@@ -1,4 +1,4 @@
-import { clampZoom, fitScale, percentOf, stepZoom, zoomAt, type PanZoomState } from "@xdev-asia/ui";
+import { MAX_ZOOM, MIN_ZOOM, clampZoom, fitScale, percentOf, stepZoom, zoomAt, type PanZoomState } from "@xdev-asia/ui";
 import type { Api } from "@/api";
 import { toApiError } from "@/api";
 import { mimeOf } from "./viewer";
@@ -36,6 +36,8 @@ export class ImageSession {
   private listeners = new Set<() => void>();
   private gen = 0;
   private owns = true;
+  private detach: (() => void) | null = null;
+  private parent: ImageSession | null = null;
   constructor(
     private api: Pick<Api, "fileBytes">,
     private worktree: string,
@@ -72,18 +74,34 @@ export class ImageSession {
 
   /** Revokes the URL and ignores a load still in flight. */
   dispose(): void {
+    this.detach?.();
+    this.detach = null;
     this.gen++;
     this.revoke();
     this.listeners.clear();
     this.state = { ...this.state, url: null };
   }
 
-  /** A second view of the same loaded image (the expand dialog) with its own zoom; it never revokes the URL. */
+  /** A second view of the image (the expand dialog) with its own zoom. It follows this session's URL and status, and never revokes the URL. */
   view(): ImageSession {
     const v = new ImageSession(this.api, this.worktree, this.rel, this.urls);
     v.owns = false;
     v.state = { ...this.state, box: null, zoom: 1, pan: null };
+    v.parent = this;
+    v.attach();
     return v;
+  }
+  /** (Re)starts following the parent of a view; a no-op when already following. `dispose` stops it. */
+  attach(): void {
+    const parent = this.parent;
+    if (!parent || this.detach) return;
+    const sync = (): void => {
+      const { status, error, url, bytes } = parent.state;
+      const own = this.state;
+      if (own.status !== status || own.error !== error || own.url !== url || own.bytes !== bytes) this.set({ status, error, url, bytes });
+    };
+    this.detach = parent.subscribe(sync);
+    sync();
   }
   setNatural(w: number, h: number): void {
     this.set({ nat: { w, h } });
@@ -118,12 +136,25 @@ export class ImageSession {
     return this.state.nat && this.state.box ? percentOf(this.state.zoom, this.fit()) : null;
   }
 
+  /** Highest zoom on top of fit: 8x, or whatever shows 100% of the image's pixels when fit is small. */
+  private maxZoom(): number {
+    return Math.max(MAX_ZOOM, 1 / this.fit());
+  }
+  /** The zoom limits as absolute scales, for PanZoom: relative to fit, so a big image can still zoom out. */
+  limits(): { min: number; max: number } {
+    const fit = this.fit();
+    return { min: MIN_ZOOM * fit, max: this.maxZoom() * fit };
+  }
+  private clamp(zoom: number): number {
+    return clampZoom(zoom, MIN_ZOOM, this.maxZoom());
+  }
+
   reset(): void {
     this.set({ zoom: 1, pan: null });
   }
   private zoomBy(dir: 1 | -1): void {
     const { box } = this.state;
-    const next = stepZoom(this.state.zoom, dir);
+    const next = stepZoom(this.state.zoom, dir, undefined, MIN_ZOOM, this.maxZoom());
     if (next === this.state.zoom || !box) return;
     this.applyZoom(next, { x: box.w / 2, y: box.h / 2 });
   }
@@ -144,13 +175,17 @@ export class ImageSession {
     const fit = this.fit();
     const o = this.origin();
     const cur = this.scale();
-    const next = zoomAt({ zoom: cur, x: o.x, y: o.y }, at, (free ? zoom : clampZoom(zoom)) * fit / cur);
-    this.set({ zoom: free ? zoom : clampZoom(zoom), pan: { x: next.x, y: next.y } });
+    const { min, max } = this.limits();
+    const target = free ? zoom : this.clamp(zoom);
+    const next = zoomAt({ zoom: cur, x: o.x, y: o.y }, at, (target * fit) / cur, Math.min(min, target * fit), Math.max(max, target * fit));
+    this.set({ zoom: target, pan: { x: next.x, y: next.y } });
   }
   /** From PanZoom: absolute scale and position. */
   onZoom = (next: PanZoomState): void => {
     const fit = this.fit();
-    this.set({ zoom: clampZoom(next.zoom / fit), pan: { x: next.x, y: next.y } });
+    this.set({ zoom: this.clamp(next.zoom / fit), pan: { x: next.x, y: next.y } });
   };
+  /** From PanZoom's 0 key: the same as the Fit button. */
+  onReset = (): void => this.reset();
   onPan = (x: number, y: number): void => this.set({ pan: { x, y } });
 }

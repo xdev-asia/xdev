@@ -860,3 +860,21 @@ it("sends the fork flag and the keep awake calls to Tauri, null when absent", as
     ]);
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });
+
+it("sends the port calls to Tauri with the worktrees and the id", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined), Channel: class { onmessage: unknown } }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await api.portsScan(["/w/a"], true);
+    await api.portsStop(["/w/a"], "localhost:5173:42", { confirmed: true, outsideTerminal: false });
+    await api.portsOpen("localhost:5173:42");
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["ports_scan", { worktrees: ["/w/a"], force: true }],
+      ["ports_stop", { worktrees: ["/w/a"], id: "localhost:5173:42", confirmed: true, outsideTerminal: false }],
+      ["ports_open", { id: "localhost:5173:42" }],
+    ]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});

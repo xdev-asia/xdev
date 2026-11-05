@@ -2,9 +2,15 @@
 export type MermaidRender = (id: string, src: string, theme: Record<string, string>) => Promise<string>;
 
 /** The default renderer: mermaid is loaded on first use, so it stays out of the main bundle. */
+let initializedWith: string | null = null;
 export const renderMermaid: MermaidRender = async (id, src, theme) => {
   const { default: mermaid } = await import("mermaid");
-  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "base", themeVariables: theme });
+  // Initializing resets mermaid's config, so do it when the theme changed, not for every diagram.
+  const key = JSON.stringify(theme);
+  if (key !== initializedWith) {
+    mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "base", themeVariables: theme });
+    initializedWith = key;
+  }
   const { svg } = await mermaid.render(id, src);
   return svg;
 };

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { COPY_MAX_SIDE, copyPng, pngSize, type CopyEnv } from "./copyImage";
+import { COPY_MAX_AREA, COPY_MAX_SIDE, copyPng, pngSize, type CopyEnv } from "./copyImage";
 
 const img = { naturalWidth: 100, naturalHeight: 50 };
 
@@ -22,9 +22,21 @@ describe("pngSize", () => {
     expect(pngSize(100, 50)).toEqual({ w: 200, h: 100 });
   });
   it("keeps the longest side within 16384", () => {
-    const size = pngSize(10000, 5000);
-    expect(Math.max(size.w, size.h)).toBe(COPY_MAX_SIDE);
-    expect(size.h).toBe(COPY_MAX_SIDE / 2);
+    const size = pngSize(40000, 10);
+    expect(size.w).toBe(COPY_MAX_SIDE);
+    expect(size.h).toBeGreaterThanOrEqual(1);
+  });
+  it("keeps the whole canvas within 32 megapixels, not only each side", () => {
+    expect(COPY_MAX_AREA).toBe(32_000_000);
+    for (const [w, h] of [[10000, 5000], [16000, 16000], [8000, 6000], [4000, 3000]]) {
+      const size = pngSize(w, h);
+      expect(size.w * size.h).toBeLessThanOrEqual(COPY_MAX_AREA);
+      expect(Math.max(size.w, size.h)).toBeLessThanOrEqual(COPY_MAX_SIDE);
+      expect(size.w / size.h).toBeCloseTo(w / h, 2);
+    }
+  });
+  it("still draws a small image at 2x", () => {
+    expect(pngSize(2000, 1000)).toEqual({ w: 4000, h: 2000 });
   });
 });
 

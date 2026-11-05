@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fillImages, isRelativeSrc, joinRel, resolveFileLink } from "./previewLinks";
+import { ImageCache, fillImages, isRelativeSrc, joinRel, resolveFileLink } from "./previewLinks";
 import { ensureParsers, fenceLanguages } from "./parsers";
 
 describe("joinRel and resolveFileLink", () => {
@@ -45,6 +45,14 @@ describe("fillImages", () => {
     stop();
     expect(urls.revoke).toHaveBeenCalledWith("blob:1");
   });
+  it("reads a leading / image from the worktree root, like a link, not from the file's folder", async () => {
+    const api = { fileBytes: vi.fn(async () => new Uint8Array(1)) };
+    const list = [el({ "data-src": "/img/a.png" }), el({ "data-src": "/../out.png" })];
+    fillImages({ querySelectorAll: () => list }, { api, worktree: "W", rel: "docs/deep/a.md", urls: { create: () => "blob:1", revoke() {} }, make: () => "IMG" });
+    await tick();
+    expect(api.fileBytes).toHaveBeenCalledTimes(1);
+    expect(api.fileBytes).toHaveBeenCalledWith("W", "img/a.png");
+  });
   it("does not read a remote image or one outside the worktree", async () => {
     const api = { fileBytes: vi.fn(async () => new Uint8Array(1)) };
     const list = [el({ "data-src": "https://x/a.png" }), el({ "data-src": "../../a.png" })];
@@ -69,6 +77,106 @@ describe("fillImages", () => {
     expect(urls.create).not.toHaveBeenCalled();
     expect(late.replaceWith).not.toHaveBeenCalled();
     expect(failed.replaceWith).not.toHaveBeenCalled();
+  });
+});
+
+describe("ImageCache", () => {
+  const deferred = () => {
+    const calls: Array<{ rel: string; done: (b: Uint8Array) => void; fail: (e: unknown) => void }> = [];
+    const api = {
+      fileBytes: vi.fn(
+        (_w: string, rel: string) => new Promise<Uint8Array>((done, fail) => calls.push({ rel, done, fail })),
+      ),
+    };
+    return { api, calls };
+  };
+  const urls = () => {
+    let n = 0;
+    return { create: vi.fn(() => `blob:${n++}`), revoke: vi.fn() };
+  };
+
+  it("reads a path once however many images use it, and shares the URL", async () => {
+    const api = { fileBytes: vi.fn(async () => new Uint8Array(1)) };
+    const u = urls();
+    const cache = new ImageCache(api, "W", u);
+    const [a, b] = await Promise.all([cache.url("a.png"), cache.url("a.png")]);
+    expect(await cache.url("a.png")).toBe(a);
+    expect(b).toBe(a);
+    expect(api.fileBytes).toHaveBeenCalledTimes(1);
+    expect(u.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs at most 4 reads at once and starts the next as one finishes", async () => {
+    const { api, calls } = deferred();
+    const cache = new ImageCache(api, "W", urls());
+    const all = Array.from({ length: 7 }, (_, i) => cache.url(`${i}.png`));
+    await tick();
+    expect(api.fileBytes).toHaveBeenCalledTimes(4);
+    calls[0].done(new Uint8Array(1));
+    await tick();
+    expect(api.fileBytes).toHaveBeenCalledTimes(5);
+    for (const c of calls.slice(1)) c.done(new Uint8Array(1));
+    await tick();
+    for (const c of calls.slice(5)) c.done(new Uint8Array(1));
+    await tick();
+    expect(api.fileBytes).toHaveBeenCalledTimes(7);
+    await expect(Promise.all(all)).resolves.toHaveLength(7);
+  });
+
+  it("does not remember a failed read, so a later call tries again", async () => {
+    const api = { fileBytes: vi.fn().mockRejectedValueOnce({ code: "io" }).mockResolvedValue(new Uint8Array(1)) };
+    const cache = new ImageCache(api, "W", urls());
+    await expect(cache.url("a.png")).rejects.toEqual({ code: "io" });
+    await expect(cache.url("a.png")).resolves.toBe("blob:0");
+    expect(api.fileBytes).toHaveBeenCalledTimes(2);
+  });
+
+  it("revokes every URL on dispose and drops a read that arrives afterwards", async () => {
+    const { api, calls } = deferred();
+    const u = urls();
+    const cache = new ImageCache(api, "W", u);
+    const first = cache.url("a.png");
+    calls[0].done(new Uint8Array(1));
+    await first;
+    const late = cache.url("b.png");
+    late.catch(() => undefined);
+    await tick();
+    cache.dispose();
+    expect(u.revoke).toHaveBeenCalledWith("blob:0");
+    calls[1].done(new Uint8Array(1));
+    await tick();
+    expect(u.create).toHaveBeenCalledTimes(1);
+    await expect(late).rejects.toThrow();
+  });
+
+  it("can be used again after dispose (a remount)", async () => {
+    const api = { fileBytes: vi.fn(async () => new Uint8Array(1)) };
+    const cache = new ImageCache(api, "W", urls());
+    await cache.url("a.png");
+    cache.dispose();
+    await expect(cache.url("a.png")).resolves.toBe("blob:1");
+    expect(api.fileBytes).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("fillImages with a shared cache", () => {
+  it("a second fill reuses the cached bytes, and its cleanup leaves the cache's URLs alone", async () => {
+    const api = { fileBytes: vi.fn(async () => new Uint8Array(1)) };
+    const u = { create: vi.fn(() => "blob:1"), revoke: vi.fn() };
+    const cache = new ImageCache(api, "W", u);
+    const make = vi.fn(() => "IMG");
+    const one = el({ "data-src": "a.png" });
+    fillImages({ querySelectorAll: () => [one] }, { api, worktree: "W", rel: "a.md", cache, make })();
+    await tick();
+    const two = el({ "data-src": "a.png" });
+    const stop = fillImages({ querySelectorAll: () => [two, el({ "data-src": "a.png" })] }, { api, worktree: "W", rel: "a.md", cache, make });
+    await tick();
+    stop();
+    expect(api.fileBytes).toHaveBeenCalledTimes(1);
+    expect(two.replaceWith).toHaveBeenCalledWith("IMG");
+    expect(u.revoke).not.toHaveBeenCalled();
+    cache.dispose();
+    expect(u.revoke).toHaveBeenCalledTimes(1);
   });
 });
 

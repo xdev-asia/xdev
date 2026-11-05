@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@xdev-asia/ui";
 import type { JSX } from "react";
-import type { ApiError, Check, FolderEntry, KeptView, LivePort, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorkStatus, WorktreeStat, WorktreeView } from "@/api";
+import type { ApiError, Check, FolderEntry, KeptView, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorkStatus, WorktreeStat, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
@@ -22,6 +22,7 @@ import { SidebarFilters } from "./SidebarFilters";
 import { SidebarOptions } from "./SidebarOptions";
 import { WorkItemChip } from "./WorkItemChip";
 import { PortsChip, PortsPopover } from "./PortsChip";
+import type { LivePort } from "./livePorts";
 import { ContextMenu } from "@/ui/ContextMenu";
 
 type T = ReturnType<typeof useI18n>["t"];
@@ -161,7 +162,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const [dragging, setDragging] = useState<string | null>(null);
   // The worktree whose live ports popover is open, where it opens, and the pid whose Stop asks again.
   const [portsOpen, setPortsOpen] = useState<{ worktree: WorktreeView; at: { x: number; y: number } } | null>(null);
-  const [stopAsk, setStopAsk] = useState<number | null>(null);
+  const [stopAsk, setStopAsk] = useState<{ pid: number; since: number } | null>(null);
   const prefs = props.prefs ?? SIDEBAR_PREFS_DEFAULTS;
   const tree = props.items;
   // The repos whose "Found outside xDev" group is open; all start closed.
@@ -813,7 +814,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         </p>
       )}
       {openMenuNode()}
-      {portsOpen && <PortsPopover ports={props.ports?.[portsOpen.worktree.path] ?? []} at={portsOpen.at} confirming={stopAsk} onOpenBrowser={(p) => props.onOpenPort?.(p)} onCopy={(p) => props.onCopyPort?.(p)} onAskStop={(p) => setStopAsk(p.pid)} onStop={(p) => {
+      {portsOpen && <PortsPopover ports={props.ports?.[portsOpen.worktree.path] ?? []} at={portsOpen.at} confirming={stopAsk} onOpenBrowser={(p) => props.onOpenPort?.(p)} onCopy={(p) => props.onCopyPort?.(p)} onAskStop={(p) => setStopAsk({ pid: p.pid, since: Date.now() })} onStop={(p) => {
         setStopAsk(null);
         void props.onStopPort?.(portsOpen.worktree, p);
       }} onClose={() => { setPortsOpen(null); setStopAsk(null); }} />}

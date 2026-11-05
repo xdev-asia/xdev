@@ -19,7 +19,7 @@ use crate::open_in::OpenTarget;
 use crate::orchestration::{
     ReadTab, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome,
 };
-use crate::ports::{LivePort, PortQuery, WorktreePorts};
+use crate::ports::PortsAdvertised;
 use crate::power::AwakeView;
 use crate::profiles::ProfilesView;
 use crate::pty::{PtyAttached, PtyExit, PtyInfo, PtydStatus};
@@ -118,9 +118,6 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     DiffSettings::export_all(cfg)?;
     AgentsSettings::export_all(cfg)?;
     AwakeView::export_all(cfg)?;
-    LivePort::export_all(cfg)?;
-    PortQuery::export_all(cfg)?;
-    WorktreePorts::export_all(cfg)?;
     UsageSettings::export_all(cfg)?;
     XdevIdSettings::export_all(cfg)?;
     OrchestrationSettings::export_all(cfg)?;
@@ -222,6 +219,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     TabReport::export_all(cfg)?;
     CliOpenTab::export_all(cfg)?;
     CliAsk::export_all(cfg)?;
+    PortsAdvertised::export_all(cfg)?;
+    xdev_ports::PortScan::export_all(cfg)?;
     Ok(())
 }
 

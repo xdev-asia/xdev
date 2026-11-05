@@ -1,19 +1,13 @@
 import { useEffect, useRef } from "react";
 import type { JSX, KeyboardEvent } from "react";
 import { Icon } from "@xdev-asia/ui";
-import type { LivePort } from "@/api";
+import type { LivePort } from "./livePorts";
+import { confirmCounts } from "@/ports/confirmClick";
 import { useI18n } from "@/i18n";
 
-/** The address a browser can open: a wildcard listener is reached on localhost. */
-export function browserUrl(port: LivePort): string {
-  const wild = port.address === "0.0.0.0" || port.address === "::";
-  const host = wild ? "localhost" : port.address.includes(":") ? `[${port.address}]` : port.address;
-  return `http://${host}:${port.port}`;
-}
-
-/** `host:port` as shown and copied. */
+/** What the chip shows and copies: the connect host as the Ports panel has it. */
 export function endpoint(port: LivePort): string {
-  return `${port.address.includes(":") ? `[${port.address}]` : port.address}:${port.port}`;
+  return port.endpoint;
 }
 
 /** The plug and the count on a card; nothing at zero. A span with a button role: it sits inside the row's own button. */
@@ -50,8 +44,8 @@ export function PortsChip(props: { count: number; onOpen(at: { x: number; y: num
 export interface PortsPopoverProps {
   ports: LivePort[];
   at: { x: number; y: number };
-  /** The pid whose Stop asks for a second click. */
-  confirming: number | null;
+  /** The pid whose Stop asked, and when its confirm appeared. */
+  confirming: { pid: number; since: number } | null;
   onOpenBrowser(port: LivePort): void;
   onCopy(port: LivePort): void;
   /** First click on Stop: ask. */
@@ -91,10 +85,10 @@ export function PortsPopover(props: PortsPopoverProps): JSX.Element {
                   {t("ports.open")}
                 </button>
                 <button type="button" className="btn-secondary" data-action="copy" onClick={() => props.onCopy(p)}>
-                  {t("ports.copy", { address: endpoint(p) })}
+                  {t("ports.copyAt", { address: endpoint(p) })}
                 </button>
-                {props.confirming === p.pid ? (
-                  <button type="button" className="btn-secondary ws-ports-stop" data-action="stop-confirm" onClick={() => props.onStop(p)}>
+                {props.confirming?.pid === p.pid ? (
+                  <button type="button" className="btn-secondary ws-ports-stop" data-action="stop-confirm" onClick={(e) => { if (props.confirming && confirmCounts(e, props.confirming.since)) props.onStop(p); }}>
                     {t("ports.stopConfirm", { port: p.port })}
                   </button>
                 ) : (

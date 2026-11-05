@@ -1,17 +1,17 @@
 import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { LivePort } from "@/api";
+import type { LivePort } from "./livePorts";
 import { translate } from "@/i18n";
-import { browserUrl, endpoint, PortsChip, PortsPopover, type PortsPopoverProps } from "./PortsChip";
+import { endpoint, PortsChip, PortsPopover, type PortsPopoverProps } from "./PortsChip";
 
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 // The popover is called as a function to read its handlers, so its refs and effects are stubs.
 vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(), useRef: () => ({ current: null }), useEffect: () => {} }));
 
-const node: LivePort = { port: 5173, address: "127.0.0.1", pid: 4242, process: "node" };
-const bare: LivePort = { port: 8080, address: "0.0.0.0", pid: 77, process: null };
-const six: LivePort = { port: 3000, address: "::1", pid: 78, process: "python" };
+const node: LivePort = { id: "n", port: 5173, address: "127.0.0.1", endpoint: "127.0.0.1:5173", pid: 4242, process: "node" };
+const bare: LivePort = { id: "b", port: 8080, address: "localhost", endpoint: "localhost:8080", pid: 77, process: null };
+const six: LivePort = { id: "s", port: 3000, address: "::1", endpoint: "[::1]:3000", pid: 78, process: "python" };
 
 function walk(el: unknown, out: ReactElement<Record<string, any>>[] = []): ReactElement<Record<string, any>>[] {
   if (Array.isArray(el)) el.forEach((e) => walk(e, out));
@@ -43,7 +43,7 @@ it("the popover title counts the ports and each row shows port, process or PID, 
   expect(html).toContain("Live ports (2)");
   expect(html).toContain("5173");
   expect(html).toContain("node - 127.0.0.1");
-  expect(html).toContain("PID 77 - 0.0.0.0");
+  expect(html).toContain("PID 77 - localhost");
   expect(html).toContain("Open in browser");
   expect(html).toContain("Copy 127.0.0.1:5173");
   expect(html).toContain("Stop process");
@@ -62,12 +62,25 @@ it("Open, Copy and the first Stop click act on their own row", () => {
 });
 
 it("a Stop that asked first shows the confirmation, and only that click stops the process", () => {
-  const props = base({ confirming: 4242 });
+  const props = base({ confirming: { pid: 4242, since: Date.now() - 500 } });
   const tree = PortsPopover(props);
   expect(renderToStaticMarkup(tree)).toContain("Stop process on 5173?");
   expect(action(tree, "stop", 0)).toBeDefined();
-  action(tree, "stop-confirm", 0).props.onClick();
+  action(tree, "stop-confirm", 0).props.onClick({ detail: 1 });
   expect(props.onStop).toHaveBeenCalledWith(node);
+});
+
+it("the confirm ignores the extra clicks of a double or triple click and a click right after it appears", () => {
+  const fresh = base({ confirming: { pid: 4242, since: Date.now() } });
+  action(PortsPopover(fresh), "stop-confirm", 0).props.onClick({ detail: 1 });
+  expect(fresh.onStop).not.toHaveBeenCalled();
+  const armed = base({ confirming: { pid: 4242, since: Date.now() - 500 } });
+  const tree = PortsPopover(armed);
+  action(tree, "stop-confirm", 0).props.onClick({ detail: 2 });
+  action(tree, "stop-confirm", 0).props.onClick({ detail: 3 });
+  expect(armed.onStop).not.toHaveBeenCalled();
+  action(tree, "stop-confirm", 0).props.onClick({ detail: 1 });
+  expect(armed.onStop).toHaveBeenCalledTimes(1);
 });
 
 it("Escape and the backdrop close it", () => {
@@ -81,10 +94,7 @@ it("Escape and the backdrop close it", () => {
   expect(props.onClose).toHaveBeenCalledTimes(2);
 });
 
-it("a wildcard listener opens on localhost and an IPv6 address is bracketed", () => {
-  expect(browserUrl(node)).toBe("http://127.0.0.1:5173");
-  expect(browserUrl(bare)).toBe("http://localhost:8080");
-  expect(browserUrl(six)).toBe("http://[::1]:3000");
+it("an IPv6 address is bracketed in the copied endpoint", () => {
   expect(endpoint(six)).toBe("[::1]:3000");
   expect(endpoint(node)).toBe("127.0.0.1:5173");
 });

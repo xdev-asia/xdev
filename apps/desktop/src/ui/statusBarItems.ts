@@ -3,7 +3,7 @@ import type { StatusBarItems } from "@/api";
 
 // One copy for the window: `applyAppearance` stores the setting, the footer reads it.
 
-export const ALL_ITEMS: StatusBarItems = { branch: true, tokenUsage: true, agents: true, version: true };
+export const ALL_ITEMS: StatusBarItems = { branch: true, tokenUsage: true, agents: true, version: true, ports: true };
 
 let current: StatusBarItems = ALL_ITEMS;
 const listeners = new Set<() => void>();

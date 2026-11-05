@@ -16,6 +16,7 @@ import type {
   ReadTab,
   WorkerChanged,
   AwakeView,
+  PortScan,
   KeepAwake,
   SwitchRunning,
   Approvals,
@@ -96,9 +97,6 @@ import type {
   WorktreeStat,
   WorktreeView,
   WorktreeCreated,
-  LivePort,
-  PortQuery,
-  WorktreePorts,
   Linked,
   DefaultTab,
   DetailsPatch,
@@ -197,12 +195,16 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 
 export { createMockApi };
 /** The kinds of `HookKind` that are scripts; the others are lists. */
+/** What the person agreed to before a port stop. */
+export type PortStopConsent = { confirmed: boolean; outsideTerminal: boolean };
+
 export type ScriptKind = Extract<HookKind, "setup" | "archive">;
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearchStatus };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, AwakeView, KeepAwake, SwitchRunning };
+export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } from "@xdev/bindings";
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind } from "@xdev/bindings";
@@ -354,9 +356,6 @@ export type {
   DefaultTab,
   Linked,
   WorktreeCreated,
-  LivePort,
-  PortQuery,
-  WorktreePorts,
   HookRun,
   KeySettings,
   TerminalKeyPolicy,
@@ -404,7 +403,6 @@ export type ErrorCode =
   | "share_bad_image"
   | "share_clipboard"
   | "share_open"
-  | "port_unknown"
   | "io"
   | "not_utf8"
   | "too_large"
@@ -453,6 +451,19 @@ export type ErrorCode =
   | "pty_spawn"
   | "pty_resize"
   | "pty_gone"
+  | "scan_failed"
+  | "port_gone"
+  | "port_not_owned"
+  | "port_no_pid"
+  | "port_own_process"
+  | "port_scan_unavailable"
+  | "port_changed"
+  | "port_stop_unconfirmed"
+  | "port_not_started_by_app"
+  | "port_terminal_root"
+  | "port_still_listening"
+  | "stop_failed"
+  | "open_failed"
   | "ptyd_unreachable"
   | "ptyd_auth"
   | "ptyd_version"
@@ -497,7 +508,6 @@ export type ErrorCode =
   | "pull_policy"
   | "no_web_remote"
   | "needs_force"
-  | "open_failed"
   | "force_base"
   | "nothing_to_amend"
   | "amend_pushed"
@@ -873,10 +883,6 @@ export interface Api {
   keptKeep(repoId: string, branch: string): Promise<void>;
   // Deletes a kept branch from git. Rejects with `needs_approval` until `confirmed`, `kept_unknown`.
   branchDelete(repoId: string, branch: string, confirmed: boolean): Promise<void>;
-  // The TCP ports each worktree's terminals listen on, in the order asked.
-  portsScan(queries: PortQuery[]): Promise<WorktreePorts[]>;
-  // Ends the process on a port. Rejects with `needs_approval` until `confirmed`, `port_unknown`.
-  portStop(ptyIds: string[], pid: number, confirmed: boolean): Promise<void>;
   // Repos (with their kept branches), plain folders and groups in shown order.
   workspaceSidebar(): Promise<SidebarItem[]>;
   // The top-level order; unknown ids are skipped and items left out follow in the order added.
@@ -1120,6 +1126,15 @@ export interface Api {
   // Reports whether any agent tab is working; the backend decides in `agent` mode.
   keepAwakeAgents(working: boolean): Promise<AwakeView>;
   onKeepAwakeChanged(cb: (v: AwakeView) => void): Promise<() => void>;
+  // Ports: one scan of the local listeners for these worktrees (`force` skips the back-off wait), stopping
+  // the process behind a port id, opening its URL in the OS browser, and a terminal printing a new URL.
+  portsScan(worktrees: string[], force: boolean): Promise<PortScan>;
+  // A stop needs `confirmed`; a port no xDev terminal started also needs `outsideTerminal`, the second
+  // confirmation, and so does a listener that is a terminal's own process. Rejects with
+  // `port_stop_unconfirmed` / `port_not_started_by_app` / `port_terminal_root` otherwise.
+  portsStop(worktrees: string[], id: string, consent: PortStopConsent): Promise<PortScan>;
+  portsOpen(id: string): Promise<void>;
+  onPortsAdvertised(cb: (worktree: string) => void): Promise<() => void>;
   usageSettings(): Promise<UsageSettings>;
   usageSettingsPut(v: UsageSettings): Promise<UsageSettings>;
 
@@ -1175,7 +1190,6 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "share_bad_image",
   "share_clipboard",
   "share_open",
-  "port_unknown",
   "io",
   "not_utf8",
   "too_large",
@@ -1224,6 +1238,19 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "pty_spawn",
   "pty_resize",
   "pty_gone",
+  "scan_failed",
+  "port_gone",
+  "port_not_owned",
+  "port_no_pid",
+  "port_own_process",
+  "port_scan_unavailable",
+  "port_changed",
+  "port_stop_unconfirmed",
+  "port_not_started_by_app",
+  "port_terminal_root",
+  "port_still_listening",
+  "stop_failed",
+  "open_failed",
   "ptyd_unreachable",
   "ptyd_auth",
   "ptyd_version",
@@ -1268,7 +1295,6 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "pull_policy",
   "no_web_remote",
   "needs_force",
-  "open_failed",
   "force_base",
   "nothing_to_amend",
   "amend_pushed",
@@ -1514,8 +1540,6 @@ const tauriApi: Api = {
   worktreeRestore: (repoId, branch) => call("worktree_restore", { repoId, branch }),
   keptKeep: (repoId, branch) => call("kept_keep", { repoId, branch }),
   branchDelete: (repoId, branch, confirmed) => call("branch_delete", { repoId, branch, confirmed }),
-  portsScan: (queries) => call("ports_scan", { queries }),
-  portStop: (ptyIds, pid, confirmed) => call("port_stop", { ptyIds, pid, confirmed }),
   workspaceSidebar: () => call("workspace_sidebar"),
   sidebarOrder: (ids) => call("sidebar_order", { ids }),
   groupPut: (id, name) => call("group_put", { id, name }),
@@ -1642,6 +1666,10 @@ const tauriApi: Api = {
   keepAwakeSet: (mode) => call("keep_awake_set", { mode }),
   keepAwakeAgents: (working) => call("keep_awake_agents", { working }),
   onKeepAwakeChanged: (cb) => listen<AwakeView>("keep-awake://changed", (e) => cb(e.payload)),
+  portsScan: (worktrees, force) => call("ports_scan", { worktrees, force }),
+  portsStop: (worktrees, id, consent) => call("ports_stop", { worktrees, id, confirmed: consent.confirmed, outsideTerminal: consent.outsideTerminal }),
+  portsOpen: (id) => call("ports_open", { id }),
+  onPortsAdvertised: (cb) => listen<{ worktree: string }>("ports://advertised", (e) => cb(e.payload.worktree)),
   usageSettings: () => call("usage_settings_get"),
   usageSettingsPut: (settings) => call("usage_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),
