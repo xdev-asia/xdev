@@ -2,6 +2,7 @@ import { useEffect, useReducer, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { Button, EmptyState, StatusDot, Tooltip, ListRow, SearchInput, Segmented } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
+import { openMissionControl } from "@/orchestration/missionEvents";
 import { reasonKey } from "@/workspace/attention";
 import { CloseTabsDialog } from "@/workspace/CloseTabsDialog";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
@@ -347,7 +348,16 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
       anyThreads={anyThreads}
       feed={entries}
       names={props.names}
-      agents={<AgentDashboard sources={sources} names={props.names} now={now} onJump={props.onJump} />}
+      agents={
+        <>
+          <div className="act-mission">
+            <Button variant="secondary" type="button" icon="workflow" onClick={() => openMissionControl("tabs")}>
+              {t("mission.activity.open")}
+            </Button>
+          </div>
+          <AgentDashboard sources={sources} names={props.names} now={now} onJump={props.onJump} />
+        </>
+      }
       now={now}
       menuAt={menuAt}
       selected={selection.selected}

@@ -11,6 +11,7 @@ import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { CrashHost } from "@/crash/CrashHost";
+import { MissionHost } from "@/orchestration/MissionHost";
 import { StartupBanner } from "@/startup/StartupBanner";
 import { onTabJump } from "./tabJump";
 import { PaletteHost } from "@/palette/PaletteHost";
@@ -2489,6 +2490,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         onCancel={() => setConfirmEndAll(false)}
       />
       <CrashHost api={api} />
+      <MissionHost api={api} focusTab={jumpTo} frontTab={() => (current ? shownTab[current.path] ?? null : null)} />
       <Toasts />
       {adding && (
         <AddProjectDialog
