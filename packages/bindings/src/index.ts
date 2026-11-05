@@ -164,6 +164,8 @@ export type { MrState } from "./MrState";
 export type { MrSummary } from "./MrSummary";
 export type { NamePreview } from "./NamePreview";
 export type { NavigationSettings } from "./NavigationSettings";
+export type { NestedRepo } from "./NestedRepo";
+export type { NestedScanResult } from "./NestedScanResult";
 export type { NotificationPermission } from "./NotificationPermission";
 export type { OnNameTaken } from "./OnNameTaken";
 export type { OnQuit } from "./OnQuit";

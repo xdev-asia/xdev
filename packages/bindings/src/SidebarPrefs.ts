@@ -6,7 +6,8 @@ import type { SidebarSort } from "./SidebarSort";
 
 /**
  * The sidebar's filters, grouping, sort and card layout. All filters off:
- * every row shows.
+ * every row shows, except worktrees made outside xDev, which wait in the
+ * visibility dialog until they are shown.
  */
 export type SidebarPrefs = { 
 /**
@@ -28,4 +29,21 @@ compactCards: boolean, card: CardProps, projectOrder: ProjectOrder,
 /**
  * A pinned row also shows in its group.
  */
-pinnedInGroups: boolean, };
+pinnedInGroups: boolean, 
+/**
+ * Repo ids the sidebar is limited to; empty lists every project.
+ */
+projectFilter: Array<string>, 
+/**
+ * Worktrees made outside xDev stay out of the sidebar until they are
+ * shown one by one.
+ */
+externalDefaultHidden: boolean, 
+/**
+ * Paths of worktrees the user hid from the sidebar.
+ */
+hiddenWorktrees: Array<string>, 
+/**
+ * Paths of worktrees made outside xDev the user chose to show.
+ */
+shownWorktrees: Array<string>, };

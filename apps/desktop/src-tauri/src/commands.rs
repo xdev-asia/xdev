@@ -232,8 +232,10 @@ pub fn sidebar_prefs_put(
     app: AppHandle,
     prefs: settings::SidebarPrefs,
 ) -> Result<settings::SidebarPrefs, CmdError> {
-    settings_store::write(&app, &[SettingsSection::Sidebar], |s| s.sidebar = prefs)
-        .map(|s| s.sidebar)
+    settings_store::write(&app, &[SettingsSection::Sidebar], |s| {
+        s.sidebar = prefs.clamped()
+    })
+    .map(|s| s.sidebar)
 }
 
 /// Settings → General → Navigation as stored; the defaults when nothing is.

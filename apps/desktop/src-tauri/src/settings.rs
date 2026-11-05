@@ -524,8 +524,9 @@ impl Default for CardProps {
 }
 
 /// The sidebar's filters, grouping, sort and card layout. All filters off:
-/// every row shows.
-#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// every row shows, except worktrees made outside xDev, which wait in the
+/// visibility dialog until they are shown.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(default, rename_all = "camelCase")]
 pub struct SidebarPrefs {
@@ -544,6 +545,69 @@ pub struct SidebarPrefs {
     pub project_order: ProjectOrder,
     /// A pinned row also shows in its group.
     pub pinned_in_groups: bool,
+    /// Repo ids the sidebar is limited to; empty lists every project.
+    pub project_filter: Vec<String>,
+    /// Worktrees made outside xDev stay out of the sidebar until they are
+    /// shown one by one.
+    pub external_default_hidden: bool,
+    /// Paths of worktrees the user hid from the sidebar.
+    pub hidden_worktrees: Vec<String>,
+    /// Paths of worktrees made outside xDev the user chose to show.
+    pub shown_worktrees: Vec<String>,
+}
+
+impl Default for SidebarPrefs {
+    fn default() -> Self {
+        SidebarPrefs {
+            hide_default: false,
+            hide_detached: false,
+            hide_automation: false,
+            hide_cli: false,
+            group_by: SidebarGroupBy::default(),
+            sort: SidebarSort::default(),
+            compact_cards: false,
+            card: CardProps::default(),
+            project_order: ProjectOrder::default(),
+            pinned_in_groups: false,
+            project_filter: Vec::new(),
+            external_default_hidden: true,
+            hidden_worktrees: Vec::new(),
+            shown_worktrees: Vec::new(),
+        }
+    }
+}
+
+/// Most ids or paths a sidebar list keeps, and the longest one.
+const SIDEBAR_LIST_MAX: usize = 2000;
+const SIDEBAR_ENTRY_MAX: usize = 4096;
+
+impl SidebarPrefs {
+    /// The lists trimmed, de-duplicated in order, blank and over-long entries
+    /// dropped, cut to `SIDEBAR_LIST_MAX`. A path in both visibility lists
+    /// stays hidden.
+    pub fn clamped(mut self) -> Self {
+        self.project_filter = clean_list(self.project_filter);
+        self.hidden_worktrees = clean_list(self.hidden_worktrees);
+        self.shown_worktrees = clean_list(self.shown_worktrees);
+        let hidden = &self.hidden_worktrees;
+        self.shown_worktrees.retain(|p| !hidden.contains(p));
+        self
+    }
+}
+
+fn clean_list(list: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for item in list {
+        let item = item.trim().to_string();
+        if item.is_empty() || item.len() > SIDEBAR_ENTRY_MAX || out.contains(&item) {
+            continue;
+        }
+        out.push(item);
+        if out.len() == SIDEBAR_LIST_MAX {
+            break;
+        }
+    }
+    out
 }
 
 /// The order Ctrl+Tab walks the tabs of a worktree.
@@ -3303,6 +3367,66 @@ then sum up"
         let sb: SidebarPrefs = serde_json::from_str(r#"{"projectOrder":"x","sort":"y"}"#).unwrap();
         assert_eq!(sb.project_order, ProjectOrder::Manual);
         assert_eq!(sb.sort, SidebarSort::Manual);
+    }
+
+    #[test]
+    fn visibility_fields_default_when_an_old_file_lacks_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            r#"{ "sidebar": { "hideCli": true, "sort": "name" } }"#,
+        )
+        .unwrap();
+        let sb = load(&path).sidebar;
+        assert!(sb.hide_cli);
+        assert!(sb.project_filter.is_empty());
+        assert!(sb.external_default_hidden);
+        assert!(sb.hidden_worktrees.is_empty() && sb.shown_worktrees.is_empty());
+        let sb: SidebarPrefs = serde_json::from_str("{}").unwrap();
+        assert_eq!(sb, SidebarPrefs::default());
+    }
+
+    #[test]
+    fn visibility_fields_round_trip() {
+        let want = SidebarPrefs {
+            project_filter: vec!["r1".into()],
+            external_default_hidden: false,
+            hidden_worktrees: vec!["/a".into()],
+            shown_worktrees: vec!["/b".into()],
+            ..SidebarPrefs::default()
+        };
+        let text = serde_json::to_string(&want).unwrap();
+        assert!(text.contains(r#""externalDefaultHidden":false"#));
+        assert!(text.contains(r#""projectFilter":["r1"]"#));
+        let back: SidebarPrefs = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, want);
+    }
+
+    #[test]
+    fn sidebar_lists_are_trimmed_deduped_and_bounded() {
+        let long = "x".repeat(SIDEBAR_ENTRY_MAX + 1);
+        let many: Vec<String> = (0..SIDEBAR_LIST_MAX + 50)
+            .map(|i| format!("/w{i}"))
+            .collect();
+        let sb = SidebarPrefs {
+            project_filter: vec![
+                " a ".into(),
+                "a".into(),
+                "".into(),
+                "  ".into(),
+                long,
+                "b".into(),
+            ],
+            hidden_worktrees: many,
+            shown_worktrees: vec!["/w1".into(), "/keep".into()],
+            ..SidebarPrefs::default()
+        }
+        .clamped();
+        assert_eq!(sb.project_filter, vec!["a", "b"]);
+        assert_eq!(sb.hidden_worktrees.len(), SIDEBAR_LIST_MAX);
+        // Hidden wins over shown.
+        assert_eq!(sb.shown_worktrees, vec!["/keep"]);
     }
 
     #[test]
