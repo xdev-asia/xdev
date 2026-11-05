@@ -1052,6 +1052,8 @@ pub fn pty_spawn(
     prompt: Option<String>,
     // An automation's extra agent arguments; checked again by `add_extra_args`.
     extra_args: Option<Vec<String>>,
+    // This launch's model, effort and arguments over the profile's.
+    overrides: Option<xdev_agent::LaunchOverrides>,
 ) -> Result<PtyInfo, CmdError> {
     let data = data_dir(&state)?;
     let mut launch = if profile_id == SETUP_PROFILE {
@@ -1068,6 +1070,9 @@ pub fn pty_spawn(
             prompt.as_deref(),
         )?
     };
+    if let Some(o) = &overrides {
+        launch.apply_overrides(o);
+    }
     add_extra_args(&mut launch, extra_args.as_deref().unwrap_or_default())?;
     let starts_agent = crate::app_stats::counts_as_start(launch.agent, resume.as_deref(), fork);
     let exit_id = id.clone();
@@ -1125,10 +1130,12 @@ pub fn pty_approve(
     fork: Option<bool>,
     // The extra agent arguments the refused spawn carried: the gate keys on the full argv.
     extra_args: Option<Vec<String>>,
+    // As `pty_spawn` got them: the gate keys on the full argv.
+    overrides: Option<xdev_agent::LaunchOverrides>,
 ) -> Result<(), CmdError> {
     let data = data_dir(&state)?;
     let hooks = hooks_now(&app);
-    let launch = launch_for(
+    let mut launch = launch_for(
         data,
         &profile_id,
         account.as_deref(),
@@ -1136,6 +1143,9 @@ pub fn pty_approve(
         resume.as_deref(),
         fork.unwrap_or(false),
     )?;
+    if let Some(o) = &overrides {
+        launch.apply_overrides(o);
+    }
     approve_extra(
         &ptys,
         data,

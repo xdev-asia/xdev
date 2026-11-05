@@ -13,6 +13,10 @@ permissions: Permissions, followsApprovals: boolean,
  */
 efforts: Array<string>, 
 /**
+ * The model names its CLI is known to take; empty when none is known.
+ */
+models: Array<string>, 
+/**
  * The profile's own args already hold a permission flag of its agent,
  * so xDev adds none.
  */

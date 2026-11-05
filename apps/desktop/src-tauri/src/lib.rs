@@ -443,6 +443,7 @@ pub fn run() {
             profiles::profile_reset,
             profiles::profiles_defaults,
             profiles::agents_refresh,
+            profiles::agent_probe,
             profiles::agent_docs_open,
             profiles::shell_put,
             profiles::shell_remove,

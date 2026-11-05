@@ -10,9 +10,10 @@ use tauri::AppHandle;
 use tauri::State;
 use tauri_plugin_opener::OpenerExt;
 use xdev_agent::{
-    Approvals, Cli, CustomShell, DefaultAgent, Permissions, Profile, ProfileError, Profiles,
-    PromptMode, ShellKind, default_shell_id, efforts, find_builtin, find_program, flags,
-    has_permission_args, list_shells, modes, permission_env, pick_agent, set_path_override, spec,
+    Approvals, Cli, CustomShell, DefaultAgent, LaunchVerdict, Permissions, Profile, ProfileError,
+    Profiles, PromptMode, ShellKind, default_shell_id, efforts, find_builtin, find_program, flags,
+    has_permission_args, list_shells, models, modes, permission_env, pick_agent, probe_version,
+    set_path_override, spec, verdict,
 };
 
 use crate::accounts::data_dir;
@@ -44,6 +45,8 @@ pub struct ProfileView {
     pub follows_approvals: bool,
     /// The effort levels its CLI accepts; empty when it has none.
     pub efforts: Vec<String>,
+    /// The model names its CLI is known to take; empty when none is known.
+    pub models: Vec<String>,
     /// The profile's own args already hold a permission flag of its agent,
     /// so xDev adds none.
     pub custom_args: bool,
@@ -169,6 +172,10 @@ fn build(profiles: &Profiles, find: Find<'_>, distros: &[String]) -> ProfilesVie
                         .cli
                         .map(|c| efforts(c).iter().map(|e| (*e).to_owned()).collect())
                         .unwrap_or_default(),
+                    models: p
+                        .cli
+                        .map(|c| models(c).iter().map(|m| (*m).to_owned()).collect())
+                        .unwrap_or_default(),
                     profile: p.clone(),
                 }
             })
@@ -274,6 +281,30 @@ pub fn agents_refresh(state: State<'_, AppState>) -> Result<ProfilesView, CmdErr
         set_path_override(Some(path));
     }
     view(data_dir(&state)?, &detect, distros())
+}
+
+/// What `--version` of the built-in agent `id` says: its version, or why
+/// it cannot launch. Starts the program once; nothing goes over the network
+/// from xDev.
+#[tauri::command(async)]
+pub fn agent_probe(state: State<'_, AppState>, id: String) -> Result<LaunchVerdict, CmdError> {
+    let profiles = Profiles::load(data_dir(&state)?)?;
+    let unknown = || CmdError {
+        code: "unknown_profile",
+        detail: Some(id.clone()),
+    };
+    let profile = profiles.get(&id).ok_or_else(unknown)?;
+    let cli = profile.cli.ok_or_else(unknown)?;
+    let Some(program) = detect(profile) else {
+        return Ok(LaunchVerdict::NotInstalled);
+    };
+    let probe = probe_version(&program);
+    Ok(verdict(
+        cli,
+        &probe.output,
+        probe.exit,
+        probe.spawn_error.as_deref(),
+    ))
 }
 
 /// The docs or install page of a built-in agent.
