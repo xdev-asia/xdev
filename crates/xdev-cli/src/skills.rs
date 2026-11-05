@@ -299,17 +299,14 @@ pub fn run(command: SkillsCommand, data_dir: &Path) -> Result<Outcome, &'static 
 }
 
 /// Every skill the agents load: the agent homes, the plugin cache, the shared
-/// `~/.agents/skills` and the worktree's `.claude/skills`.
+/// `~/.agents/skills`, the other agents' skill folders and the worktree's `.claude/skills`.
 pub fn installed(
     env: &SkillEnv,
     homes: &[xdev_kit::Home],
     worktree: Option<&Path>,
 ) -> Vec<xdev_kit::Skill> {
     let mut all = xdev_kit::scan_skills(homes, worktree);
-    all.extend(xdev_kit::scan_skill_root(
-        &env.user_home.join(".agents").join("skills"),
-        "agents",
-    ));
+    all.extend(xdev_kit::scan_agent_roots(&env.user_home));
     xdev_kit::mark_duplicates(&mut all);
     all
 }

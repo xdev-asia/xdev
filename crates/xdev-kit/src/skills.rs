@@ -32,6 +32,9 @@ pub struct Skill {
     pub scope: SkillScope,
     /// `None` for a project skill.
     pub home_id: Option<String>,
+    /// The agent that loads it: `claude`, `codex`, `gemini`, `cursor`,
+    /// `factory`, or `agents` for the shared `~/.agents/skills`.
+    pub agent: String,
     /// The skill's folder; `SKILL.md` is inside it.
     pub dir: PathBuf,
     /// Of `SKILL.md` alone.
@@ -51,34 +54,69 @@ pub fn scan_skills(homes: &[Home], worktree: Option<&Path>) -> Vec<Skill> {
         let mut dirs = Vec::new();
         collect_skill_dirs(&home.path.join("skills"), 1, &mut dirs);
         for dir in dirs {
-            push_skill(&mut out, dir, SkillScope::User, Some(&home.id));
+            push_skill(
+                &mut out,
+                dir,
+                SkillScope::User,
+                Some(&home.id),
+                agent_id(home.agent),
+            );
         }
         if home.agent == Agent::Claude {
             for (dir, scope) in plugin_skill_dirs(&home.path.join("plugins/cache")) {
-                push_skill(&mut out, dir, scope, Some(&home.id));
+                push_skill(&mut out, dir, scope, Some(&home.id), agent_id(home.agent));
             }
         }
     }
     if let Some(wt) = worktree {
         for dir in sorted_subdirs(&wt.join(".claude/skills")) {
-            push_skill(&mut out, dir, SkillScope::Project, None);
+            push_skill(&mut out, dir, SkillScope::Project, None, "claude");
         }
     }
     mark_duplicates(&mut out);
     out
 }
 
+fn agent_id(agent: Agent) -> &'static str {
+    match agent {
+        Agent::Claude => "claude",
+        Agent::Codex => "codex",
+    }
+}
+
 /// Skills directly under `root` (same depth and dot-folder rules as a home's
-/// `skills` folder), scope `User`, `home_id` as given. Duplicates are not
-/// marked; the caller marks them with [`mark_duplicates`].
+/// `skills` folder), scope `User`, `home_id` and `agent` as given. Duplicates
+/// are not marked; the caller marks them with [`mark_duplicates`].
 pub fn scan_skill_root(root: &Path, home_id: &str) -> Vec<Skill> {
+    scan_root_for(root, home_id, home_id)
+}
+
+fn scan_root_for(root: &Path, home_id: &str, agent: &str) -> Vec<Skill> {
     let mut dirs = Vec::new();
     collect_skill_dirs(root, 1, &mut dirs);
     let mut out = Vec::new();
     for dir in dirs {
-        push_skill(&mut out, dir, SkillScope::User, Some(home_id));
+        push_skill(&mut out, dir, SkillScope::User, Some(home_id), agent);
     }
     out
+}
+
+/// The `skills` folders other agents read, below the user's home:
+/// `(id, folder)`. The id is both the skill's `home_id` and its agent.
+pub const AGENT_SKILL_ROOTS: [(&str, &str); 4] = [
+    ("agents", ".agents/skills"),
+    ("gemini", ".gemini/skills"),
+    ("cursor", ".cursor/skills"),
+    ("factory", ".factory/skills"),
+];
+
+/// Skills in [`AGENT_SKILL_ROOTS`] that exist under `user_home`, each labelled
+/// with its agent. Duplicates are not marked.
+pub fn scan_agent_roots(user_home: &Path) -> Vec<Skill> {
+    AGENT_SKILL_ROOTS
+        .iter()
+        .flat_map(|(id, folder)| scan_root_for(&user_home.join(folder), id, id))
+        .collect()
 }
 
 /// Folders holding a `SKILL.md`, at most `MAX_DEPTH` levels below `skills`.
@@ -141,7 +179,13 @@ fn compare_versions(a: &str, b: &str) -> Ordering {
     parts(a).cmp(&parts(b))
 }
 
-fn push_skill(out: &mut Vec<Skill>, dir: PathBuf, scope: SkillScope, home_id: Option<&str>) {
+fn push_skill(
+    out: &mut Vec<Skill>,
+    dir: PathBuf,
+    scope: SkillScope,
+    home_id: Option<&str>,
+    agent: &str,
+) {
     let Ok(raw) = fs::read(dir.join(SKILL_FILE)) else {
         return;
     };
@@ -153,6 +197,7 @@ fn push_skill(out: &mut Vec<Skill>, dir: PathBuf, scope: SkillScope, home_id: Op
         description: description.unwrap_or_default(),
         scope,
         home_id: home_id.map(str::to_owned),
+        agent: agent.to_owned(),
         dir,
         bytes,
         tokens: approx_tokens(bytes),
@@ -260,6 +305,7 @@ mod tests {
         assert_eq!(s.description, "Does a thing");
         assert_eq!(s.scope, SkillScope::User);
         assert_eq!(s.home_id.as_deref(), Some("own-claude"));
+        assert_eq!(s.agent, "claude");
         assert_eq!(s.dir, dir.path().join("skills/folder-x"));
         assert_eq!(s.bytes, 71);
         assert_eq!(s.tokens, 18);
@@ -446,5 +492,62 @@ old
         let before = all.clone();
         mark_duplicates(&mut all);
         assert_eq!(all, before);
+    }
+
+    #[test]
+    fn agent_roots_are_read_and_labelled() {
+        let user = tempfile::tempdir().unwrap();
+        write(
+            &user.path().join(".agents/skills/shared/SKILL.md"),
+            "---\nname: shared\n---\n",
+        );
+        write(
+            &user.path().join(".gemini/skills/g/SKILL.md"),
+            "---\nname: g\n---\n",
+        );
+        write(
+            &user.path().join(".cursor/skills/c/SKILL.md"),
+            "---\nname: c\n---\n",
+        );
+        write(
+            &user.path().join(".factory/skills/f/SKILL.md"),
+            "---\nname: f\n---\n",
+        );
+        // A dot folder is trash, and a folder of another agent is not read.
+        write(&user.path().join(".gemini/skills/.old/x/SKILL.md"), "x");
+        write(&user.path().join(".continue/skills/k/SKILL.md"), "x");
+        let found = scan_agent_roots(user.path());
+        let got: Vec<(&str, &str)> = found
+            .iter()
+            .map(|s| (s.name.as_str(), s.agent.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("shared", "agents"),
+                ("g", "gemini"),
+                ("c", "cursor"),
+                ("f", "factory")
+            ]
+        );
+        assert!(found.iter().all(|s| s.scope == SkillScope::User));
+        assert_eq!(found[1].home_id.as_deref(), Some("gemini"));
+        // Folders that are absent add nothing.
+        let none = tempfile::tempdir().unwrap();
+        assert!(scan_agent_roots(none.path()).is_empty());
+    }
+
+    #[test]
+    fn home_and_project_skills_carry_their_agent() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join("skills/a/SKILL.md"), "x");
+        let wt = tempfile::tempdir().unwrap();
+        write(&wt.path().join(".claude/skills/p/SKILL.md"), "x");
+        let skills = scan_skills(
+            &[home("own-codex", Agent::Codex, dir.path())],
+            Some(wt.path()),
+        );
+        assert_eq!(skills[0].agent, "codex");
+        assert_eq!(skills[1].agent, "claude");
     }
 }

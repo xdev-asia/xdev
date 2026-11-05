@@ -178,7 +178,10 @@ impl Ctx {
 
     fn skills(&self, worktree: Option<String>) -> Result<Vec<Skill>, CmdError> {
         let wt = self.worktree(worktree)?;
-        Ok(xdev_kit::scan_skills(&self.homes(), wt.as_deref()))
+        let mut all = xdev_kit::scan_skills(&self.homes(), wt.as_deref());
+        all.extend(xdev_kit::scan_agent_roots(self.user_home()));
+        xdev_kit::mark_duplicates(&mut all);
+        Ok(all)
     }
 
     fn memory(&self, worktree: Option<String>) -> Result<MemorySet, CmdError> {
