@@ -1235,6 +1235,7 @@
   "setup.card.openTabs": "Open default tabs",
   "setup.tab": "Setup",
   "error.bad_profiles": "The saved profiles file cannot be read, so it was left as it is.",
+  "error.trust_unsafe": "The folder could not be trusted automatically.",
   "error.invalid_profile": "That profile or shell is not valid.",
   "error.builtin_profile": "A built-in profile cannot be removed.",
   "error.profile_off": "That profile is turned off.",

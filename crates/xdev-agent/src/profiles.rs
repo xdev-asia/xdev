@@ -9,28 +9,52 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
+use crate::catalog::modes;
 use crate::flags::efforts;
 
 const FILE: &str = "profiles.json";
 const VERSION: u32 = 1;
-const DEFAULT_AGENT: &str = "claude";
 const MAX_ID: usize = 32;
 /// Shell ids the shell menu already uses (`shell:powershell`, ...).
 const RESERVED_SHELLS: [&str; 3] = ["powershell", "cmd", "login"];
 
-/// An agent CLI xDev knows the flags of.
+/// An agent CLI xDev knows. The table in `catalog` says the rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum Cli {
     Claude,
     Codex,
     Gemini,
+    Cursor,
+    Copilot,
+    Opencode,
+    Amp,
+    Droid,
+    QwenCode,
+    Kimi,
+    Devin,
+    Aider,
+    Goose,
 }
 
 impl Cli {
     /// The built-in profiles, in menu order.
-    pub const ALL: [Cli; 3] = [Cli::Claude, Cli::Codex, Cli::Gemini];
+    pub const ALL: [Cli; 13] = [
+        Cli::Claude,
+        Cli::Codex,
+        Cli::Gemini,
+        Cli::Cursor,
+        Cli::Copilot,
+        Cli::Opencode,
+        Cli::Amp,
+        Cli::Droid,
+        Cli::QwenCode,
+        Cli::Kimi,
+        Cli::Devin,
+        Cli::Aider,
+        Cli::Goose,
+    ];
 
     /// The id of the CLI's built-in profile.
     pub fn as_str(self) -> &'static str {
@@ -38,19 +62,25 @@ impl Cli {
             Cli::Claude => "claude",
             Cli::Codex => "codex",
             Cli::Gemini => "gemini",
+            Cli::Cursor => "cursor",
+            Cli::Copilot => "copilot",
+            Cli::Opencode => "opencode",
+            Cli::Amp => "amp",
+            Cli::Droid => "droid",
+            Cli::QwenCode => "qwen-code",
+            Cli::Kimi => "kimi",
+            Cli::Devin => "devin",
+            Cli::Aider => "aider",
+            Cli::Goose => "goose",
         }
     }
 
-    fn of_id(id: &str) -> Option<Cli> {
+    pub(crate) fn of_id(id: &str) -> Option<Cli> {
         Cli::ALL.into_iter().find(|cli| cli.as_str() == id)
     }
 
     fn title(self) -> &'static str {
-        match self {
-            Cli::Claude => "Claude Code",
-            Cli::Codex => "Codex",
-            Cli::Gemini => "Gemini CLI",
-        }
+        crate::catalog::spec(self).title
     }
 }
 
@@ -61,6 +91,7 @@ impl Cli {
 pub enum Permissions {
     Ask,
     AcceptEdits,
+    Auto,
     Skip,
 }
 
@@ -69,6 +100,7 @@ impl Permissions {
         match self {
             Permissions::Ask => "ask",
             Permissions::AcceptEdits => "accept-edits",
+            Permissions::Auto => "auto",
             Permissions::Skip => "skip",
         }
     }
@@ -81,7 +113,53 @@ impl Permissions {
 pub enum Approvals {
     #[default]
     Ask,
+    Auto,
     Skip,
+}
+
+/// Which agent a new agent tab starts. Stored and sent as `"auto"`,
+/// `"blank"` or a profile id.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(type = "string"))]
+pub enum DefaultAgent {
+    /// The first installed, enabled agent of the auto order; a shell when
+    /// there is none.
+    #[default]
+    Auto,
+    /// A plain terminal.
+    Blank,
+    Agent(String),
+}
+
+impl DefaultAgent {
+    pub fn as_str(&self) -> &str {
+        match self {
+            DefaultAgent::Auto => "auto",
+            DefaultAgent::Blank => "blank",
+            DefaultAgent::Agent(id) => id,
+        }
+    }
+
+    pub fn parse(text: &str) -> DefaultAgent {
+        match text {
+            "auto" => DefaultAgent::Auto,
+            "blank" => DefaultAgent::Blank,
+            id => DefaultAgent::Agent(id.to_owned()),
+        }
+    }
+}
+
+impl Serialize for DefaultAgent {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for DefaultAgent {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(DefaultAgent::parse(&String::deserialize(d)?))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,7 +229,7 @@ pub struct CustomShell {
 #[serde(rename_all = "camelCase")]
 pub struct Profiles {
     pub approvals: Approvals,
-    pub default_agent: String,
+    pub default_agent: DefaultAgent,
     /// A shell id without the `shell:` prefix (`powershell`, `fish`,
     /// `wsl:Ubuntu`); `None` picks the platform's own default.
     #[serde(default)]
@@ -194,8 +272,8 @@ struct OnDisk {
     version: u32,
     #[serde(default)]
     approvals: Approvals,
-    #[serde(default = "default_agent")]
-    default_agent: String,
+    #[serde(default)]
+    default_agent: DefaultAgent,
     #[serde(default)]
     default_shell: Option<String>,
     #[serde(default)]
@@ -206,10 +284,6 @@ struct OnDisk {
 
 fn default_true() -> bool {
     true
-}
-
-fn default_agent() -> String {
-    DEFAULT_AGENT.to_owned()
 }
 
 /// The built-in profile of `cli`, as first installed.
@@ -245,7 +319,7 @@ impl Default for Profiles {
     fn default() -> Self {
         Profiles {
             approvals: Approvals::Ask,
-            default_agent: DEFAULT_AGENT.to_owned(),
+            default_agent: DefaultAgent::Auto,
             default_shell: None,
             profiles: Cli::ALL.into_iter().map(builtin).collect(),
             shells: Vec::new(),
@@ -301,7 +375,9 @@ impl Profiles {
         }
         ordered.append(&mut found.profiles);
         found.profiles = ordered;
-        if found.get(&found.default_agent).is_none() {
+        if let DefaultAgent::Agent(id) = &found.default_agent
+            && found.get(id).is_none()
+        {
             return Err(ProfileError::Bad);
         }
         Ok(found)
@@ -349,8 +425,8 @@ impl Profiles {
             return Err(ProfileError::Builtin);
         }
         self.profiles.remove(at);
-        if self.default_agent == id {
-            self.default_agent = DEFAULT_AGENT.to_owned();
+        if self.default_agent == DefaultAgent::Agent(id.to_owned()) {
+            self.default_agent = DefaultAgent::Auto;
         }
         Ok(())
     }
@@ -400,16 +476,28 @@ impl Profiles {
     pub fn set_defaults(
         &mut self,
         approvals: Approvals,
-        default_agent: &str,
+        default_agent: DefaultAgent,
         default_shell: Option<String>,
     ) -> Result<(), ProfileError> {
-        if self.get(default_agent).is_none() {
+        if let DefaultAgent::Agent(id) = &default_agent
+            && self.get(id).is_none()
+        {
             return Err(ProfileError::Unknown);
         }
         self.approvals = approvals;
-        self.default_agent = default_agent.to_owned();
+        self.default_agent = default_agent;
         self.default_shell = default_shell;
         Ok(())
+    }
+
+    /// The profile id a caller with no terminal to ask starts: the saved
+    /// agent, else `claude`. The `auto` pick needs detection, which the UI
+    /// does (`pick_agent`).
+    pub fn default_id(&self) -> String {
+        match &self.default_agent {
+            DefaultAgent::Agent(id) => id.clone(),
+            _ => Cli::Claude.as_str().to_owned(),
+        }
     }
 
     /// What the profile runs as: its own mode, else the global switch when
@@ -421,10 +509,19 @@ impl Profiles {
         }
         match profile.permissions {
             Some(mode) => mode,
-            None if profile.follows_approvals() => match self.approvals {
-                Approvals::Ask => Permissions::Ask,
-                Approvals::Skip => Permissions::Skip,
-            },
+            None if profile.follows_approvals() => {
+                let offered = profile.cli.map(modes).unwrap_or_default();
+                let want = match self.approvals {
+                    Approvals::Ask => Permissions::Ask,
+                    Approvals::Auto => Permissions::Auto,
+                    Approvals::Skip => Permissions::Skip,
+                };
+                if offered.contains(&want) {
+                    want
+                } else {
+                    Permissions::Ask
+                }
+            }
             None => Permissions::Ask,
         }
     }
@@ -514,6 +611,22 @@ mod tests {
         tempfile::tempdir().unwrap()
     }
 
+    const CLI_IDS: [&str; 13] = [
+        "claude",
+        "codex",
+        "gemini",
+        "cursor",
+        "copilot",
+        "opencode",
+        "amp",
+        "droid",
+        "qwen-code",
+        "kimi",
+        "devin",
+        "aider",
+        "goose",
+    ];
+
     fn ids(p: &Profiles) -> Vec<&str> {
         p.profiles.iter().map(|p| p.id.as_str()).collect()
     }
@@ -521,9 +634,9 @@ mod tests {
     fn custom(id: &str) -> Profile {
         Profile {
             id: id.to_owned(),
-            name: "Aider".to_owned(),
+            name: "Mine".to_owned(),
             cli: None,
-            program: Some("aider".to_owned()),
+            program: Some("mine".to_owned()),
             ..builtin(Cli::Claude)
         }
     }
@@ -536,8 +649,8 @@ mod tests {
     fn missing_file_gives_builtins() {
         let d = tempdir();
         let p = Profiles::load(d.path()).unwrap();
-        assert_eq!(ids(&p), ["claude", "codex", "gemini"]);
-        assert_eq!(p.default_agent, "claude");
+        assert_eq!(ids(&p), CLI_IDS);
+        assert_eq!(p.default_agent, DefaultAgent::Auto);
         assert_eq!(p.approvals, Approvals::Ask);
         assert_eq!(p.default_shell, None);
         assert!(p.shells.is_empty());
@@ -549,7 +662,7 @@ mod tests {
     fn save_is_atomic_and_reloads() {
         let d = tempdir();
         let mut p = Profiles::default();
-        p.put(custom("aider-x")).unwrap();
+        p.put(custom("mine-x")).unwrap();
         p.put_shell(CustomShell {
             id: "fish".into(),
             name: "Fish".into(),
@@ -557,8 +670,12 @@ mod tests {
             args: vec!["-l".into()],
         })
         .unwrap();
-        p.set_defaults(Approvals::Skip, "aider-x", Some("fish".into()))
-            .unwrap();
+        p.set_defaults(
+            Approvals::Skip,
+            DefaultAgent::Agent("mine-x".into()),
+            Some("fish".into()),
+        )
+        .unwrap();
         p.save(d.path()).unwrap();
         assert_eq!(Profiles::load(d.path()).unwrap(), p);
         let names: Vec<_> = fs::read_dir(d.path())
@@ -576,7 +693,7 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(d.path().join(FILE)).unwrap()).unwrap();
         assert_eq!(v["version"], 1);
         assert_eq!(v["approvals"], "ask");
-        assert_eq!(v["defaultAgent"], "claude");
+        assert_eq!(v["defaultAgent"], "auto");
         assert!(v["defaultShell"].is_null());
         assert_eq!(v["profiles"][0]["cli"], "claude");
         assert_eq!(v["profiles"][0]["enabled"], true);
@@ -613,7 +730,7 @@ mod tests {
         )
         .unwrap();
         let p = Profiles::load(d.path()).unwrap();
-        assert_eq!(ids(&p), ["claude", "codex", "gemini", "mine"]);
+        assert_eq!(ids(&p)[13], "mine");
         // The file's own entry wins over the fresh built-in.
         assert!(!p.get("claude").unwrap().enabled);
         assert_eq!(p.get("claude").unwrap().cli, Some(Cli::Claude));
@@ -624,7 +741,7 @@ mod tests {
         let mut p = Profiles::default();
         assert_eq!(code(p.remove("codex")), "builtin_profile");
         assert_eq!(code(p.remove("nope")), "unknown_profile");
-        assert_eq!(ids(&p), ["claude", "codex", "gemini"]);
+        assert_eq!(ids(&p), CLI_IDS);
     }
 
     #[test]
@@ -635,31 +752,31 @@ mod tests {
         }
         p.put(custom(&"a".repeat(32))).unwrap();
 
-        let mut no_program = custom("aider");
+        let mut no_program = custom("mine");
         no_program.program = None;
         assert_eq!(code(p.put(no_program)), "invalid_profile");
-        let mut blank_program = custom("aider");
+        let mut blank_program = custom("mine");
         blank_program.program = Some("  ".into());
         assert_eq!(code(p.put(blank_program)), "invalid_profile");
-        let mut no_name = custom("aider");
+        let mut no_name = custom("mine");
         no_name.name = " ".into();
         assert_eq!(code(p.put(no_name)), "invalid_profile");
 
         for name in ["A=B", "", "A\0B"] {
-            let mut c = custom("aider");
+            let mut c = custom("mine");
             c.env = vec![EnvVar {
                 name: name.into(),
                 value: "1".into(),
             }];
             assert_eq!(code(p.put(c)), "invalid_profile", "{name:?}");
         }
-        let mut ok = custom("aider");
+        let mut ok = custom("mine");
         ok.env = vec![EnvVar {
             name: "A_B".into(),
             value: "x=y".into(),
         }];
         p.put(ok).unwrap();
-        assert_eq!(p.get("aider").unwrap().env[0].value, "x=y");
+        assert_eq!(p.get("mine").unwrap().env[0].value, "x=y");
     }
 
     #[test]
@@ -692,7 +809,7 @@ mod tests {
         // The rejected ones changed nothing.
         assert_eq!(p.get("claude").unwrap().effort.as_deref(), Some("max"));
         assert_eq!(p.get("gemini").unwrap().effort, None);
-        assert!(p.get("aider").is_none());
+        assert!(p.get("mine").is_none());
     }
 
     #[test]
@@ -710,11 +827,11 @@ mod tests {
         p.put(cleared).unwrap();
         assert_eq!(p.get("codex").unwrap().cli, Some(Cli::Codex));
         // A custom profile cannot take one.
-        let mut c = custom("aider");
+        let mut c = custom("mine");
         c.cli = Some(Cli::Claude);
         assert_eq!(code(p.put(c)), "invalid_profile");
         // Replacing keeps the list order.
-        assert_eq!(ids(&p), ["claude", "codex", "gemini"]);
+        assert_eq!(ids(&p), CLI_IDS);
     }
 
     #[test]
@@ -746,7 +863,7 @@ mod tests {
     #[test]
     fn reset_leaves_a_custom_profile_alone() {
         let mut p = Profiles::default();
-        let mut c = custom("aider");
+        let mut c = custom("mine");
         c.args = vec!["--yes".into()];
         c.env = vec![EnvVar {
             name: "A".into(),
@@ -755,7 +872,7 @@ mod tests {
         c.permissions = Some(Permissions::AcceptEdits);
         p.put(c.clone()).unwrap();
         p.reset("aider").unwrap();
-        assert_eq!(p.get("aider"), Some(&c));
+        assert_eq!(p.get("mine"), Some(&c));
     }
 
     #[test]
@@ -776,8 +893,8 @@ mod tests {
         let d = tempdir();
         fs::write(d.path().join(FILE), r#"{"version":1}"#).unwrap();
         let p = Profiles::load(d.path()).unwrap();
-        assert_eq!(p.default_agent, "claude");
-        assert_eq!(ids(&p), ["claude", "codex", "gemini"]);
+        assert_eq!(p.default_agent, DefaultAgent::Auto);
+        assert_eq!(ids(&p), CLI_IDS);
     }
 
     #[test]
@@ -837,37 +954,42 @@ mod tests {
             Permissions::AcceptEdits
         );
         // A custom profile asks even when the switch is skip.
-        p.put(custom("aider")).unwrap();
-        assert!(!p.get("aider").unwrap().follows_approvals());
-        assert_eq!(p.effective(p.get("aider").unwrap()), Permissions::Ask);
-        let mut skipping = custom("aider");
+        p.put(custom("mine")).unwrap();
+        assert!(!p.get("mine").unwrap().follows_approvals());
+        assert_eq!(p.effective(p.get("mine").unwrap()), Permissions::Ask);
+        let mut skipping = custom("mine");
         skipping.permissions = Some(Permissions::Skip);
         p.put(skipping).unwrap();
-        assert_eq!(p.effective(p.get("aider").unwrap()), Permissions::Ask);
+        assert_eq!(p.effective(p.get("mine").unwrap()), Permissions::Ask);
     }
 
     #[test]
     fn default_agent_must_exist() {
         let mut p = Profiles::default();
-        let err = p.set_defaults(Approvals::Skip, "nope", None);
+        let err = p.set_defaults(Approvals::Skip, DefaultAgent::Agent("nope".into()), None);
         assert_eq!(code(err), "unknown_profile");
         // Nothing changed.
         assert_eq!(p.approvals, Approvals::Ask);
-        assert_eq!(p.default_agent, "claude");
-        p.set_defaults(Approvals::Skip, "gemini", Some("cmd".into()))
-            .unwrap();
-        assert_eq!(p.default_agent, "gemini");
+        assert_eq!(p.default_agent, DefaultAgent::Auto);
+        p.set_defaults(
+            Approvals::Skip,
+            DefaultAgent::Agent("gemini".into()),
+            Some("cmd".into()),
+        )
+        .unwrap();
+        assert_eq!(p.default_agent, DefaultAgent::Agent("gemini".into()));
         assert_eq!(p.default_shell.as_deref(), Some("cmd"));
     }
 
     #[test]
     fn removing_the_default_agent_resets_it() {
         let mut p = Profiles::default();
-        p.put(custom("aider")).unwrap();
-        p.set_defaults(Approvals::Ask, "aider", None).unwrap();
-        p.remove("aider").unwrap();
-        assert_eq!(p.default_agent, "claude");
-        assert!(p.get("aider").is_none());
+        p.put(custom("mine")).unwrap();
+        p.set_defaults(Approvals::Ask, DefaultAgent::Agent("mine".into()), None)
+            .unwrap();
+        p.remove("mine").unwrap();
+        assert_eq!(p.default_agent, DefaultAgent::Auto);
+        assert!(p.get("mine").is_none());
     }
 
     #[test]
@@ -893,8 +1015,12 @@ mod tests {
         no_program.program = " ".into();
         assert_eq!(code(p.put_shell(no_program)), "invalid_profile");
 
-        p.set_defaults(Approvals::Ask, "claude", Some("fish".into()))
-            .unwrap();
+        p.set_defaults(
+            Approvals::Ask,
+            DefaultAgent::Agent("claude".into()),
+            Some("fish".into()),
+        )
+        .unwrap();
         p.remove_shell("fish").unwrap();
         assert!(p.shells.is_empty());
         assert_eq!(p.default_shell, None);

@@ -34,6 +34,7 @@ export type { Created } from "./Created";
 export type { CursorStyle } from "./CursorStyle";
 export type { CustomScheme } from "./CustomScheme";
 export type { CustomShell } from "./CustomShell";
+export type { DefaultAgent } from "./DefaultAgent";
 export type { DefaultTab } from "./DefaultTab";
 export type { DetailsPatch } from "./DetailsPatch";
 export type { DiffSettings } from "./DiffSettings";

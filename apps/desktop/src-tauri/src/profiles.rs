@@ -8,8 +8,9 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use serde::Serialize;
 use tauri::State;
 use xdev_agent::{
-    Approvals, CustomShell, Permissions, Profile, ProfileError, Profiles, ShellKind,
-    default_shell_id, efforts, find_builtin, find_program, list_shells,
+    Approvals, CustomShell, DefaultAgent, Permissions, Profile, ProfileError, Profiles, PromptMode,
+    ShellKind, default_shell_id, efforts, find_builtin, find_program, has_permission_args,
+    list_shells, modes, pick_agent, spec,
 };
 
 use crate::accounts::data_dir;
@@ -41,6 +42,16 @@ pub struct ProfileView {
     pub follows_approvals: bool,
     /// The effort levels its CLI accepts; empty when it has none.
     pub efforts: Vec<String>,
+    /// The profile's own args already hold a permission flag of its agent,
+    /// so xDev adds none.
+    pub custom_args: bool,
+    /// The approval modes the agent offers; `ask` first.
+    pub modes: Vec<Permissions>,
+    /// A built-in with a docs or install link.
+    pub docs: bool,
+    /// The first prompt is typed after the agent starts, not passed as an
+    /// argument.
+    pub prompt_after: bool,
 }
 
 /// A shell the `+` menu offers. `id` has the `shell:` prefix `pty_spawn` takes.
@@ -59,7 +70,10 @@ pub struct ShellView {
 #[serde(rename_all = "camelCase")]
 pub struct ProfilesView {
     pub approvals: Approvals,
-    pub default_agent: String,
+    pub default_agent: DefaultAgent,
+    /// The profile id the default agent starts now (`auto` picks the first
+    /// installed one); `None` opens a shell.
+    pub resolved_default: Option<String>,
     /// With the `shell:` prefix, like the ids in `shells`.
     pub default_shell: String,
     pub profiles: Vec<ProfileView>,
@@ -86,6 +100,11 @@ fn build(profiles: &Profiles, find: Find<'_>, distros: &[String]) -> ProfilesVie
     ProfilesView {
         approvals: profiles.approvals,
         default_agent: profiles.default_agent.clone(),
+        resolved_default: pick_agent(&profiles.default_agent, &|id| {
+            profiles
+                .get(id)
+                .is_some_and(|p| p.enabled && find(p).is_some())
+        }),
         default_shell,
         profiles: profiles
             .profiles
@@ -97,6 +116,12 @@ fn build(profiles: &Profiles, find: Find<'_>, distros: &[String]) -> ProfilesVie
                     installed: path.is_some(),
                     path: path.map(|p| p.to_string_lossy().into_owned()),
                     permissions: profiles.effective(p),
+                    custom_args: p.cli.is_some_and(|cli| has_permission_args(cli, &p.args)),
+                    modes: p.cli.map(modes).unwrap_or_default(),
+                    docs: p.cli.is_some(),
+                    prompt_after: p
+                        .cli
+                        .is_some_and(|cli| spec(cli).prompt == PromptMode::AfterStart),
                     follows_approvals: p.follows_approvals(),
                     efforts: p
                         .cli
@@ -189,12 +214,12 @@ pub fn profiles_defaults(
     state: State<'_, AppState>,
     lock: State<'_, ProfilesLock>,
     approvals: Approvals,
-    default_agent: String,
+    default_agent: DefaultAgent,
     default_shell: Option<String>,
 ) -> Result<ProfilesView, CmdError> {
     let shell = default_shell.map(|s| s.strip_prefix("shell:").unwrap_or(&s).to_owned());
     change(&state, &lock, |p| {
-        p.set_defaults(approvals, &default_agent, shell)
+        p.set_defaults(approvals, default_agent, shell)
     })
 }
 
@@ -249,7 +274,7 @@ mod tests {
         assert_eq!(by("claude").permissions, Permissions::Ask);
         assert!(by("claude").efforts.contains(&"max".to_owned()));
         assert!(by("gemini").efforts.is_empty());
-        assert_eq!(v.default_agent, "claude");
+        assert_eq!(v.default_agent, DefaultAgent::Auto);
         assert!(v.shells.iter().all(|s| s.id.starts_with("shell:")));
         assert!(v.shells.iter().any(|s| s.id == v.default_shell));
     }

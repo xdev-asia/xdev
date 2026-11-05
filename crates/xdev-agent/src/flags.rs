@@ -1,5 +1,6 @@
 //! The CLI arguments a profile's model, effort and approval mode turn into.
 
+use crate::catalog::spec;
 use crate::profiles::{Cli, Permissions};
 
 const CLAUDE_EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
@@ -10,7 +11,7 @@ pub fn efforts(cli: Cli) -> &'static [&'static str] {
     match cli {
         Cli::Claude => &CLAUDE_EFFORTS,
         Cli::Codex => &CODEX_EFFORTS,
-        Cli::Gemini => &[],
+        _ => &[],
     }
 }
 
@@ -31,23 +32,17 @@ pub fn flags(
         match cli {
             Cli::Claude => push(&["--effort", effort]),
             Cli::Codex => push(&["-c", &format!("model_reasoning_effort={effort}")]),
-            Cli::Gemini => {}
+            _ => {}
         }
     }
-    match (cli, permissions) {
-        (_, Permissions::Ask) => {}
-        (Cli::Claude, Permissions::AcceptEdits) => push(&["--permission-mode", "acceptEdits"]),
-        (Cli::Claude, Permissions::Skip) => push(&["--dangerously-skip-permissions"]),
-        (Cli::Codex, Permissions::AcceptEdits) => push(&[
-            "--sandbox",
-            "workspace-write",
-            "--ask-for-approval",
-            "on-request",
-        ]),
-        (Cli::Codex, Permissions::Skip) => push(&["--dangerously-bypass-approvals-and-sandbox"]),
-        (Cli::Gemini, Permissions::AcceptEdits) => push(&["--approval-mode", "auto_edit"]),
-        (Cli::Gemini, Permissions::Skip) => push(&["--approval-mode", "yolo"]),
-    }
+    let table = spec(cli);
+    let recipe = match permissions {
+        Permissions::Ask => &[][..],
+        Permissions::AcceptEdits => table.accept_edits,
+        Permissions::Auto => table.auto,
+        Permissions::Skip => table.skip,
+    };
+    push(recipe);
     out
 }
 

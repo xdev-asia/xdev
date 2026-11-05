@@ -3,4 +3,4 @@
 /**
  * How an agent asks before it acts.
  */
-export type Permissions = "ask" | "accept-edits" | "skip";
+export type Permissions = "ask" | "accept-edits" | "auto" | "skip";

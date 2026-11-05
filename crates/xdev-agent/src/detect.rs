@@ -6,6 +6,7 @@ use std::path::{self, PathBuf};
 
 use xdev_ai::{claude_command, codex_command};
 
+use crate::catalog::spec;
 use crate::profiles::Cli;
 
 /// What Windows tries as an extension when `PATHEXT` is unset.
@@ -64,7 +65,7 @@ pub fn find_builtin(cli: Cli) -> Option<PathBuf> {
             .ok()
             .map(|c| PathBuf::from(c.get_program())),
         Cli::Codex => codex_command().ok().map(|c| PathBuf::from(c.get_program())),
-        Cli::Gemini => find_program("gemini"),
+        cli => find_program(spec(cli).commands[0]),
     }
 }
 

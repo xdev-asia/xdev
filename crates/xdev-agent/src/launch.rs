@@ -203,7 +203,7 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
     let program = (ctx.find)(profile).ok_or_else(|| match profile.cli {
         Some(Cli::Claude) => LaunchError::NotInstalled(AiError::NoClaude.code()),
         Some(Cli::Codex) => LaunchError::NotInstalled(AiError::NoCodex.code()),
-        Some(Cli::Gemini) => LaunchError::NotFound(Cli::Gemini.as_str().to_owned()),
+        Some(cli) => LaunchError::NotFound(cli.as_str().to_owned()),
         None => LaunchError::NotFound(profile.program.clone().unwrap_or_default()),
     })?;
 
@@ -647,20 +647,20 @@ mod tests {
 
     #[test]
     fn resolve_missing_custom_names_its_program() {
-        let err = run(&with(custom("aider")), "aider", None, &|_| None).unwrap_err();
+        let err = run(&with(custom("mine")), "mine", None, &|_| None).unwrap_err();
         assert_eq!(err.code(), "not_installed");
         assert_eq!(err.to_string(), "aider");
     }
 
     #[test]
     fn find_gets_the_profile() {
-        let mut c = custom("aider");
-        c.program = Some("/opt/aider".into());
-        let l = run(&with(c), "aider", None, &|p| {
+        let mut c = custom("mine");
+        c.program = Some("/opt/mine".into());
+        let l = run(&with(c), "mine", None, &|p| {
             p.program.as_deref().map(PathBuf::from)
         })
         .unwrap();
-        assert_eq!(l.program, PathBuf::from("/opt/aider"));
+        assert_eq!(l.program, PathBuf::from("/opt/mine"));
     }
 
     #[test]
@@ -699,11 +699,11 @@ mod tests {
         let p = Profiles::default();
         let err = run(&p, "gemini", Some("work"), &found).unwrap_err();
         assert_eq!(err.code(), "unknown_account");
-        let err = run(&with(custom("aider")), "aider", Some("work"), &found).unwrap_err();
+        let err = run(&with(custom("mine")), "mine", Some("work"), &found).unwrap_err();
         assert_eq!(err.code(), "unknown_account");
-        let mut c = custom("aider");
+        let mut c = custom("mine");
         c.account = Some("work".into());
-        let err = run(&with(c), "aider", None, &found).unwrap_err();
+        let err = run(&with(c), "mine", None, &found).unwrap_err();
         assert_eq!(err.code(), "unknown_account");
     }
 
@@ -776,7 +776,7 @@ mod tests {
         // A custom program and Gemini have no account home; they start as
         // before rather than failing on an account they cannot take.
         for (profiles, id) in [
-            (with(custom("aider")), "aider"),
+            (with(custom("mine")), "mine"),
             (Profiles::default(), "gemini"),
         ] {
             let l = run_active(&profiles, id, None).unwrap();
@@ -838,7 +838,7 @@ mod tests {
 
     #[test]
     fn custom_profile_env_and_args() {
-        let mut c = custom("aider");
+        let mut c = custom("mine");
         c.args = vec!["--yes".into()];
         c.env = vec![EnvVar {
             name: "A".into(),
@@ -848,7 +848,7 @@ mod tests {
         c.startup = vec!["  cd src ".into(), "   ".into(), "nvm use".into()];
         let mut p = with(c);
         p.approvals = Approvals::Skip;
-        let l = run(&p, "aider", None, &found).unwrap();
+        let l = run(&p, "mine", None, &found).unwrap();
         // A custom profile has no flag mapping and always asks.
         assert_eq!(l.args, ["--yes"]);
         assert_eq!(l.env, [("A".to_owned(), "x=y".into())]);
@@ -885,7 +885,7 @@ mod tests {
         assert_eq!((l.cli, l.hooks), (Some(Cli::Claude), false));
         let l = run(&p, "codex", None, &found).unwrap();
         assert_eq!(l.cli, Some(Cli::Codex));
-        let l = run(&with(custom("aider")), "aider", None, &found).unwrap();
+        let l = run(&with(custom("mine")), "mine", None, &found).unwrap();
         assert_eq!(l.cli, None);
     }
 
@@ -938,7 +938,7 @@ mod tests {
         gemini.add_hooks(xdev, Path::new("/no/data"));
         assert_eq!((gemini.args, gemini.hooks), (before, false));
 
-        let mut aider = run(&with(custom("aider")), "aider", None, &found).unwrap();
+        let mut aider = run(&with(custom("mine")), "mine", None, &found).unwrap();
         aider.add_hooks(xdev, Path::new("/no/data"));
         assert!(!aider.hooks && aider.args.is_empty());
 

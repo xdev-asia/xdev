@@ -3,4 +3,4 @@ import type { AccountSource } from "./AccountSource";
 import type { Cli } from "./Cli";
 import type { HookEvent } from "./HookEvent";
 
-export type PtyInfo = { id: string, pid: number | null, program: string, agent: boolean, profile: string, permissions: string, account: string | null, accountSource: AccountSource | null, hooks: boolean, hookEvents: Array<HookEvent>, cli: Cli | null, };
+export type PtyInfo = { id: string, pid: number | null, program: string, agent: boolean, profile: string, permissions: string, account: string | null, accountSource: AccountSource | null, hooks: boolean, hookEvents: Array<HookEvent>, cli: Cli | null, promptAfter: string | null, };

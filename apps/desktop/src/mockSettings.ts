@@ -90,6 +90,7 @@ export const AGENTS_SETTINGS_DEFAULTS: AgentsSettings = {
   autoSleep: false,
   sleepAfterMin: 30,
   sessionSearch: false,
+  workspaceTrust: true,
 };
 
 /** `OrchestrationSettings::default()` in Rust, and the range the depth is clamped to. */

@@ -10,14 +10,14 @@ describe("mock profiles", () => {
   it("mock_profile_put_round_trips", async () => {
     const api = createMockApi({});
     const first = await api.profiles();
-    expect(first.profiles.map((p) => p.profile.id)).toEqual(["claude", "codex", "gemini"]);
+    expect(first.profiles.map((p) => p.profile.id)).toHaveLength(13);
     expect(first.profiles.find((p) => p.profile.id === "gemini")!.installed).toBe(false);
     expect(first.shells.map((s) => s.id)).toEqual(["shell:powershell", "shell:cmd", "shell:wsl:Ubuntu"]);
     const put = await api.profilePut(custom("mine"));
     expect(put.profiles.at(-1)!.profile.id).toBe("mine");
-    expect((await api.profiles()).profiles).toHaveLength(4);
+    expect((await api.profiles()).profiles).toHaveLength(14);
     await expect(api.profileRemove("claude")).rejects.toMatchObject({ code: "builtin_profile" });
-    expect((await api.profileRemove("mine")).profiles).toHaveLength(3);
+    expect((await api.profileRemove("mine")).profiles).toHaveLength(13);
     const shells = await api.shellPut({ id: "mysh", name: "mysh", program: "sh", args: [] });
     expect(shells.shells.at(-1)).toMatchObject({ id: "shell:mysh", custom: true });
     expect((await api.shellRemove("mysh")).shells).toHaveLength(3);

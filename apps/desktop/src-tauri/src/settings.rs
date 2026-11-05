@@ -226,6 +226,9 @@ pub struct AgentsSettings {
     pub sleep_after_min: u32,
     /// Consent to index agent conversations on this computer.
     pub session_search: bool,
+    /// Trust the folder in the agent's own store before an agent starts
+    /// (fresh launches only).
+    pub workspace_trust: bool,
 }
 
 /// Settings → Agents → Keep computer awake.
@@ -256,6 +259,7 @@ impl Default for AgentsSettings {
             auto_sleep: false,
             sleep_after_min: SLEEP_AFTER_MIN_DEFAULT,
             session_search: false,
+            workspace_trust: true,
         }
     }
 }

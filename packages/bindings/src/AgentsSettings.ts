@@ -25,4 +25,9 @@ sleepAfterMin: number,
 /**
  * Consent to index agent conversations on this computer.
  */
-sessionSearch: boolean, };
+sessionSearch: boolean, 
+/**
+ * Trust the folder in the agent's own store before an agent starts
+ * (fresh launches only).
+ */
+workspaceTrust: boolean, };

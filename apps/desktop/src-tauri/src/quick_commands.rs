@@ -339,7 +339,7 @@ fn file_commands(found: RepoCommands, default_agent: &str) -> FileCommands {
 
 /// The default agent's id; the built-in one when the profiles do not read.
 fn default_agent(data: &Path) -> String {
-    Profiles::load(data).unwrap_or_default().default_agent
+    Profiles::load(data).unwrap_or_default().default_id()
 }
 
 /// The `[[commands]]` of the worktree's `xdev.toml`. Read only.

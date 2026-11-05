@@ -1235,6 +1235,7 @@
   "setup.card.openTabs": "Mở tab mặc định",
   "setup.tab": "Thiết lập",
   "error.bad_profiles": "Không đọc được tệp hồ sơ đã lưu, nên đã giữ nguyên.",
+  "error.trust_unsafe": "Không thể tự động tin cậy thư mục này.",
   "error.invalid_profile": "Hồ sơ hoặc shell này không hợp lệ.",
   "error.builtin_profile": "Không thể xóa hồ sơ có sẵn.",
   "error.profile_off": "Hồ sơ này đang tắt.",

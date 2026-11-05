@@ -81,6 +81,10 @@ pub struct PtyInfo {
     // The CLI the profile runs, also for a custom profile; null for a shell
     // or an unknown program.
     cli: Option<Cli>,
+    // A first prompt the UI types once the agent has started (after-start
+    // agents, or a Windows shim that cannot take it as an argument).
+    #[serde(default)]
+    prompt_after: Option<String>,
 }
 
 /// Payload of the `pty://exit` event.
@@ -592,6 +596,7 @@ pub(crate) fn spawn_launch(
         hooks: launch.hooks,
         hook_events: launch.hook_events,
         cli: launch.cli,
+        prompt_after: None,
     };
     // What the service lists the PTY with; `info` comes back on attach.
     let meta = serde_json::json!({
@@ -991,6 +996,7 @@ fn info_of(id: &str, session: &SessionInfo) -> PtyInfo {
             hooks: false,
             hook_events: Vec::new(),
             cli: None,
+            prompt_after: None,
         });
     info.id = id.to_owned();
     info.pid = session.pid;

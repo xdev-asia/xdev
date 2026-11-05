@@ -499,14 +499,15 @@ fn draft_pr_with(
 /// custom program do not.
 fn recipe_provider(data: &Path, recipe: &Recipe) -> Result<Provider, CmdError> {
     let profiles = Profiles::load(data)?;
-    let id = recipe.agent.as_deref().unwrap_or(&profiles.default_agent);
+    let default_id = profiles.default_id();
+    let id = recipe.agent.as_deref().unwrap_or(&default_id);
     let profile = profiles
         .get(id)
         .ok_or_else(|| err("unknown_profile", Some(id.to_owned())))?;
     match profile.cli {
         Some(Cli::Claude) => Ok(Provider::Claude),
         Some(Cli::Codex) => Ok(Provider::Codex),
-        Some(Cli::Gemini) | None => Err(err("unsupported_agent", Some(id.to_owned()))),
+        _ => Err(err("unsupported_agent", Some(id.to_owned()))),
     }
 }
 
@@ -1577,7 +1578,7 @@ mod tests {
         );
         // A default agent other than Claude is what "no profile" means.
         let mut profiles = Profiles::load(dir.path()).unwrap();
-        profiles.default_agent = "codex".to_owned();
+        profiles.default_agent = xdev_agent::DefaultAgent::Agent("codex".to_owned());
         profiles.save(dir.path()).unwrap();
         assert_eq!(built_for(dir.path(), &recipe_of(None)).unwrap(), "codex");
     }

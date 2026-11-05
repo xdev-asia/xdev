@@ -10,4 +10,22 @@ permissions: Permissions, followsApprovals: boolean,
 /**
  * The effort levels its CLI accepts; empty when it has none.
  */
-efforts: Array<string>, };
+efforts: Array<string>, 
+/**
+ * The profile's own args already hold a permission flag of its agent,
+ * so xDev adds none.
+ */
+customArgs: boolean, 
+/**
+ * The approval modes the agent offers; `ask` first.
+ */
+modes: Array<Permissions>, 
+/**
+ * A built-in with a docs or install link.
+ */
+docs: boolean, 
+/**
+ * The first prompt is typed after the agent starts, not passed as an
+ * argument.
+ */
+promptAfter: boolean, };

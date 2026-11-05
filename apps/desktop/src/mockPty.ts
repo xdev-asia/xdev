@@ -39,6 +39,8 @@ export type MockPtyd = {
   __ptydHold(held: MockHeld): void;
   // The last `ptydQuitChoice` answer; null when none was given.
   __quitChoice(): boolean | null;
+  // The `prompt` each `ptySpawn` got, by pty id; absent when it had none.
+  __prompts(): Record<string, string>;
 };
 
 const PROMPT = "$ ";
@@ -58,7 +60,7 @@ const encode = (text: string) => new TextEncoder().encode(text);
  * once; an agent running as `skip` needs it before every start.
  */
 export function createMockPty(
-  profiles: Pick<MockProfiles, "__launchError" | "__permissions"> & Partial<Pick<MockProfiles, "__account">>,
+  profiles: Pick<MockProfiles, "__launchError" | "__permissions"> & Partial<Pick<MockProfiles, "__account" | "__promptAfter">>,
   // The setup script of the worktree at `cwd`, for `SETUP_PROFILE`.
   setupRun: (cwd: string) => Promise<MockSetupRun> = () => reject("hook_none", "setup"),
   // The provider's active account, which a built-in agent with no account of its own runs as.
@@ -74,6 +76,7 @@ export function createMockPty(
   const statusListeners = new Set<(s: PtydStatus) => void>();
   const held = new Map<string, MockHeld & { info: PtyInfo; startedMs: number }>();
   let quitChoice: boolean | null = null;
+  const prompts: Record<string, string> = {};
   const serviceUp = () => status.state === "running" || status.state === "old-version";
   const setStatus = (next: PtydStatus) => {
     status = next;
@@ -91,6 +94,7 @@ export function createMockPty(
     hooks: false,
     cli: null,
     hookEvents: [],
+    promptAfter: null,
   });
   const end = (id: string) => {
     held.delete(id);
@@ -102,7 +106,8 @@ export function createMockPty(
   };
 
   return {
-    async ptySpawn(id, cwd, profileId, account, _cols, _rows, onData, resume, fork) {
+    async ptySpawn(id, cwd, profileId, account, _cols, _rows, onData, resume, fork, prompt) {
+      if (prompt !== undefined) prompts[id] = prompt;
       if (profileId === SETUP_PROFILE) {
         if (ptys.has(id)) return reject("pty_exists");
         const run = await setupRun(cwd);
@@ -127,6 +132,7 @@ export function createMockPty(
           hooks: false,
           cli: null,
           hookEvents: [],
+          promptAfter: null,
         };
       }
       const refused = profiles.__launchError(profileId);
@@ -176,6 +182,7 @@ export function createMockPty(
             : profileId === "codex"
               ? ["prompt", "needs-input", "resume", "turn-done", "interrupt"]
               : [],
+        promptAfter: prompt !== undefined && profiles.__promptAfter?.(profileId) ? prompt : null,
       };
     },
     async ptyApprove(profileId) {
@@ -282,5 +289,6 @@ export function createMockPty(
       held.set(h.id, { ...h, info: { ...shellInfo(h.id), ...h.info }, startedMs: Date.now() });
     },
     __quitChoice: () => quitChoice,
+    __prompts: () => ({ ...prompts }),
   };
 }

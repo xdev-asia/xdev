@@ -24,6 +24,7 @@ const info = (id: string, hooks: boolean | HookEvent[]): PtyInfo => ({
   hooks: hooks !== false,
   hookEvents: hooks === true ? CLAUDE : hooks === false ? [] : hooks,
   cli: "claude",
+  promptAfter: null,
 });
 
 async function spawn(sessions: Sessions, worktree: string, profile: Profile) {

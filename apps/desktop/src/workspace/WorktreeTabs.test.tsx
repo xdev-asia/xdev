@@ -736,7 +736,7 @@ it("terminal menu: Set Title opens the dialog, Split Right opens a shell in a ne
 });
 
 const custom = (over: Partial<Profile> = {}): Profile => ({
-  id: "aider", name: "Aider", cli: null, program: "aider", args: [], env: [], model: null, effort: null,
+  id: "mine", name: "Mine", cli: null, program: "aider", args: [], env: [], model: null, effort: null,
   permissions: null, account: null, startup: [], enabled: true, ...over,
 });
 const profileOf = async (api: Api, id: string) => (await api.profiles()).profiles.find((p) => p.profile.id === id)!.profile;
@@ -750,12 +750,12 @@ const items = (g: Node | undefined) => (g ? nodes(g.props.children).filter((n) =
 
 it("plus_menu_lists_agents_and_shells", async () => {
   const api = createMockApi({});
-  // Gemini is not installed in the mock; codex is turned off here.
+  // Only claude, codex and aider are installed in the mock; codex is turned off here.
   store.view = await api.profilePut({ ...(await profileOf(api, "codex")), enabled: false });
   const live = (sessions = new Sessions(api));
   const view = harness(api, live);
   openMenu(view, live);
-  expect(items(group(view, en("workspace.tabs.agents")))).toEqual([en("terminal.profile.claude")]);
+  expect(items(group(view, en("workspace.tabs.agents")))).toEqual([en("terminal.profile.claude"), "Aider"]);
   expect(items(group(view, en("workspace.tabs.shells")))).toEqual(["PowerShell", "CMD", "WSL Ubuntu"]);
   // Each group says what it holds.
   expect(view.html()).toContain(`>${en("workspace.tabs.agents")}<`);
@@ -829,18 +829,18 @@ it("custom_profile_tab_uses_its_name", async () => {
   const live = (sessions = new Sessions(api));
   const view = harness(api, live);
   openMenu(view, live);
-  expect(items(group(view, en("workspace.tabs.agents")))).toContain("Aider");
-  view.find((n) => n.props.role === "menuitem" && n.props.children === "Aider")!.props.onClick();
+  expect(items(group(view, en("workspace.tabs.agents")))).toContain("Mine");
+  view.find((n) => n.props.role === "menuitem" && n.props.children === "Mine")!.props.onClick();
   const tab = live.tabs(A).at(-1)!;
-  expect(tab.profileId).toBe("aider");
+  expect(tab.profileId).toBe("mine");
   const html = view.html();
-  expect(html).toContain('<span class="ws-tab-name">Aider</span>');
-  expect(html).toContain(">A</span>");
-  expect(view.labelled(en("workspace.tabs.close", { name: "Aider" }))).toBeDefined();
+  expect(html).toContain('<span class="ws-tab-name">Mine</span>');
+  expect(html).toContain(">M</span>");
+  expect(view.labelled(en("workspace.tabs.close", { name: "Mine" }))).toBeDefined();
 
   // Once the profile is gone the tab falls back to its id.
-  store.view = await api.profileRemove("aider");
-  expect(view.html()).toContain('<span class="ws-tab-name">aider</span>');
+  store.view = await api.profileRemove("mine");
+  expect(view.html()).toContain('<span class="ws-tab-name">mine</span>');
 });
 
 it("restart_of_disabled_profile_shows_error", async () => {
