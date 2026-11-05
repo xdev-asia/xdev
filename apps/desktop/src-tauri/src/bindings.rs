@@ -174,6 +174,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     AutomationRun::export_all(cfg)?;
     AutomationInput::export_all(cfg)?;
     AutomationsView::export_all(cfg)?;
+    crate::automation_runs_summary::RunsSummary::export_all(cfg)?;
+    crate::automation_runs_summary::RunsRange::export_all(cfg)?;
     Describe::export_all(cfg)?;
     ExtraArgsError::export_all(cfg)?;
     AutomationDispatch::export_all(cfg)?;

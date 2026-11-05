@@ -7,6 +7,7 @@ mod app_menu;
 mod app_stats;
 mod applog;
 mod atomic;
+mod automation_runs_summary;
 mod automations;
 #[cfg(test)]
 mod bindings;
@@ -646,6 +647,7 @@ pub fn run() {
             xdev_id::xdev_id_server_set,
             automations::automations_list,
             automations::automation_runs,
+            automation_runs_summary::automation_runs_summary,
             automations::automation_create,
             automations::automation_update,
             automations::automation_set_enabled,

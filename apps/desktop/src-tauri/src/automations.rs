@@ -297,6 +297,17 @@ impl AutomationService {
         }
     }
 
+    /// Every automation, every run and the time now, for the Runs dashboard.
+    pub fn snapshot(&self) -> (Vec<Automation>, Vec<AutomationRun>, i64) {
+        let store = self.store();
+        let runs = store
+            .list()
+            .iter()
+            .flat_map(|a| store.runs(&a.id))
+            .collect();
+        (store.list().to_vec(), runs, self.now())
+    }
+
     pub fn get_runs(&self, automation_id: &str) -> Vec<AutomationRun> {
         self.store().runs(automation_id)
     }
