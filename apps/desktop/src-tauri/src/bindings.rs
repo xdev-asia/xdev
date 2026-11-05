@@ -9,6 +9,7 @@ use ts_rs::{Config, TS};
 use xdev_automations::{Automation, AutomationInput, AutomationRun, Describe, ExtraArgsError};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
+use crate::agent_session_log::{SessionTurn, SkippedLogs};
 use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
 use crate::ai_keys::AiKeyStatus;
 use crate::app_stats::AppStatsView;
@@ -276,6 +277,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     SessionQuery::export_all(cfg)?;
     SessionRow::export_all(cfg)?;
     SessionSearchStatus::export_all(cfg)?;
+    SessionTurn::export_all(cfg)?;
+    SkippedLogs::export_all(cfg)?;
     xdev_workspace::VaultView::export_all(cfg)?;
     xdev_workspace::VaultKind::export_all(cfg)?;
     QuickCommand::export_all(cfg)?;

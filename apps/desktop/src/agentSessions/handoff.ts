@@ -29,6 +29,8 @@ export interface HandoffInput {
   firstPrompt: string | null;
   /** The screen text of the source terminal, oldest first. */
   lines: string[];
+  /** The conversation text from `transcriptText`; when set it stands in for the terminal lines. */
+  transcript?: string;
 }
 
 /**
@@ -39,6 +41,16 @@ export interface HandoffInput {
 export function handoffPrompt(input: HandoffInput): string {
   const where = input.branch ? `${input.worktree} (${input.branch})` : input.worktree;
   const tail = lastLines(input.lines, CONTEXT_LINES);
+  if (input.transcript !== undefined && input.transcript !== "") {
+    return [
+      `Another agent (${input.fromProfile}) worked on this task and you are taking it over.`,
+      `Worktree: ${where}`,
+      "--- its conversation so far, oldest first ---",
+      input.transcript,
+      "--- end ---",
+      "Read the state of the work from this and continue it.",
+    ].join("\n");
+  }
   return [
     `Another agent (${input.fromProfile}) worked on this task and you are taking it over.`,
     `Worktree: ${where}`,
@@ -48,4 +60,41 @@ export function handoffPrompt(input: HandoffInput): string {
     "--- end ---",
     "Read the state of the work from this and continue it.",
   ].join("\n");
+}
+
+/** The most characters of conversation text a full-transcript hand-off carries. */
+export const TRANSCRIPT_MAX = 8000;
+/** The first line of a transcript that had its older turns cut. */
+export const CUT_MARK = "[earlier turns cut]";
+
+export interface TranscriptTurn {
+  /** `user`; any other value reads as the agent. */
+  role: string;
+  text: string;
+}
+
+/**
+ * The turns as `User: …` and `Agent: …` blocks, oldest first, at most `max` characters. The newest turns
+ * are kept whole; when older ones do not fit the text starts with `CUT_MARK`. A newest turn longer than the
+ * room keeps its end. No turns (or only blank ones) give an empty string.
+ */
+export function transcriptText(turns: TranscriptTurn[], max: number = TRANSCRIPT_MAX): string {
+  const blocks = turns.map((t) => ({ role: t.role, text: t.text.trim() })).filter((t) => t.text !== "").map((t) => `${t.role === "user" ? "User" : "Agent"}: ${t.text}`);
+  if (blocks.length === 0) return "";
+  const join = (parts: string[]) => parts.join("\n\n");
+  if (join(blocks).length <= max) return join(blocks);
+  const room = max - CUT_MARK.length - 2;
+  const kept: string[] = [];
+  let used = 0;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i]!;
+    const cost = block.length + (kept.length > 0 ? 2 : 0);
+    if (used + cost > room) {
+      if (kept.length === 0) kept.unshift(Array.from(block).slice(-Math.max(room, 0)).join(""));
+      break;
+    }
+    kept.unshift(block);
+    used += cost;
+  }
+  return `${CUT_MARK}\n\n${join(kept)}`;
 }

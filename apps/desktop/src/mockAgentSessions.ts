@@ -1,4 +1,4 @@
-import type { AgentSession, AgentsSettings, Api, ApiError, SessionQuery, SessionRow } from "./api";
+import type { AgentSession, AgentsSettings, Api, ApiError, SessionQuery, SessionRow, SessionTurn } from "./api";
 
 /** The agents settings the search reads its consent from, and the one write a clear makes. */
 export interface SearchConsent {
@@ -6,7 +6,18 @@ export interface SearchConsent {
   agentsSettingsPut(next: AgentsSettings): Promise<AgentsSettings>;
 }
 
-type AgentSessionsApi = Pick<Api, "agentSessions" | "sessionSearchStatus" | "sessionSearchClear">;
+type AgentSessionsApi = Pick<
+  Api,
+  | "agentSessions"
+  | "sessionSearchStatus"
+  | "sessionSearchClear"
+  | "agentSessionTail"
+  | "agentSessionLogPath"
+  | "agentSessionOpenLog"
+  | "agentSessionRevealLog"
+  | "agentSessionDelete"
+  | "agentSessionsSkipped"
+>;
 
 const LIMIT_MAX = 500;
 const HOUR_MS = 3_600_000;
@@ -79,7 +90,32 @@ function matches(row: SessionRow, words: string[]): boolean {
 
 /** A fixed list of sessions across two repos, filtered, sorted and cut like Rust does. */
 export function createMockAgentSessions(consent: SearchConsent, now: () => number = () => Date.now()): AgentSessionsApi {
+  const deleted = new Set<string>();
+  const live = () => ROWS.map((make) => make(now())).filter((r) => !deleted.has(r.session.key));
+  const find = async (key: string) => live().find((r) => r.session.key === key) ?? reject("not_found", "session");
   return {
+    async agentSessionTail(key, turns = 6, chars = 1200) {
+      const r = await find(key);
+      const all: SessionTurn[] = r.transcript.map((text, i) => ({ role: i % 2 === 0 ? "user" : "assistant", text: text.slice(0, chars), at: r.session.last - (r.transcript.length - i) * 60_000 }));
+      return all.slice(-turns);
+    },
+    async agentSessionLogPath(key) {
+      const r = await find(key);
+      return `/demo/.${r.session.agent}/sessions/${r.session.id}.jsonl`;
+    },
+    async agentSessionOpenLog(key) {
+      await find(key);
+    },
+    async agentSessionRevealLog(key) {
+      await find(key);
+    },
+    async agentSessionDelete(key) {
+      await find(key);
+      deleted.add(key);
+    },
+    async agentSessionsSkipped() {
+      return { count: 0, paths: [] };
+    },
     async sessionSearchStatus() {
       const enabled = (await consent.agentsSettings()).sessionSearch;
       if (!enabled) return { enabled, sessions: 0, messages: 0, updatedAt: null, indexing: false };
@@ -94,10 +130,9 @@ export function createMockAgentSessions(consent: SearchConsent, now: () => numbe
       if (query.limit > LIMIT_MAX) return reject("bad_arg", "limit");
       const words = (query.text ?? "").toLowerCase().split(/\s+/).filter(Boolean);
       const scope = query.scope;
-      const t = now();
       const searching = (await consent.agentsSettings()).sessionSearch;
       const found = new Map<string, string>();
-      const rows = ROWS.map((make) => make(t)).filter((r) => {
+      const rows = live().filter((r) => {
         if (scope.kind === "worktree" && !inside(r.session.cwd, scope.path)) return false;
         if (scope.kind === "repo" && r.repo !== scope.path) return false;
         if (query.agent && r.session.agent !== query.agent) return false;

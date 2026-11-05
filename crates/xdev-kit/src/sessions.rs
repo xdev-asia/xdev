@@ -18,6 +18,9 @@ use crate::{Agent, FileMark, Home, KitError, RefreshStats};
 const VERSION: u32 = 1;
 const TITLE_CHARS: usize = 200;
 
+/// A log longer than this is left out of the index and counted as skipped.
+pub const LOG_BYTES_MAX: u64 = 1 << 30;
+
 /// One agent session on this machine.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -51,6 +54,10 @@ pub struct SessionIndex {
     /// Keyed by `AgentSession::key`.
     #[serde(default)]
     pub sessions: BTreeMap<String, AgentSession>,
+    /// Logs the last refresh could not use (unreadable, or longer than
+    /// `LOG_BYTES_MAX`), by path. Not saved: each refresh finds them again.
+    #[serde(skip)]
+    pub skipped: Vec<String>,
 }
 
 impl Default for SessionIndex {
@@ -59,6 +66,7 @@ impl Default for SessionIndex {
             version: VERSION,
             files: BTreeMap::new(),
             sessions: BTreeMap::new(),
+            skipped: Vec::new(),
         }
     }
 }
@@ -108,10 +116,22 @@ impl SessionIndex {
         since_ms: Option<i64>,
         after_file: &mut dyn FnMut(&Self),
     ) -> RefreshStats {
+        self.refresh_limited(homes, since_ms, LOG_BYTES_MAX, after_file)
+    }
+
+    /// `refresh_since`, skipping a log longer than `max_bytes`.
+    pub fn refresh_limited(
+        &mut self,
+        homes: &[Home],
+        since_ms: Option<i64>,
+        max_bytes: u64,
+        after_file: &mut dyn FnMut(&Self),
+    ) -> RefreshStats {
         let mut stats = RefreshStats::default();
         if self.version != VERSION {
             *self = Self::default();
         }
+        self.skipped.clear();
         let mut present = HashSet::new();
         for home in homes {
             for file in log_files(home) {
@@ -122,7 +142,7 @@ impl SessionIndex {
                 if !present.insert(file_key.clone()) {
                     continue;
                 }
-                if self.refresh_file(home, &file, &file_key, since_ms, &mut stats) {
+                if self.refresh_file(home, &file, &file_key, since_ms, max_bytes, &mut stats) {
                     after_file(self);
                 }
             }
@@ -148,14 +168,20 @@ impl SessionIndex {
         path: &Path,
         file_key: &str,
         since_ms: Option<i64>,
+        max_bytes: u64,
         stats: &mut RefreshStats,
     ) -> bool {
         let Ok(meta) = fs::metadata(path) else {
+            self.skipped.push(file_key.to_string());
             return false;
         };
         let len = meta.len();
         let mtime_ns = mtime_ns(&meta);
         if !self.files.contains_key(file_key) && is_older(mtime_ns, since_ms) {
+            return false;
+        }
+        if len > max_bytes {
+            self.skipped.push(file_key.to_string());
             return false;
         }
         let mut start = 0;
@@ -186,6 +212,7 @@ impl SessionIndex {
             Agent::Codex => read_codex(path, start, existed, &mut session, &mut read),
         };
         let Ok(LineRead { offset, .. }) = result else {
+            self.skipped.push(file_key.to_string());
             return false;
         };
         stats.files_read += 1;
@@ -220,6 +247,14 @@ impl SessionIndex {
     /// back when it is written to.
     pub fn prune(&mut self, older_than_ms: i64) {
         self.sessions.retain(|_, s| s.last >= older_than_ms);
+    }
+
+    /// The log file (canonical path) a session was read from.
+    pub fn file_of(&self, key: &str) -> Option<&str> {
+        self.files
+            .iter()
+            .find(|(_, mark)| mark.session == key)
+            .map(|(file, _)| file.as_str())
     }
 
     /// Every session with a message, newest `last` first.

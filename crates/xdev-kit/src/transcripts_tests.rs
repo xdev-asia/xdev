@@ -243,3 +243,82 @@ fn a_codex_log_without_session_meta_still_sends_its_texts() {
     assert_eq!(got[0].1, "p0");
     assert!(matches!(events[0], TranscriptEvent::Reset { .. }));
 }
+
+fn claude_turn(role: &str, text: &str) -> String {
+    format!(
+        "{{\"type\":\"{role}\",\"timestamp\":\"2026-11-02T10:00:00Z\",\"message\":{{\"content\":\"{text}\"}}}}"
+    )
+}
+
+#[test]
+fn tail_keeps_the_last_turns_in_order() {
+    let items: Vec<String> = (0..10)
+        .map(|i| {
+            claude_turn(
+                if i % 2 == 0 { "user" } else { "assistant" },
+                &format!("t{i}"),
+            )
+        })
+        .collect();
+    let refs: Vec<&str> = items.iter().map(String::as_str).collect();
+    let (_d, h, file) = claude_home(&lines(&refs));
+    let tail = tail_turns(&h, &file, 6, 100);
+    let got: Vec<&str> = tail.iter().map(|t| t.text.as_str()).collect();
+    assert_eq!(got, ["t4", "t5", "t6", "t7", "t8", "t9"]);
+    assert_eq!(tail[0].role, TextRole::User);
+    assert_eq!(tail[1].role, TextRole::Assistant);
+    assert!(tail[0].at > 0);
+}
+
+#[test]
+fn tail_cuts_each_turn_and_skips_tool_lines() {
+    let log = lines(&[
+        &claude_turn("user", "abcdefghij"),
+        "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"input\":{}}]}}",
+        "not json",
+    ]);
+    let (_d, h, file) = claude_home(&log);
+    let tail = tail_turns(&h, &file, 6, 4);
+    assert_eq!(tail.len(), 1);
+    assert_eq!(tail[0].text, "abcd");
+}
+
+#[test]
+fn tail_of_an_empty_or_missing_log_is_empty() {
+    let (_d, h, file) = claude_home("");
+    assert!(tail_turns(&h, &file, 6, 10).is_empty());
+    assert!(tail_turns(&h, &file.with_extension("gone"), 6, 10).is_empty());
+    assert!(tail_turns(&h, &file, 0, 10).is_empty());
+}
+
+#[test]
+fn tail_of_a_long_log_starts_on_a_line_and_keeps_the_end() {
+    let filler = "x".repeat(1000);
+    let mut items: Vec<String> = (0..5000)
+        .map(|i| claude_turn("user", &format!("{i}{filler}")))
+        .collect();
+    items.push(claude_turn("assistant", "last"));
+    let refs: Vec<&str> = items.iter().map(String::as_str).collect();
+    let (_d, h, file) = claude_home(&lines(&refs));
+    assert!(fs::metadata(&file).unwrap().len() > TAIL_BYTES);
+    let tail = tail_turns(&h, &file, 3, 20);
+    assert_eq!(tail.len(), 3);
+    assert_eq!(tail[2].text, "last");
+    assert!(tail[0].text.starts_with("49"), "{}", tail[0].text);
+}
+
+#[test]
+fn tail_reads_a_codex_log() {
+    let log = lines(&[
+        "{\"type\":\"session_meta\",\"payload\":{\"id\":\"s1\"}}",
+        "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}}",
+        "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"hi there\"}]}}",
+    ]);
+    let (_d, h, file) = codex_home(&log);
+    let tail = tail_turns(&h, &file, 6, 100);
+    let got: Vec<(TextRole, &str)> = tail.iter().map(|t| (t.role, t.text.as_str())).collect();
+    assert_eq!(
+        got,
+        [(TextRole::User, "hello"), (TextRole::Assistant, "hi there")]
+    );
+}

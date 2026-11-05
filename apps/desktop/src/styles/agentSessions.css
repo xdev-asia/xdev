@@ -423,3 +423,79 @@
   flex-wrap: wrap;
   gap: 4px;
 }
+
+.as-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 8px 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+  min-width: 0;
+}
+
+.as-details-title {
+  margin: 0;
+  color: var(--text-1);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.as-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.as-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}
+
+.as-turn[data-role="assistant"] {
+  background: var(--bg-1);
+}
+
+.as-turn-role {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.as-turn-text {
+  margin: 0;
+  color: var(--text-1);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.as-skipped {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 8px;
+}
+
+.as-skipped-list {
+  max-height: 160px;
+  margin: 0;
+  padding: 0 4px;
+  overflow: auto;
+  list-style: none;
+}
+
+.as-skipped-path {
+  color: var(--text-2);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}

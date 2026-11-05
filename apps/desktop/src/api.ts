@@ -257,6 +257,8 @@ import type {
   SessionQuery,
   SessionRow,
   SessionSearchStatus,
+  SessionTurn,
+  SkippedLogs,
   Agent,
   Cost,
   Skill,
@@ -282,7 +284,7 @@ export type PortStopConsent = { confirmed: boolean; outsideTerminal: boolean };
 export type ScriptKind = Extract<HookKind, "setup" | "archive">;
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
-export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearchStatus };
+export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearchStatus, SessionTurn, SkippedLogs };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, AppStatsView, AwakeView, KeepAwake, SwitchRunning };
 export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } from "@xdev/bindings";
@@ -1280,6 +1282,18 @@ export interface Api {
   sessionSearchStatus(): Promise<SessionSearchStatus>;
   /** Turns the search off, then deletes the index; returns the stored settings. */
   sessionSearchClear(): Promise<AgentsSettings>;
+  /** The last `turns` (1-200, 6 when absent) user and assistant texts of a session, oldest first, each cut to `chars` (1-8000, 1200 when absent). Rejects `not_found`, `bad_path`. */
+  agentSessionTail(key: string, turns?: number, chars?: number): Promise<SessionTurn[]>;
+  /** The path of a session's log file. Rejects `not_found`, `bad_path`. */
+  agentSessionLogPath(key: string): Promise<string>;
+  /** Opens a session's log file with the OS. */
+  agentSessionOpenLog(key: string): Promise<void>;
+  /** Shows a session's log file in the file manager. */
+  agentSessionRevealLog(key: string): Promise<void>;
+  /** Deletes a session's log file when it is inside the agent's session store, then reads the logs again. Rejects `not_found`, `bad_path`, `io`. */
+  agentSessionDelete(key: string): Promise<void>;
+  /** The logs the last scan could not read or that were too large; at most 20 paths. */
+  agentSessionsSkipped(): Promise<SkippedLogs>;
 
   // Quick commands
   // Every saved command (settings.json `quickCommands`), global and per repo together, in order.
@@ -1998,6 +2012,12 @@ const tauriApi: Api = {
   agentSessions: (query, refresh) => call("agent_sessions", { query, refresh }),
   sessionSearchStatus: () => call("session_search_status"),
   sessionSearchClear: () => call("session_search_clear"),
+  agentSessionTail: (key, turns, chars) => call("agent_session_tail", { key, turns: turns ?? null, chars: chars ?? null }),
+  agentSessionLogPath: (key) => call("agent_session_log_path", { key }),
+  agentSessionOpenLog: (key) => call("agent_session_open_log", { key }),
+  agentSessionRevealLog: (key) => call("agent_session_reveal_log", { key }),
+  agentSessionDelete: (key) => call("agent_session_delete", { key }),
+  agentSessionsSkipped: () => call("agent_sessions_skipped"),
   quickCommandsList: () => call("quick_commands_list"),
   quickCommandUpsert: (item) => call("quick_command_upsert", { item }),
   quickCommandDelete: (id) => call("quick_command_delete", { id }),

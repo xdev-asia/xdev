@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import type { PtyProfile, SessionRow, SessionScope } from "@/api";
+import { api, type PtyProfile, type SessionRow, type SessionScope, type SkippedLogs } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import { copyText } from "@/ui/clipboard";
@@ -9,7 +9,7 @@ import { pushToast } from "@/workspace/toastStore";
 import { HandOffDialog, type HandOffChoice } from "./HandOffDialog";
 import { SessionsPanel, type ScopeKind } from "./SessionsPanel";
 import { confirmResume, startResume, type PendingResume } from "./resumeFlow";
-import { FIRST_PROMPT_MAX, handoffPrompt } from "./handoff";
+import { FIRST_PROMPT_MAX, handoffPrompt, transcriptText, TRANSCRIPT_MAX } from "./handoff";
 import type { ResumeDestination } from "./resumeTarget";
 import { baseName } from "./sessionsView";
 import type { AgentSessionsStore } from "./store";
@@ -50,6 +50,8 @@ export function SessionsSidebar(props: {
   const view = useSyncExternalStore(store.subscribe, () => store.view, () => store.view);
   const [handingOff, setHandingOff] = useState<{ row: SessionRow; source: string } | null>(null);
   const [asking, setAsking] = useState<PendingResume | null>(null);
+  const [deleting, setDeleting] = useState<SessionRow | null>(null);
+  const [skipped, setSkipped] = useState<SkippedLogs>({ count: 0, paths: [] });
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -57,6 +59,18 @@ export function SessionsSidebar(props: {
     setNow(Date.now());
     return store.watch();
   }, [store, visible]);
+  // What the last scan skipped is asked for once a read has ended.
+  useEffect(() => {
+    if (!visible || state.loading) return;
+    let live = true;
+    api.agentSessionsSkipped().then(
+      (found) => live && setSkipped(found),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [visible, state.loading]);
   // Relative times move on with the clock, not only with a read.
   useEffect(() => {
     if (!visible) return;
@@ -80,15 +94,24 @@ export function SessionsSidebar(props: {
 
   const agentName = (agent: string) => t(`agentSessions.agent.${agent}`);
   // Opens the chosen agent with the session's first prompt as its own; a stored session has no terminal text to carry.
-  const handOff = (pending: { row: SessionRow; source: string }, choice: HandOffChoice) => {
+  const handOff = async (pending: { row: SessionRow; source: string }, choice: HandOffChoice) => {
     const s = pending.row.session;
     const title = s.title?.trim();
+    let transcript: string | undefined;
+    if (choice.content === "full") {
+      try {
+        transcript = transcriptText(await api.agentSessionTail(s.key, 200, TRANSCRIPT_MAX), TRANSCRIPT_MAX);
+      } catch {
+        pushToast({ text: t("agentSessions.handOff.fullFailed") });
+      }
+    }
     const text = handoffPrompt({
       fromProfile: agentName(s.agent),
       worktree: pending.source,
       branch: s.branch,
       firstPrompt: title ? Array.from(title).slice(0, FIRST_PROMPT_MAX).join("") : null,
       lines: [],
+      transcript,
     });
     props.onOpened(sessions.open(choice.worktree, choice.profileId as PtyProfile, null, undefined, { prompt: text }));
     pushToast({ text: t("agentFork.handedOff") });
@@ -122,6 +145,18 @@ export function SessionsSidebar(props: {
         current={path}
         onResumeAt={resume}
         onCopyFirstPrompt={(text) => void copyText(text).then((ok) => pushToast({ text: t(ok ? "agentSessions.firstPromptCopied" : "agentSessions.copyFailed") }))}
+        loadTail={(row) => api.agentSessionTail(row.session.key)}
+        onViewLog={(row) => void api.agentSessionOpenLog(row.session.key).catch(() => pushToast({ text: t("agentSessions.logFailed") }))}
+        onCopyLogPath={(row) =>
+          void api
+            .agentSessionLogPath(row.session.key)
+            .then((p) => copyText(p))
+            .catch(() => false)
+            .then((ok) => pushToast({ text: t(ok ? "agentSessions.logPathCopied" : "agentSessions.copyFailed") }))
+        }
+        onRevealLog={(row) => void api.agentSessionRevealLog(row.session.key).catch(() => pushToast({ text: t("agentSessions.logFailed") }))}
+        onDelete={setDeleting}
+        skipped={skipped}
         onCopyCommand={(command) => void copyText(command).then((ok) => pushToast({ text: t(ok ? "agentSessions.commandCopied" : "agentSessions.copyFailed") }))}
       />
       {handingOff && (
@@ -130,13 +165,34 @@ export function SessionsSidebar(props: {
           worktrees={handOffPaths.map((p) => ({ value: p, label: baseName(p) || p }))}
           sourceProfile={handingOff.row.session.agent}
           sourceWorktree={handingOff.source}
+          contentChoice
           onConfirm={(choice) => {
-            handOff(handingOff, choice);
+            void handOff(handingOff, choice);
             setHandingOff(null);
           }}
           onCancel={() => setHandingOff(null)}
         />
       )}
+      <ConfirmDialog
+        open={deleting !== null}
+        title={t("agentSessions.delete.title")}
+        body={t("agentSessions.delete.body", { title: deleting?.session.title ?? t("agentSessions.untitled") })}
+        warning={t("agentSessions.delete.warning")}
+        confirmLabel={t("agentSessions.delete.confirm")}
+        onConfirm={() => {
+          const row = deleting;
+          setDeleting(null);
+          if (!row) return;
+          void api.agentSessionDelete(row.session.key).then(
+            () => {
+              pushToast({ text: t("agentSessions.deleted") });
+              return store.refresh();
+            },
+            () => pushToast({ text: t("agentSessions.deleteFailed") }),
+          );
+        }}
+        onCancel={() => setDeleting(null)}
+      />
       <ConfirmDialog
         open={asking !== null}
         title={t("agentSessions.mismatch.title")}

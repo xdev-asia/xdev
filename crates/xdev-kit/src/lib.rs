@@ -21,7 +21,9 @@ pub use memory::{
 pub use pricing::{PRICES_AS_OF, Rates, cost_nanos, rates_for};
 pub use sessions::{AgentSession, SessionIndex};
 pub use skills::{Skill, SkillScope, mark_duplicates, scan_skill_root, scan_skills};
-pub use transcripts::{TextRole, TranscriptEvent, TranscriptText, scan_transcripts};
+pub use transcripts::{
+    TailTurn, TextRole, TranscriptEvent, TranscriptText, scan_transcripts, tail_turns,
+};
 pub use usage::{
     RefreshStats, SessionUsage, Tokens, UsageIndex, UsageQuery, UsageSummary, summarize,
 };

@@ -437,3 +437,31 @@ fn a_line_of_many_mb_is_read_for_its_fields_only() {
     assert_eq!(s.model.as_deref(), Some("claude-x"));
     assert_eq!((s.first, s.last), (T_NOV2_10H, T_NOV3_09H));
 }
+
+#[test]
+fn a_log_over_the_size_limit_is_skipped_and_listed() {
+    let line = "{\"type\":\"user\",\"timestamp\":\"2026-11-02T10:00:00Z\",\"message\":{\"content\":\"hi\"}}\n";
+    let (_dir, h, file) = claude_home_with(line);
+    let key = fs::canonicalize(&file)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let mut index = SessionIndex::default();
+    index.refresh_limited(std::slice::from_ref(&h), None, 10, &mut |_| {});
+    assert_eq!(index.skipped, [key.clone()]);
+    assert!(index.sessions.is_empty());
+    // With room for it the log is read and nothing is skipped.
+    index.refresh_limited(&[h], None, 1 << 20, &mut |_| {});
+    assert!(index.skipped.is_empty());
+    assert_eq!(index.file_of("own-claude:s-x"), Some(key.as_str()));
+    assert_eq!(index.file_of("own-claude:none"), None);
+}
+
+#[test]
+fn skipped_logs_are_not_saved_with_the_index() {
+    let mut index = SessionIndex::default();
+    index.skipped.push("/a/b.jsonl".into());
+    let dir = tempfile::tempdir().unwrap();
+    index.save(dir.path()).unwrap();
+    assert!(SessionIndex::load(dir.path()).skipped.is_empty());
+}

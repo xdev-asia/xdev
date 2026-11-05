@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
 import { Icon, type MenuEntry } from "@xdev-asia/ui";
-import type { Agent, SessionRow, SessionScope, SessionSort } from "@/api";
+import type { Agent, SessionRow, SessionScope, SessionSort, SessionTurn, SkippedLogs } from "@/api";
 import { MenuButton } from "@/automations/MenuButton";
 import { renderSnippet } from "@/components/renderSnippet";
 import { useI18n } from "@/i18n";
@@ -11,6 +11,7 @@ import { DragController } from "./dragToResume";
 import { FirstPromptCard, firstPrompt } from "./FirstPromptCard";
 import { resumeChoices, type ResumeDestination } from "./resumeTarget";
 import { rowMenuItems } from "./rowMenu";
+import { SessionDetails, SkippedBanner } from "./SessionDetails";
 import { NAV_KEYS, nextRowIndex, type NavItem, type NavKey } from "./rowNav";
 import { baseName, GROUP_BYS, groupRows, HISTORY_DAYS, type SessionGroup } from "./sessionsView";
 import { DEFAULT_VIEW, type AgentSessionsState, type ViewPrefs } from "./store";
@@ -51,6 +52,16 @@ export interface SessionsPanelProps {
   current?: string | null;
   /** Resume a row at a destination picked from the Resume menu; without it the row has only the default Resume. */
   onResumeAt?(row: SessionRow, dest: ResumeDestination): void;
+  /** The last turns of a row's session; without it a selected row has no details pane. */
+  loadTail?(row: SessionRow): Promise<SessionTurn[]>;
+  /** Open a row's raw log file (the details pane's View log). */
+  onViewLog?(row: SessionRow): void;
+  /** Row menu: each item shows only when its handler is given. */
+  onCopyLogPath?(row: SessionRow): void;
+  onRevealLog?(row: SessionRow): void;
+  onDelete?(row: SessionRow): void;
+  /** Logs the last scan could not use; a banner shows while the count is above zero. */
+  skipped?: SkippedLogs;
 }
 
 /** The sessions of every agent home on this machine: search, scope, sort, and a resume on each row. */
@@ -196,6 +207,9 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
         copyCommand: (command) => props.onCopyCommand?.(command),
         copyFirstPrompt: props.onCopyFirstPrompt,
         jump: () => tab !== null && props.onPrimary(row, tab),
+        copyLogPath: props.onCopyLogPath && (() => props.onCopyLogPath?.(row)),
+        revealLog: props.onRevealLog && (() => props.onRevealLog?.(row)),
+        deleteSession: props.onDelete && (() => props.onDelete?.(row)),
       },
       canHandOff,
     );
@@ -292,6 +306,9 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
             }}
           />
         )}
+        {picked === s.key && props.loadTail && (
+          <SessionDetails row={row} loadTail={props.loadTail} onViewLog={(r) => props.onViewLog?.(r)} onClose={() => setPicked(null)} />
+        )}
       </li>
     );
   };
@@ -368,6 +385,7 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
           {t(`error.${state.error.code}`)}
         </p>
       )}
+      {props.skipped && props.skipped.count > 0 && <SkippedBanner count={props.skipped.count} paths={props.skipped.paths} />}
       {state.reading && (
         <p className="as-status" role="status">
           {t("agentSessions.reading")}
