@@ -39,3 +39,12 @@ it("a narrow window drops the brand and crumbs, floats the sidebar and stacks Se
   expect(stacked).toMatch(/\.settings\s*\{[^}]*flex-direction:\s*column/);
   expect(stacked).toMatch(/\.settings-nav\s*\{[^}]*width:\s*auto/);
 });
+
+it("the file viewers wrap their toolbars and fix no width past 360px", () => {
+  const files = read("preview-files.css");
+  expect(files).toMatch(/\.media-bar\s*\{[^}]*flex-wrap:\s*wrap/);
+  expect(files).toMatch(/\.md-pane-bar\s*\{[^}]*flex-wrap:\s*wrap/);
+  expect(files).toMatch(/\.md-toc\s*\{[^}]*max-width:\s*40%/);
+  const fixed = [...files.matchAll(/(?<![-\w])(?:min-)?width:\s*(\d+)px/g)].map((m) => Number(m[1]));
+  expect(fixed.filter((px) => px > 360)).toEqual([]);
+});
