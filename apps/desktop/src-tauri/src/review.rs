@@ -505,8 +505,10 @@ mod tests {
     #[test]
     fn review_reports_the_head_commit() {
         let fx = fixture();
-        let head = commit(&fx.wt, "b.txt", "b
-", "b");
+        let head = commit(
+            &fx.wt, "b.txt", "b
+", "b",
+        );
         let r = review(&fx.data, &fx.wt, None).unwrap();
         assert_eq!(r.head_oid.as_deref(), Some(head.as_str()));
     }

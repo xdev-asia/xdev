@@ -646,11 +646,12 @@ describe("mock repo hooks", () => {
     it("merges, or rejects with the block as detail", async () => {
       const api = createMockWorkspace();
       expect((await api.worktreePrMergeInfo(PATH, NUMBER)).methods).toEqual(["squash", "merge", "rebase"]);
-      await api.worktreePrMerge(PATH, NUMBER, "squash");
+      await expect(api.worktreePrMerge(PATH, NUMBER, "squash", "f".repeat(40))).rejects.toMatchObject({ code: "pr_head_moved" });
+      await api.worktreePrMerge(PATH, NUMBER, "squash", MOCK_HEAD);
       expect((await api.worktreePr(PATH))?.state).toBe("merged");
-      const info = { block: "draft" as const, checksFailed: false, methods: ["merge" as const], defaultMethod: "merge" as const };
+      const info = { block: "draft" as const, checksFailed: false, methods: ["merge" as const], defaultMethod: "merge" as const, headOid: MOCK_HEAD };
       const blocked = createMockWorkspace({ ...DEMO_WORKSPACE, mergeInfo: { [PATH]: info } });
-      await expect(blocked.worktreePrMerge(PATH, NUMBER, "merge")).rejects.toEqual({ code: "merge_blocked", detail: "draft" });
+      await expect(blocked.worktreePrMerge(PATH, NUMBER, "merge", MOCK_HEAD)).rejects.toEqual({ code: "merge_blocked", detail: "draft" });
       expect(await blocked.worktreePrMergeInfo(PATH, NUMBER)).toEqual(info);
     });
   });

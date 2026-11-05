@@ -532,6 +532,7 @@ export type ErrorCode =
   | "bad_draft"
   | "comment_too_large"
   | "pr_head_mismatch"
+  | "pr_head_moved"
   | "empty_comment"
   | "nothing_to_rerun"
   | "merge_blocked"
@@ -971,7 +972,7 @@ export interface Api {
   worktreePrChecksRerun(path: string, number: number, failedOnly: boolean): Promise<RerunReport>;
   worktreePrMergeInfo(path: string, number: number): Promise<PrMergeInfo>;
   // Rejects with `merge_blocked`; `detail` is the `MergeBlock`.
-  worktreePrMerge(path: string, number: number, method: MergeMethod): Promise<void>;
+  worktreePrMerge(path: string, number: number, method: MergeMethod, headOid: string): Promise<void>;
   worktreePrOpen(path: string, checks: boolean): Promise<void>;
   // The logins `gh` holds, active one flagged; [] when none or `gh` is not signed in. Rejects with
   // `gh_missing`. A repo bound to a login that is gone rejects its `gh` calls with `gh_account_missing`.
@@ -1314,6 +1315,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "bad_draft",
   "comment_too_large",
   "pr_head_mismatch",
+  "pr_head_moved",
   "empty_comment",
   "nothing_to_rerun",
   "merge_blocked",
@@ -1587,7 +1589,7 @@ const tauriApi: Api = {
   worktreePrReaction: (path, subjectId, content, on) => call("worktree_pr_reaction", { path, subjectId, content, on }),
   worktreePrChecksRerun: (path, number, failedOnly) => call("worktree_pr_checks_rerun", { path, number, failedOnly }),
   worktreePrMergeInfo: (path, number) => call("worktree_pr_merge_info", { path, number }),
-  worktreePrMerge: (path, number, method) => call("worktree_pr_merge", { path, number, method }),
+  worktreePrMerge: (path, number, method, headOid) => call("worktree_pr_merge", { path, number, method, headOid }),
   worktreePrOpen: (path, checks) => call("worktree_pr_open", { path, checks }),
   issuesList: (repoId, query) => call("issues_list", { repoId, query }),
   issueView: (repoId, number) => call("issue_view", { repoId, number }),

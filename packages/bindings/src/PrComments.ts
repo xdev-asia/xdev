@@ -7,6 +7,7 @@ export type PrComments = {
  */
 comments: Array<PrComment>, 
 /**
- * A source hit `COMMENTS_PER_SOURCE`, so more may exist.
+ * A source (or the replies of a thread) holds more than one page, so older
+ * items were left out.
  */
 truncated: boolean, };

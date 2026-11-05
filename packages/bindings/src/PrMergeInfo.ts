@@ -10,4 +10,8 @@ checksFailed: boolean,
 /**
  * Allowed methods, in squash, merge, rebase order.
  */
-methods: Array<MergeMethod>, defaultMethod: MergeMethod, };
+methods: Array<MergeMethod>, defaultMethod: MergeMethod, 
+/**
+ * The PR head this state was read at; the merge is pinned to it.
+ */
+headOid: string, };

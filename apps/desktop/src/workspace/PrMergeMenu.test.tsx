@@ -38,7 +38,7 @@ const tick = async () => { for (let i = 0; i < 30; i++) await Promise.resolve();
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 const OAK = "/demo/wt/xdev-oak";
 const PR: PrView = { number: 7, url: "u", state: "open", title: "t", base: "main", head: "oak" };
-const INFO: PrMergeInfo = { block: null, checksFailed: false, methods: ["squash", "merge", "rebase"], defaultMethod: "squash" };
+const INFO: PrMergeInfo = { block: null, checksFailed: false, methods: ["squash", "merge", "rebase"], defaultMethod: "squash", headOid: "abc123" };
 
 function api(info: PrMergeInfo, extra: Partial<Api> = {}): Api {
   return { ...createMockApi({}, { workspace: { ...DEMO_WORKSPACE, prs: { [OAK]: PR }, mergeInfo: { [OAK]: info } } }), ...extra };
@@ -110,7 +110,7 @@ it("merges with the chosen method, then reloads the PR", async () => {
   m.dialog().props.onConfirm(); // a second press while the first runs
   await tick();
   expect(merge).toHaveBeenCalledTimes(1);
-  expect(merge).toHaveBeenCalledWith(OAK, 7, "merge");
+  expect(merge).toHaveBeenCalledWith(OAK, 7, "merge", "abc123");
   expect(load).toHaveBeenCalledWith(OAK, { checks: true });
   expect(m.tree().some((n) => n.props.children === en("prReview.merge.done"))).toBe(true);
 });

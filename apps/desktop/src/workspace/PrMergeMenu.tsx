@@ -51,6 +51,8 @@ export function PrMergeMenu(props: {
   const current: MergeMethod = method && info.methods.includes(method) ? method : info.defaultMethod;
   const block: MergeBlock | null = info.block;
 
+  const headOid = info.headOid;
+
   async function merge(): Promise<void> {
     if (inFlight.current || block) return;
     inFlight.current = true;
@@ -58,7 +60,7 @@ export function PrMergeMenu(props: {
     setBusy(true);
     setNote(null);
     try {
-      await api.worktreePrMerge(worktree, pr.number, current);
+      await api.worktreePrMerge(worktree, pr.number, current, headOid);
       setNote({ error: false, text: t("prReview.merge.done") });
       await prs.load(worktree, { checks: true });
     } catch (e) {

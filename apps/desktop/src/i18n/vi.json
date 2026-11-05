@@ -596,6 +596,7 @@
   "error.comment_too_large": "Bình luận quá lớn để gửi an toàn.",
   "error.empty_comment": "Hãy viết nội dung trước khi gửi.",
   "error.nothing_to_rerun": "Không có check GitHub Actions nào để chạy lại.",
+  "error.pr_head_moved": "PR đã thay đổi kể từ lần bạn xem; hãy làm mới.",
   "error.merge_blocked": "GitHub chưa cho phép gộp pull request này.",
   "error.branch_in_use": "Nhánh này đang được checkout ở worktree khác.",
   "error.bad_sparse": "Có thư mục trong danh sách sparse không hợp lệ: dùng đường dẫn tương đối trong repo, tối đa 50.",

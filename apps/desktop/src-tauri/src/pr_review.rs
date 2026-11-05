@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use tauri::State;
 use xdev_git::{
     GhExec, MergeMethod, PrCommentDraft, PrComments, PrMergeInfo, Reaction, RerunReport, SystemGh,
-    pr_checks_rerun, pr_comment_post, pr_comments, pr_head_oid, pr_merge, pr_merge_info, pr_reaction,
-    pr_thread_resolve,
+    pr_checks_rerun, pr_comment_post, pr_comments, pr_head_oid, pr_merge, pr_merge_info,
+    pr_reaction, pr_thread_resolve,
 };
 
 use crate::accounts::data_dir;
@@ -65,8 +65,9 @@ fn merge_with(
     path: &Path,
     number: u64,
     method: MergeMethod,
+    head_oid: &str,
 ) -> Result<(), CmdError> {
-    Ok(pr_merge(gh, path, number, method)?)
+    Ok(pr_merge(gh, path, number, method, head_oid)?)
 }
 
 #[tauri::command(async)]
@@ -159,10 +160,11 @@ pub fn worktree_pr_merge(
     path: PathBuf,
     number: u64,
     method: MergeMethod,
+    head_oid: String,
 ) -> Result<(), CmdError> {
     let account = gh_account_for(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, account, |gh| {
-        merge_with(gh, &path, number, method)
+        merge_with(gh, &path, number, method, &head_oid)
     })
 }
 
@@ -286,9 +288,21 @@ mod tests {
         assert_token(&calls_of("{}", |gh| {
             let _ = merge_info_with(gh, p, 7);
         }));
-        let merged = calls_of("", |gh| merge_with(gh, p, 7, MergeMethod::Squash).unwrap());
+        let merged = calls_of("", |gh| {
+            merge_with(gh, p, 7, MergeMethod::Squash, "abc123").unwrap()
+        });
         assert_token(&merged);
-        assert_eq!(merged[0].0, ["pr", "merge", "7", "--squash"]);
+        assert_eq!(
+            merged[0].0,
+            [
+                "pr",
+                "merge",
+                "7",
+                "--squash",
+                "--match-head-commit",
+                "abc123"
+            ]
+        );
     }
 
     #[test]
@@ -302,7 +316,7 @@ mod tests {
             },
         };
         let err = run_gh(&inner, None, |gh| {
-            merge_with(gh, Path::new("."), 7, MergeMethod::Merge)
+            merge_with(gh, Path::new("."), 7, MergeMethod::Merge, "abc123")
         })
         .unwrap_err();
         assert_eq!(err.code, "merge_blocked");

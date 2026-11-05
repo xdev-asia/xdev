@@ -871,16 +871,16 @@ it("routes pull request review calls with the names Rust expects", async () => {
     const draft = { body: "b", replyTo: null, path: null, line: null, startLine: null, commit: null };
     await api.worktreePrComments("/w", 7); await api.worktreePrCommentPost("/w", 7, draft);
     await api.worktreePrHead("/w", 7); await api.worktreePrThreadResolve("/w", "T1", true); await api.worktreePrReaction("/w", "N1", "THUMBS_UP", false);
-    await api.worktreePrChecksRerun("/w", 7, true); await api.worktreePrMergeInfo("/w", 7); await api.worktreePrMerge("/w", 7, "squash");
+    await api.worktreePrChecksRerun("/w", 7, true); await api.worktreePrMergeInfo("/w", 7); await api.worktreePrMerge("/w", 7, "squash", "abc");
     expect(vi.mocked(invoke).mock.calls).toEqual([
       ["worktree_pr_comments", { path: "/w", number: 7 }], ["worktree_pr_comment_post", { path: "/w", number: 7, draft }],
       ["worktree_pr_head", { path: "/w", number: 7 }],
       ["worktree_pr_thread_resolve", { path: "/w", threadId: "T1", resolved: true }],
       ["worktree_pr_reaction", { path: "/w", subjectId: "N1", content: "THUMBS_UP", on: false }],
       ["worktree_pr_checks_rerun", { path: "/w", number: 7, failedOnly: true }],
-      ["worktree_pr_merge_info", { path: "/w", number: 7 }], ["worktree_pr_merge", { path: "/w", number: 7, method: "squash" }],
+      ["worktree_pr_merge_info", { path: "/w", number: 7 }], ["worktree_pr_merge", { path: "/w", number: 7, method: "squash", headOid: "abc" }],
     ]);
     vi.mocked(invoke).mockRejectedValueOnce({ code: "merge_blocked", detail: "draft" });
-    await expect(api.worktreePrMerge("/w", 7, "merge")).rejects.toEqual({ code: "merge_blocked", detail: "draft" });
+    await expect(api.worktreePrMerge("/w", 7, "merge", "abc")).rejects.toEqual({ code: "merge_blocked", detail: "draft" });
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });

@@ -184,6 +184,8 @@ pub struct PrMergeInfo {
     /// Allowed methods, in squash, merge, rebase order.
     pub methods: Vec<MergeMethod>,
     pub default_method: MergeMethod,
+    /// The PR head this state was read at; the merge is pinned to it.
+    pub head_oid: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -742,6 +744,8 @@ pub fn pr_merge_info(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<PrMerge
         review_decision: Option<String>,
         #[serde(default)]
         status_check_rollup: Vec<Rollup>,
+        #[serde(default)]
+        head_ref_oid: String,
     }
     #[derive(Deserialize)]
     struct Rollup {
@@ -769,7 +773,7 @@ pub fn pr_merge_info(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<PrMerge
             "view",
             &number.to_string(),
             "--json",
-            "state,isDraft,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup",
+            "state,isDraft,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,headRefOid",
         ],
         None,
     )?)?;
@@ -828,6 +832,7 @@ pub fn pr_merge_info(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<PrMerge
         checks_failed,
         methods,
         default_method,
+        head_oid: pr.head_ref_oid,
     })
 }
 
@@ -863,24 +868,43 @@ fn merge_refusal(text: &str) -> Option<MergeBlock> {
     }
 }
 
-/// Merges PR `number` with `method`. The branch is left alone (no
-/// `--delete-branch`). A refusal is mapped to `MergeBlocked`.
+/// Merges PR `number` with `method`, only if its head is still `head_oid` (the
+/// one that was reviewed): a moved head is `PrHeadMoved`. The branch is left
+/// alone (no `--delete-branch`). A refusal is mapped to `MergeBlocked`.
 pub fn pr_merge(
     gh: &dyn GhExec,
     cwd: &Path,
     number: u64,
     method: MergeMethod,
+    head_oid: &str,
 ) -> Result<(), GitError> {
+    if !(4..=64).contains(&head_oid.len()) || !head_oid.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(GitError::BadId(head_oid.to_owned()));
+    }
     let flag = match method {
         MergeMethod::Squash => "--squash",
         MergeMethod::Merge => "--merge",
         MergeMethod::Rebase => "--rebase",
     };
-    let out = gh.run(cwd, &["pr", "merge", &number.to_string(), flag], None)?;
+    let out = gh.run(
+        cwd,
+        &[
+            "pr",
+            "merge",
+            &number.to_string(),
+            flag,
+            "--match-head-commit",
+            head_oid,
+        ],
+        None,
+    )?;
     if out.status == Some(0) {
         return Ok(());
     }
     match classify(&out) {
+        GitError::Gh(text) if text.to_lowercase().contains("head branch was modified") => {
+            Err(GitError::PrHeadMoved)
+        }
         GitError::Gh(text) => {
             Err(merge_refusal(&text).map_or(GitError::Gh(text), GitError::MergeBlocked))
         }
@@ -1038,7 +1062,10 @@ mod tests {
 
     #[test]
     fn pr_comments_asks_for_the_newest_of_each_source() {
-        let fake = Fake::new(vec![out(0, REPO, ""), out(0, &page_json("false", "false"), "")]);
+        let fake = Fake::new(vec![
+            out(0, REPO, ""),
+            out(0, &page_json("false", "false"), ""),
+        ]);
         pr_comments(&fake, cwd(), 7).unwrap();
         let query = fake.calls.borrow()[1].0[3].clone();
         for source in ["reviewThreads", "comments", "reviews"] {
@@ -1253,7 +1280,10 @@ mod tests {
     #[test]
     fn an_inline_comment_on_another_commit_is_refused() {
         for commit in [Some("def456".to_owned()), None] {
-            let fake = Fake::new(vec![out(0, REPO, ""), out(0, r#"{"headRefOid":"abc123"}"#, "")]);
+            let fake = Fake::new(vec![
+                out(0, REPO, ""),
+                out(0, r#"{"headRefOid":"abc123"}"#, ""),
+            ]);
             let d = PrCommentDraft {
                 path: Some("src/a.rs".into()),
                 line: Some(10),
@@ -1560,23 +1590,58 @@ mod tests {
                 "view",
                 "7",
                 "--json",
-                "state,isDraft,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup"
+                "state,isDraft,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,headRefOid"
             ]
         );
         assert_eq!(&calls[1].0[..2], ["repo", "view"]);
     }
 
+    const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
     #[test]
-    fn merge_uses_the_method_flag_and_never_deletes_the_branch() {
+    fn merge_uses_the_method_flag_pins_the_head_and_never_deletes_the_branch() {
         for (method, flag) in [
             (MergeMethod::Squash, "--squash"),
             (MergeMethod::Merge, "--merge"),
             (MergeMethod::Rebase, "--rebase"),
         ] {
             let fake = Fake::new(vec![out(0, "", "")]);
-            pr_merge(&fake, cwd(), 7, method).unwrap();
-            assert_eq!(fake.calls.borrow()[0].0, ["pr", "merge", "7", flag]);
+            pr_merge(&fake, cwd(), 7, method, SHA).unwrap();
+            assert_eq!(
+                fake.calls.borrow()[0].0,
+                ["pr", "merge", "7", flag, "--match-head-commit", SHA]
+            );
         }
+    }
+
+    #[test]
+    fn merge_refuses_a_head_that_is_not_a_commit_id() {
+        for bad in ["", "--admin", "abc def", "xyz"] {
+            let fake = Fake::new(vec![]);
+            let err = pr_merge(&fake, cwd(), 7, MergeMethod::Squash, bad).unwrap_err();
+            assert_eq!(err.code(), "git", "{bad}");
+            assert!(fake.calls.borrow().is_empty());
+        }
+    }
+
+    #[test]
+    fn merge_maps_a_moved_head_to_a_typed_error() {
+        let fake = Fake::new(vec![out(
+            1,
+            "",
+            "X Pull request merge failed: Head branch was modified. Review and try the merge again. (HTTP 409)",
+        )]);
+        let err = pr_merge(&fake, cwd(), 7, MergeMethod::Squash, SHA).unwrap_err();
+        assert_eq!(err.code(), "pr_head_moved");
+    }
+
+    #[test]
+    fn merge_info_carries_the_head_commit() {
+        let pr = r#"{"state":"OPEN","isDraft":false,"mergeStateStatus":"CLEAN","statusCheckRollup":[],"headRefOid":"abc123"}"#;
+        assert_eq!(
+            info(pr, &repo_json("SQUASH", true, true, true)).head_oid,
+            "abc123"
+        );
     }
 
     #[test]
@@ -1600,7 +1665,7 @@ mod tests {
         ];
         for (stderr, want) in cases {
             let fake = Fake::new(vec![out(1, "", stderr)]);
-            match pr_merge(&fake, cwd(), 7, MergeMethod::Squash) {
+            match pr_merge(&fake, cwd(), 7, MergeMethod::Squash, SHA) {
                 Err(GitError::MergeBlocked(b)) => assert_eq!(b, want, "{stderr}"),
                 other => panic!("{stderr}: {other:?}"),
             }
@@ -1611,12 +1676,12 @@ mod tests {
     fn merge_failures_without_a_known_reason_stay_gh_errors() {
         let fake = Fake::new(vec![out(1, "", "network down")]);
         assert!(matches!(
-            pr_merge(&fake, cwd(), 7, MergeMethod::Squash),
+            pr_merge(&fake, cwd(), 7, MergeMethod::Squash, SHA),
             Err(GitError::Gh(m)) if m == "network down"
         ));
         let fake = Fake::new(vec![out(1, "", "run gh auth login")]);
         assert!(matches!(
-            pr_merge(&fake, cwd(), 7, MergeMethod::Squash),
+            pr_merge(&fake, cwd(), 7, MergeMethod::Squash, SHA),
             Err(GitError::GhAuth)
         ));
     }

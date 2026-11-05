@@ -596,6 +596,7 @@
   "error.comment_too_large": "The comment is too large to submit safely.",
   "error.empty_comment": "Write something before you send.",
   "error.nothing_to_rerun": "There are no GitHub Actions checks to rerun.",
+  "error.pr_head_moved": "The PR changed since you looked; refresh.",
   "error.merge_blocked": "GitHub will not merge this pull request yet.",
   "error.branch_in_use": "That branch is already checked out in another worktree.",
   "error.bad_sparse": "A folder in the sparse list isn't valid: use repo-relative paths, at most 50.",

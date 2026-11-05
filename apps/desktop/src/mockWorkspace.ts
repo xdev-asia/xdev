@@ -196,7 +196,7 @@ const COMMENT_BODY_MAX = 64 * 1024;
 
 /** The commit every mock worktree is on, and the PR head unless a seed says otherwise. */
 export const MOCK_HEAD = "1".repeat(40);
-const DEFAULT_MERGE_INFO: PrMergeInfo = { block: null, checksFailed: false, methods: ["squash", "merge", "rebase"], defaultMethod: "squash" };
+const DEFAULT_MERGE_INFO: PrMergeInfo = { block: null, checksFailed: false, methods: ["squash", "merge", "rebase"], defaultMethod: "squash", headOid: MOCK_HEAD };
 
 const DEMO_START = "5555555555555555555555555555555555555555";
 
@@ -1425,12 +1425,13 @@ export function createMockWorkspace(
       if (!pr || pr.number !== number) return reject("pr_not_found");
       return structuredClone(mergeInfo.get(path) ?? DEFAULT_MERGE_INFO);
     },
-    async worktreePrMerge(path, number) {
+    async worktreePrMerge(path, number, _method, headOid) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       const pr = prs.get(path);
       if (!pr || pr.number !== number) return reject("pr_not_found");
       const block: MergeBlock | null | undefined = mergeInfo.get(path)?.block;
       if (block) return reject("merge_blocked", block);
+      if (headOid !== (seed.prHeads?.[path] ?? MOCK_HEAD)) return reject("pr_head_moved");
       prs.set(path, { ...pr, state: "merged" });
     },
     async worktreePrOpen(path) {
