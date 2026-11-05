@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type Api, type ApiError, type IssueDetail } from "@/api";
+import { Button, Field, Menu, Popover, Textarea } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { IssueDetailView } from "./IssueDetailView";
 
@@ -131,4 +132,225 @@ it("explains a gh failure with its hint", async () => {
   view.commit();
   await flush();
   expect(view.html()).toContain(en("issues.reason.gh_auth"));
+});
+
+// ---- edit: state, labels, assignees ----
+const popover = (view: ReturnType<typeof mount>, label: string) => view.nodes().find((n) => n.type === Popover && n.props.label === label)!;
+const menuItems = (node: Node) => nodes(node).find((n) => n.type === Menu)!.props.items as { label: string; checked?: boolean; onSelect?: () => void }[];
+
+it("renders the state, labels and assignees controls once loaded", async () => {
+  const view = mount(createMockApi({}), 1);
+  view.commit();
+  expect(view.nodes().some((n) => n.type === Popover)).toBe(false);
+  await flush();
+  for (const key of ["issues.edit.close", "issues.edit.labels", "issues.edit.assignees"]) expect(popover(view, en(key))).toBeTruthy();
+  const html = view.html();
+  expect(html).toContain("bug");
+  expect(html).toContain("me");
+});
+
+it("closing as not planned sends the state edit and reloads", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const issueView = vi.fn(api.issueView);
+  const view = mount({ ...api, issueEdit, issueView } as Api, 1);
+  view.commit();
+  await flush();
+  const items = menuItems(popover(view, en("issues.edit.close")));
+  expect(items.map((i) => i.label)).toEqual([en("issues.edit.closeCompleted"), en("issues.edit.closeNotPlanned")]);
+  items[1].onSelect!();
+  await flush();
+  expect(issueEdit).toHaveBeenCalledOnce();
+  expect(issueEdit.mock.calls[0][2]).toMatchObject({ state: "closed", closeReason: "not_planned" });
+  expect(issueView).toHaveBeenCalledTimes(2);
+  expect(view.html()).toContain(en("issues.state.closed"));
+  expect(button(view, en("issues.edit.reopen"))).toBeTruthy();
+});
+
+it("a labels pick is saved as a diff when the picker closes", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  popover(view, en("issues.edit.labels")).props.trigger({})!.props.onClick();
+  await flush();
+  const items = menuItems(popover(view, en("issues.edit.labels")));
+  expect(items.map((i) => [i.label, i.checked])).toEqual([["bug", true], ["docs", false], ["ui", true]]);
+  items.find((i) => i.label === "docs")!.onSelect!();
+  menuItems(popover(view, en("issues.edit.labels"))).find((i) => i.label === "bug")!.onSelect!();
+  popover(view, en("issues.edit.labels")).props.onClose();
+  await flush();
+  expect(issueEdit.mock.calls[0][2]).toMatchObject({ addLabels: ["docs"], removeLabels: ["bug"] });
+});
+
+it("closing a picker without a change sends nothing", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  popover(view, en("issues.edit.assignees")).props.trigger({})!.props.onClick();
+  await flush();
+  popover(view, en("issues.edit.assignees")).props.onClose();
+  await flush();
+  expect(issueEdit).not.toHaveBeenCalled();
+});
+
+it("an assignee pick uses the assignable logins", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  popover(view, en("issues.edit.assignees")).props.trigger({})!.props.onClick();
+  await flush();
+  const items = menuItems(popover(view, en("issues.edit.assignees")));
+  expect(items.map((i) => i.label)).toEqual(["octo", "mona", "me"]);
+  items[0].onSelect!();
+  popover(view, en("issues.edit.assignees")).props.onClose();
+  await flush();
+  expect(issueEdit.mock.calls[0][2]).toMatchObject({ addAssignees: ["octo"], removeAssignees: [] });
+});
+
+it("a partial report shows what was not saved", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(async () => ({ failed: ["state"], error: "boom" }));
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  menuItems(popover(view, en("issues.edit.close")))[0].onSelect!();
+  await flush();
+  const html = view.html();
+  expect(html).toContain(en("issues.edit.partial", { parts: en("issues.edit.part.state") }));
+  expect(html).toContain("boom");
+});
+
+it("an edit that rejects shows its error", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(() => Promise.reject({ code: "bad_draft", message: "", detail: null }));
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  menuItems(popover(view, en("issues.edit.close")))[0].onSelect!();
+  await flush();
+  expect(view.html()).toContain(en("error.bad_draft"));
+});
+
+// ---- edit: title, body, comment ----
+const findBtn = (view: ReturnType<typeof mount>, label: string) => view.nodes().find((n) => (n.type === "button" || n.type === Button) && n.props.children === label)!;
+
+it("saving a body edit sends the body only", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  findBtn(view, en("issues.edit.body")).props.onClick();
+  const area = view.nodes().find((n) => n.type === Textarea)!;
+  expect(area.props.value).toContain("narrow window");
+  area.props.onChange({ target: { value: "New text" } });
+  findBtn(view, en("issues.edit.save")).props.onClick();
+  await flush();
+  const sent = issueEdit.mock.calls[0][2];
+  expect(sent.body).toBe("New text");
+  expect(sent.title).toBeNull();
+  expect(view.html()).toContain("<p>New text</p>");
+});
+
+it("a blank title cannot be saved, and an unchanged one sends nothing", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  findBtn(view, en("issues.edit.title")).props.onClick();
+  view.nodes().find((n) => n.type === Field)!.props.onChange({ target: { value: "  " } });
+  expect(findBtn(view, en("issues.edit.save")).props.disabled).toBe(true);
+  view.nodes().find((n) => n.type === Field)!.props.onChange({ target: { value: "Footer meter overflows" } });
+  findBtn(view, en("issues.edit.save")).props.onClick();
+  await flush();
+  expect(issueEdit).not.toHaveBeenCalled();
+});
+
+it("cancel closes the editor without sending", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  findBtn(view, en("issues.edit.title")).props.onClick();
+  findBtn(view, en("issues.edit.cancel")).props.onClick();
+  expect(view.nodes().some((n) => n.type === Field)).toBe(false);
+  expect(issueEdit).not.toHaveBeenCalled();
+});
+
+it("an empty comment disables Comment; posting reloads and clears the box", async () => {
+  const api = createMockApi({});
+  const issueComment = vi.fn(api.issueComment);
+  const view = mount({ ...api, issueComment } as Api, 1);
+  view.commit();
+  await flush();
+  expect(findBtn(view, en("issues.comment.post")).props.disabled).toBe(true);
+  view.nodes().find((n) => n.type === Textarea && n.props.label === en("issues.comment.placeholder"))!.props.onChange({ target: { value: "Hello" } });
+  expect(findBtn(view, en("issues.comment.post")).props.disabled).toBe(false);
+  findBtn(view, en("issues.comment.post")).props.onClick();
+  await flush();
+  expect(issueComment).toHaveBeenCalledWith("r1", 1, "Hello");
+  expect(view.html()).toContain(en("issues.comments", { count: 2 }));
+  expect(findBtn(view, en("issues.comment.post")).props.disabled).toBe(true);
+});
+
+it("a failed comment keeps the text and shows the error", async () => {
+  const api = createMockApi({});
+  const issueComment = vi.fn(() => Promise.reject({ code: "comment_too_large" }));
+  const view = mount({ ...api, issueComment } as Api, 1);
+  view.commit();
+  await flush();
+  view.nodes().find((n) => n.type === Textarea)!.props.onChange({ target: { value: "x" } });
+  findBtn(view, en("issues.comment.post")).props.onClick();
+  await flush();
+  expect(view.html()).toContain(en("error.comment_too_large"));
+  expect(view.nodes().find((n) => n.type === Textarea)!.props.value).toBe("x");
+});
+
+// ---- timeline ----
+it("loads the timeline only when it is opened", async () => {
+  const api = createMockApi({});
+  const issueTimeline = vi.fn(api.issueTimeline);
+  const view = mount({ ...api, issueTimeline } as Api, 1);
+  view.commit();
+  await flush();
+  expect(issueTimeline).not.toHaveBeenCalled();
+  expect(view.html()).not.toContain(en("issues.timeline.closed", { actor: "x", subject: "" }));
+  view.nodes().find((n) => n.type === "button" && n.props.children === en("issues.timeline"))!.props.onClick();
+  await flush();
+  expect(issueTimeline).toHaveBeenCalledWith("r1", 1);
+  const html = view.html();
+  expect(html).toContain(en("issues.timeline.labeled", { actor: "hubot", subject: "bug" }));
+  expect(html).toContain(en("issues.timeline.renamed", { actor: "octocat", subject: "Footer meter overflows" }));
+});
+
+it("a timeline error stays in its section", async () => {
+  const api = createMockApi({});
+  const issueTimeline = vi.fn(() => Promise.reject({ code: "gh_failed", detail: "boom" }));
+  const view = mount({ ...api, issueTimeline } as Api, 1);
+  view.commit();
+  await flush();
+  view.nodes().find((n) => n.type === "button" && n.props.children === en("issues.timeline"))!.props.onClick();
+  await flush();
+  const html = view.html();
+  expect(html).toContain("boom");
+  expect(html).toContain(en("issues.comments", { count: 1 }));
+  expect(html.match(/role="alert"/g)).toHaveLength(1);
+});
+
+it("says so when the timeline is empty", async () => {
+  const api = createMockApi({});
+  const view = mount({ ...api, issueTimeline: async () => [] } as Api, 1);
+  view.commit();
+  await flush();
+  view.nodes().find((n) => n.type === "button" && n.props.children === en("issues.timeline"))!.props.onClick();
+  await flush();
+  expect(view.html()).toContain(en("issues.timeline.empty"));
 });

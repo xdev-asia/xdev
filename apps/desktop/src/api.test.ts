@@ -608,11 +608,15 @@ it("routes pull request, project, issue create and create request calls with the
     const draft = { title: "T", body: "B" };
     await api.prsList("r", query); await api.prGet("r", 7); await api.prOpen("r", 7); await api.prBranch("r", 7); await api.prBranchDiscard("r", "pr-7");
     await api.projectsList("r"); await api.projectOpen("r", 2); await api.issueCreate("r", draft);
+    const edit = { title: "T", body: null, state: null, closeReason: null, addLabels: ["bug"], removeLabels: [], addAssignees: [], removeAssignees: [] };
+    await api.issueEdit("r", 4, edit); await api.issueComment("r", 4, "hi"); await api.issueLabels("r"); await api.issueAssignable("r"); await api.issueTimeline("r", 4);
     await api.worktreeCreate("r", "n", null); await api.worktreeCreate("r", "n", "main", { existing: "b", sparse: ["src"] });
     expect(vi.mocked(invoke).mock.calls).toEqual([
       ["prs_list", { repoId: "r", query }], ["pr_get", { repoId: "r", number: 7 }], ["pr_open", { repoId: "r", number: 7 }],
       ["pr_branch", { repoId: "r", number: 7 }], ["pr_branch_discard", { repoId: "r", branch: "pr-7" }], ["projects_list", { repoId: "r" }], ["project_open", { repoId: "r", number: 2 }],
       ["issue_create", { repoId: "r", draft }],
+      ["issue_edit", { repoId: "r", number: 4, edit }], ["issue_comment", { repoId: "r", number: 4, body: "hi" }], ["issue_labels", { repoId: "r" }],
+      ["issue_assignable", { repoId: "r" }], ["issue_timeline", { repoId: "r", number: 4 }],
       ["worktree_create", { repoId: "r", name: "n", from: null, request: null }],
       ["worktree_create", { repoId: "r", name: "n", from: "main", request: { existing: "b", sparse: ["src"] } }],
     ]);

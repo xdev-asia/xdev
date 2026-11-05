@@ -1,8 +1,8 @@
-import type { Api, ApiError, Issue, IssueDetail, PrSummary, ProjectSummary } from "./api";
+import type { Api, ApiError, Issue, IssueDetail, IssueEvent, IssueLabel, PrSummary, ProjectSummary } from "./api";
 
 type IssuesApi = Pick<
   Api,
-  "issuesList" | "issueView" | "issueResolve" | "issueOpen" | "issueCreate" | "prsList" | "prGet" | "prOpen" | "prBranch" | "prBranchDiscard" | "projectsList" | "projectOpen"
+  "issuesList" | "issueView" | "issueResolve" | "issueOpen" | "issueCreate" | "issueEdit" | "issueComment" | "issueLabels" | "issueAssignable" | "issueTimeline" | "prsList" | "prGet" | "prOpen" | "prBranch" | "prBranchDiscard" | "projectsList" | "projectOpen"
 >;
 
 /** The repo the mock's issue URLs belong to. */
@@ -38,6 +38,20 @@ const DETAILS: Record<number, Pick<IssueDetail, "body" | "comments">> = {
   3: { body: "Done in the last release.", comments: [] },
 };
 
+const LABELS: IssueLabel[] = [
+  { name: "bug", color: "d73a4a" },
+  { name: "docs", color: "0075ca" },
+  { name: "ui", color: "a2eeef" },
+];
+const ASSIGNABLE = ["octo", "mona"];
+const COMMENT_MAX = 64 * 1024;
+
+const EVENTS: IssueEvent[] = [
+  { kind: "labeled", actor: "hubot", subject: "bug", createdAt: new Date(NOW - 5 * 3_600_000).toISOString() },
+  { kind: "assigned", actor: "hubot", subject: "me", createdAt: new Date(NOW - 4 * 3_600_000).toISOString() },
+  { kind: "renamed", actor: "octocat", subject: "Footer meter overflows", createdAt: new Date(NOW - 3 * 3_600_000).toISOString() },
+];
+
 function pr(number: number, title: string, state: PrSummary["state"], head: string, author: string, hoursAgo: number, fork = false): PrSummary {
   return {
     number, title, state, head, author, fork,
@@ -65,7 +79,10 @@ const PROJECTS: ProjectSummary[] = [
 export function createMockIssues(): IssuesApi {
   // New issues of this instance, shown before the fixed ones.
   const made: Issue[] = [];
-  const all = () => [...made, ...ISSUES];
+  // Edits and comments change this instance's copy, never the fixed seeds.
+  const seeded: Issue[] = structuredClone(ISSUES);
+  const details: Record<number, Pick<IssueDetail, "body" | "comments">> = structuredClone(DETAILS);
+  const all = () => [...made, ...seeded];
   return {
     async issuesList(_repoId, query) {
       const wantClosed = query.state === "closed";
@@ -81,7 +98,7 @@ export function createMockIssues(): IssuesApi {
     async issueView(_repoId, number) {
       const found = all().find((i) => i.number === number);
       if (!found) return reject("issue_not_found");
-      return structuredClone({ issue: found, ...(DETAILS[number] ?? { body: "", comments: [] }) });
+      return structuredClone({ issue: found, ...(details[number] ?? { body: "", comments: [] }) });
     },
     async issueOpen(_repoId, number) {
       if (!all().some((i) => i.number === number)) return reject("issue_not_found");
@@ -93,6 +110,36 @@ export function createMockIssues(): IssuesApi {
       next.author = "me";
       made.unshift(next);
       return structuredClone(next);
+    },
+    async issueEdit(_repoId, number, edit) {
+      const found = all().find((i) => i.number === number);
+      if (!found) return reject("issue_not_found");
+      if (edit.title != null && (edit.title.trim() === "" || [...edit.title.trim()].length > 256)) return reject("bad_draft");
+      if ([...edit.addLabels, ...edit.removeLabels, ...edit.addAssignees, ...edit.removeAssignees].some((t) => t.startsWith("-") || t.includes("\n"))) return reject("bad_draft");
+      if (edit.state != null) found.state = edit.state;
+      if (edit.body != null) details[number] = { body: edit.body, comments: details[number]?.comments ?? [] };
+      if (edit.title != null) found.title = edit.title.trim();
+      found.labels = [...found.labels.filter((l) => !edit.removeLabels.includes(l)), ...edit.addLabels.filter((l) => !found.labels.includes(l))];
+      found.assignees = [...found.assignees.filter((a) => !edit.removeAssignees.includes(a)), ...edit.addAssignees.filter((a) => !found.assignees.includes(a))];
+      found.updatedAt = new Date(NOW).toISOString();
+      return { failed: [], error: null };
+    },
+    async issueComment(_repoId, number, body) {
+      if (!all().some((i) => i.number === number)) return reject("issue_not_found");
+      if (body.trim() === "") return reject("empty_comment");
+      if ([...body].length > COMMENT_MAX) return reject("comment_too_large");
+      const current = details[number] ?? { body: "", comments: [] };
+      details[number] = { ...current, comments: [...current.comments, { author: "me", body, createdAt: new Date(NOW).toISOString() }] };
+    },
+    async issueLabels() {
+      return structuredClone(LABELS);
+    },
+    async issueAssignable() {
+      return [...ASSIGNABLE];
+    },
+    async issueTimeline(_repoId, number) {
+      if (!all().some((i) => i.number === number)) return reject("issue_not_found");
+      return structuredClone(EVENTS);
     },
     async prsList(_repoId, query) {
       const state = query.state ?? "open";

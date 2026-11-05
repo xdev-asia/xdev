@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type ApiError, type BranchPrefixMode, type GitSettings as Git } from "@/api";
+import { Select } from "@xdev-asia/ui";
+import { toApiError, type ApiError, type BranchPrefixMode, type GitSettings as Git, type IssuesPreset } from "@/api";
+import { ISSUES_PRESETS } from "@/issues/issuesPreset";
 import { useI18n } from "@/i18n";
 import { previewPrefix } from "./branchPrefix";
 import { SettingRow, settingShown } from "./SettingRow";
@@ -220,6 +222,33 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
           onClick={() => change({ refreshLocalBaseOnCreate: !git.refreshLocalBaseOnCreate })}
         />
       </div>
+      </SettingRow>
+      <SettingRow id="git.issuesView" filter={filter}>
+        <label className="ws-field">
+          <span>{t("settings.git.issuesView")}</span>
+          <Select
+            data-field="issuesDefaultView"
+            value={git.issuesDefaultView}
+            options={ISSUES_PRESETS.map((p) => ({ value: p, label: t(`settings.git.issuesView.${p}`) }))}
+            onChange={(e) => change({ issuesDefaultView: e.target.value as IssuesPreset })}
+          />
+        </label>
+      </SettingRow>
+      <SettingRow id="git.issuesTab" filter={filter}>
+        <div className="settings-item settings-git-row">
+          <div className="settings-git-text">
+            <strong id="settings-git-issues-tab">{t("settings.git.issuesTab")}</strong>
+            <small className="settings-hint">{t("settings.git.issuesTabHint")}</small>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            className="agent-switch"
+            aria-checked={git.showIssuesTab}
+            aria-labelledby="settings-git-issues-tab"
+            onClick={() => change({ showIssuesTab: !git.showIssuesTab })}
+          />
+        </div>
       </SettingRow>
       <SettingRow id="git.autoRename" filter={filter}>
       <div className="settings-item settings-git-row">

@@ -17,6 +17,8 @@ export const DEFAULT_GIT_SETTINGS: GitSettings = {
   sourceControlGroupOrder: "changes-first",
   prBotAuthorOverrides: [],
   pullPolicy: "ff-only",
+  issuesDefaultView: "all",
+  showIssuesTab: true,
   recipes: {
     commitMessage: { ...DEFAULT_RECIPE, args: [] },
     pullRequest: { ...DEFAULT_RECIPE, args: [] },

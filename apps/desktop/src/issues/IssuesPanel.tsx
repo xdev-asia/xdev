@@ -1,11 +1,12 @@
 import { Segmented } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type Issue, type IssueDetail, type PrSummary } from "@/api";
+import { toApiError, type Api, type ApiError, type Issue, type IssueDetail, type IssuesPreset, type PrSummary } from "@/api";
 import { useI18n } from "@/i18n";
 import { ago } from "@/workspace/ago";
 import { IssueDetailView } from "./IssueDetailView";
 import { issueQuery } from "./issueStart";
+import { presetStart } from "./issuesPreset";
 import { NewIssueForm } from "./NewIssueForm";
 import { PrsList } from "./PrsList";
 import { ProjectsList } from "./ProjectsList";
@@ -17,18 +18,19 @@ type Filter = "open" | "closed";
 export type IssuesView = "issues" | "prs" | "projects";
 
 /** The GitHub issues of a repo: filters, search and one row per issue. */
-export function IssuesPanel(props: { api: Api; repoId: string; onStart?: (detail: IssueDetail) => void; /** A pull request row was clicked; without it the row opens on GitHub. */ onOpenPr?: (pr: PrSummary) => void }): JSX.Element {
+export function IssuesPanel(props: { api: Api; repoId: string; onStart?: (detail: IssueDetail) => void; /** A pull request row was clicked; without it the row opens on GitHub. */ onOpenPr?: (pr: PrSummary) => void; /** Where the panel starts; the person moves freely after that. */ initialPreset?: IssuesPreset }): JSX.Element {
   const { api, repoId, onStart } = props;
+  const [start] = useState(() => presetStart(props.initialPreset ?? "all"));
   const { t } = useI18n();
   const [state, setState] = useState<Filter>("open");
-  const [mine, setMine] = useState(false);
+  const [mine, setMine] = useState(start.mine);
   const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
   const [tick, setTick] = useState(0);
   const [issues, setIssues] = useState<Issue[] | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
-  const [view, setView] = useState<IssuesView>("issues");
+  const [view, setView] = useState<IssuesView>(start.view);
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
@@ -68,7 +70,7 @@ export function IssuesPanel(props: { api: Api; repoId: string; onStart?: (detail
     return (
       <div className="ws-issues">
         {views}
-        <PrsList api={api} repoId={repoId} searchDebounceMs={SEARCH_DEBOUNCE_MS} onOpen={props.onOpenPr} />
+        <PrsList api={api} repoId={repoId} searchDebounceMs={SEARCH_DEBOUNCE_MS} initialChip={start.chip} onOpen={props.onOpenPr} />
       </div>
     );
   }

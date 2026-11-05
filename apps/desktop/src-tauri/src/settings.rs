@@ -1486,6 +1486,39 @@ impl<'de> serde::Deserialize<'de> for SourceControlGroupOrder {
     }
 }
 
+/// Where the Issues panel opens.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum IssuesPreset {
+    #[default]
+    All,
+    Issues,
+    MyIssues,
+    Prs,
+    MyPrs,
+    Review,
+}
+
+/// An unknown value is the default, as for `TabOrder`.
+impl<'de> serde::Deserialize<'de> for IssuesPreset {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("issues") => IssuesPreset::Issues,
+            Some("my_issues") => IssuesPreset::MyIssues,
+            Some("prs") => IssuesPreset::Prs,
+            Some("my_prs") => IssuesPreset::MyPrs,
+            Some("review") => IssuesPreset::Review,
+            _ => IssuesPreset::All,
+        })
+    }
+}
+
+fn lenient_true<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::Error> {
+    lenient_or(de, true)
+}
+
 /// Settings → Git. Every field has a default, so a file from an older
 /// version, or one missing a field, still loads.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1522,6 +1555,11 @@ pub struct GitSettings {
     pub pr_bot_author_overrides: Vec<String>,
     /// How Pull and Sync combine local and remote commits.
     pub pull_policy: PullPolicy,
+    /// Where the Issues panel opens.
+    pub issues_default_view: IssuesPreset,
+    /// Show the Issues tab in the side panel.
+    #[serde(deserialize_with = "lenient_true")]
+    pub show_issues_tab: bool,
     /// The prompts behind the agent actions. A part that does not parse
     /// falls back to the defaults on its own.
     #[serde(deserialize_with = "lenient")]
@@ -1545,6 +1583,8 @@ impl Default for GitSettings {
             source_control_group_order: SourceControlGroupOrder::default(),
             pr_bot_author_overrides: Vec::new(),
             pull_policy: PullPolicy::default(),
+            issues_default_view: IssuesPreset::default(),
+            show_issues_tab: true,
             recipes: GitRecipes::default(),
         }
     }
@@ -1766,6 +1806,8 @@ mod tests {
                 source_control_group_order: SourceControlGroupOrder::StagedFirst,
                 pr_bot_author_overrides: vec!["renovate".into()],
                 pull_policy: PullPolicy::GitConfig,
+                issues_default_view: IssuesPreset::MyPrs,
+                show_issues_tab: false,
                 recipes: GitRecipes::default(),
             },
             status: StatusSettings {
@@ -2894,6 +2936,37 @@ then sum up"
         assert_eq!(bad.pull_policy, PullPolicy::FfOnly);
         let num: GitSettings = serde_json::from_str(r#"{ "pullPolicy": 3 }"#).unwrap();
         assert_eq!(num.pull_policy, PullPolicy::FfOnly);
+    }
+
+    #[test]
+    fn git_settings_defaults_issues_view_all_and_tab_shown() {
+        let git: GitSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(git.issues_default_view, IssuesPreset::All);
+        assert!(git.show_issues_tab);
+        let out = serde_json::to_string(&GitSettings::default()).unwrap();
+        assert!(out.contains(r#""issuesDefaultView":"all""#), "{out}");
+        assert!(out.contains(r#""showIssuesTab":true"#), "{out}");
+    }
+
+    #[test]
+    fn git_settings_unknown_preset_falls_back() {
+        for (text, want) in [
+            ("issues", IssuesPreset::Issues),
+            ("my_issues", IssuesPreset::MyIssues),
+            ("prs", IssuesPreset::Prs),
+            ("my_prs", IssuesPreset::MyPrs),
+            ("review", IssuesPreset::Review),
+        ] {
+            let git: GitSettings =
+                serde_json::from_str(&format!(r#"{{"issuesDefaultView":"{text}"}}"#)).unwrap();
+            assert_eq!(git.issues_default_view, want);
+        }
+        let bad: GitSettings = serde_json::from_str(r#"{"issuesDefaultView":"x"}"#).unwrap();
+        assert_eq!(bad.issues_default_view, IssuesPreset::All);
+        let num: GitSettings =
+            serde_json::from_str(r#"{"issuesDefaultView":3,"showIssuesTab":"no"}"#).unwrap();
+        assert_eq!(num.issues_default_view, IssuesPreset::All);
+        assert!(num.show_issues_tab);
     }
 
     #[test]

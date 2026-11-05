@@ -3375,6 +3375,12 @@ button.ws-tree-row:focus-visible {
   font-size: 11px;
 }
 
+.ws-issue-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .ws-issue[data-state="closed"] .ws-checks-title {
   color: var(--text-2);
 }

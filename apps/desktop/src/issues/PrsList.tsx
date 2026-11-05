@@ -15,10 +15,10 @@ export function chipQuery(chip: PrChip, search: string | null): PrQuery {
 }
 
 /** The pull requests of a repo: three filter chips, a search box and one row per pull request. */
-export function PrsList(props: { api: Api; repoId: string; searchDebounceMs: number; onOpen?: (pr: PrSummary) => void }): JSX.Element {
+export function PrsList(props: { api: Api; repoId: string; searchDebounceMs: number; initialChip?: PrChip; onOpen?: (pr: PrSummary) => void }): JSX.Element {
   const { api, repoId, onOpen } = props;
   const { t } = useI18n();
-  const [chip, setChip] = useState<PrChip>("open");
+  const [chip, setChip] = useState<PrChip>(props.initialChip ?? "open");
   const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
   const [prs, setPrs] = useState<PrSummary[] | null>(null);

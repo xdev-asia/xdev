@@ -9,6 +9,7 @@ mod conflict;
 mod diff;
 mod fork;
 mod gh;
+mod gh_issue;
 mod gh_review;
 mod history;
 mod host_url;
@@ -36,6 +37,10 @@ pub use gh::{
     issue_create, issue_list, issue_open_web, issue_view, parse_issue_ref, parse_pr_ref, pr_checks,
     pr_create, pr_get, pr_list, pr_open_number, pr_open_web, pr_view, project_list, project_open,
     repo_name, run_failed_log,
+};
+pub use gh_issue::{
+    ISSUE_TIMELINE_MAX, IssueCloseReason, IssueEdit, IssueEditReport, IssueEvent, IssueEventKind,
+    IssueLabel, issue_assignable, issue_comment, issue_edit, issue_labels, issue_timeline,
 };
 pub use gh_review::{
     COMMENT_BODY_MAX, COMMENTS_PER_SOURCE, MergeBlock, MergeMethod, PrComment, PrCommentDraft,

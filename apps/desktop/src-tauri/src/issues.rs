@@ -6,9 +6,11 @@ use std::sync::{Mutex, OnceLock};
 
 use tauri::State;
 use xdev_git::{
-    GhAccount, GhExec, GitError, Issue, IssueDetail, IssueDraft, IssueQuery, SystemGh,
-    issue_create as gh_issue_create, issue_list, issue_open_web, issue_view as gh_issue_view,
-    parse_issue_ref, repo_name,
+    GhAccount, GhExec, GitError, Issue, IssueDetail, IssueDraft, IssueEdit, IssueEditReport,
+    IssueEvent, IssueLabel, IssueQuery, SystemGh, issue_assignable as gh_issue_assignable,
+    issue_comment as gh_issue_comment, issue_create as gh_issue_create,
+    issue_edit as gh_issue_edit, issue_labels as gh_issue_labels, issue_list, issue_open_web,
+    issue_timeline as gh_issue_timeline, issue_view as gh_issue_view, parse_issue_ref, repo_name,
 };
 use xdev_workspace::{Registry, WorkspaceError};
 
@@ -71,6 +73,48 @@ fn create_issue_with(
     draft: &IssueDraft,
 ) -> Result<Issue, CmdError> {
     Ok(gh_issue_create(gh, &main_path(data, repo_id)?, draft)?)
+}
+
+fn edit_with(
+    gh: &dyn GhExec,
+    data: &Path,
+    repo_id: &str,
+    number: u64,
+    edit: &IssueEdit,
+) -> Result<IssueEditReport, CmdError> {
+    Ok(gh_issue_edit(gh, &main_path(data, repo_id)?, number, edit)?)
+}
+
+fn comment_with(
+    gh: &dyn GhExec,
+    data: &Path,
+    repo_id: &str,
+    number: u64,
+    body: &str,
+) -> Result<(), CmdError> {
+    Ok(gh_issue_comment(
+        gh,
+        &main_path(data, repo_id)?,
+        number,
+        body,
+    )?)
+}
+
+fn labels_with(gh: &dyn GhExec, data: &Path, repo_id: &str) -> Result<Vec<IssueLabel>, CmdError> {
+    Ok(gh_issue_labels(gh, &main_path(data, repo_id)?)?)
+}
+
+fn assignable_with(gh: &dyn GhExec, data: &Path, repo_id: &str) -> Result<Vec<String>, CmdError> {
+    Ok(gh_issue_assignable(gh, &main_path(data, repo_id)?)?)
+}
+
+fn timeline_with(
+    gh: &dyn GhExec,
+    data: &Path,
+    repo_id: &str,
+    number: u64,
+) -> Result<Vec<IssueEvent>, CmdError> {
+    Ok(gh_issue_timeline(gh, &main_path(data, repo_id)?, number)?)
 }
 
 fn resolve_with(
@@ -157,6 +201,73 @@ pub fn issue_create(
     let account = account_of(data, &repo_id)?;
     run_gh(&SystemGh, account, |gh| {
         create_issue_with(gh, data, &repo_id, &draft)
+    })
+}
+
+/// Changes an issue's state, labels, assignees, title or body. Every part is
+/// tried; the report names the parts that failed.
+#[tauri::command(async)]
+pub fn issue_edit(
+    state: State<'_, AppState>,
+    repo_id: String,
+    number: u64,
+    edit: IssueEdit,
+) -> Result<IssueEditReport, CmdError> {
+    let data = data_dir(&state)?;
+    let account = account_of(data, &repo_id)?;
+    run_gh(&SystemGh, account, |gh| {
+        edit_with(gh, data, &repo_id, number, &edit)
+    })
+}
+
+/// Posts a comment on an issue.
+#[tauri::command(async)]
+pub fn issue_comment(
+    state: State<'_, AppState>,
+    repo_id: String,
+    number: u64,
+    body: String,
+) -> Result<(), CmdError> {
+    let data = data_dir(&state)?;
+    let account = account_of(data, &repo_id)?;
+    run_gh(&SystemGh, account, |gh| {
+        comment_with(gh, data, &repo_id, number, &body)
+    })
+}
+
+/// The repo's labels.
+#[tauri::command(async)]
+pub fn issue_labels(
+    state: State<'_, AppState>,
+    repo_id: String,
+) -> Result<Vec<IssueLabel>, CmdError> {
+    let data = data_dir(&state)?;
+    let account = account_of(data, &repo_id)?;
+    run_gh(&SystemGh, account, |gh| labels_with(gh, data, &repo_id))
+}
+
+/// Logins an issue of the repo can be assigned to.
+#[tauri::command(async)]
+pub fn issue_assignable(
+    state: State<'_, AppState>,
+    repo_id: String,
+) -> Result<Vec<String>, CmdError> {
+    let data = data_dir(&state)?;
+    let account = account_of(data, &repo_id)?;
+    run_gh(&SystemGh, account, |gh| assignable_with(gh, data, &repo_id))
+}
+
+/// An issue's events, oldest first.
+#[tauri::command(async)]
+pub fn issue_timeline(
+    state: State<'_, AppState>,
+    repo_id: String,
+    number: u64,
+) -> Result<Vec<IssueEvent>, CmdError> {
+    let data = data_dir(&state)?;
+    let account = account_of(data, &repo_id)?;
+    run_gh(&SystemGh, account, |gh| {
+        timeline_with(gh, data, &repo_id, number)
     })
 }
 
@@ -308,6 +419,65 @@ mod tests {
         let fake = Fake::new(vec![(0, "", "")]);
         open_with(&fake, &data, "r-open", 3).unwrap();
         assert_eq!(fake.calls.borrow()[0], ["issue", "view", "3", "--web"]);
+    }
+
+    #[test]
+    fn edit_with_runs_in_main_checkout() {
+        let (_tmp, data) = fixture("r-edit");
+        let fake = Fake::new(vec![(0, "", "")]);
+        let edit = IssueEdit {
+            add_labels: vec!["bug".into()],
+            ..IssueEdit::default()
+        };
+        let report = edit_with(&fake, &data, "r-edit", 5, &edit).unwrap();
+        assert!(report.failed.is_empty());
+        assert_eq!(fake.calls.borrow()[0][..3], ["issue", "edit", "5"]);
+        let bad = IssueEdit {
+            add_labels: vec!["-x".into()],
+            ..IssueEdit::default()
+        };
+        assert_eq!(
+            edit_with(&fake, &data, "r-edit", 5, &bad).unwrap_err().code,
+            "bad_draft"
+        );
+    }
+
+    #[test]
+    fn comment_with_maps_empty_comment() {
+        let (_tmp, data) = fixture("r-comment");
+        let fake = Fake::new(vec![]);
+        let err = comment_with(&fake, &data, "r-comment", 5, "  ").unwrap_err();
+        assert_eq!(err.code, "empty_comment");
+        let big = "x".repeat(xdev_git::COMMENT_BODY_MAX + 1);
+        let err = comment_with(&fake, &data, "r-comment", 5, &big).unwrap_err();
+        assert_eq!(err.code, "comment_too_large");
+    }
+
+    #[test]
+    fn labels_and_assignable_run_in_the_main_checkout() {
+        let (_tmp, data) = fixture("r-pick");
+        let fake = Fake::new(vec![
+            (0, r#"[{"name":"bug","color":"f00"}]"#, ""),
+            (0, r#"{"nameWithOwner":"acme/app"}"#, ""),
+            (
+                0, "octo
+", "",
+            ),
+        ]);
+        assert_eq!(labels_with(&fake, &data, "r-pick").unwrap()[0].name, "bug");
+        assert_eq!(assignable_with(&fake, &data, "r-pick").unwrap(), ["octo"]);
+    }
+
+    #[test]
+    fn timeline_with_maps_not_github() {
+        let (_tmp, data) = fixture("r-time");
+        let fake = Fake::new(vec![(
+            1,
+            "",
+            "none of the git remotes configured for this repository point to a known GitHub host",
+        )]);
+        let err = timeline_with(&fake, &data, "r-time", 5).unwrap_err();
+        assert_eq!(err.code, "not_github");
     }
 
     #[test]

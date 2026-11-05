@@ -481,7 +481,7 @@ pub fn pr_comments(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<PrComment
     })
 }
 
-fn post_json(
+pub(crate) fn post_json(
     gh: &dyn GhExec,
     cwd: &Path,
     endpoint: &str,

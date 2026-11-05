@@ -37,10 +37,10 @@ use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
     AgentsSettings, AutomationsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings,
-    KeySettings, MacOptionAsAlt, NavigationSettings, OpenInSettings, OrchestrationSettings,
-    RestoreMode, SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems,
-    StatusSettings, TerminalLinkClick, TerminalSettings, Theme, UiSettings, UpdateChannel,
-    UsageSettings, XdevIdSettings,
+    IssuesPreset, KeySettings, MacOptionAsAlt, NavigationSettings, OpenInSettings,
+    OrchestrationSettings, RestoreMode, SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs,
+    StatusBarItems, StatusSettings, TerminalLinkClick, TerminalSettings, Theme, UiSettings,
+    UpdateChannel, UsageSettings, XdevIdSettings,
 };
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
@@ -68,6 +68,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     VaultSetup::export_all(cfg)?;
     VcsState::export_all(cfg)?;
     GitSettings::export_all(cfg)?;
+    IssuesPreset::export_all(cfg)?;
     Expected::export_all(cfg)?;
     xdev_core::DocEntry::export_all(cfg)?;
     xdev_core::SearchHit::export_all(cfg)?;
@@ -234,6 +235,12 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::PrFilter::export_all(cfg)?;
     xdev_git::PrQuery::export_all(cfg)?;
     xdev_git::IssueDraft::export_all(cfg)?;
+    xdev_git::IssueEdit::export_all(cfg)?;
+    xdev_git::IssueEditReport::export_all(cfg)?;
+    xdev_git::IssueCloseReason::export_all(cfg)?;
+    xdev_git::IssueLabel::export_all(cfg)?;
+    xdev_git::IssueEvent::export_all(cfg)?;
+    xdev_git::IssueEventKind::export_all(cfg)?;
     xdev_git::ProjectSummary::export_all(cfg)?;
     xdev_git::PrComment::export_all(cfg)?;
     xdev_git::PrComments::export_all(cfg)?;
