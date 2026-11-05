@@ -115,8 +115,10 @@ export function startAutomationDispatch(api: Api, host: DispatchHost): () => voi
       }
       const opened = sessions.open(e.worktree, e.profile, null, undefined, e.extraArgs.length > 0 ? e.extraArgs : undefined);
       const refused = refusal(opened);
-      const sent = sendToOpenedTab(sessions, e.worktree, opened.id, e.prompt, { timeoutMs: START_DEADLINE_MS });
-      const first = await Promise.race([sent, refused.promise.then((err) => ({ err }))]);
+      // A refusal ends the launch: a tab approved later must not get the prompt of a skipped run.
+      let gaveUp = false;
+      const sent = sendToOpenedTab(sessions, e.worktree, opened.id, e.prompt, { timeoutMs: START_DEADLINE_MS, cancelled: () => gaveUp || stopped });
+      const first = await Promise.race([sent, refused.promise.then((err) => ((gaveUp = true), { err }))]);
       refused.stop();
       if (first && "err" in first) {
         const needs = first.err.code === "needs_approval";

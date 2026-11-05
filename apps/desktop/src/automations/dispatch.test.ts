@@ -187,6 +187,19 @@ describe("startAutomationDispatch", () => {
     expect(api.__automationReports().results).toEqual([{ status: "failed", runId: "run-1", code: "needsApproval", detail: "start claude in a terminal" }]);
   });
 
+  it("does not type the prompt into a refused tab that starts later", async () => {
+    const f = fakeHost();
+    const { api } = await setup(f.host);
+    api.__automationDispatch(dispatch());
+    await flush();
+    f.refuse("tab-1", { code: "needs_approval", detail: "start claude in a terminal" });
+    await flush();
+    // The person approves in the tab afterwards: the run is already recorded as skipped.
+    await f.ready(f.tabs[0]);
+    expect(f.inputs).toEqual([]);
+    expect(api.__automationReports().results).toHaveLength(1);
+  });
+
   it("reports agentNeverStarted for another start failure and for a tab that ends before it is ready", async () => {
     const a = fakeHost();
     const first = await setup(a.host);

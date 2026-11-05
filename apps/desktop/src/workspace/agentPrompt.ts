@@ -70,16 +70,19 @@ export async function sendToAgentTab(
   return tab;
 }
 
-/** Types `text` into the tab `id` of `worktree` once it has started; null at the timeout or when it ends. */
+/**
+ * Types `text` into the tab `id` of `worktree` once it has started; null at the timeout, when it ends,
+ * or when `cancelled()` says the caller gave up meanwhile.
+ */
 export async function sendToOpenedTab(
   sessions: Sessions,
   worktree: string,
   id: string,
   text: string,
-  wait: { timeoutMs: number } = { timeoutMs: AGENT_START_MS },
+  wait: { timeoutMs: number; cancelled?: () => boolean } = { timeoutMs: AGENT_START_MS },
 ): Promise<Tab | null> {
   const tab = await ready(sessions, worktree, id, wait.timeoutMs);
-  if (!tab) return null;
+  if (!tab || wait.cancelled?.()) return null;
   await tab.client.input(pastePrompt(text));
   return tab;
 }
