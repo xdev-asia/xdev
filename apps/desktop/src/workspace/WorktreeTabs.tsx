@@ -84,6 +84,7 @@ import { useBatchLaunch } from "@/terminalSets/useBatchLaunch";
 import { openCopy, openEntry, type OpenContext } from "@/terminalSets/launch";
 import { captureEntries } from "@/terminalSets/sets";
 import { startupOf } from "@/terminalSets/startupMemory";
+import { ConversationDock } from "@/conversation/ConversationDock";
 
 // Offered while the profile view has not loaded: the built-in agents and the default shell.
 const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
@@ -1018,6 +1019,7 @@ export function WorktreeTabs(props: {
                   return () => registerTerminal(tab.id, null);
                 }}
               /></SurfaceBoundary>}
+              {tab.agent && <ConversationDock api={api} tab={tab} agentName={profileName(view, tab.profileId, t)} />}
             </div>
           );
         })}

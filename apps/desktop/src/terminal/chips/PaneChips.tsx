@@ -9,6 +9,7 @@ import { useChipPrefs, type ChipPrefs } from "./chipPrefs";
 import { useChipQuota } from "./quotaStore";
 import { useRunClocks } from "./runClocks";
 import { useContextUsage } from "./useContextUsage";
+import { canShowConversation, openConversation } from "@/conversation/conversationStore";
 
 /** The run timer: it alone re-renders every second, and only while the agent works. */
 function TimerChip({ clock, label }: { clock: RunClock; label: (running: boolean, time: string) => string }): JSX.Element {
@@ -63,6 +64,8 @@ export interface PaneChipsViewProps {
   onOpen: (open: boolean) => void;
   /** The polite announcement for the status region. */
   said: string;
+  /** Opens the tab's conversation; absent when it has none. */
+  onConversation?: () => void;
 }
 
 /**
@@ -119,6 +122,7 @@ export function PaneChipsView(props: PaneChipsViewProps): JSX.Element {
       ) : (
         chips
       )}
+      {props.onConversation && <IconButton icon="chat" label={t("conversation.button")} onClick={props.onConversation} data-testid="conversation-button" />}
       <span className="pane-note-btn">
         <IconButton icon="edit" label={t(props.hasNote ? "notes.button.filled" : "notes.button")} onClick={props.onNote} data-testid="note-button" />
         {props.hasNote && <span className="pane-note-dot" aria-hidden="true" />}
@@ -164,6 +168,7 @@ export function PaneChips(props: { api: Api; tab: Tab; narrow: boolean; hasNote:
       open={open}
       onOpen={setOpen}
       said={said}
+      onConversation={canShowConversation(tab) ? () => openConversation(tab.id) : undefined}
     />
   );
 }
