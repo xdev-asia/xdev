@@ -32,7 +32,7 @@ export function AutomationList(props: {
     );
   };
   return (
-    <table className="au-table au-list" aria-label={t("automations.list.label")}>
+    <table className="au-table au-list" role="grid" aria-label={t("automations.list.label")}>
       <thead>
         <tr>
           {header("name", t("automations.list.col.name"))}
@@ -69,7 +69,8 @@ export function AutomationList(props: {
               <td>
                 <StatusDot state={a.enabled ? "done" : "idle"} label={t(a.enabled ? "automations.list.status.enabled" : "automations.list.status.paused")} />
               </td>
-              <td className="au-actions">
+              {/* The menu acts on the row without selecting it. */}
+              <td className="au-actions" onClick={(e) => e.stopPropagation()}>
                 <MenuButton label={t("automations.actions.label", { name: a.name })} items={items} className="ws-icon-btn" action="actions">
                   <span aria-hidden="true">⋯</span>
                 </MenuButton>
