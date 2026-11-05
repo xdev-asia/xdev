@@ -32,6 +32,7 @@ import "./styles/quickCommands.css";
 import "./styles/ssh.css";
 import "katex/dist/katex.min.css";
 import "./styles/preview-files.css";
+import "./styles/paneChrome.css";
 import "./styles/diagnostics.css";
 import "./styles/mcp.css";
 import "./styles/startup.css";

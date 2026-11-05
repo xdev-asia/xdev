@@ -403,6 +403,191 @@ fn codex_line(v: CodexLine, at: i64, out: &mut Out<'_>) {
     }
 }
 
+/// How much of a conversation the model holds in mind now, read from the
+/// last usage line of a log.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextUsage {
+    /// Tokens the last request sent: new input plus cache writes and reads.
+    pub tokens: u64,
+    /// The model of that request, when the line names one.
+    pub model: Option<String>,
+    /// The model's window when the log states it (Codex does); `None` otherwise.
+    pub window: Option<u64>,
+    /// Unix ms of the line; 0 when it has no time.
+    pub at: i64,
+}
+
+/// The window of a Claude model that does not state it: 200k, or 1M for a
+/// model id marked `[1m]`. A session that already holds more than 200k tokens
+/// must be on the 1M window.
+pub fn claude_window(model: Option<&str>, tokens: u64) -> u64 {
+    const BASE: u64 = 200_000;
+    const WIDE: u64 = 1_000_000;
+    let wide = model.is_some_and(|m| m.to_ascii_lowercase().contains("[1m]"));
+    if wide || tokens > BASE { WIDE } else { BASE }
+}
+
+fn uint(v: &serde_json::Value, key: &str) -> u64 {
+    v.get(key).and_then(serde_json::Value::as_u64).unwrap_or(0)
+}
+
+/// The context usage one log line reports, or `None` for a line that carries
+/// none (or is not JSON). Claude: an `assistant` line's `message.usage`
+/// (side chains are another conversation and are skipped). Codex: an
+/// `event_msg` `token_count` line's `last_token_usage`.
+pub fn parse_context_line(agent: Agent, line: &str) -> Option<ContextUsage> {
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let at = v
+        .get("timestamp")
+        .and_then(serde_json::Value::as_str)
+        .and_then(parse_ts)
+        .unwrap_or(0);
+    match agent {
+        Agent::Claude => {
+            if v.get("type")?.as_str()? != "assistant"
+                || v.get("isSidechain").and_then(serde_json::Value::as_bool) == Some(true)
+            {
+                return None;
+            }
+            let message = v.get("message")?;
+            let usage = message.get("usage")?;
+            let tokens = uint(usage, "input_tokens")
+                + uint(usage, "cache_creation_input_tokens")
+                + uint(usage, "cache_read_input_tokens");
+            let model = message
+                .get("model")
+                .and_then(serde_json::Value::as_str)
+                .filter(|m| !m.is_empty() && !m.starts_with('<'))
+                .map(str::to_string);
+            // A synthetic reply (no model, no tokens) says nothing about the context.
+            (tokens > 0).then_some(ContextUsage {
+                tokens,
+                model,
+                window: None,
+                at,
+            })
+        }
+        Agent::Codex => {
+            if v.get("type")?.as_str()? != "event_msg" {
+                return None;
+            }
+            let payload = v.get("payload")?;
+            if payload.get("type")?.as_str()? != "token_count" {
+                return None;
+            }
+            let info = payload.get("info")?;
+            let last = info.get("last_token_usage")?;
+            let tokens = last
+                .get("total_tokens")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_else(|| uint(last, "input_tokens") + uint(last, "output_tokens"));
+            let window = info
+                .get("model_context_window")
+                .and_then(serde_json::Value::as_u64)
+                .filter(|w| *w > 0);
+            (tokens > 0).then_some(ContextUsage {
+                tokens,
+                model: None,
+                window,
+                at,
+            })
+        }
+    }
+}
+
+/// The latest context usage in `text` (log lines, oldest first).
+pub fn latest_context(agent: Agent, text: &str) -> Option<ContextUsage> {
+    text.lines()
+        .rev()
+        .find_map(|line| parse_context_line(agent, line))
+}
+
+/// The most bytes `context_usage` reads from the end of a log.
+const CONTEXT_BYTES: u64 = 1 << 20;
+
+/// The context usage at the end of one log: the last usage line in its final
+/// `CONTEXT_BYTES`. `None` when the log cannot be read or has none, which a
+/// caller shows as nothing, not as zero.
+pub fn context_usage(home: &Home, path: &Path) -> Option<ContextUsage> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let from = len.saturating_sub(CONTEXT_BYTES);
+    file.seek(SeekFrom::Start(from)).ok()?;
+    let mut buf = Vec::new();
+    file.take(CONTEXT_BYTES).read_to_end(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf);
+    // A read that began mid-file starts inside a line: drop that piece.
+    let text = if from > 0 {
+        text.split_once('\n').map_or("", |(_, rest)| rest)
+    } else {
+        &text
+    };
+    latest_context(home.agent, text)
+}
+
 #[cfg(test)]
 #[path = "transcripts_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+
+    const CLAUDE: &str = r#"{"type":"assistant","timestamp":"2026-01-02T03:04:05.000Z","message":{"model":"claude-sonnet-5-5","content":[],"usage":{"input_tokens":10,"cache_creation_input_tokens":200,"cache_read_input_tokens":3000,"output_tokens":50}}}"#;
+
+    #[test]
+    fn claude_sums_the_input_side() {
+        let u = parse_context_line(Agent::Claude, CLAUDE).unwrap();
+        assert_eq!(u.tokens, 3210);
+        assert_eq!(u.model.as_deref(), Some("claude-sonnet-5-5"));
+        assert_eq!(u.window, None);
+        assert!(u.at > 0);
+    }
+
+    #[test]
+    fn claude_skips_sidechain_user_and_empty_usage() {
+        let side = CLAUDE.replace(
+            r#"{"type":"assistant","#,
+            r#"{"type":"assistant","isSidechain":true,"#,
+        );
+        assert_eq!(parse_context_line(Agent::Claude, &side), None);
+        let user = CLAUDE.replace("\"assistant\"", "\"user\"");
+        assert_eq!(parse_context_line(Agent::Claude, &user), None);
+        let zero = r#"{"type":"assistant","message":{"model":"<synthetic>","usage":{"input_tokens":0,"output_tokens":0}}}"#;
+        assert_eq!(parse_context_line(Agent::Claude, zero), None);
+        assert_eq!(parse_context_line(Agent::Claude, "not json"), None);
+        assert_eq!(parse_context_line(Agent::Claude, "{}"), None);
+    }
+
+    #[test]
+    fn codex_reads_last_usage_and_window() {
+        let line = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":99999},"last_token_usage":{"input_tokens":900,"output_tokens":100,"total_tokens":1000},"model_context_window":258400}}}"#;
+        let u = parse_context_line(Agent::Codex, line).unwrap();
+        assert_eq!(u.tokens, 1000);
+        assert_eq!(u.window, Some(258_400));
+        let null_info = r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#;
+        assert_eq!(parse_context_line(Agent::Codex, null_info), None);
+        assert_eq!(parse_context_line(Agent::Codex, CLAUDE), None);
+    }
+
+    #[test]
+    fn latest_wins_and_unknown_is_none() {
+        let older = CLAUDE.replace("3000", "1");
+        let text = format!("{older}\nnot json\n{CLAUDE}\n{{\"type\":\"user\"}}\n");
+        assert_eq!(latest_context(Agent::Claude, &text).unwrap().tokens, 3210);
+        assert_eq!(latest_context(Agent::Claude, "{\"type\":\"user\"}\n"), None);
+        assert_eq!(latest_context(Agent::Claude, ""), None);
+    }
+
+    #[test]
+    fn window_by_model_and_size() {
+        assert_eq!(claude_window(Some("claude-sonnet-5-5"), 1000), 200_000);
+        assert_eq!(
+            claude_window(Some("claude-sonnet-5-5[1m]"), 1000),
+            1_000_000
+        );
+        assert_eq!(claude_window(None, 250_000), 1_000_000);
+        assert_eq!(claude_window(None, 0), 200_000);
+    }
+}

@@ -120,6 +120,8 @@ import type {
   ReviewBranch,
   ReviewData,
   ReviewNote,
+  Note,
+  ContextUsage,
   StageState,
   ConflictOp,
   ConflictState,
@@ -445,6 +447,8 @@ export type {
   ReviewData,
   ReviewFile,
   ReviewNote,
+  Note,
+  ContextUsage,
   StageState,
   ConflictOp,
   ConflictState,
@@ -1391,6 +1395,15 @@ export interface Api {
   agentSessionDelete(key: string): Promise<void>;
   /** The logs the last scan could not read or that were too large; at most 20 paths. */
   agentSessionsSkipped(): Promise<SkippedLogs>;
+  /** Tokens used and the model's window for an agent session (its CLI session id or `<home id>:<id>` key), read from the end of its log; `null` when unknown. */
+  agentContextUsage(session: string): Promise<ContextUsage | null>;
+  // Sticky notes, one Markdown note per tab (64 KB at most; a longer one rejects `bad_note`).
+  /** Every note, newest first. */
+  notesList(): Promise<Note[]>;
+  notesGet(tab: string): Promise<Note | null>;
+  /** Saves the note (the time is set by the store); a blank body removes it and returns `null`. */
+  notesPut(note: Note): Promise<Note | null>;
+  notesDelete(tab: string): Promise<void>;
 
   // Quick commands
   // Every saved command (settings.json `quickCommands`), global and per repo together, in order.
@@ -2240,6 +2253,11 @@ const tauriApi: Api = {
   agentSessionRevealLog: (key) => call("agent_session_reveal_log", { key }),
   agentSessionDelete: (key) => call("agent_session_delete", { key }),
   agentSessionsSkipped: () => call("agent_sessions_skipped"),
+  agentContextUsage: (session) => call("agent_context_usage", { session }),
+  notesList: () => call("notes_list"),
+  notesGet: (tab) => call("notes_get", { tab }),
+  notesPut: (note) => call("notes_put", { note }),
+  notesDelete: (tab) => call("notes_delete", { tab }),
   quickCommandsList: () => call("quick_commands_list"),
   quickCommandUpsert: (item) => call("quick_command_upsert", { item }),
   quickCommandDelete: (id) => call("quick_command_delete", { id }),

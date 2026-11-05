@@ -9,7 +9,7 @@ use ts_rs::{Config, TS};
 use xdev_automations::{Automation, AutomationInput, AutomationRun, Describe, ExtraArgsError};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
-use crate::agent_session_log::{SessionTurn, SkippedLogs};
+use crate::agent_session_log::{ContextUsage, SessionTurn, SkippedLogs};
 use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
 use crate::ai_keys::AiKeyStatus;
 use crate::app_stats::AppStatsView;
@@ -28,6 +28,7 @@ use crate::hooks::PtyHook;
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
 use crate::mcp_tools::{McpActivityView, McpHealth, McpToolView};
+use crate::notes::Note;
 use crate::open_in::OpenTarget;
 use crate::orchestration::{
     ReadTab, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome,
@@ -228,6 +229,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::ForkSyncBlock::export_all(cfg)?;
     xdev_git::LineCount::export_all(cfg)?;
     ReviewNote::export_all(cfg)?;
+    Note::export_all(cfg)?;
+    ContextUsage::export_all(cfg)?;
     xdev_workspace::DirListing::export_all(cfg)?;
     xdev_workspace::FileText::export_all(cfg)?;
     xdev_workspace::MediaKind::export_all(cfg)?;

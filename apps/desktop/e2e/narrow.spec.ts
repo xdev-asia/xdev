@@ -42,5 +42,23 @@ test("Mission Control fits at 360px", async ({ page, openApp }) => {
   expect(box && box.x >= 0 && box.x + box.width <= 360).toBe(true);
   await mission.getByRole("tab", { name: "Team map" }).click();
   await expect(mission.getByRole("button", { name: "Lead, focus tab" })).toBeVisible();
+});
+
+test("at 360px the pane chips fold behind one button and the page does not scroll", async ({ page, openApp }) => {
+  await openApp();
+  // At 360px the first-run tip covers the empty state; "Maybe later" puts it away.
+  await page.getByRole("button", { name: "Maybe later" }).click();
+  const sidebar = page.getByRole("button", { name: "Show or hide the sidebar" });
+  if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
+  await page.getByRole("button", { name: "Claude Code", exact: true }).click();
+  await page.getByRole("button", { name: "Allow and start" }).click();
+  const id = (await page.locator('.ws-tab[data-selected="true"]').getAttribute("data-tab-id"))!;
+  await page.evaluate((tab) => (window as unknown as { xdevMock: { __hook(id: string, e: string): void } }).xdevMock.__hook(tab, "prompt"), id);
+  await expect(page.getByRole("button", { name: "Pane details" })).toBeVisible();
+  await expect(page.locator('.pane-chips [data-chip="timer"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "Pane details" }).click();
+  await expect(page.getByRole("dialog", { name: "Pane details" }).locator('[data-chip="timer"]')).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Sticky note", exact: true })).toBeVisible();
   expect(await fitsWidth(page)).toBe(true);
 });

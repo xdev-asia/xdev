@@ -40,6 +40,7 @@ mod links;
 mod links_open;
 mod mcp_tools;
 mod network;
+mod notes;
 mod open_in;
 mod orch_pump;
 mod orch_skill;
@@ -135,6 +136,7 @@ pub fn run() {
         .manage(workspace::Clones::default())
         .manage(visibility::NestedScanState::default())
         .manage(review_notes::ReviewNotesLock::default())
+        .manage(notes::NotesLock::default())
         .manage(profiles::ProfilesLock::default())
         .manage(files::Searches::default())
         .manage(file_watch::FileWatches::default())
@@ -654,6 +656,11 @@ pub fn run() {
             agent_session_log::agent_session_reveal_log,
             agent_session_log::agent_session_delete,
             agent_session_log::agent_sessions_skipped,
+            agent_session_log::agent_context_usage,
+            notes::notes_list,
+            notes::notes_get,
+            notes::notes_put,
+            notes::notes_delete,
             quick_commands::quick_commands_list,
             quick_commands::quick_command_upsert,
             quick_commands::quick_command_delete,

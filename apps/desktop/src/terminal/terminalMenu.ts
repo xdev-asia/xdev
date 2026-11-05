@@ -1,6 +1,7 @@
 import { chordLabel, type ActionId } from "@/keys/keymap";
 import type { Tab } from "@/workspace/sessions";
 import type { MenuItem } from "@/ui/ContextMenu";
+import type { ChipKind, ChipPrefs } from "./chips/chipPrefs";
 import type { TerminalHandle } from "./Terminal";
 
 /** What the terminal menu acts on. */
@@ -35,6 +36,10 @@ export interface TerminalMenuContext {
   clearTitle?(): void;
   /** Copies the tab's agent session id. Absent hides Copy session ID. */
   copySessionId?(): void;
+  /** Opens the tab's sticky note. Absent hides Sticky note. */
+  openNote?(): void;
+  /** Which header chips show now, and the switch of one; absent hides the Header chips submenu. */
+  chips?: { prefs: ChipPrefs; toggle(kind: ChipKind): void };
 }
 
 /** Whether Clear pane title shows: only a title set by hand can be cleared. */
@@ -50,6 +55,12 @@ const SEP = (id: string): MenuItem => ({ id, labelKey: "", kind: "separator" });
 
 // The chord the keys registry binds to an action now (a rebound key shows too), or nothing.
 const chord = (action: ActionId): string | undefined => chordLabel(action) ?? undefined;
+
+/** The Header chips submenu: one checked row per chip that shows. */
+function chipsSubmenu(chips: NonNullable<TerminalMenuContext["chips"]>): MenuItem {
+  const row = (kind: ChipKind): MenuItem => ({ id: `chip-${kind}`, labelKey: `paneChips.menu.${kind}`, checked: chips.prefs[kind], run: () => chips.toggle(kind) });
+  return { id: "headerChips", labelKey: "paneChips.menu", children: [row("quota"), row("context"), row("timer")] };
+}
 
 /**
  * The terminal's right-click items, in the reference order (plan U2): the items that have an action
@@ -78,6 +89,9 @@ export function terminalMenuItems(ctx: TerminalMenuContext): MenuItem[] {
     { id: "copyTerminalId", labelKey: "termMenu.copyTerminalId", run: ctx.copyTerminalId },
     ...(ctx.paneId ? [{ id: "copyPaneId", labelKey: "termMenu.copyPaneId", run: ctx.copyPaneId }] : []),
     ...(ctx.copySessionId && showsCopySessionId(ctx.tab) ? [{ id: "copySessionId", labelKey: "termMenu.copySessionId", run: ctx.copySessionId }] : []),
+    ...(ctx.openNote || ctx.chips ? [SEP("sepChrome")] : []),
+    ...(ctx.openNote ? [{ id: "stickyNote", labelKey: "notes.menu.open", run: ctx.openNote }] : []),
+    ...(ctx.chips ? [chipsSubmenu(ctx.chips)] : []),
     SEP("sep4"),
     { id: "clear", labelKey: "termMenu.clearScreen", chord: chord("terminal.clear"), run: () => handle.clear() },
     { id: "reset", labelKey: "termMenu.resetTerminal", run: () => handle.reset() },

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties, JSX, ReactNode } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
-import type { PtyProfile } from "@/api";
+import type { Api, PtyProfile } from "@/api";
 import { useI18n } from "@/i18n";
 import { withChord } from "@/keys/hint";
 import { fileName } from "@/files/fileTabs";
@@ -16,6 +16,8 @@ import { beforeOf, insertAt, pastThreshold, zoneFor } from "./tabDrag";
 import { TabIndicator } from "./TabIndicator";
 import { CardPortal, HOVER_DELAY_MS, TabHoverCard, useTabHover } from "./TabHoverCard";
 import { cacheLeftMs, formatCacheLeft, useNow } from "./cacheTimer";
+import { PaneChips } from "@/terminal/chips/PaneChips";
+import { noteRuns } from "@/terminal/chips/runClocks";
 
 /** One entry of a strip: a terminal tab, or the review tab or a file tab (`tab` is null). */
 export interface StripItem {
@@ -85,6 +87,9 @@ export function hitTest(pane: string, x: number, y: number): { mark: { id: strin
   return { mark: null, over: zones && zone ? { pane: zones.getAttribute("data-dropzones")!, zone } : null };
 }
 
+/** Below this width a pane header keeps only a button for its chips. */
+export const NARROW_STRIP_PX = 520;
+
 /** The prompt cache countdown of a tab, or a "cold" mark once it ran out. */
 function CacheBadge({ left }: { left: number }): JSX.Element {
   const { t } = useI18n();
@@ -153,6 +158,14 @@ export function TabStrip(props: {
   trailing?: ReactNode;
   /** Prompt cache timers: tab id → when it settled, and the cache lifetime. Absent: none drawn. */
   cache?: { timers: ReadonlyMap<string, number>; ttlMs: number };
+  /** Draws the pane header chips (quota, context, run timer) and the note button for the front terminal tab; absent, none. */
+  api?: Api;
+  /** Tab ids that have a sticky note: they get a dot. */
+  noteTabs?: ReadonlySet<string>;
+  /** Opens the sticky note of a tab (the tab menu item and the header button). */
+  onNote?: (id: string) => void;
+  /** Opens the notes library. */
+  onNotesLibrary?: () => void;
 }): JSX.Element {
   const { items, active, groups, cache } = props;
   // One clock for the strip, running only while a timer on it still counts down.
@@ -166,6 +179,19 @@ export function TabStrip(props: {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropMark, setDropMark] = useState<{ id: string; after: boolean } | null>(null);
   const hover = useTabHover();
+  // A strip narrower than this folds its chips behind one button.
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    if (!root || typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(() => setNarrow(root.getBoundingClientRect().width < NARROW_STRIP_PX));
+    watch.observe(root);
+    return () => watch.disconnect();
+  }, [root]);
+  // The run timers follow every agent tab of this strip, front or not.
+  useEffect(() => {
+    noteRuns(items.flatMap((i) => (i.tab ? [i.tab] : [])));
+  });
   const endDrag = () => {
     press.cur = null;
     press.dragging = false;
@@ -285,11 +311,19 @@ export function TabStrip(props: {
       closeAll: () => props.onCloseAll?.(),
       }),
       ...history,
+      ...(props.onNote
+        ? [
+            { id: "sep-note", labelKey: "", kind: "separator" as const },
+            { id: "note", labelKey: "notes.menu.open", run: () => props.onNote?.(item.id) },
+            ...(props.onNotesLibrary ? [{ id: "notes-library", labelKey: "notes.menu.library", run: () => props.onNotesLibrary?.() }] : []),
+          ]
+        : []),
     ];
   };
+  const frontTab = items.find((i) => i.id === active)?.tab ?? null;
 
   return (
-    <div className="ws-tabstrip" data-pane={props.pane}>
+    <div className="ws-tabstrip" data-pane={props.pane} ref={setRoot}>
       <div className="ws-tablist" data-pane-id={props.pane} role="tablist" aria-label={t("workspace.tabs.label")}>
         {items.map((item) => {
           const tab = item.tab;
@@ -406,6 +440,7 @@ export function TabStrip(props: {
                       {/* Plain shells are not agents: no status mark. */}
                       {TabIndicator({ status: tab.agent ? tab.status : null, label: statusLabel(tab.status) })}
                       {cache && cache.timers.has(tab.id) && <CacheBadge left={cacheLeftMs(cache.timers.get(tab.id)!, stripNow, cache.ttlMs)} />}
+                      {props.noteTabs?.has(tab.id) && <span className="ws-tab-note" role="img" aria-label={t("notes.tab.dot")} title={t("notes.tab.dot")} />}
                     </>
                   ) : (
                     <>
@@ -498,6 +533,9 @@ export function TabStrip(props: {
           <ContextMenu at={{ x: context.x, y: context.y }} items={contextItems(picked)} onClose={() => setContext(null)} />
         )}
       </div>
+      {props.api && frontTab && props.onNote && (
+        <PaneChips api={props.api} tab={frontTab} narrow={narrow} hasNote={!!props.noteTabs?.has(frontTab.id)} onNote={() => props.onNote?.(frontTab.id)} />
+      )}
       {props.trailing}
       {hoverTab && hover.open && (
         <CardPortal>

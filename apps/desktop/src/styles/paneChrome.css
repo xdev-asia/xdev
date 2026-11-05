@@ -1,0 +1,158 @@
+/* The chips and the sticky note button in a pane's header, and the notes dialogs. Tokens only. */
+.pane-chips {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--x-space-1);
+  padding-inline: var(--x-space-1);
+}
+
+.pane-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x-space-1);
+  min-height: 24px;
+  padding: 0 var(--x-space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-family: var(--x-font-mono);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pane-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pane-chip[data-warn] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.pane-chip[data-running] {
+  color: var(--text-1);
+}
+
+.pane-chip-sub {
+  color: var(--x-color-muted);
+}
+
+.pane-chips-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--x-space-2);
+}
+
+.pane-note-btn {
+  position: relative;
+  display: inline-grid;
+}
+
+.pane-note-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.ws-tab-note {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-inline: 2px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.note-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+}
+
+.note-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+}
+
+.note-preview {
+  max-height: 160px;
+  overflow: auto;
+  padding: var(--x-space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+}
+
+.note-library {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+}
+
+.note-library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 50vh;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.note-library-row {
+  display: flex;
+  align-items: center;
+  gap: var(--x-space-2);
+  padding: var(--x-space-1) var(--x-space-2);
+  border-radius: var(--radius-m);
+}
+
+.note-library-row:hover {
+  background: var(--bg-3);
+}
+
+.note-library-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-1);
+  text-align: start;
+  cursor: pointer;
+}
+
+.note-library-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.note-library-title,
+.note-library-meta,
+.note-library-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-library-meta,
+.note-library-snippet {
+  color: var(--x-color-muted);
+  font-size: 11px;
+}
