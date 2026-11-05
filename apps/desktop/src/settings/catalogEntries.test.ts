@@ -55,3 +55,11 @@ it("the tray row is for Windows, the menu bar row for macOS, and the rest of the
   expect(entriesFor("mac").map((x) => x.id)).not.toContain("general.minimizeToTray");
   expect(entriesFor("win").map((x) => x.id)).toContain("general.minimizeToTray");
 });
+
+it("finds editor font", () => {
+  const entry = SETTING_ENTRIES.find((x) => x.id === "editor.fontFamily")!;
+  expect(entry.section).toBe("editor");
+  expect(entry.keywords).toEqual(expect.arrayContaining(["font", "phông"]));
+  expect(en[entry.titleKey as keyof typeof en]).toBe("Editor font family");
+  expect(vi[entry.titleKey as keyof typeof vi]).toBe("Phông chữ trình soạn thảo");
+});

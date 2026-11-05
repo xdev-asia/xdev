@@ -38,3 +38,24 @@ export function prWorkItem(pr: PrSummary): WorkItem {
 export function prWorktreeName(pr: PrSummary): string {
   return numberedName(pr.number, pr.title, "pr").replace(/^(\d+)/, "pr-$1");
 }
+
+export interface BaseRefOption {
+  name: string;
+  isDefault: boolean;
+}
+
+/**
+ * The refs a new branch can start from: the project default first (its name is "" when none is set),
+ * then every branch once, sorted, narrowed by the query and cut at `limit` rows. `typed` is the trimmed
+ * query when it is not empty and equals no name, so a tag or SHA can still be used.
+ */
+export function baseRefOptions(branches: ReviewBranch[], baseRef: string | null, query: string, limit = 30): { options: BaseRefOption[]; typed: string | null } {
+  const q = query.trim();
+  const needle = q.toLowerCase();
+  const def = baseRef ?? "";
+  const rest = [...new Set(branches.map((b) => b.name))].filter((n) => n !== def).sort((a, b) => a.localeCompare(b));
+  const all: BaseRefOption[] = [{ name: def, isDefault: true }, ...rest.map((name) => ({ name, isDefault: false }))];
+  const options = all.filter((o) => needle === "" || o.name.toLowerCase().includes(needle)).slice(0, limit);
+  const typed = q !== "" && !all.some((o) => o.name === q) ? q : null;
+  return { options, typed };
+}

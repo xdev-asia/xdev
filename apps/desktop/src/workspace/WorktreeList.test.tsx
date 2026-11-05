@@ -736,6 +736,28 @@ it("the menu of a child row has the lineage items; the parent's has Delete with 
   expect(done.nested).toEqual([a.path]);
 });
 
+it("a parent row offers Sleep with nested worktrees; it is disabled when nothing in the subtree can sleep", () => {
+  const [xdev] = repos();
+  const [a, b] = xdev.worktrees.filter(w => !w.primary);
+  const nested = { ...xdev, worktrees: xdev.worktrees.map(w => (w.path === b.path ? { ...w, parent: a.path, pinned: false } : w)) };
+  const dots = { [a.path]: "idle", [b.path]: "idle" } as typeof DOTS;
+  const slept: string[] = [];
+  const open = (sleepable?: Record<string, boolean>) => {
+    const view = harness(dots, repos, { items: [asItem(nested)], sleepable, onSleep: () => {}, onSleepNested: (w) => void slept.push(w.path) });
+    view.main(a.path).props.onContextMenu(event);
+    return view;
+  };
+  const awake = open();
+  awake.item("sleepNested")!.run!();
+  expect(slept).toEqual([a.path]);
+  expect(awake.item("sleepNested")!.disabled).toBeFalsy();
+  // A child without a nested one has no such item.
+  awake.main(b.path).props.onContextMenu(event);
+  expect(awake.item("sleepNested")).toBeUndefined();
+  expect(open({ [a.path]: false, [b.path]: true }).item("sleepNested")!.disabled).toBeFalsy();
+  expect(open({ [a.path]: false, [b.path]: false }).item("sleepNested")!.disabled).toBe(true);
+});
+
 it("project order recent puts the repo with the newest output first, in headings and project sections, and turns dragging off", () => {
   const activity = { "/code/notes": NOW - 100, "/demo/wt/xdev-elm": NOW - 1000 };
   const view = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "project", projectOrder: "recent" }), activity, onReorder: () => {} });

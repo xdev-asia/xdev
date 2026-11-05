@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { clear, click, runBulk, selectAll } from "./selection";
+import { bulkSleepable, clear, click, runBulk, selectAll } from "./selection";
 
 const order = ["a", "b", "c", "d"];
 const none = { toggle: false, range: false };
@@ -31,4 +31,10 @@ it("bulk runs one after another, stops the terminals first and reports failures"
   expect(r.ok).toEqual(["a", "b"]);
   expect(r.failed.map((f) => [f.path, f.error.code])).toEqual([["c", "worktree_dirty"]]);
   expect(r.kept).toHaveLength(1);
+});
+
+it("bulkSleepable is true when any picked worktree has an awake tab", () => {
+  expect(bulkSleepable(new Set(["/a", "/b"]), { "/a": false, "/b": true })).toBe(true);
+  expect(bulkSleepable(new Set(["/a", "/b"]), { "/a": false })).toBe(false);
+  expect(bulkSleepable([], { "/a": true })).toBe(false);
 });

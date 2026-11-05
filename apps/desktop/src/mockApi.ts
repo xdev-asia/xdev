@@ -699,6 +699,9 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     async pickFolder() {
       return DEMO_ROOT;
     },
+    async pickFolders() {
+      return [DEMO_ROOT];
+    },
     async openVault(path) {
       open = true;
       last = path;

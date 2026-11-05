@@ -561,6 +561,37 @@ describe("Sessions", () => {
     expect(live.unread(A)).toBe(false);
   });
 
+  it("marks one tab read or unread by hand", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const one = live.open(A, "claude");
+    const two = live.open(B, "claude");
+    const heard = vi.fn();
+    live.subscribe(heard);
+    live.markTabUnread(one.id);
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(live.unreadTabs().map((t) => t.id)).toEqual([one.id]);
+    expect(live.unreadTabs()[0].unreadReason).toBe("needs-you");
+    expect(live.unreadTabs()[0].unreadAt).not.toBeNull();
+    // Seeing other tabs leaves it unread; seeing it again clears it.
+    live.setSeen([two.id]);
+    expect(live.unreadTabs().map((t) => t.id)).toEqual([one.id]);
+    live.setSeen([one.id]);
+    expect(live.unreadTabs()).toEqual([]);
+    // Mark read clears it at once, and the bell count with it.
+    live.setSeen([]);
+    live.markTabUnread(two.id);
+    expect(live.unreadWorktrees()).toEqual([B]);
+    live.markTabRead(two.id);
+    expect(live.unreadTabs()).toEqual([]);
+    expect(live.unreadWorktrees()).toEqual([]);
+    // An unknown id is a no-op, and so is a repeat.
+    heard.mockClear();
+    live.markTabRead("nope");
+    live.markTabUnread("nope");
+    live.markTabRead(two.id);
+    expect(heard).not.toHaveBeenCalled();
+  });
+
   it("a title sets the name unless renamed", () => {
     const live = (sessions = new Sessions(createMockApi({})));
     const tab = live.open(A, "claude");
@@ -816,6 +847,46 @@ describe("Sessions", () => {
     expect(live.tabs(A)[0].status).toBe("idle");
     expect(heard).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("notes a program status and its progress", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.noteProgramStatus(tab.id, "working", 40, "Reading");
+    expect(live.tabs(A)[0]).toMatchObject({ status: "working", progress: 40, programMessage: "Reading" });
+    live.noteProgress(tab.id, 60);
+    expect(live.tabs(A)[0].progress).toBe(60);
+    live.noteProgress(tab.id, "keep");
+    expect(live.tabs(A)[0].progress).toBe(60);
+    live.noteProgramStatus(tab.id, "needs-you");
+    expect(live.tabs(A)[0]).toMatchObject({ status: "needs-you", progress: 60 });
+    live.noteProgramStatus(tab.id, "done");
+    expect(live.tabs(A)[0]).toMatchObject({ status: "done", progress: null });
+    live.noteProgress(tab.id, null);
+    expect(live.tabs(A)[0].progress).toBeNull();
+  });
+
+  it("a program done, failed or needs-you on an unseen tab is unread", () => {
+    for (const status of ["needs-you", "done", "failed"] as const) {
+      const live = (sessions = new Sessions(createMockApi({})));
+      const tab = live.open(A, "claude");
+      vi.useFakeTimers();
+      live.noteProgramStatus(tab.id, status);
+      // A finished turn is news once it stays finished.
+      vi.advanceTimersByTime(DONE_QUIET_MS + 10);
+      expect(live.tabs(A)[0]).toMatchObject({ status, unread: true });
+      vi.useRealTimers();
+      live.dispose();
+    }
+  });
+
+  it("program progress clears when the status turns idle, and an unknown id is a no-op", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.noteProgramStatus(tab.id, "working", 10);
+    live.noteProgramStatus(tab.id, "idle");
+    expect(live.tabs(A)[0]).toMatchObject({ status: "idle", progress: null });
+    expect(() => { live.noteProgramStatus("nope", "working", 5); live.noteProgress("nope", 5); }).not.toThrow();
   });
 
   describe("plan 4b", () => {

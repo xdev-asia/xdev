@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
+import { FontField, UI_FONT_SUGGESTIONS } from "@xdev-asia/ui";
 import { toApiError, type ApiError, type EditorSettings } from "@/api";
 import { clampEditorSettings, EDITOR_LIMITS } from "@/files/editorDefaults";
 import { getEditorSettings, setEditorSettings } from "@/files/editorSettings";
 import { useI18n } from "@/i18n";
+import { getTerminalSettings } from "@/terminal/terminalSettings";
 import { SettingRow, settingShown } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
@@ -17,6 +19,8 @@ export function EditorPage(props: SettingsSectionProps): JSX.Element {
   const [settings, setSettings] = useState<EditorSettings>(getEditorSettings);
   // A number while it is being typed in; written when it loses focus or on Enter.
   const [draft, setDraft] = useState<Partial<Record<NumberField, string>>>({});
+  // The family while it is being typed in; written on Enter or when the field loses focus.
+  const [fontDraft, setFontDraft] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError["code"]>();
 
@@ -33,6 +37,7 @@ export function EditorPage(props: SettingsSectionProps): JSX.Element {
       const stored = await api.editorSettingsPut(clampEditorSettings(next));
       setSettings(stored);
       setDraft({});
+      setFontDraft(undefined);
       setEditorSettings(stored);
     } catch (e) {
       setError(toApiError(e).code);
@@ -51,6 +56,12 @@ export function EditorPage(props: SettingsSectionProps): JSX.Element {
     const value = clampEditorSettings({ ...settings, [field]: n })[field];
     if (value === settings[field]) return drop();
     void patch({ [field]: value });
+  }
+  function saveFont(): void {
+    if (fontDraft === undefined) return;
+    const family = fontDraft.trim();
+    setFontDraft(undefined);
+    if (family !== settings.fontFamily) void patch({ fontFamily: family });
   }
   const numberInput = (field: NumberField) => (
     <input
@@ -110,6 +121,29 @@ export function EditorPage(props: SettingsSectionProps): JSX.Element {
             <span>{t("files.settings.fontSize")}</span>
             {numberInput("fontSize")}
           </label>
+        </SettingRow>
+        <SettingRow id="editor.fontFamily" filter={filter}>
+          <div className="ws-field" data-field="fontFamily">
+            <span>{t("files.settings.fontFamily")}</span>
+            <FontField
+              value={fontDraft ?? settings.fontFamily}
+              suggestions={UI_FONT_SUGGESTIONS}
+              placeholder={getTerminalSettings().fontFamily.trim() || "var(--x-font-mono)"}
+              aria-label={t("files.settings.fontFamily")}
+              disabled={busy}
+              labels={{ reset: t("files.settings.fontFamily.reset") }}
+              onChange={(next) => {
+                setFontDraft(next);
+                // Clearing goes back to the terminal font at once; typing waits for Enter or leaving the field.
+                if (next === "" && settings.fontFamily !== "") void patch({ fontFamily: "" });
+              }}
+              onBlur={saveFont}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveFont();
+              }}
+            />
+            <small className="settings-hint">{t("files.settings.fontFamily.hint")}</small>
+          </div>
         </SettingRow>
         <SettingRow id="editor.tabSize" filter={filter}>
           <label className="ws-field">

@@ -5,7 +5,7 @@ import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import en from "@/i18n/en.json";
 import viDict from "@/i18n/vi.json";
-import { AccountsView } from "./AccountsView";
+import { AccountsView, statusBadge } from "./AccountsView";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[], deps: [] as unknown[][] }));
 vi.mock("react", async (original) => ({
@@ -265,5 +265,28 @@ describe("active account", () => {
   it("has the switch strings in both languages", () => {
     for (const key of Object.keys(en).filter(k => k.startsWith("accounts.switch."))) expect(viDict).toHaveProperty(key);
     expect(Object.keys(en).filter(k => k.startsWith("accounts.switch.")).length).toBeGreaterThan(3);
+  });
+});
+
+describe("sign-in-again badge", () => {
+  const account = (state: "logged_in" | "logged_out") => ({ name: "claude-2", provider: "claude" as const, dir: "/d", status: { state, email: null, plan: null, org: null } });
+  const quota = (reason: string | null, state: "ok" | "unknown" = "unknown") => ({ name: "claude-2", state, reason, windows: [], asOf: null }) as never;
+
+  it("reads sign in again for a signed-in account with an expired quota", () => {
+    expect(statusBadge(account("logged_in"), quota("expired"))).toEqual({ key: "accounts.status.reauth", state: "reauth" });
+    expect(statusBadge(account("logged_in"), quota(null, "ok"))).toEqual({ key: "accounts.status.logged_in", state: "logged_in" });
+    expect(statusBadge(account("logged_in"), undefined)).toEqual({ key: "accounts.status.logged_in", state: "logged_in" });
+    expect(statusBadge(account("logged_out"), quota("expired"))).toEqual({ key: "accounts.status.logged_out", state: "logged_out" });
+  });
+
+  it("shows the badge and the expired reason on the card even when the quota state is not unknown", async () => {
+    const api = createMockApi({});
+    vi.spyOn(api, "quota").mockResolvedValue([quota("expired", "ok")]);
+    const view = harness(api); view.draw(); const cleanup = hooks.effects[0](); await tick();
+    const html = view.html();
+    expect(html).toContain('data-state="reauth"');
+    expect(html).toContain(translate("en", "accounts.status.reauth"));
+    expect(html).toContain(translate("en", "accounts.reason.expired"));
+    if (typeof cleanup === "function") cleanup();
   });
 });

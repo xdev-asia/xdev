@@ -105,6 +105,15 @@ describe("Sessions sleep", () => {
     expect(live.tab(next.id)?.status).toBe("idle");
   });
 
+  it("sleepWorktree without children leaves the child tabs awake", async () => {
+    const live = make();
+    agent(live, A, "a-1");
+    agent(live, B, "b-1");
+    await live.sleepWorktree(A, none);
+    expect(live.asleep(A)).toBe(true);
+    expect(live.tabs(B).some((t) => t.asleep)).toBe(false);
+  });
+
   it("sleepWorktree sleeps every tab, children on request; wakeWorktree wakes them", async () => {
     const live = make();
     agent(live, A, "a-1");

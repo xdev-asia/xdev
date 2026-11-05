@@ -56,3 +56,6 @@ export async function runBulk(paths: string[], op: (path: string) => Promise<Rem
   }
   return out;
 }
+
+/** True when at least one of `paths` has an awake tab to put to sleep (a path not in `map` counts as not sleepable). */
+export const bulkSleepable = (paths: Iterable<string>, map: Record<string, boolean>): boolean => [...paths].some((p) => map[p] === true);

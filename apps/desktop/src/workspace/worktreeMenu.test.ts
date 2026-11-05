@@ -116,6 +116,26 @@ it("offers Rename branch… after Details, for a worktree on a branch only", () 
   expect(ids(ctx().items)).not.toContain("renameBranch");
 });
 
+it("offers Sleep with nested worktrees right after Sleep, only for a parent that is awake", () => {
+  const nested = vi.fn();
+  const parent = ctx({ children: 2, onSleep: vi.fn(), onSleepNested: nested });
+  const order = ids(parent.items);
+  expect(order.indexOf("sleepNested")).toBe(order.indexOf("sleep") + 1);
+  expect(find(parent.items, "sleepNested").labelKey).toBe("sleep.menu.nested");
+  expect(find(parent.items, "sleepNested").disabled).toBeFalsy();
+  find(parent.items, "sleepNested").run?.();
+  expect(nested).toHaveBeenCalledTimes(1);
+
+  expect(ids(ctx({ children: 0, onSleep: vi.fn(), onSleepNested: nested }).items)).not.toContain("sleepNested");
+  expect(ids(ctx({ children: 2, asleep: true, onWake: vi.fn(), onSleepNested: nested }).items)).not.toContain("sleepNested");
+  expect(ids(ctx({ children: 2, onSleep: vi.fn() }).items)).not.toContain("sleepNested");
+  expect(find(ctx({ children: 2, nestedSleepable: false, onSleep: vi.fn(), onSleepNested: nested }).items, "sleepNested").disabled).toBe(true);
+  // A parent with no awake tab still offers the nested item, because a child may be awake.
+  const quiet = ctx({ children: 1, sleepable: false, onSleep: vi.fn(), onSleepNested: nested });
+  expect(ids(quiet.items)).not.toContain("sleep");
+  expect(ids(quiet.items)).toContain("sleepNested");
+});
+
 it("offers Sleep on an awake worktree and Wake on a sleeping one, also on the primary checkout", () => {
   const sleep = vi.fn();
   const wake = vi.fn();

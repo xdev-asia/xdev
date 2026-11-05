@@ -53,6 +53,7 @@
 
 /* States */
 .account-state { border: 1px solid transparent; }
+.badge[data-state="reauth"] { color: var(--x-color-warn); background: var(--x-color-warn-soft); border-color: var(--x-color-warn-line); }
 .account-state[data-state="ok"] { color: var(--x-color-ok); background: color-mix(in srgb, var(--x-color-ok) 14%, transparent); }
 .account-state[data-state="reserve"] { color: var(--x-color-warn); background: var(--x-color-warn-soft); border-color: var(--x-color-warn-line); }
 .account-state[data-state="full"] { color: var(--x-color-danger); background: var(--x-color-danger-soft); }

@@ -11,12 +11,15 @@ export interface TitleRule {
 }
 
 /**
- * Titles the CLIs are known to set, and what each says. Empty on purpose: the Task 1 spike did not
- * record real titles from the installed `claude` and `codex` (print mode sets none), so no rule can
- * be stated as fact yet. Add a row only for a title string seen on a real interactive launch.
- * Titles count only for a pane that has no hook data (see `status.ts`).
+ * Glyphs the CLIs put in the terminal title: a Braille spinner frame or a quarter circle while a turn
+ * runs, and a leading U+2733 for a resting claude. Titles count only for a pane that has no hook data
+ * (see `status.ts`).
  */
-export const TITLE_RULES: readonly TitleRule[] = [];
+export const TITLE_RULES: readonly TitleRule[] = [
+  { cli: "claude", match: /[\u{2800}-\u{28FF}\u{25D0}-\u{25D3}]/u, status: "working" },
+  { cli: "codex", match: /[\u{2800}-\u{28FF}\u{25D0}-\u{25D3}]/u, status: "working" },
+  { cli: "claude", match: /^\u{2733}/u, status: "idle" },
+];
 
 /** The status a title says for a CLI, or null when no rule matches (or the tab runs no known CLI). */
 export function titleStatus(cli: TabCli, title: string, rules: readonly TitleRule[] = TITLE_RULES): TitleStatus | null {

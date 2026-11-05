@@ -45,6 +45,7 @@ export type StatusEvent =
   | { kind: "exit"; code: number | null }
   | { kind: "hook"; event: HookEvent; at: number; detail?: HookDetail | null }
   | { kind: "title"; status: "working" | "needs-you" | "idle"; at: number }
+  | { kind: "program"; status: TabStatus; at: number }
   | { kind: "seen"; at: number };
 
 /** Output this soon after a keystroke is the terminal echoing it, not work. */
@@ -141,6 +142,11 @@ function raw(s: StatusState, e: StatusEvent): StatusState {
       // Fresh hook data outranks titles on a pane whose launch reports hooks.
       if (s.hooked && s.caps.turnDone) return s;
       // An idle title says nothing new about a tab that waits on the person.
+      if (e.status === "idle" && waiting(s.status)) return s;
+      return { ...s, status: e.status };
+    case "program":
+      // The program said it itself (OSC 7501); hooks still outrank it, as they do a title.
+      if (s.hooked && s.caps.turnDone) return s;
       if (e.status === "idle" && waiting(s.status)) return s;
       return { ...s, status: e.status };
     case "seen":

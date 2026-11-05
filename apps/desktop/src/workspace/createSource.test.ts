@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { PrSummary, WorktreeView } from "@/api";
-import { localBranches, prWorkItem, prWorktreeName, sparseDirs } from "./createSource";
+import type { PrSummary, ReviewBranch, WorktreeView } from "@/api";
+import { baseRefOptions, localBranches, prWorkItem, prWorktreeName, sparseDirs } from "./createSource";
 
 const pr = (patch: Partial<PrSummary> = {}): PrSummary => ({
   number: 12,
@@ -55,5 +55,45 @@ describe("pull request helpers", () => {
     expect(prWorktreeName(pr({ title: "!!!" }))).toBe("pr-12");
     expect(prWorktreeName(pr({ title: "Đổi màu nền" }))).toBe("pr-12-doi-mau-nen");
     expect(prWorktreeName(pr({ title: "a".repeat(80) })).length).toBeLessThanOrEqual(43);
+  });
+});
+
+describe("baseRefOptions", () => {
+  const b = (name: string, remote = false): ReviewBranch => ({ name, remote });
+  const names = (o: { name: string }[]) => o.map((x) => x.name);
+
+  it("puts the default first and flags it", () => {
+    const { options } = baseRefOptions([b("alpha"), b("main"), b("beta")], "main", "");
+    expect(options[0]).toEqual({ name: "main", isDefault: true });
+    expect(names(options)).toEqual(["main", "alpha", "beta"]);
+    expect(options.filter((o) => o.isDefault)).toHaveLength(1);
+  });
+
+  it("keeps a local and a remote name apart but drops the same name twice", () => {
+    const { options } = baseRefOptions([b("main"), b("origin/main", true), b("dev"), b("dev", true)], null, "");
+    expect(names(options)).toEqual(["", "dev", "main", "origin/main"]);
+  });
+
+  it("sorts with localeCompare", () => {
+    const { options } = baseRefOptions([b("zed"), b("alpha"), b("mid")], null, "");
+    expect(names(options.slice(1))).toEqual(["alpha", "mid", "zed"]);
+  });
+
+  it("filters by a case-insensitive substring", () => {
+    const { options } = baseRefOptions([b("feat/Login"), b("main"), b("fix/login-bug")], "main", "LOGIN");
+    expect(names(options)).toEqual(["feat/Login", "fix/login-bug"]);
+  });
+
+  it("limits to 30 rows, the default included", () => {
+    const many = Array.from({ length: 50 }, (_, i) => b(`b${String(i).padStart(2, "0")}`));
+    const { options } = baseRefOptions(many, "main", "");
+    expect(options).toHaveLength(30);
+    expect(options[0].isDefault).toBe(true);
+  });
+
+  it("offers the typed text when no name matches exactly", () => {
+    expect(baseRefOptions([b("main")], "main", " v1.2 ").typed).toBe("v1.2");
+    expect(baseRefOptions([b("main")], "main", "main").typed).toBeNull();
+    expect(baseRefOptions([b("main")], "main", "  ").typed).toBeNull();
   });
 });

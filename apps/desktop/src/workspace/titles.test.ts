@@ -1,11 +1,18 @@
 import { expect, it } from "vitest";
 import { TITLE_RULES, titleStatus, type TitleRule } from "./titles";
 
-it("title rules map recorded titles", () => {
-  // No title was recorded from a real launch yet, so nothing matches by default.
-  expect(TITLE_RULES).toEqual([]);
-  expect(titleStatus("claude", "anything")).toBeNull();
-  // The matching itself, with rules given here.
+it("title rules map glyphs to a status per CLI", () => {
+  expect(TITLE_RULES.length).toBeGreaterThan(0);
+  expect(titleStatus("claude", "⠋ Fixing")).toBe("working");
+  expect(titleStatus("codex", "⠋ Fixing")).toBe("working");
+  expect(titleStatus("codex", "◐ x")).toBe("working");
+  expect(titleStatus("claude", "✳ Claude")).toBe("idle");
+  expect(titleStatus("codex", "✳ Claude")).toBeNull();
+  expect(titleStatus("claude", "plain title")).toBeNull();
+  expect(titleStatus(null, "⠋ x")).toBeNull();
+});
+
+it("matching uses the rules given", () => {
   const rules: TitleRule[] = [
     { cli: "claude", match: /^working/, status: "working" },
     { cli: "codex", match: /waiting$/, status: "needs-you" },
@@ -13,7 +20,5 @@ it("title rules map recorded titles", () => {
   expect(titleStatus("claude", "working on it", rules)).toBe("working");
   expect(titleStatus("codex", "working on it", rules)).toBeNull();
   expect(titleStatus("codex", "still waiting", rules)).toBe("needs-you");
-  // An unknown title, or a tab with no known CLI, says nothing.
   expect(titleStatus("claude", "vim main.rs", rules)).toBeNull();
-  expect(titleStatus(null, "working", rules)).toBeNull();
 });

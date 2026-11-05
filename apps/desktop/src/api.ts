@@ -749,6 +749,8 @@ export interface Api {
   // Oldest first.
   squadEvents(id: string): Promise<SquadEvent[]>;
   pickFolder(): Promise<string | null>;
+  // A native dialog that takes one or more folders; empty when cancelled.
+  pickFolders(): Promise<string[]>;
   // A native file dialog limited to `extensions` (no dot); null when cancelled.
   pickFile(extensions: string[]): Promise<string | null>;
   // Imported terminal schemes (`xdev-terminal-theme` files under the data dir), by name.
@@ -999,6 +1001,8 @@ export interface Api {
   // Against the commit the worktree started from.
   worktreeChanges(path: string): Promise<WorktreeChange[]>;
   worktreeFileDiff(path: string, file: string): Promise<WorktreeFileDiff>;
+  /** A file at HEAD and on disk now; the base for change markers. */
+  worktreeFileHead(path: string, file: string): Promise<WorktreeFileDiff>;
   // The new commit's id, or null when none of `files` had a change. Rejects with `empty_message`.
   worktreeCommit(path: string, files: string[], message: string): Promise<string | null>;
   // Line counts against the start ref (against HEAD for the primary checkout), untracked files included.
@@ -1586,6 +1590,10 @@ const tauriApi: Api = {
     const picked = await open({ directory: true });
     return typeof picked === "string" ? picked : null;
   },
+  async pickFolders() {
+    const picked = await open({ directory: true, multiple: true });
+    return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
+  },
   async pickFile(extensions) {
     const picked = await open({ multiple: false, directory: false, filters: [{ name: "", extensions }] });
     return typeof picked === "string" ? picked : null;
@@ -1741,6 +1749,7 @@ const tauriApi: Api = {
   sidebarPrefsPut: (prefs) => call("sidebar_prefs_put", { prefs }),
   worktreeChanges: (path) => call("worktree_changes", { path }),
   worktreeFileDiff: (path, file) => call("worktree_file_diff", { path, file }),
+  worktreeFileHead: (path, file) => call("worktree_file_head", { path, file }),
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
   worktreeStat: (path) => call("worktree_stat", { path }),
   worktreeShip: (path) => call("worktree_ship", { path }),

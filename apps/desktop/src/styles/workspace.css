@@ -262,7 +262,31 @@
   overflow-y: auto;
 }
 
+.ws-bell-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ws-bell-toggle {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.ws-bell-toggle:hover,
+.ws-bell-toggle:focus-visible {
+  background: var(--bg-3);
+}
+
 .ws-bell-row {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -298,6 +322,7 @@
 }
 
 .ws-bell-state,
+.ws-bell-reason,
 .ws-bell-age {
   flex-shrink: 0;
   color: var(--text-3);
@@ -1912,6 +1937,35 @@ button.ws-tree-row:focus-visible {
 
 .ws-field input.ws-mono {
   font-family: var(--x-font-mono);
+}
+
+/* The "Branch from" button of the create dialog, in the look of the inputs above and below it. */
+.ws-field .x-popover-anchor {
+  display: block;
+}
+
+.ws-base-ref {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font: inherit;
+  font-family: var(--x-font-mono);
+  font-weight: 400;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* The search list fits a 360px window. */
+.ws-base-ref-pop {
+  width: min(360px, calc(100vw - 2 * var(--x-space-4)));
+  text-align: left;
 }
 
 /* The delete confirm, plain and forced: dark text on danger, legible in both modes. */
@@ -3811,3 +3865,11 @@ button.ws-tree-row:focus-visible {
   padding: 0 8px;
   font-size: 11px;
 }
+
+/* The pane a jump (a notification click, the bell or activity row) lands on: a 1px accent outline that fades. */
+.ws-tab-pane[data-flash] { animation: ws-pane-flash 900ms ease-out; }
+@keyframes ws-pane-flash {
+  from { outline: 1px solid var(--x-color-accent); outline-offset: -1px; }
+  to { outline: 1px solid transparent; outline-offset: -1px; }
+}
+@media (prefers-reduced-motion: reduce) { .ws-tab-pane[data-flash] { animation: none; } }

@@ -28,6 +28,7 @@ import { recentFiles } from "@/search/recentFiles";
 import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
+import { addFoldersNotice, addRepoFolders } from "./addFolders";
 import { livePortsByWorktree, stopFromCard } from "./livePorts";
 import type { LivePort } from "./livePorts";
 import { endpoint } from "./PortsChip";
@@ -35,6 +36,7 @@ import { startAutoRename } from "./autoRename";
 import { startAutoTabTitle } from "./autoTabTitle";
 import { startAutoSleep } from "./autoSleep";
 import { startKeepAwakeReport } from "@/status/keepAwake";
+import { flash } from "./flash";
 import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
@@ -43,7 +45,8 @@ import { getNavigationSettings, setNavigationSettings, useNavigationSettings } f
 import { SettingsView } from "@/settings/SettingsView";
 import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
-import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
+import { getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
+import { admits } from "./attention";
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
 import { ActivityFeed } from "@/activity/feed";
@@ -114,7 +117,7 @@ import { worktreeTarget } from "./groups";
 import { WorktreeList } from "./WorktreeList";
 import { NameDialog } from "./NameDialog";
 import { flattenRepos, keptByRepo } from "./sidebarModel";
-import { clear as clearPicked, click as pickClick, runBulk, selectAll, type BulkResult, type Selection } from "./selection";
+import { bulkSleepable, clear as clearPicked, click as pickClick, runBulk, selectAll, type BulkResult, type Selection } from "./selection";
 import { BulkBar } from "./BulkBar";
 import { BulkRemoveDialog } from "./BulkRemoveDialog";
 import { ReviewBranchesDialog } from "./ReviewBranchesDialog";
@@ -684,7 +687,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   // The bell lists the unread tabs and the taskbar badge counts the unread worktrees, both only for the
   // events that are switched on (and none with the master switch off).
-  const counted = (tab: Tab) => eventOn(statusSettings, tab.unreadReason ?? "needs-you");
+  const counted = (tab: Tab) => admits(tab.unreadReason, statusSettings);
   const unreadTabs = (sessions?.unreadTabs() ?? []).filter(counted);
   const unreadCount = statusSettings.enabled ? (sessions?.unreadWorktrees(counted).length ?? 0) : 0;
   useEffect(() => {
@@ -731,6 +734,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return;
       const pane = [...document.querySelectorAll<HTMLElement>(".ws-tab-pane")].find((el) => el.dataset.tab === tab.id);
       pane?.querySelector<HTMLElement>(".xterm-helper-textarea")?.focus();
+      flash(pane ?? null);
     }, 0);
   }
   live.repos = repos;
@@ -1040,15 +1044,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   async function addRepoFolder(): Promise<void> {
     setAdding(false);
     setNotice(undefined);
-    const path = await api.pickFolder().catch(() => null);
-    if (!path) return;
-    try {
-      const repo = await api.repoAdd(path);
-      await load();
-      if (repo.worktrees[0]) select(repo.worktrees[0]);
-    } catch (e) {
-      setNotice(toApiError(e).code);
-    }
+    const paths = await api.pickFolders().catch(() => [] as string[]);
+    if (paths.length === 0) return;
+    const result = await addRepoFolders(api, paths);
+    await load();
+    const first = result.added[0]?.worktrees[0];
+    if (first) select(first);
+    const notice = addFoldersNotice(result, paths.length);
+    if (notice === null) return;
+    if ("code" in notice) setNotice(notice.code);
+    else pushToast({ text: t("addProject.openFolders.partial", notice.toast) });
   }
 
   async function sidebarCall(run: () => Promise<unknown>): Promise<boolean> {
@@ -1736,7 +1741,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               </span>
             )}
           </button>
-          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
+          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onToggleRead={(tab) => (tab.unread ? sessions?.markTabRead(tab.id) : sessions?.markTabUnread(tab.id))} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
         </div>
         <HelpButton onPick={pickHelp} />
         <button
@@ -1861,6 +1866,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 const pin = !all.filter((w) => picked.paths.has(w.path)).every((w) => w.pinned);
                 void bulkEach((path) => api.worktreePin(path, pin));
               }}
+              canSleep={bulkSleepable(picked.paths, sleepableMap)}
+              onSleep={() => void Promise.all([...picked.paths].map((p) => sessions?.sleepWorktree(p, sessionFallback(api))))}
               onStatus={(status: WorkStatus) => void bulkEach((path) => api.worktreeDetails(path, { status }))}
               onClear={() => setPicked(clearPicked())}
             />
@@ -1930,7 +1937,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               unread={unreadMap}
               asleep={asleepMap}
               sleepable={sleepableMap}
-              onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
+              onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api))}
+              onSleepNested={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
               onWake={(wt) => [wt.path, ...all.filter((c) => c.parent === wt.path).map((c) => c.path)].forEach((p) => sessions?.wakeWorktree(p))}
               onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
               onMarkRead={(wt) => sessions?.markRead(wt.path)}
@@ -2243,6 +2251,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         version={pkg.version}
         onOpenUsage={openUsage}
         onManageAccounts={openAccounts}
+        onUsageSettings={() => openSettings("usage")}
         onUseAccount={(provider, name) =>
           void api.accountActivate(provider, name).catch((e) => pushToast({ text: t("accounts.switch.failed", { code: toApiError(e).code }) }))
         }
