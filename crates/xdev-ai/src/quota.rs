@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -140,11 +141,101 @@ pub fn pick(
         .map(|(_, name)| name.clone())
 }
 
-fn highest(windows: &[QuotaWindow]) -> Option<f64> {
+/// Percent used in the account's tightest window; `None` when unknown.
+pub fn highest(windows: &[QuotaWindow]) -> Option<f64> {
     windows
         .iter()
         .filter_map(|w| w.utilization)
         .max_by(f64::total_cmp)
+}
+
+/// The windows quota alerts watch.
+pub const ALERT_WINDOWS: [&str; 2] = ["five_hour", "seven_day"];
+
+/// An account crossed one of its provider's thresholds in one window.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaAlert {
+    pub provider: Provider,
+    pub account: String,
+    /// `five_hour` or `seven_day`.
+    pub window: String,
+    pub threshold: u8,
+    pub utilization: f64,
+}
+
+/// The thresholds each account's windows already alerted for, so every
+/// window raises each threshold once until it resets.
+#[derive(Debug, Default)]
+pub struct AlertLog {
+    seen: HashMap<(String, String), Seen>,
+}
+
+#[derive(Debug)]
+struct Seen {
+    resets_at: Option<String>,
+    fired: Vec<u8>,
+}
+
+impl AlertLog {
+    /// The alerts `quota`'s latest reading raises. Thresholds crossed
+    /// together raise one alert, for the highest. A window resets when its
+    /// reset time moves (compared to the minute, so a reading that only
+    /// differs in seconds is the same window) or its usage falls below a
+    /// threshold it alerted for.
+    pub fn check(
+        &mut self,
+        provider: Provider,
+        quota: &Quota,
+        thresholds: &[u8],
+    ) -> Vec<QuotaAlert> {
+        let mut alerts = Vec::new();
+        for window in &quota.windows {
+            if !ALERT_WINDOWS.contains(&window.key.as_str()) {
+                continue;
+            }
+            let Some(used) = window.utilization else {
+                continue;
+            };
+            let seen = self
+                .seen
+                .entry((quota.name.clone(), window.key.clone()))
+                .or_insert_with(|| Seen {
+                    resets_at: window.resets_at.clone(),
+                    fired: Vec::new(),
+                });
+            let minute =
+                |at: &Option<String>| at.as_deref().map(|t| t.get(..16).unwrap_or(t).to_owned());
+            if minute(&seen.resets_at) != minute(&window.resets_at) {
+                seen.fired.clear();
+                seen.resets_at = window.resets_at.clone();
+            }
+            seen.fired.retain(|t| used >= f64::from(*t));
+            let crossed: Vec<u8> = thresholds
+                .iter()
+                .copied()
+                .filter(|t| used >= f64::from(*t) && !seen.fired.contains(t))
+                .collect();
+            let Some(top) = crossed.iter().copied().max() else {
+                continue;
+            };
+            seen.fired.extend(crossed);
+            alerts.push(QuotaAlert {
+                provider,
+                account: quota.name.clone(),
+                window: window.key.clone(),
+                threshold: top,
+                utilization: used,
+            });
+        }
+        alerts
+    }
+
+    /// Forgets an account, so it alerts afresh if it comes back.
+    pub fn forget(&mut self, account: &str) {
+        self.seen.retain(|(name, _), _| name != account);
+    }
 }
 
 #[cfg(test)]
@@ -230,5 +321,112 @@ mod tests {
             Err(ProbeError::Timeout)
         });
         assert_eq!(q.reason, Some(Reason::NoSessions));
+    }
+
+    fn reading(five: f64, resets: &str) -> Quota {
+        Quota {
+            name: "a".into(),
+            state: QuotaState::Ok,
+            reason: None,
+            windows: vec![
+                QuotaWindow {
+                    key: "five_hour".into(),
+                    utilization: Some(five),
+                    resets_at: Some(resets.into()),
+                },
+                QuotaWindow {
+                    key: "seven_day".into(),
+                    utilization: Some(10.0),
+                    resets_at: Some("2026-11-10T00:00:00Z".into()),
+                },
+                QuotaWindow {
+                    key: "seven_day_opus".into(),
+                    utilization: Some(99.0),
+                    resets_at: None,
+                },
+            ],
+            as_of: None,
+        }
+    }
+
+    fn fired(log: &mut AlertLog, q: &Quota) -> Vec<(String, u8)> {
+        log.check(Provider::Claude, q, &[80, 95])
+            .into_iter()
+            .map(|a| (a.window, a.threshold))
+            .collect()
+    }
+
+    const AT: &str = "2026-11-06T15:00:00.120Z";
+
+    #[test]
+    fn each_threshold_alerts_once_per_window() {
+        let mut log = AlertLog::default();
+        assert!(fired(&mut log, &reading(50.0, AT)).is_empty());
+        assert_eq!(
+            fired(&mut log, &reading(81.0, AT)),
+            [("five_hour".into(), 80)]
+        );
+        assert!(fired(&mut log, &reading(85.0, AT)).is_empty());
+        assert_eq!(
+            fired(&mut log, &reading(96.0, AT)),
+            [("five_hour".into(), 95)]
+        );
+        assert!(fired(&mut log, &reading(100.0, AT)).is_empty());
+    }
+
+    #[test]
+    fn thresholds_crossed_together_raise_the_highest_once() {
+        let mut log = AlertLog::default();
+        assert_eq!(
+            fired(&mut log, &reading(97.0, AT)),
+            [("five_hour".into(), 95)]
+        );
+        assert!(fired(&mut log, &reading(98.0, AT)).is_empty());
+    }
+
+    #[test]
+    fn a_reset_window_alerts_again() {
+        let mut log = AlertLog::default();
+        assert_eq!(fired(&mut log, &reading(81.0, AT)).len(), 1);
+        // Same window, read a moment later: the reset time differs in
+        // seconds only.
+        assert!(fired(&mut log, &reading(82.0, "2026-11-06T15:00:00.480Z")).is_empty());
+        // The next window, already past 80% by the next reading.
+        assert_eq!(
+            fired(&mut log, &reading(83.0, "2026-11-06T20:00:00Z")),
+            [("five_hour".into(), 80)]
+        );
+        // Usage that falls back under a threshold also means a reset.
+        assert!(fired(&mut log, &reading(5.0, "2026-11-06T20:00:00Z")).is_empty());
+        assert_eq!(
+            fired(&mut log, &reading(81.0, "2026-11-06T20:00:00Z")).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn windows_and_accounts_are_kept_apart() {
+        let mut log = AlertLog::default();
+        let mut q = reading(81.0, AT);
+        q.windows[1].utilization = Some(90.0);
+        assert_eq!(
+            fired(&mut log, &q),
+            [("five_hour".into(), 80), ("seven_day".into(), 80)]
+        );
+        q.name = "b".into();
+        assert_eq!(fired(&mut log, &q).len(), 2);
+        log.forget("a");
+        q.name = "a".into();
+        assert_eq!(fired(&mut log, &q).len(), 2);
+    }
+
+    #[test]
+    fn unknown_usage_raises_nothing() {
+        let mut log = AlertLog::default();
+        let mut q = reading(0.0, AT);
+        q.windows[0].utilization = None;
+        assert!(fired(&mut log, &q).is_empty());
+        assert_eq!(highest(&q.windows), Some(99.0));
+        assert_eq!(highest(&[]), None);
     }
 }
