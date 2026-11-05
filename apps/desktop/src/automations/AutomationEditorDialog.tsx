@@ -40,6 +40,7 @@ export function AutomationEditorDialog(props: {
     return props.template ? applyTemplate(blank, props.template, t) : blank;
   });
   const [cronError, setCronError] = useState<ScheduleProblem | null>(null);
+  const [advanced, setAdvanced] = useState(false);
   const [extraError, setExtraError] = useState<ExtraArgsError | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -78,6 +79,8 @@ export function AutomationEditorDialog(props: {
 
   async function save(): Promise<void> {
     setAttempted(true);
+    // A problem in Advanced is shown there: open it, in case it is collapsed.
+    if (problem === "freshSession" || problem === "extraArgs") setAdvanced(true);
     if (problem !== null || saving) return;
     setSaving(true);
     const input = buildInput(draft, { timezone, dtstart: automation?.dtstart ?? Date.now(), enabled: automation?.enabled ?? true });
@@ -87,7 +90,10 @@ export function AutomationEditorDialog(props: {
       props.onSaved(saved);
     } catch (e) {
       const refused = extraArgsErrorOf(e);
-      if (refused) setExtraError(refused);
+      if (refused) {
+        setExtraError(refused);
+        setAdvanced(true);
+      }
       else pushToast({ text: t("automations.toast.saveFailed", { code: toApiError(e).code }) });
       setSaving(false);
     }
@@ -209,7 +215,7 @@ export function AutomationEditorDialog(props: {
             <SchedulePicker draft={draft.schedule} onChange={(schedule) => set({ schedule })} cronError={cronError} timezone={timezone} />
             <GraceField value={draft.grace} onChange={(grace) => set({ grace })} />
             <PrecheckFields command={draft.precheckCommand} timeout={draft.precheckTimeout} onChange={(p) => set({ precheckCommand: p.command, precheckTimeout: p.timeout })} />
-            <details className="au-advanced">
+            <details className="au-advanced" open={advanced} onToggle={(e) => setAdvanced(e.currentTarget.open)}>
               <summary>{t("automations.editor.advanced")}</summary>
               <ExtraArgsField value={draft.extraArgs} conflict={conflict} error={extraError} onChange={(extraArgs) => set({ extraArgs })} onUseFresh={() => set({ reuseSession: false })} />
               {draft.mode === "new_per_run" && (
@@ -226,7 +232,7 @@ export function AutomationEditorDialog(props: {
             </details>
           </div>
         </div>
-        {attempted && problem !== null && problem !== "freshSession" && (
+        {attempted && problem !== null && (
           <FieldMessage tone="error" id="au-editor-problem">
             {problemMessage(problem, t)}
           </FieldMessage>

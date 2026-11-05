@@ -160,6 +160,9 @@ it("offers fresh sessions when extra arguments meet a reused session, and does n
   expect(field.props.conflict).toBe(true);
   submit(m.all());
   expect(create).not.toHaveBeenCalled();
+  // The conflict is shown even with Advanced collapsed: Advanced opens, and the footer says why.
+  expect(m.all().find((n) => n.type === "details")!.props.open).toBe(true);
+  expect(textOf(m.all().find((n) => n.props.id === "au-editor-problem")!)).toBe("Extra arguments require a fresh session for every run.");
   field.props.onUseFresh();
   expect(find(m.all(), ExtraArgsField).props.conflict).toBe(false);
   submit(m.all());
