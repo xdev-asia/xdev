@@ -105,6 +105,7 @@ import { QuitDialog } from "./QuitDialog";
 import { AboutDialog } from "./AboutDialog";
 import { checkForUpdates, HelpButton, type HelpPick, runHelpPick } from "./HelpMenu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { SshAuthPrompts } from "@/components/SshAuthDialog";
 import { runMenuAction } from "@/shell/menuActions";
 import { useShellLabels } from "@/shell/shellLabels";
 import { askQuit, guardClose, installCloseGuard, type QuitAsk, type QuitChoice } from "./quitGuard";
@@ -2346,6 +2347,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         onOpenSshTerminal={current && sessions ? (alias) => void sessions.open(current.path, `${SSH_SHELL_PREFIX}${alias}`, null, null) : undefined}
         hidden={view === "docs"}
       />
+      <SshAuthPrompts api={api} />
 
       {creating && repos && (
         <CreateWorktreeDialog

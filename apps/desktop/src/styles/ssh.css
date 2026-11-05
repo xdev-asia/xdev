@@ -79,3 +79,17 @@
   max-height: min(360px, 60vh);
   overflow-y: auto;
 }
+
+/* The sign-in dialog of a kept connection: ssh's own prompt above the answer. */
+.ssh-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ssh-auth-prompt {
+  margin: 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
