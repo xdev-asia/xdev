@@ -6,7 +6,7 @@ import { ownAccount } from "./ownAccount";
 
 // Where `ownAccount` lives to keep it free of the api import; callers may still take it from here.
 export { ownAccount };
-import { addTab, leaves, paneOf, pinFirst, removeTab, replaceTab, single, splitPane, type PaneDir, type PaneLayout } from "./paneTree";
+import { addTab, leaves, paneOf, pinFirst, removeTab, replaceTab, setPaneTabs, single, splitPane, type PaneDir, type PaneLayout } from "./paneTree";
 import { LAYOUT_VERSION, fromSnapshot, toSnapshot, type LayoutSnapshot, restoredAccount, type RestoreOptions, type RestoreReport, type SessionFallback, type TabSnapshot, type WorktreeSnapshot } from "./layoutSnapshot";
 import { DONE_QUIET_MS, INTERRUPT_MS, NO_CAPS, STALE_MS, capsFor, isInterrupt, start, step, worktreeDot, type Caps, type StatusEvent, type StatusState, type TabStatus } from "./status";
 
@@ -103,6 +103,22 @@ const busy = (tab: Tab): boolean => tab.agent && (tab.status === "working" || ta
 
 const asks = (status: TabStatus): status is Exclude<Attention, "bell"> =>
   status === "needs-you" || status === "done" || status === "failed";
+
+/** The edge of a pane a dragged tab is dropped on. */
+export type DropZone = "left" | "right" | "top" | "bottom";
+
+/**
+ * Moves `id` in `tabs` to sit before `before` (null: to the end). Same reference when the order
+ * does not change or an id is unknown.
+ */
+export function reorderTabs(tabs: readonly string[], id: string, before: string | null): readonly string[] {
+  const from = tabs.indexOf(id);
+  if (from < 0 || id === before || (before !== null && !tabs.includes(before))) return tabs;
+  const rest = tabs.filter((t) => t !== id);
+  const to = before === null ? rest.length : rest.indexOf(before);
+  const next = [...rest.slice(0, to), id, ...rest.slice(to)];
+  return next.every((t, i) => t === tabs[i]) ? tabs : next;
+}
 
 /** The CLI of a built-in profile id, for callers that have no profile view. */
 export function cliOf(profileId: PtyProfile): TabCli {
@@ -807,6 +823,40 @@ export class Sessions {
     const pane = paneOf(layout, id)!;
     const without = removeTab(layout, id);
     if (without) this.setLayout(entry.tab.worktree, splitPane(without, pane, dir, id));
+  }
+
+  /** Moves a tab before `before` (null: last) inside its own pane; pinned tabs stay first. Persists with the layout. */
+  reorderTab(id: string, before: string | null): void {
+    const worktree = this.entries.get(id)?.tab.worktree ?? this.worktreeOfLayoutTab(id);
+    const layout = worktree ? this.layouts.get(worktree) : undefined;
+    const pane = layout && paneOf(layout, id);
+    if (!worktree || !layout || !pane) return;
+    const leaf = leaves(layout).find((n) => n.id === pane);
+    if (!leaf || leaf.kind !== "leaf") return;
+    const moved = setPaneTabs(layout, pane, [...reorderTabs(leaf.tabs, id, before)]);
+    this.setLayout(worktree, pinFirst(moved, pane, (t) => this.entries.get(t)?.tab.pinned ?? false));
+  }
+
+  /** Drops a tab on an edge of `pane`: it leaves its pane and opens a new one on that side. */
+  dropToSplit(worktree: string, id: string, pane: string, zone: DropZone): void {
+    const layout = this.layouts.get(worktree);
+    if (!layout || !paneOf(layout, id)) return;
+    const own = paneOf(layout, id) === pane;
+    if (own && (this.stripOfLayout(layout, id)?.length ?? 0) < 2) return;
+    const without = removeTab(layout, id);
+    if (!without) return;
+    const next = splitPane(without, pane, zone === "left" || zone === "right" ? "right" : "down", id, zone === "left" || zone === "top");
+    if (next !== without) this.setLayout(worktree, next);
+  }
+
+  private worktreeOfLayoutTab(id: string): string | null {
+    for (const [path, layout] of this.layouts) if (paneOf(layout, id)) return path;
+    return null;
+  }
+
+  private stripOfLayout(layout: PaneLayout, id: string): string[] | null {
+    const leaf = leaves(layout).find((n) => n.kind === "leaf" && n.tabs.includes(id));
+    return leaf && leaf.kind === "leaf" ? leaf.tabs : null;
   }
 
   /** Whether `moveToSplit` would move the tab: it shares its pane with another tab. */

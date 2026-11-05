@@ -54,7 +54,7 @@ import { bodyStyle, PaneView, paneRects } from "./PaneView";
 import { CommitView, type CommitAsk } from "./CommitView";
 import { cliOf, ownAccount, type Sessions, type Tab, type TabCli } from "./sessions";
 import type { SetupGate } from "./setupGate";
-import { TabStrip, type MenuGroup, type StripItem } from "./TabStrip";
+import { TabStrip, type MenuGroup, type StripItem, type TabDrag } from "./TabStrip";
 import { AgentPicker } from "./AgentPicker";
 import { cycleTab, mruOrder, nthTab } from "./tabNav";
 import { TabTitleDialog } from "./TabTitleDialog";
@@ -142,6 +142,7 @@ export function WorktreeTabs(props: {
   const [walk] = useState(() => ({ current: null as { list: string[]; at: number; timer: ReturnType<typeof setTimeout> } | null }));
   // The pane whose `+` menu is open.
   const [menuPane, setMenuPane] = useState<string | null>(null);
+  const [drag, setDrag] = useState<TabDrag | null>(null);
   // The pane whose agent picker is open.
   const [pickerPane, setPickerPane] = useState<string | null>(null);
   // A close that waits for a yes: what it asks about, and what to do on confirm; null when nothing waits.
@@ -631,6 +632,9 @@ export function WorktreeTabs(props: {
         }
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
         onMoveToSplit={(id, dir) => (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id) ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
+        onReorder={(id, before) => sessions.reorderTab(id, before)}
+        onDragTab={setDrag}
+        onDropZone={(id, pane, zone) => sessions.dropToSplit(worktree, id, pane, zone)}
         onPin={(id, pinned) => sessions.setPinned(id, pinned)}
         onCopyTabId={(id) => void copyText(id)}
         onChangeTitle={(id) => setTitling(id)}
@@ -687,6 +691,7 @@ export function WorktreeTabs(props: {
             onFocus={(pane) => layout.focused !== pane && setLayout(focusPane(layout, pane))}
             onResize={(split, sizes) => setLayout(resize(layout, split, sizes))}
             onEqualize={() => setLayout(equalize(layout))}
+            tabDrag={drag}
           />
         )}
         {tabs.map((tab) => {

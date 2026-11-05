@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties, JSX, ReactNode } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import type { PtyProfile } from "@/api";
@@ -11,7 +11,10 @@ import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import type { Tab, TabColor } from "./sessions";
 import { tabColorVar, tabMenuItems } from "./tabMenu";
 import type { TabStatus } from "./status";
-import { StatusGlyph } from "./StatusGlyph";
+import type { DropZone } from "./sessions";
+import { beforeOf, insertAt, pastThreshold, zoneFor } from "./tabDrag";
+import { TabIndicator } from "./TabIndicator";
+import { CardPortal, HOVER_DELAY_MS, TabHoverCard, useTabHover } from "./TabHoverCard";
 import { cacheLeftMs, formatCacheLeft, useNow } from "./cacheTimer";
 
 /** One entry of a strip: a terminal tab, or the review tab or a file tab (`tab` is null). */
@@ -31,6 +34,55 @@ export interface MenuGroup {
   ids: PtyProfile[];
   /** The group ends with the "Agent…" item that opens the picker. */
   picker?: boolean;
+}
+
+/** What a drag in a strip tells its owner: the tab and the pane zone under the pointer. */
+export interface TabDrag {
+  id: string;
+  over: { pane: string; zone: DropZone } | null;
+}
+
+interface PressState {
+  id: string;
+  x: number;
+  y: number;
+  pointerId: number;
+  mark: { id: string; after: boolean } | null;
+  over: { pane: string; zone: DropZone } | null;
+}
+
+/**
+ * Middle-click handlers of a tab: they close it through `close`, the same path as the close button
+ * (so its confirm dialogs run). Pinned tabs have no close button and ignore the middle button too.
+ * Mouse-down on the middle button is cancelled so the webview does not start autoscroll.
+ */
+export function middleClick(id: string, pinned: boolean, close: (id: string) => void) {
+  return {
+    onMouseDown: (e: { button: number; preventDefault(): void }) => {
+      if (e.button === 1) e.preventDefault();
+    },
+    onAuxClick: (e: { button: number; preventDefault(): void }) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      if (!pinned) close(id);
+    },
+  };
+}
+
+/** What the pointer is over during a tab drag: a spot in a strip, or a zone of a pane body. */
+export function hitTest(pane: string, x: number, y: number): { mark: { id: string; after: boolean } | null; over: { pane: string; zone: DropZone } | null } {
+  const el = document.elementFromPoint(x, y);
+  const list = el?.closest(".ws-tablist");
+  if (list && list.getAttribute("data-pane-id") === pane) {
+    const boxes = Array.from(list.querySelectorAll("[data-tab-id]")).map((t) => {
+      const r = t.getBoundingClientRect();
+      return { id: t.getAttribute("data-tab-id")!, left: r.left, width: r.width };
+    });
+    return { mark: insertAt(boxes, x), over: null };
+  }
+  const zones = el?.closest("[data-dropzones]");
+  const zone = zones ? zoneFor(zones.getBoundingClientRect(), x, y) : null;
+  return { mark: null, over: zones && zone ? { pane: zones.getAttribute("data-dropzones")!, zone } : null };
 }
 
 /** The prompt cache countdown of a tab, or a "cold" mark once it ran out. */
@@ -69,6 +121,12 @@ export function TabStrip(props: {
   onSplit: (dir: PaneDir) => void;
   /** Moves a tab of this pane into a new pane beside it. */
   onMoveToSplit: (id: string, dir: PaneDir) => void;
+  /** A tab of this pane was dropped before `before` (null: at the end) of the strip. */
+  onReorder?: (id: string, before: string | null) => void;
+  /** A tab drag started (its id) or ended (null); the pane area shows drop zones meanwhile. */
+  onDragTab?: (drag: TabDrag | null) => void;
+  /** A tab was dropped on an edge zone of a pane. */
+  onDropZone?: (id: string, pane: string, zone: DropZone) => void;
   onPin: (id: string, pinned: boolean) => void;
   onCopyTabId: (id: string) => void;
   /** Opens the title dialog for a tab. */
@@ -92,6 +150,29 @@ export function TabStrip(props: {
   // The tab context menu: which tab, and where the pointer was.
   const [context, setContext] = useState<{ id: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [press] = useState<{ cur: PressState | null; dragging: boolean; suppress: boolean }>(() => ({ cur: null, dragging: false, suppress: false }));
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropMark, setDropMark] = useState<{ id: string; after: boolean } | null>(null);
+  const hover = useTabHover();
+  const endDrag = () => {
+    press.cur = null;
+    press.dragging = false;
+    setDragId(null);
+    setDropMark(null);
+    props.onDragTab?.(null);
+  };
+  // Escape cancels a drag in progress; the release that follows is no click.
+  useEffect(() => {
+    if (!dragId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      press.suppress = true;
+      endDrag();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [dragId]);
+  const cardId = `ws-tab-card-${props.pane}`;
 
   const name = (tab: Tab) => profileName(view, tab.profileId, t);
   // What the strip shows: the terminal's own title once it set one, else the profile.
@@ -126,6 +207,7 @@ export function TabStrip(props: {
     </button>
   );
 
+  const hoverTab = hover.open ? (items.find((i) => i.id === hover.open!.id)?.tab ?? null) : null;
   const picked = context ? items.find((i) => i.id === context.id) : null;
   const canSplitTab = items.length > 1;
   const strip = items.flatMap((i) => (i.tab ? [i.tab] : []));
@@ -177,7 +259,7 @@ export function TabStrip(props: {
 
   return (
     <div className="ws-tabstrip" data-pane={props.pane}>
-      <div className="ws-tablist" role="tablist" aria-label={t("workspace.tabs.label")}>
+      <div className="ws-tablist" data-pane-id={props.pane} role="tablist" aria-label={t("workspace.tabs.label")}>
         {items.map((item) => {
           const tab = item.tab;
           const selected = item.id === active;
@@ -189,6 +271,49 @@ export function TabStrip(props: {
               data-pinned={tab?.pinned || undefined}
               data-color={tab && tab.color !== "none" ? tab.color : undefined}
               style={tab && tab.color !== "none" ? ({ "--ws-tab-color": `var(${tabColorVar(tab.color)!})` } as CSSProperties) : undefined}
+              data-dragging={dragId === item.id || undefined}
+              data-drop={dropMark?.id === item.id ? (dropMark.after ? "after" : "before") : undefined}
+              data-tab-id={item.id}
+              data-pane-id={props.pane}
+              onPointerDown={(e) => {
+                if (e.button !== 0 || !props.onReorder || renaming === item.id || (e.target as Element).closest(".ws-tab-close")) return;
+                press.suppress = false;
+                press.cur = { id: item.id, x: e.clientX, y: e.clientY, pointerId: e.pointerId, mark: null, over: null };
+              }}
+              onPointerMove={(e) => {
+                const p = press.cur;
+                if (!p || e.pointerId !== p.pointerId) return;
+                if (!press.dragging) {
+                  if (!pastThreshold(p, e.clientX, e.clientY)) return;
+                  press.dragging = true;
+                  e.currentTarget.setPointerCapture?.(e.pointerId);
+                  hover.hide();
+                  setDragId(p.id);
+                }
+                const h = hitTest(props.pane, e.clientX, e.clientY);
+                p.mark = h.mark && h.mark.id !== p.id ? h.mark : null;
+                p.over = h.over;
+                setDropMark(p.mark);
+                props.onDragTab?.({ id: p.id, over: p.over });
+              }}
+              onPointerUp={(e) => {
+                const p = press.cur;
+                if (!p || e.pointerId !== p.pointerId) return;
+                if (press.dragging) {
+                  press.suppress = true;
+                  if (p.over) props.onDropZone?.(p.id, p.over.pane, p.over.zone);
+                  else if (p.mark) props.onReorder?.(p.id, beforeOf(items.map((i) => i.id), p.mark));
+                }
+                endDrag();
+              }}
+              onPointerCancel={endDrag}
+              onClickCapture={(e) => {
+                if (!press.suppress) return;
+                press.suppress = false;
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              {...middleClick(item.id, !!tab?.pinned, props.onClose)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 props.onMenu(false);
@@ -222,6 +347,11 @@ export function TabStrip(props: {
                       : undefined
                   }
                   title={tab?.title ?? item.file?.rel ?? item.preview?.rel ?? (item.commit ? t("commitView.tab", { id: item.commit.id.slice(0, 7) }) : undefined)}
+                  aria-describedby={tab && hover.open?.id === item.id ? cardId : undefined}
+                  onMouseEnter={tab ? (e) => hover.show(item.id, e.currentTarget, HOVER_DELAY_MS) : undefined}
+                  onMouseLeave={tab ? hover.hide : undefined}
+                  onFocus={tab ? (e) => hover.show(item.id, e.currentTarget, 0) : undefined}
+                  onBlur={tab ? hover.hide : undefined}
                   onClick={() => props.onSelect(item.id)}
                   onDoubleClick={() => tab && setRenaming(item.id)}
                 >
@@ -243,7 +373,7 @@ export function TabStrip(props: {
                         </span>
                       )}
                       {/* Plain shells are not agents: no status mark. */}
-                      {StatusGlyph({ status: tab.agent ? tab.status : null, label: statusLabel(tab.status) })}
+                      {TabIndicator({ status: tab.agent ? tab.status : null, label: statusLabel(tab.status) })}
                       {cache && cache.timers.has(tab.id) && <CacheBadge left={cacheLeftMs(cache.timers.get(tab.id)!, stripNow, cache.ttlMs)} />}
                     </>
                   ) : (
@@ -325,6 +455,16 @@ export function TabStrip(props: {
         )}
       </div>
       {props.trailing}
+      {hoverTab && hover.open && (
+        <CardPortal>
+          <TabHoverCard
+            id={cardId}
+            at={hover.open}
+            labels={{ agent: t("workspace.tabs.card.agent"), status: t("workspace.tabs.card.status"), cwd: t("workspace.tabs.card.cwd") }}
+            data={{ title: shownName(hoverTab), agent: name(hoverTab), status: statusLabel(hoverTab.status), cwd: hoverTab.worktree }}
+          />
+        </CardPortal>
+      )}
     </div>
   );
 }
