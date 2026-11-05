@@ -883,4 +883,8 @@
   .settings-body {
     padding: 16px 12px;
   }
+
+  .settings-item {
+    flex-wrap: wrap;
+  }
 }
