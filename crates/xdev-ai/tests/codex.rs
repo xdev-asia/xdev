@@ -40,10 +40,31 @@ fn child_codex_status() {
     println!("RESULT:{}", serde_json::to_string(&got).unwrap());
 }
 
-fn child(envs: &[(&str, OsString)]) -> Value {
+#[test]
+#[ignore = "run by a parent test in a child process"]
+fn child_codex_quota() {
+    let dir = PathBuf::from(std::env::var_os("XDEV_TEST_ACCOUNT_DIR").expect("run by a parent"));
+    let got = quota(&entry(dir), &signed_in(), 30);
+    println!("RESULT:{}", serde_json::to_string(&got).unwrap());
+}
+
+/// `quota` with no live probe: the child has no Codex binary, so it reads the
+/// session log, and the test never starts the user's own `codex`.
+fn quota_offline(home: &Path) -> Value {
+    let missing = home.join("no-such-codex");
+    child(
+        "child_codex_quota",
+        &[
+            ("XDEV_CODEX_BIN", missing.into_os_string()),
+            ("XDEV_TEST_ACCOUNT_DIR", home.as_os_str().to_owned()),
+        ],
+    )
+}
+
+fn child(test: &str, envs: &[(&str, OsString)]) -> Value {
     let mut cmd = Command::new(std::env::current_exe().unwrap());
     cmd.args([
-        "child_codex_status",
+        test,
         "--exact",
         "--ignored",
         "--nocapture",
@@ -105,12 +126,12 @@ fn status_through_fake_codex() {
         ("XDEV_TEST_ACCOUNT_DIR", dir.clone().into_os_string()),
     ];
     assert_eq!(
-        child(&envs),
+        child("child_codex_status", &envs),
         json!({ "state": "logged_out", "email": null, "plan": null, "org": null })
     );
     fs::write(dir.join("signed-in"), "").unwrap();
     assert_eq!(
-        child(&envs),
+        child("child_codex_status", &envs),
         json!({ "state": "logged_in", "email": null, "plan": null, "org": null })
     );
 }
@@ -120,18 +141,24 @@ fn status_without_codex() {
     let tmp = TempDir::new().unwrap();
     let dir = tmp.path().join("home");
     fs::create_dir_all(&dir).unwrap();
-    let got = child(&[
-        ("XDEV_CODEX_BIN", tmp.path().join("missing").into()),
-        ("XDEV_TEST_ACCOUNT_DIR", dir.clone().into()),
-    ]);
+    let got = child(
+        "child_codex_status",
+        &[
+            ("XDEV_CODEX_BIN", tmp.path().join("missing").into()),
+            ("XDEV_TEST_ACCOUNT_DIR", dir.clone().into()),
+        ],
+    );
     assert_eq!(got["state"], "no_codex");
 
     let empty = tmp.path().join("empty");
     fs::create_dir(&empty).unwrap();
-    let got = child(&[
-        ("PATH", empty.into()),
-        ("XDEV_TEST_ACCOUNT_DIR", dir.into()),
-    ]);
+    let got = child(
+        "child_codex_status",
+        &[
+            ("PATH", empty.into()),
+            ("XDEV_TEST_ACCOUNT_DIR", dir.into()),
+        ],
+    );
     assert_eq!(got["state"], "no_codex");
 }
 
@@ -144,7 +171,10 @@ fn status_finds_codex_on_path() {
     let dir = tmp.path().join("home");
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("signed-in"), "").unwrap();
-    let got = child(&[("PATH", bin.into()), ("XDEV_TEST_ACCOUNT_DIR", dir.into())]);
+    let got = child(
+        "child_codex_status",
+        &[("PATH", bin.into()), ("XDEV_TEST_ACCOUNT_DIR", dir.into())],
+    );
     assert_eq!(got["state"], "logged_in");
 }
 
@@ -196,9 +226,9 @@ fn quota_reads_last_rate_limits_of_newest_session() {
     );
     session(home, "2026/11/01/rollout-old.jsonl", &older, ago(86_400));
 
-    let got = quota(&entry(home.to_path_buf()), &signed_in(), 30);
+    let got = quota_offline(home);
     assert_eq!(
-        serde_json::to_value(&got).unwrap(),
+        got,
         json!({
             "name": "cx", "state": "ok", "reason": null,
             "asOf": "2026-11-02T08:01:30.123Z",
@@ -223,9 +253,9 @@ fn quota_keeps_unknown_window_lengths_and_rolls_over_past_resets() {
     );
     session(home, "2026/11/02/rollout-a.jsonl", &line, ago(5));
 
-    let got = quota(&entry(home.to_path_buf()), &signed_in(), 30);
+    let got = quota_offline(home);
     assert_eq!(
-        serde_json::to_value(&got).unwrap(),
+        got,
         json!({
             "name": "cx", "state": "reserve", "reason": null,
             "asOf": "2026-11-02T09:00:00Z",
@@ -257,17 +287,17 @@ fn quota_skips_sessions_without_limits_and_falls_back_to_mtime() {
         modified,
     );
 
-    let got = quota(&entry(home.to_path_buf()), &signed_in(), 30);
-    assert_eq!(got.state, xdev_ai::QuotaState::Full);
-    assert_eq!(got.as_of.as_deref(), Some("2026-11-02T06:13:20Z"));
+    let got = quota_offline(home);
+    assert_eq!(got["state"], "full");
+    assert_eq!(got["asOf"], "2026-11-02T06:13:20Z");
 }
 
 #[test]
 fn quota_without_sessions_is_unknown() {
     let tmp = TempDir::new().unwrap();
-    let got = quota(&entry(tmp.path().to_path_buf()), &signed_in(), 30);
+    let got = quota_offline(tmp.path());
     assert_eq!(
-        serde_json::to_value(&got).unwrap(),
+        got,
         json!({ "name": "cx", "state": "unknown", "reason": "no_sessions", "asOf": null, "windows": [] })
     );
 

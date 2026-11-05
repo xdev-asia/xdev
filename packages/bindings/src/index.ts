@@ -32,6 +32,7 @@ export type { CommitRef } from "./CommitRef";
 export type { ConflictOp } from "./ConflictOp";
 export type { ConflictState } from "./ConflictState";
 export type { ContextUse } from "./ContextUse";
+export type { Cost } from "./Cost";
 export type { CreateProject } from "./CreateProject";
 export type { CreateRequest } from "./CreateRequest";
 export type { Created } from "./Created";
