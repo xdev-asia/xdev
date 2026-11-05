@@ -5,6 +5,7 @@ import { translate } from "@/i18n";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { createMockApi } from "@/mockApi";
 import { buildCreate, CreateWorktreeDialog, PreviewHint } from "./CreateWorktreeDialog";
+import { BaseRefField } from "./BaseRefField";
 import { parseItem } from "./workItemInput";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -239,13 +240,13 @@ it("the Name tab chooses a new or an existing branch; the new one keeps the base
   const radio = () => m.all().find((n) => n.props.name === "ws-create-branch-mode")!;
   expect(radio().props.value).toBe("new");
   expect(m.branchSelect()).toBeUndefined();
-  expect(m.all().some((n) => n.props.placeholder === m.repo.baseRef)).toBe(true);
+  expect(m.all().some((n) => n.type === BaseRefField)).toBe(true);
   radio().props.onChange("existing");
   m.redraw();
   await flush();
   m.redraw();
   expect(m.branchSelect()).toBeDefined();
-  expect(m.all().some((n) => n.props.placeholder === m.repo.baseRef)).toBe(false);
+  expect(m.all().some((n) => n.type === BaseRefField)).toBe(false);
   m.branchSelect()!.props.onChange({ target: { value: "keep-me" } });
   m.redraw();
   m.typeName("birch");
@@ -253,4 +254,41 @@ it("the Name tab chooses a new or an existing branch; the new one keeps the base
   expect(m.onCreate.mock.calls[0][4]).toEqual({ existing: "keep-me", sparse: [] });
   m.tab("branch");
   expect(m.all().some((n) => n.props.name === "ws-create-branch-mode")).toBe(false);
+});
+
+it("the Name tab shows the base ref field, loads the branches for it and sends the picked ref", async () => {
+  const branches = vi.fn(async () => BRANCHES);
+  const m = mount({ branches });
+  await flush();
+  m.redraw();
+  expect(branches).toHaveBeenCalledWith(m.repo.path);
+  const field = () => m.all().find((n) => n.type === BaseRefField)!;
+  expect(field().props.branches).toEqual(BRANCHES);
+  expect(field().props.failed).toBe(false);
+  expect(field().props.baseRef).toBe(m.repo.baseRef);
+  field().props.onChange("origin/dev");
+  m.redraw();
+  m.typeName("birch");
+  m.submit();
+  expect(m.onCreate.mock.calls[0][2]).toBe("origin/dev");
+});
+
+it("the default base ref sends null", async () => {
+  const m = mount({ branches: async () => BRANCHES });
+  m.typeName("birch");
+  m.submit();
+  expect(m.onCreate.mock.calls[0][2]).toBeNull();
+});
+
+it("a failed branch list is reported to the field, which still takes a typed ref", async () => {
+  const m = mount({ branches: async () => { throw new Error("no"); } });
+  await flush();
+  m.redraw();
+  const field = m.all().find((n) => n.type === BaseRefField)!;
+  expect(field.props.failed).toBe(true);
+  field.props.onChange("v1.2");
+  m.redraw();
+  m.typeName("birch");
+  m.submit();
+  expect(m.onCreate.mock.calls[0][2]).toBe("v1.2");
 });

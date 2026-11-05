@@ -268,7 +268,7 @@ it("remembers the selected worktree and falls back to the first", async () => {
 
 it("add repo opens the dialog; Open folder picks a folder and shows the new repo", async () => {
   const api = createMockApi({});
-  const pick = vi.spyOn(api, "pickFolder").mockResolvedValueOnce(null).mockResolvedValueOnce("/code/notes");
+  const pick = vi.spyOn(api, "pickFolders").mockResolvedValueOnce([]).mockResolvedValueOnce(["/code/notes"]);
   const add = vi.spyOn(api, "repoAdd");
   const view = await harness(api);
   const openFolder = async () => {
@@ -294,10 +294,39 @@ it("add repo opens the dialog; Open folder picks a folder and shows the new repo
   expect(view.html()).toContain(">notes<");
 
   // Adding it again keeps the list and says why.
-  vi.spyOn(api, "pickFolder").mockResolvedValueOnce("/code/notes");
+  vi.spyOn(api, "pickFolders").mockResolvedValueOnce(["/code/notes"]);
   await openFolder();
   expect(reposOf(view.list())).toHaveLength(2);
   expect(view.html()).toContain(en("error.repo_exists"));
+});
+
+it("Open folder takes several folders; one failure of several is one toast, the first added repo is selected", async () => {
+  const api = createMockApi({});
+  const real = api.repoAdd.bind(api);
+  vi.spyOn(api, "repoAdd").mockImplementation(async (path) => {
+    if (path === "/code/bad") throw { code: "no_repo" };
+    return real(path);
+  });
+  vi.spyOn(api, "pickFolders").mockResolvedValueOnce(["/code/one", "/code/bad", "/code/two"]);
+  const view = await harness(api);
+  view.list().props.onAddRepo();
+  await view.of(AddProjectDialog)[0].props.onOpenFolder();
+  await tick();
+  expect(reposOf(view.list()).map((r: { shortName: string }) => r.shortName)).toEqual(["xdev", "one", "two"]);
+  expect(view.list().props.selected).toBe("/code/one");
+  expect(getToasts().map((x) => x.text)).toContain(translate("en", "addProject.openFolders.partial", { added: 2, total: 3, failed: 1 }));
+  expect(view.html()).not.toContain(en("error.no_repo"));
+});
+
+it("Open folder with one failing folder shows the error notice, not a toast", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "repoAdd").mockRejectedValue({ code: "no_repo" });
+  vi.spyOn(api, "pickFolders").mockResolvedValueOnce(["/code/bad"]);
+  const view = await harness(api);
+  view.list().props.onAddRepo();
+  await view.of(AddProjectDialog)[0].props.onOpenFolder();
+  await tick();
+  expect(view.html()).toContain(en("error.no_repo"));
 });
 
 it("the create dialog gets the name preview from the api", async () => {
@@ -348,7 +377,7 @@ it("create closes the dialog at once; a failure stays as a row with Retry and Di
   expect(dialog().props.repoId).toBe("demo-xdev");
   const markup = renderToStaticMarkup(dialog());
   expect(markup).toContain('placeholder="auto"');
-  expect(markup).toContain('placeholder="main"');
+  expect(markup).toContain("main (default)");
 
   dialog().props.onCreate("demo-xdev", "...", null);
   expect(view.of(CreateWorktreeDialog)).toHaveLength(0);

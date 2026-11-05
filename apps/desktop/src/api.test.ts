@@ -6,6 +6,7 @@ import {
   createMockApi,
   defaultMessage,
   DEMO_COMMITS,
+  DEMO_ROOT,
   DEMO_SEED,
   EXPORT_MARKER,
   setMockClipboardImage,
@@ -999,4 +1000,11 @@ it("routes automation calls and events to their Tauri names", async () => {
     await api.onAutomationDispatch(() => {}); await api.onAutomationsChanged(() => {});
     expect(listen.mock.calls.map((c) => c[0])).toEqual(["automation://dispatch", "automations://changed"]);
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.doUnmock("@tauri-apps/api/event"); vi.resetModules(); }
+});
+
+describe("mock folder pickers", () => {
+  it("pickFolders resolves the demo folder as a list", async () => {
+    const api = createMockApi({});
+    expect(await api.pickFolders()).toEqual([DEMO_ROOT]);
+  });
 });

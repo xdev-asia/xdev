@@ -8,6 +8,7 @@ import { expandShortcodes, hasEmoji, slugFromTitle } from "./emoji";
 import { localBranches, sparseDirs } from "./createSource";
 import { LinkedWorkSearch } from "./LinkedWorkSearch";
 import { schedulePreview } from "./namePreview";
+import { BaseRefField } from "./BaseRefField";
 import { parseItem } from "./workItemInput";
 
 /** What the dialog adds to the name and base: the title, the agent, the parent and the work item. */
@@ -116,6 +117,7 @@ export function CreateWorktreeDialog(props: {
   const [branchMode, setBranchMode] = useState<"new" | "existing">("new");
   const [branchList, setBranchList] = useState<{ repoId: string; list: ReviewBranch[] } | null>(null);
   const [existing, setExisting] = useState("");
+  const [listFailed, setListFailed] = useState<string | null>(null);
   const [found, setFound] = useState<Found | null>(null);
   const [preview, setPreview] = useState<NamePreview | null>(null);
 
@@ -142,17 +144,23 @@ export function CreateWorktreeDialog(props: {
   // The Branch tab always picks an existing branch; on the Name tab the choice is the radio.
   const mode = tab === "branch" ? "existing" : branchMode;
   const listing = tab !== "github" && mode === "existing";
+  // The base picker lists the branches too, so they load for it as well, once per repo.
+  const baseShown = mode !== "existing";
   useEffect(() => {
-    if (!listing || !branches || !repo) return;
+    if (!(listing || baseShown) || !branches || !repo) return;
     let stale = false;
     branches(repo.path).then(
       (list) => !stale && setBranchList({ repoId: repo.id, list }),
-      () => !stale && setBranchList({ repoId: repo.id, list: [] }),
+      () => {
+        if (stale) return;
+        setBranchList({ repoId: repo.id, list: [] });
+        setListFailed(repo.id);
+      },
     );
     return () => {
       stale = true;
     };
-  }, [listing, branches, repo?.id]);
+  }, [listing || baseShown, branches, repo?.id]);
   const loaded = branchList && branchList.repoId === repo?.id ? branchList.list : null;
   const free = loaded && repo ? localBranches(loaded, repo.worktrees) : [];
   const pickedBranch = listing && free.includes(existing) ? existing : "";
@@ -312,10 +320,10 @@ export function CreateWorktreeDialog(props: {
             <PreviewHint preview={preview} />
           </label>
           {pickedBranch === "" && mode !== "existing" && (
-            <label className="ws-field">
-              <span>{t("workspace.create.from")}</span>
-              <input type="text" className="ws-mono" value={from} placeholder={repo?.baseRef ?? ""} spellCheck={false} onChange={(e) => setFrom(e.target.value)} />
-            </label>
+            <div className="ws-field">
+              <span>{t("workspace.create.base.label")}</span>
+              <BaseRefField value={from} baseRef={repo?.baseRef ?? null} branches={branches ? loaded : []} failed={listFailed === repo?.id} onChange={setFrom} />
+            </div>
           )}
           <label className="ws-field">
             <span>{t("workspace.create.agent")}</span>
