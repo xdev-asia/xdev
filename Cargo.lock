@@ -6603,7 +6603,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-agent"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -6620,7 +6620,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-ai"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "keyring",
  "serde",
@@ -6633,18 +6633,18 @@ dependencies = [
 
 [[package]]
 name = "xdev-api"
-version = "0.5.0"
+version = "0.6.0"
 
 [[package]]
 name = "xdev-awake"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "xdev-cli"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "clap",
  "serde",
@@ -6662,7 +6662,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "dirs",
  "serde",
@@ -6678,7 +6678,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-desktop"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "arboard",
  "blake3",
@@ -6718,7 +6718,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-export"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "blake3",
  "serde",
@@ -6729,7 +6729,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-git"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -6741,7 +6741,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-id"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.4.3",
@@ -6757,14 +6757,14 @@ dependencies = [
 
 [[package]]
 name = "xdev-input-source"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "core-foundation 0.10.1",
 ]
 
 [[package]]
 name = "xdev-ipc"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "blake3",
  "getrandom 0.4.3",
@@ -6777,7 +6777,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-kit"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "dunce",
  "serde",
@@ -6790,7 +6790,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-mcp"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -6799,7 +6799,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-orch"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -6812,7 +6812,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-policy"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "blake3",
  "serde",
@@ -6823,7 +6823,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-pty"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "portable-pty",
  "serde",
@@ -6837,7 +6837,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-store"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "blake3",
  "rusqlite",
@@ -6849,7 +6849,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-vault"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "blake3",
  "ignore",
@@ -6862,7 +6862,7 @@ dependencies = [
 
 [[package]]
 name = "xdev-workspace"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "blake3",
  "dunce",
