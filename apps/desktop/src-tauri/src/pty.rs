@@ -298,7 +298,6 @@ impl Ptys {
 
     /// The terminals this app holds, each with the pid at its root and the folder it
     /// started in. A terminal without a pid or a folder is left out.
-    #[allow(dead_code)] // read by the port scan once it is wired
     pub(crate) fn roots(&self) -> Vec<xdev_ports::PtyRoot> {
         let cwds = self.cwds().clone();
         self.map()
@@ -310,6 +309,11 @@ impl Ptys {
                 })
             })
             .collect()
+    }
+
+    /// The pid of the terminal service, when the terminals run in it.
+    pub(crate) fn service_pid(&self) -> Option<u32> {
+        Some(self.host().service()?.welcome().pid)
     }
 
     /// The folder the PTY `id` started in; none for an unknown id.
@@ -876,6 +880,9 @@ pub fn pty_spawn(
         )?
     };
     let exit_id = id.clone();
+    let feed_id = id.clone();
+    let feed_cwd = cwd.clone();
+    let feed_app = app.clone();
     spawn_launch(
         &ptys,
         data,
@@ -885,6 +892,7 @@ pub fn pty_spawn(
         cols,
         rows,
         move |bytes| {
+            crate::ports::feed_output(&feed_app, &feed_id, &feed_cwd, &bytes);
             // A closed channel means the tab is gone; `pty_kill` follows.
             let _ = out.send(InvokeResponseBody::Raw(bytes));
         },
@@ -937,11 +945,12 @@ pub fn pty_ack(ptys: State<'_, Ptys>, id: String, n: usize) -> Result<(), CmdErr
 
 // Off the main thread: ending a process tree waits on taskkill and the console.
 #[tauri::command(async)]
-pub fn pty_kill(ptys: State<'_, Ptys>, id: String) {
-    pty_kill_in(&ptys, &id);
+pub fn pty_kill(ptys: State<'_, Ptys>, ports: State<'_, crate::ports::Ports>, id: String) {
+    pty_kill_in(&ptys, &ports, &id);
 }
 
-fn pty_kill_in(ptys: &Ptys, id: &str) {
+fn pty_kill_in(ptys: &Ptys, ports: &crate::ports::Ports, id: &str) {
+    ports.forget_pty(id);
     // An unknown id has already ended. A service PTY ends only on `kill`.
     let handle = ptys.take(id);
     if let Some(handle) = handle {
@@ -968,8 +977,14 @@ pub fn pty_attach(
     let listed = client.list()?.into_iter().find(|s| s.id == id);
     let session = listed.ok_or_else(gone)?;
     let exit_id = id.clone();
+    let feed_id = id.clone();
+    let feed_cwd = session.meta["worktree"].as_str().map(PathBuf::from);
+    let feed_app = app.clone();
     let sink = Sink {
         on_output: Box::new(move |bytes| {
+            if let Some(cwd) = &feed_cwd {
+                crate::ports::feed_output(&feed_app, &feed_id, cwd, &bytes);
+            }
             let _ = out.send(InvokeResponseBody::Raw(bytes));
         }),
         on_exit: Box::new(move |code| {
@@ -1649,7 +1664,7 @@ mod tests {
         let launch = launch_for(data.path(), "shell", None, None, None, false).unwrap();
         start(&ptys, data.path(), "k", launch).0.unwrap();
         assert!(ptys.cwd_of("k").is_some());
-        pty_kill_in(&ptys, "k");
+        pty_kill_in(&ptys, &crate::ports::Ports::default(), "k");
         assert!(ptys.cwd_of("k").is_none());
         assert!(ptys.map().is_empty());
     }
@@ -1923,7 +1938,7 @@ b",
         result.unwrap();
         assert_eq!(ptys.cwd_of("c"), Some(std::env::temp_dir()));
         assert_eq!(ptys.cwd_of("other"), None);
-        pty_kill_in(&ptys, "c");
+        pty_kill_in(&ptys, &crate::ports::Ports::default(), "c");
         assert_eq!(ptys.cwd_of("c"), None);
     }
 
