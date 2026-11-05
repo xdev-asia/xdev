@@ -2,7 +2,7 @@ import type { Api, ApiError, Eol, FileHits, FileText, FsEvent, SearchQuery } fro
 
 type FilesApi = Pick<
   Api,
-  "fileRead" | "fileWrite" | "fileCreate" | "fileRename" | "fileTrash" | "fileReveal" | "filesList" | "filesSearch" | "filesSearchCancel" | "filesWatch" | "filesUnwatch"
+  "fileRead" | "fileWrite" | "fileCreate" | "fileRename" | "fileTrash" | "fileReveal" | "fileBytes" | "fileOpenDefault" | "filesList" | "filesSearch" | "filesSearchCancel" | "filesWatch" | "filesUnwatch"
 >;
 
 export type MockFiles = FilesApi & {
@@ -14,12 +14,22 @@ export type MockFiles = FilesApi & {
   __watchers(): { worktree: string; id: string }[];
   // Every `fileReveal`, oldest first.
   __fileReveals(): { worktree: string; rel: string }[];
+  // Every `fileOpenDefault`, as `worktree:rel`, oldest first.
+  __fileOpens: string[];
+  // Makes the next `fileBytes` of `rel` reject with `code` (once); for Retry tests.
+  __failBytes(rel: string, code: ApiError["code"]): void;
   // The files and the folders of `worktree` now, for its listing; null for an unknown worktree.
   tree(worktree: string): { files: string[]; dirs: Set<string> } | null;
 };
 
 /** `READ_MAX` in Rust: larger files are not read. */
 export const MOCK_READ_MAX = 2 * 1024 * 1024;
+/** `IMAGE_MAX` in Rust, scaled to the mock: larger images are not read. */
+export const MOCK_IMAGE_MAX = 20 * 1024 * 1024;
+const IMAGE = /\.(png|jpe?g|gif|webp|bmp|ico|avif|svg)$/i;
+const MEDIA = /\.(mp3|wav|ogg|oga|m4a|flac|mp4|webm|ogv|mov)$/i;
+// A 1x1 transparent PNG.
+const PIXEL = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
 const BINARY = /\.(png|jpe?g|gif|ico|webp|pdf|zip|woff2?)$/i;
 
 // A stand-in for Rust's blake3 hex: the same text gives the same hash.
@@ -114,6 +124,9 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
     o.removed.delete(rel);
   }
 
+  const opens: string[] = [];
+  const failures = new Map<string, ApiError["code"]>();
+
   return {
     tree,
     async fileRead(worktree, rel) {
@@ -204,6 +217,25 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
       if (at instanceof Promise) return at;
       reveals.push({ worktree, rel: at.p });
     },
+    async fileBytes(worktree, rel) {
+      const at = open(worktree, rel);
+      if (at instanceof Promise) return at;
+      if (!IMAGE.test(at.p) && !MEDIA.test(at.p)) return reject("bad_name", rel);
+      const forced = failures.get(at.p);
+      if (forced !== undefined) {
+        failures.delete(at.p);
+        return reject(forced, rel);
+      }
+      if (!at.t.files.includes(at.p)) return reject("not_found", rel);
+      if (textOf(worktree, at.p).length > MOCK_IMAGE_MAX) return reject("too_large", rel);
+      return IMAGE.test(at.p) ? PIXEL.slice() : Uint8Array.of(1, 2, 3, 4);
+    },
+    async fileOpenDefault(worktree, rel) {
+      const at = open(worktree, rel);
+      if (at instanceof Promise) return at;
+      if (!IMAGE.test(at.p) && !MEDIA.test(at.p)) return reject("bad_name", rel);
+      opens.push(`${worktree}:${at.p}`);
+    },
     async filesList(worktree) {
       const t = tree(worktree);
       if (!t) return reject("worktree_unknown", worktree);
@@ -274,6 +306,10 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
       }
     },
     __fileReveals: () => structuredClone(reveals),
+    __fileOpens: opens,
+    __failBytes(rel, code) {
+      failures.set(rel, code);
+    },
   };
 }
 

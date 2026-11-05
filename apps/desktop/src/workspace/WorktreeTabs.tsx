@@ -1,4 +1,4 @@
-import { Button, EmptyState } from "@xdev-asia/ui";
+import { Button, EmptyState, IconButton } from "@xdev-asia/ui";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
@@ -6,6 +6,9 @@ import { type Api, type ApiError, type PtyProfile } from "@/api";
 import { FileView } from "@/files/FileView";
 import { fileName, fileTabId, fileTabRel, fileTabs, isDirty, isFileTab, useOpenFiles } from "@/files/fileTabs";
 import { saveFile } from "@/files/fileIO";
+import { MarkdownPreview } from "@/files/MarkdownPreview";
+import { isPreviewTab, previewTabId, previewTabRel } from "@/files/previewTabs";
+import { viewerOf } from "@/files/viewer";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
@@ -180,7 +183,11 @@ export function WorktreeTabs(props: {
   const fileIds = new Set(files.map((f) => fileTabId(f.rel)));
   let layout: PaneLayout | null = withReview;
   for (const leaf of layout ? (leaves(layout) as Leaf[]) : []) {
-    for (const id of leaf.tabs) if (isFileTab(id) && !fileIds.has(id) && layout) layout = removeTab(layout, id);
+    for (const id of leaf.tabs) {
+      // A preview goes with its source: a file that is closed, or never opened, leaves no preview behind.
+      const gone = isFileTab(id) ? !fileIds.has(id) : isPreviewTab(id) && !fileIds.has(fileTabId(previewTabRel(id)!));
+      if (gone && layout) layout = removeTab(layout, id);
+    }
   }
   for (const id of fileIds) layout = layout ? addTab(layout, id) : single(id);
   useEffect(() => {
@@ -198,7 +205,7 @@ export function WorktreeTabs(props: {
   const [everFront] = useState(() => new Set<string>());
   for (const id of frontIds) everFront.add(id);
   // A string, so the shell hears only when the set on screen changes.
-  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && id !== COMMIT_TAB && !isFileTab(id)).join(" ");
+  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && id !== COMMIT_TAB && !isFileTab(id) && !isPreviewTab(id)).join(" ");
   const { onShown, onPanes, front } = props;
   useEffect(() => onShown?.(shown), [shown]);
   // The focus order for MRU; a walk records only where it ends, not the tabs it passed (R4).
@@ -289,6 +296,7 @@ export function WorktreeTabs(props: {
       if (entry && isDirty(entry)) return void setUnsaved(rel);
       return fileTabs.close(worktree, rel);
     }
+    if (isPreviewTab(id)) return void (layout && setLayout(removeTab(layout, id)));
     if (id === COMMIT_TAB) {
       setCommitAsk(null);
       if (layout) setLayout(removeTab(layout, COMMIT_TAB));
@@ -300,6 +308,22 @@ export function WorktreeTabs(props: {
   }
 
   const byId = new Map(tabs.map((tab) => [tab.id, tab]));
+
+  // The Markdown file `rel` shows in the tab strip, if it is open and the viewer for it is Markdown.
+  const markdownFile = (rel: string | null) => {
+    const entry = rel === null ? undefined : files.find((f) => f.rel === rel);
+    return entry && rel !== null && viewerOf(rel, entry.kind) === "markdown" ? entry : undefined;
+  };
+
+  // The preview of `rel`: in `pane` (the focused one by default), or in a new pane to its right.
+  function openPreview(rel: string, opts: { pane?: string; side?: boolean } = {}): boolean {
+    if (!layout || !markdownFile(rel)) return false;
+    const id = previewTabId(rel);
+    if (paneOf(layout, id)) setLayout(selectTab(layout, id));
+    else if (opts.side) setLayout(splitPane(layout, opts.pane ?? layout.focused, "right", id));
+    else setLayout(addTab(layout, id, opts.pane));
+    return true;
+  }
 
   // ---- Keys: they act on the focused pane ----------------------------------------------------
 
@@ -422,6 +446,7 @@ export function WorktreeTabs(props: {
       "pane.equalize": () => reshape(equalize),
       "pane.close": () => requestClose(focusedLeaf?.tabs ?? []),
       // Only a file tab takes the save key; anywhere else it goes on to its other owners.
+      "file.markdownPreview": () => (shown ? openPreview(fileTabRel(shown) ?? "") : false),
       "file.save": () => {
         const rel = shown ? fileTabRel(shown) : null;
         if (rel === null) return false;
@@ -520,6 +545,8 @@ export function WorktreeTabs(props: {
   const stripOf = (leaf: Leaf) => {
     const items: StripItem[] = leaf.tabs.flatMap((id): StripItem[] => {
       if (id === REVIEW_TAB) return [{ id, tab: null }];
+      const previewRel = previewTabRel(id);
+      if (previewRel !== null) return [{ id, tab: null, preview: { rel: previewRel } }];
       if (id === COMMIT_TAB) return commitOpen ? [{ id, tab: null, commit: { id: commitOpen.id } }] : [];
       const rel = fileTabRel(id);
       if (rel !== null) {
@@ -552,7 +579,7 @@ export function WorktreeTabs(props: {
         }}
         onLaunch={(profile) => launchGated(profile, leaf.id)}
         onSplit={(dir) => defaultShell !== null && splitWith(leaf.id, dir, defaultShell)}
-        onMoveToSplit={(id, dir) => (id === REVIEW_TAB || isFileTab(id) ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
+        onMoveToSplit={(id, dir) => (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id) ? splitTab(leaf.id, id, dir) : sessions.moveToSplit(id, dir))}
         onPin={(id, pinned) => sessions.setPinned(id, pinned)}
         onCopyTabId={(id) => void copyText(id)}
         onChangeTitle={(id) => setTitling(id)}
@@ -560,6 +587,10 @@ export function WorktreeTabs(props: {
         onRename={(id, name) => sessions.rename(id, name)}
         onShowHistory={props.onShowHistory}
         trailing={
+          <>
+          {markdownFile(fileTabRel(leaf.active ?? "")) && (
+            <IconButton icon="eye" label={t("files.preview.side")} onClick={() => openPreview(fileTabRel(leaf.active ?? "")!, { pane: leaf.id, side: true })} />
+          )}
           <QuickCommandsControl
             api={api}
             sessions={sessions}
@@ -571,6 +602,7 @@ export function WorktreeTabs(props: {
             onFocus={() => setKick((k) => k + 1)}
             onManage={() => props.onManageQuickCommands?.()}
           />
+          </>
         }
       />
     );
@@ -695,6 +727,20 @@ export function WorktreeTabs(props: {
           );
         })}
 
+        {layout &&
+          (leaves(layout) as Leaf[]).flatMap((leaf) =>
+            leaf.tabs.flatMap((id) => {
+              const rel = previewTabRel(id);
+              const entry = rel === null ? undefined : files.find((f) => f.rel === rel);
+              if (rel === null || !entry) return [];
+              const at = placed(id);
+              return [
+                <div key={id} className="ws-tab-pane" role="tabpanel" data-tab={id} hidden={at.hidden} style={at.style}>
+                  <MarkdownPreview api={api} worktree={worktree} rel={rel} text={entry.text} />
+                </div>,
+              ];
+            }),
+          )}
         {commitOpen && (
           <div className="ws-tab-pane" role="tabpanel" data-tab={COMMIT_TAB} hidden={commitAt.hidden} style={commitAt.style}>
             <CommitView api={api} worktree={worktree} commit={commitOpen} />
