@@ -110,6 +110,26 @@ fn reached(tab: &TabReport, want: WaitFor, now_ms: i64) -> Option<String> {
     hit.then(|| tab.status.clone())
 }
 
+/// The tab whose id is `tab`, else the one whose id starts with it:
+/// `not_found` for none, `ambiguous` for more than one.
+fn find_tab<'a>(tabs: &'a [TabReport], tab: &str) -> Result<&'a TabReport, AppError> {
+    if let Some(t) = tabs.iter().find(|t| t.id == tab) {
+        return Ok(t);
+    }
+    match tabs
+        .iter()
+        .filter(|t| t.id.starts_with(tab))
+        .collect::<Vec<_>>()[..]
+    {
+        [t] => Ok(t),
+        [] => Err(AppError::new("not_found", format!("no tab {tab}"))),
+        _ => Err(AppError::new(
+            "ambiguous",
+            format!("more than one tab starts with {tab}"),
+        )),
+    }
+}
+
 #[derive(Default)]
 struct Board {
     tabs: Vec<TabReport>,
@@ -172,26 +192,7 @@ impl TabBoard {
     ) -> Result<(String, i64), AppError> {
         let deadline = Instant::now() + timeout;
         let mut board = self.lock();
-        let id = {
-            let ids: Vec<&str> = board.tabs.iter().map(|t| t.id.as_str()).collect();
-            match ids.iter().find(|i| **i == tab) {
-                Some(id) => (*id).to_owned(),
-                None => match ids
-                    .iter()
-                    .filter(|i| i.starts_with(tab))
-                    .collect::<Vec<_>>()[..]
-                {
-                    [id] => (*id).to_owned(),
-                    [] => return Err(AppError::new("not_found", format!("no tab {tab}"))),
-                    _ => {
-                        return Err(AppError::new(
-                            "ambiguous",
-                            format!("more than one tab starts with {tab}"),
-                        ));
-                    }
-                },
-            }
-        };
+        let id = find_tab(&board.tabs, tab)?.id.clone();
         loop {
             if board.stopped {
                 return Err(AppError::new("app_stopped", "xDev is quitting"));
@@ -219,6 +220,12 @@ impl TabBoard {
                 .unwrap_or_else(PoisonError::into_inner)
                 .0;
         }
+    }
+
+    /// The tab `tab` names, by id or a unique prefix of one.
+    #[allow(dead_code)] // used by the terminal verbs as they land
+    pub fn resolve(&self, tab: &str) -> Result<TabReport, AppError> {
+        find_tab(&self.lock().tabs, tab).cloned()
     }
 
     pub(crate) fn tabs(&self) -> (Vec<TabReport>, Option<String>) {
@@ -1673,6 +1680,24 @@ pub(crate) mod tests {
         });
         rx.recv().unwrap();
         waiter
+    }
+
+    #[test]
+    fn resolve_takes_an_id_or_a_unique_prefix() {
+        let (board, _) = fake_board();
+        board.replace(
+            vec![
+                tab("agent-1", Path::new("/w"), true, "done"),
+                tab("agent-10", Path::new("/w"), true, "idle"),
+                tab("shell-2", Path::new("/w"), false, "idle"),
+            ],
+            None,
+        );
+        // An exact id wins over the longer one it prefixes.
+        assert_eq!(board.resolve("agent-1").unwrap().id, "agent-1");
+        assert_eq!(board.resolve("sh").unwrap().id, "shell-2");
+        assert_eq!(board.resolve("nope").unwrap_err().code, "not_found");
+        assert_eq!(board.resolve("agent").unwrap_err().code, "ambiguous");
     }
 
     #[test]
