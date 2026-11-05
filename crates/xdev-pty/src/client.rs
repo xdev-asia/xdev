@@ -86,6 +86,8 @@ pub struct StartOptions {
     pub ring_mb: u8,
     /// The endpoint prefix; tests pass their own.
     pub prefix: String,
+    /// Save the output of each PTY for a restore; off adds `--no-snapshots`.
+    pub snapshots: bool,
 }
 
 impl StartOptions {
@@ -102,6 +104,7 @@ impl Default for StartOptions {
             app_version: String::new(),
             ring_mb: 2,
             prefix: PREFIX.to_owned(),
+            snapshots: true,
         }
     }
 }
@@ -618,9 +621,12 @@ fn launch(exe: &Path, opts: &StartOptions) -> io::Result<()> {
         .arg("--ring-mb")
         .arg(opts.ring_mb.to_string())
         .arg("--prefix")
-        .arg(&opts.prefix)
-        // Not a worktree: a service sitting in one would keep it from being removed.
-        .current_dir(&opts.dir)
+        .arg(&opts.prefix);
+    if !opts.snapshots {
+        cmd.arg("--no-snapshots");
+    }
+    // Not a worktree: a service sitting in one would keep it from being removed.
+    cmd.current_dir(&opts.dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());

@@ -185,6 +185,7 @@ fn binary_opts(local: &std::path::Path, prefix: &str) -> StartOptions {
         app_version: "9.9.9-test".into(),
         ring_mb: 1,
         prefix: prefix.into(),
+        snapshots: true,
     }
 }
 
