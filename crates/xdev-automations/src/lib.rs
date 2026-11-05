@@ -6,6 +6,7 @@ pub mod extra_args;
 pub mod model;
 pub mod occur;
 pub mod precheck;
+pub mod prompt_queue;
 pub mod schedule;
 pub mod store;
 pub mod tick;
