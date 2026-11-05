@@ -37,8 +37,10 @@ export type ActionId =
   | "terminal.clear" | "terminal.copy" | "terminal.paste" | "terminal.selectAll" | "terminal.find"
   | "zoom.in" | "zoom.out" | "zoom.reset"
   | "tab.reopenClosed"
-  // Bound to nothing by default: the next / previous tab of the same kind (file or terminal) as the front one.
+  // The next / previous tab of the same kind (file or terminal) as the front one.
   | "tab.nextSameKind" | "tab.prevSameKind"
+  // Closes every terminal, agent and file tab of the worktree but the pinned ones; unsaved files ask first.
+  | "tab.closeAll"
   // Bound to nothing by default: closes every file tab (not terminals), asking about unsaved ones.
   | "file.closeAll"
   | "settings.open" | "settings.shortcuts"
@@ -48,7 +50,7 @@ export type ActionId =
   | "file.save"
   // Opens the Markdown preview of the focused file tab; the handler declines for any other file.
   | "file.markdownPreview"
-  // Bound to nothing by default; the quick-commands plan registers the handler.
+  // The quick-commands plan registers the handler.
   | "quickCommands.open"
   // Quick open: a file of the worktree on screen by name.
   | "quickOpen.open";
@@ -292,7 +294,7 @@ function modalOpen(): boolean {
  * them types text, and the terminal's own input is a text field.
  */
 export function useKeymap(
-  handlers: Partial<Record<ActionId, () => boolean | void>>,
+  handlers: Partial<Record<ActionId, (e?: KeyboardEvent) => boolean | void>>,
   opts?: { when?: () => boolean },
 ): void {
   useEffect(() => {
@@ -312,7 +314,7 @@ export function useKeymap(
         e.stopPropagation();
         return;
       }
-      if (handler() === false) return;
+      if (handler(e) === false) return;
       if (inTerminal(e)) notifyTerminalKey(action, chordLabel(action));
       e.preventDefault();
       e.stopPropagation();

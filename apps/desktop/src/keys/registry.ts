@@ -57,12 +57,14 @@ export const SHORTCUTS: ShortcutDef[] = [
   // Tabs.
   def("tab.new", "tabs", ["Mod+T"]),
   def("tab.close", "tabs", ["Mod+W"]),
-  def("tab.next", "tabs", ["Ctrl+Tab"]),
-  def("tab.prev", "tabs", ["Ctrl+Shift+Tab"]),
+  // Ctrl+Tab opens the recent-tab switcher (MRU order); the other chords walk the strip. Ctrl stays Ctrl on macOS.
+  def("tab.next", "tabs", ["Ctrl+Tab", "Mod+Shift+]", "Ctrl+PageDown"]),
+  def("tab.prev", "tabs", ["Ctrl+Shift+Tab", "Mod+Shift+[", "Ctrl+PageUp"]),
   ...DIGITS.map((n) => def(`tab.select.${n}`, "tabs", [`Alt+${n}`])),
   def("tab.reopenClosed", "tabs", ["Mod+Shift+T"]),
-  def("tab.nextSameKind", "tabs", []),
-  def("tab.prevSameKind", "tabs", []),
+  def("tab.nextSameKind", "tabs", ["Mod+Alt+]"]),
+  def("tab.prevSameKind", "tabs", ["Mod+Alt+["]),
+  def("tab.closeAll", "tabs", ["Mod+Alt+W"]),
   // Panes.
   def("pane.splitRight", "panes", ["Mod+Shift+D"], TUI),
   def("pane.splitDown", "panes", ["Alt+Shift+D"], TUI),
@@ -113,7 +115,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("settings.open", "app", ["Mod+,"]),
   def("settings.shortcuts", "app", []),
   def("sessions.open", "app", []),
-  def("quickCommands.open", "app", []),
+  def("quickCommands.open", "app", ["Mod+Shift+;"]),
 ];
 
 /** The default chords of `def` on `p`, as written in the list (not normalized). */
