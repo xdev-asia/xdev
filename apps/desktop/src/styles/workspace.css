@@ -3454,3 +3454,14 @@ button.ws-tree-row:focus-visible {
   border-radius: var(--radius-s);
   color: var(--text-1);
 }
+
+.ws-merge {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+}
+.ws-merge-split {
+  display: flex;
+  align-items: center;
+  gap: var(--x-space-1);
+}

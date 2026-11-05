@@ -5,6 +5,7 @@ import { useI18n } from "@/i18n";
 import { Menu } from "@xdev-asia/ui";
 import { ChecksTriage } from "./ChecksTriage";
 import { PrComments } from "./PrCommentList";
+import { PrMergeMenu } from "./PrMergeMenu";
 import { POLL_BASE_MS, canRerunUnsuccessful, nextDelay, shouldPoll, type PollOutcome } from "./checksPolicy";
 import type { PrCommentStore } from "./prCommentStore";
 import type { SendOutcome } from "./PrSendBar";
@@ -223,6 +224,7 @@ export function ChecksPanel(props: {
               ))}
             </ul>
           )}
+          <PrMergeMenu api={api} worktree={worktree} pr={pr} prs={prs} reloadKey={entry?.checks} />
           {props.comments && (
             <PrComments store={props.comments} worktree={worktree} number={pr.number} overrides={overrides} reloadKey={entry?.checks} onMarkBot={(login, mark) => void markBot(login, mark)} agent={props.onSendComments ? { sessions: props.sessions, send: (groups, choice, ack) => props.onSendComments!(pr, groups, choice, ack) } : undefined} />
           )}
