@@ -119,6 +119,9 @@ pub struct InstallOpts {
     pub dry_run: bool,
     /// Rewrite only copies that are older than the bundled one.
     pub only_outdated: bool,
+    /// Touch only copies that exist: a missing one stays missing, an outdated
+    /// one is updated, an edited one is kept unless `force`.
+    pub present_only: bool,
 }
 
 /// Makes `dst` a link to the folder `src`.
@@ -335,6 +338,7 @@ pub fn install_one(
         }
         let (action, replace) = match state {
             State::Current => (Action::Unchanged, false),
+            State::Missing if opts.present_only => (Action::Unchanged, false),
             _ if opts.only_outdated && state != State::Outdated => (Action::Unchanged, false),
             State::Missing => (Action::Created, true),
             State::Outdated => (Action::Updated, true),
@@ -806,5 +810,84 @@ mod tests {
         assert_eq!(of("xdev-cli", "claude"), Action::Unchanged);
         assert_eq!(read(&cli_claude), "mine");
         assert_eq!(read(&canonical(&h)), SKILL_MD);
+    }
+
+    fn present_only() -> InstallOpts {
+        InstallOpts {
+            present_only: true,
+            ..InstallOpts::default()
+        }
+    }
+
+    fn stale(h: &Home, b: &Bundled) {
+        let old = "old skill text";
+        for t in targets(&h.env, b.skill) {
+            fs::create_dir_all(&t.dir).unwrap();
+            fs::write(t.dir.join(SKILL_FILE), old).unwrap();
+        }
+        let mut m = manifest(&h.env);
+        m.written.push(hash(old.as_bytes()));
+        save_manifest(&h.env, &m).unwrap();
+    }
+
+    #[test]
+    fn present_only_never_creates_a_missing_copy() {
+        let h = home(1, false);
+        let r = install_one(&h.env, orch(), present_only(), &copy_linker).unwrap();
+        assert!(r.targets.iter().all(|t| t.action == Action::Unchanged));
+        assert!(!canonical(&h).exists());
+        // A copy missing in one home stays missing while the others update.
+        stale(&h, orch());
+        fs::remove_dir_all(targets(&h.env, SKILL_NAME)[1].dir.clone()).unwrap();
+        let r = install_one(&h.env, orch(), present_only(), &copy_linker).unwrap();
+        assert_eq!(r.targets[0].action, Action::Updated);
+        assert_eq!(r.targets[1].action, Action::Unchanged);
+        assert!(!targets(&h.env, SKILL_NAME)[1].dir.exists());
+    }
+
+    #[test]
+    fn present_only_updates_an_outdated_copy() {
+        let h = home(1, false);
+        stale(&h, orch());
+        let r = install_one(&h.env, orch(), present_only(), &copy_linker).unwrap();
+        assert!(r.targets.iter().all(|t| t.action == Action::Updated));
+        assert_eq!(read(&canonical(&h)), SKILL_MD);
+    }
+
+    #[test]
+    fn present_only_replaces_an_edited_copy_only_with_force() {
+        let h = home(1, false);
+        install_one(&h.env, orch(), InstallOpts::default(), &copy_linker).unwrap();
+        let claude = targets(&h.env, SKILL_NAME)[1].dir.clone();
+        fs::write(claude.join(SKILL_FILE), "mine").unwrap();
+        let r = install_one(&h.env, orch(), present_only(), &copy_linker).unwrap();
+        assert_eq!(r.targets[1].action, Action::Kept);
+        assert_eq!(read(&claude), "mine");
+        let forced = InstallOpts {
+            force: true,
+            ..present_only()
+        };
+        let r = install_one(&h.env, orch(), forced, &copy_linker).unwrap();
+        assert_eq!(r.targets[1].action, Action::Replaced);
+        assert!(r.backup.is_some());
+        assert_eq!(read(&claude), SKILL_MD);
+    }
+
+    #[test]
+    fn auto_update_refreshes_each_installed_skill_and_skips_the_rest() {
+        let h = home(1, false);
+        stale(&h, orch());
+        let r = auto_update(&h.env, &copy_linker).unwrap();
+        assert!(r.targets.iter().all(|t| t.skill == SKILL_NAME));
+        assert!(r.targets.iter().all(|t| t.action == Action::Updated));
+        assert!(!targets(&h.env, "xdev-cli")[0].dir.exists());
+        // Both installed: both are refreshed.
+        stale(&h, cli());
+        let r = auto_update(&h.env, &copy_linker).unwrap();
+        assert!(
+            r.targets
+                .iter()
+                .any(|t| t.skill == "xdev-cli" && t.action == Action::Updated)
+        );
     }
 }
