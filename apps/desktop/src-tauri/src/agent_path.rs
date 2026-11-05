@@ -128,12 +128,26 @@ fn expand(text: &str, var: &dyn Fn(&str) -> Option<String>) -> String {
 #[cfg(windows)]
 fn registry_path(timeout: Duration) -> Option<OsString> {
     let read = |key: &str| {
-        let out = capture("reg", &["query", key, "/v", "Path"], timeout)?;
+        let reg = reg_exe(std::env::var("SystemRoot").ok());
+        let out = capture(&reg, &["query", key, "/v", "Path"], timeout)?;
         reg_path_parse(&out, &|name| std::env::var(name).ok())
     };
     let user = read(r"HKCU\Environment");
     let machine = read(r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment");
     join_registry(machine, user)
+}
+
+/// `reg.exe` by its full path, so a `reg` earlier on PATH or in the working
+/// directory is never run.
+#[cfg(any(windows, test))]
+fn reg_exe(system_root: Option<String>) -> String {
+    let root = system_root.filter(|r| !r.is_empty());
+    format!(
+        r"{}\System32\reg.exe",
+        root.as_deref()
+            .unwrap_or(r"C:\Windows")
+            .trim_end_matches('\\')
+    )
 }
 
 /// The machine `Path` then the user one, the order Windows gives a new
@@ -205,6 +219,15 @@ mod tests {
         );
         assert_eq!(reg_path_parse("    TEMP    REG_SZ    x", &var), None);
         assert_eq!(reg_path_parse("", &var), None);
+    }
+
+    #[test]
+    fn reg_runs_from_system32() {
+        assert_eq!(reg_exe(Some(r"D:\Win\".into())), r"D:\Win\System32\reg.exe");
+        assert_eq!(reg_exe(None), r"C:\Windows\System32\reg.exe");
+        assert_eq!(reg_exe(Some(String::new())), r"C:\Windows\System32\reg.exe");
+        #[cfg(windows)]
+        assert!(std::path::Path::new(&reg_exe(std::env::var("SystemRoot").ok())).is_file());
     }
 
     #[test]
