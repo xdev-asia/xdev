@@ -61,6 +61,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("tab.prev", "tabs", ["Ctrl+Shift+Tab"]),
   ...DIGITS.map((n) => def(`tab.select.${n}`, "tabs", [`Alt+${n}`])),
   def("tab.reopenClosed", "tabs", ["Mod+Shift+T"]),
+  def("tab.nextSameKind", "tabs", []),
+  def("tab.prevSameKind", "tabs", []),
   // Panes.
   def("pane.splitRight", "panes", ["Mod+Shift+D"], TUI),
   def("pane.splitDown", "panes", ["Alt+Shift+D"], TUI),
@@ -103,6 +105,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   // Editor: a file tab in front; the tabs view declines the key otherwise.
   def("file.save", "editor", ["Mod+S"]),
   def("file.markdownPreview", "editor", ["Mod+Shift+V"]),
+  def("file.closeAll", "editor", []),
   // App.
   def("palette.jump", "app", ["Mod+J"]),
   def("quickOpen.open", "app", ["Mod+P"]),

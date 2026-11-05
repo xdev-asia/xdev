@@ -68,3 +68,98 @@ export function tabMenuItems(ctx: TabMenuContext): MenuItem[] {
 export function tabColorVar(color: TabColor): string | null {
   return color === "none" ? null : `--x-tab-color-${color.slice(1)}`;
 }
+
+/** One open file tab as the file menu sees it. */
+export interface FileTabInfo {
+  rel: string;
+  dirty: boolean;
+  pinned: boolean;
+}
+
+/** What the file tab menu acts on. */
+export interface FileTabMenuContext {
+  /** The file tab the menu is for. */
+  rel: string;
+  /** The file tabs of the pane, in strip order. */
+  files: FileTabInfo[];
+  canMoveToSplit: boolean;
+  /** Set for a Markdown file that can open as a preview; absent for any other file. */
+  openPreview?: () => void;
+  moveToSplit(dir: "right" | "down"): void;
+  setPinned(pinned: boolean): void;
+  copyPath(): void;
+  copyRelativePath(): void;
+  close(): void;
+  closeOthers(): void;
+  closeToRight(): void;
+  closeSaved(): void;
+  closeAll(): void;
+}
+
+export type FileCloseKind = "others" | "right" | "saved" | "all";
+
+/**
+ * The file tabs a bulk close takes: every one of `kind` except pinned tabs. `rel` is the tab the menu
+ * was opened on (unused for "saved" and "all").
+ */
+export function fileCloseTargets(files: readonly FileTabInfo[], rel: string | null, kind: FileCloseKind): string[] {
+  const at = rel === null ? -1 : files.findIndex((f) => f.rel === rel);
+  return files
+    .filter((f, i) => {
+      if (f.pinned) return false;
+      if (kind === "others") return f.rel !== rel;
+      if (kind === "right") return i > at;
+      if (kind === "saved") return !f.dirty;
+      return true;
+    })
+    .map((f) => f.rel);
+}
+
+/** The right-click items of a file tab: terminal-only items (id, title, colour) are left out. */
+export function fileTabMenuItems(ctx: FileTabMenuContext): MenuItem[] {
+  const me = ctx.files.find((f) => f.rel === ctx.rel);
+  const pinned = !!me?.pinned;
+  const has = (kind: FileCloseKind) => fileCloseTargets(ctx.files, ctx.rel, kind).length > 0;
+  return [
+    ...(ctx.openPreview ? [{ id: "openPreview", labelKey: "tabMenu.openPreview", run: ctx.openPreview }, SEP("sep-preview")] : []),
+    {
+      id: "moveToSplit",
+      labelKey: "tabMenu.moveToSplit",
+      disabled: !ctx.canMoveToSplit,
+      children: [
+        { id: "moveRight", labelKey: "tabMenu.moveRight", run: () => ctx.moveToSplit("right") },
+        { id: "moveDown", labelKey: "tabMenu.moveDown", run: () => ctx.moveToSplit("down") },
+      ],
+    },
+    SEP("sep1"),
+    pinned
+      ? { id: "pin", labelKey: "tabMenu.unpin", run: () => ctx.setPinned(false) }
+      : { id: "pin", labelKey: "tabMenu.pin", run: () => ctx.setPinned(true) },
+    SEP("sep2"),
+    { id: "copyPath", labelKey: "tabMenu.copyPath", run: ctx.copyPath },
+    { id: "copyRelativePath", labelKey: "tabMenu.copyRelativePath", run: ctx.copyRelativePath },
+    SEP("sep3"),
+    { id: "close", labelKey: "tabMenu.close", run: ctx.close },
+    { id: "closeOthers", labelKey: "tabMenu.closeOthers", disabled: !has("others"), run: ctx.closeOthers },
+    { id: "closeToRight", labelKey: "tabMenu.closeToRight", disabled: !has("right"), run: ctx.closeToRight },
+    { id: "closeSaved", labelKey: "tabMenu.closeSaved", disabled: !has("saved"), run: ctx.closeSaved },
+    { id: "closeAll", labelKey: "tabMenu.closeAll", disabled: !has("all"), run: ctx.closeAll },
+  ];
+}
+
+/**
+ * The tab after (`1`) or before (`-1`) `current` among the tabs of the same kind as `current`,
+ * wrapping. Null when `current` is not in `ids`, or it is the only tab of its kind.
+ */
+export function cycleSameKind(
+  ids: readonly string[],
+  current: string | null,
+  step: 1 | -1,
+  kindOf: (id: string) => string,
+): string | null {
+  if (current === null || !ids.includes(current)) return null;
+  const kind = kindOf(current);
+  const same = ids.filter((id) => kindOf(id) === kind);
+  if (same.length < 2) return null;
+  return same[(same.indexOf(current) + step + same.length) % same.length];
+}

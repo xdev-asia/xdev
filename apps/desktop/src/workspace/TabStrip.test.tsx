@@ -53,3 +53,10 @@ it("a deleted or renamed file tab carries the mark and its label", () => {
 it("the review tab keeps its own label", () => {
   expect(html([{ id: "review", tab: null }])).toContain(en("review.tab"));
 });
+
+it("a pinned file tab shows the pin and has no close button", () => {
+  const out = html([{ id: "file:src/a.ts", tab: null, file: { rel: "src/a.ts", dirty: false, pinned: true } }]);
+  expect(out).toContain("ws-tab-pin");
+  expect(out).not.toContain("ws-tab-close");
+  expect(html([file()])).toContain("ws-tab-close");
+});

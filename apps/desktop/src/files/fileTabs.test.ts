@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FileText } from "@/api";
-import { FILE_TAB, fileTabId, fileTabRel, FileTabs, isDirty, isFileTab } from "./fileTabs";
+import { CLOSED_FILES_KEPT, FILE_TAB, fileTabId, fileTabRel, FileTabs, isDirty, isFileTab } from "./fileTabs";
 import { onOpenFile, openFile } from "./openFile";
 import { clampEditorSettings, EDITOR_DEFAULTS } from "./editorDefaults";
 
@@ -174,5 +174,82 @@ describe("FileTabs external state", () => {
     s.markExternal(A, "a.ts", "renamed");
     s.rename(A, "a.ts", "b.ts");
     expect(s.get(A, "b.ts")!.external).toBe("renamed");
+  });
+});
+
+describe("closed file tabs and pins", () => {
+  const wt = "/wt/a";
+  function withOpen(...rels: string[]): FileTabs {
+    const s = new FileTabs();
+    for (const rel of rels) s.open(wt, rel);
+    return s;
+  }
+
+  it("takes closed tabs back newest first", () => {
+    const s = withOpen("a", "b", "c");
+    s.closeRemembering(wt, "a");
+    s.closeRemembering(wt, "c");
+    expect(s.takeClosed(wt)?.rel).toBe("c");
+    expect(s.takeClosed(wt)?.rel).toBe("a");
+    expect(s.takeClosed(wt)).toBeNull();
+    expect(s.list(wt).map((e) => e.rel)).toEqual(["b"]);
+  });
+
+  it("a plain close leaves nothing to reopen (a deleted file is no closed tab)", () => {
+    const s = withOpen("a");
+    s.close(wt, "a");
+    expect(s.takeClosed(wt)).toBeNull();
+    expect(s.lastClosedAt(wt)).toBeNull();
+  });
+
+  it("keeps at most the newest CLOSED_FILES_KEPT", () => {
+    const rels = Array.from({ length: CLOSED_FILES_KEPT + 5 }, (_, i) => `f${i}`);
+    const s = withOpen(...rels);
+    for (const rel of rels) s.closeRemembering(wt, rel);
+    expect(s.closedList(wt)).toHaveLength(CLOSED_FILES_KEPT);
+    expect(s.closedList(wt)[0].rel).toBe("f5");
+    expect(s.takeClosed(wt)?.rel).toBe(rels[rels.length - 1]);
+  });
+
+  it("keeps a stack per worktree", () => {
+    const s = withOpen("a");
+    s.open("/wt/b", "z");
+    s.closeRemembering(wt, "a");
+    s.closeRemembering("/wt/b", "z");
+    expect(s.takeClosed(wt)?.rel).toBe("a");
+    expect(s.takeClosed(wt)).toBeNull();
+    expect(s.takeClosed("/wt/b")?.rel).toBe("z");
+  });
+
+  it("skips a file that is open again and lists a file once", () => {
+    const s = withOpen("a", "b");
+    s.closeRemembering(wt, "a");
+    s.closeRemembering(wt, "b");
+    s.open(wt, "b");
+    expect(s.takeClosed(wt)?.rel).toBe("a");
+    s.open(wt, "a");
+    s.closeRemembering(wt, "a");
+    s.open(wt, "a");
+    s.closeRemembering(wt, "a");
+    expect(s.closedList(wt).filter((c) => c.rel === "a")).toHaveLength(1);
+  });
+
+  it("remembers the pin and ignores a tab that is not open", () => {
+    const s = withOpen("a");
+    s.setPinned(wt, "a", true);
+    expect(s.get(wt, "a")?.pinned).toBe(true);
+    s.closeRemembering(wt, "a");
+    s.closeRemembering(wt, "nope");
+    expect(s.takeClosed(wt)).toMatchObject({ rel: "a", pinned: true });
+    s.open(wt, "a");
+    s.setPinned(wt, "a", false);
+    expect(s.get(wt, "a")?.pinned).toBeFalsy();
+  });
+
+  it("a pin survives a reload", () => {
+    const s = withOpen("a");
+    s.setPinned(wt, "a", true);
+    s.loaded(wt, "a", { kind: "text", text: "x", hash: "h", eol: "lf" } as never);
+    expect(s.get(wt, "a")?.pinned).toBe(true);
   });
 });

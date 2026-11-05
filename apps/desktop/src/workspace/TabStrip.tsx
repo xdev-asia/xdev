@@ -9,7 +9,7 @@ import { AgentIcon } from "./AgentIcon";
 import type { PaneDir } from "./paneTree";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import type { Tab, TabColor } from "./sessions";
-import { tabColorVar, tabMenuItems } from "./tabMenu";
+import { fileTabMenuItems, tabColorVar, tabMenuItems, type FileCloseKind } from "./tabMenu";
 import type { TabStatus } from "./status";
 import type { DropZone } from "./sessions";
 import { beforeOf, insertAt, pastThreshold, zoneFor } from "./tabDrag";
@@ -22,7 +22,7 @@ export interface StripItem {
   id: string;
   tab: Tab | null;
   /** Set for a file tab: its path in the worktree and whether it has unsaved edits. */
-  file?: { rel: string; dirty: boolean; gone?: "deleted" | "renamed" };
+  file?: { rel: string; dirty: boolean; pinned?: boolean; markdown?: boolean; gone?: "deleted" | "renamed" };
   /** Set for a Markdown preview tab: the path of the file it shows. */
   preview?: { rel: string };
   /** Set for the commit tab: the commit it shows. */
@@ -129,6 +129,12 @@ export function TabStrip(props: {
   onDropZone?: (id: string, pane: string, zone: DropZone) => void;
   onPin: (id: string, pinned: boolean) => void;
   onCopyTabId: (id: string) => void;
+  /** The file tab menu's bulk closes: `kind` of the file tabs of this pane, around the tab `id`. */
+  onCloseFiles?: (id: string, kind: FileCloseKind) => void;
+  /** Copies the path of a file tab: relative to the worktree, or the full one. */
+  onCopyFilePath?: (rel: string, relative: boolean) => void;
+  /** Opens the Markdown preview of a file tab. */
+  onOpenPreview?: (rel: string) => void;
   /** Opens the title dialog for a tab. */
   onChangeTitle: (id: string) => void;
   onColor: (id: string, color: TabColor) => void;
@@ -216,6 +222,24 @@ export function TabStrip(props: {
   const contextItems = (item: StripItem): MenuItem[] => {
     // The commit tab stays in its pane: it has only Close.
     if (item.commit) return [{ id: "close", labelKey: "tabMenu.close", run: () => props.onClose(item.id) }];
+    if (item.file) {
+      const file = item.file;
+      return fileTabMenuItems({
+        rel: file.rel,
+        files: items.flatMap((i) => (i.file ? [{ rel: i.file.rel, dirty: i.file.dirty, pinned: !!i.file.pinned }] : [])),
+        canMoveToSplit: canSplitTab,
+        ...(file.markdown && props.onOpenPreview ? { openPreview: () => props.onOpenPreview?.(file.rel) } : {}),
+        moveToSplit: (dir) => props.onMoveToSplit(item.id, dir),
+        setPinned: (pinned) => props.onPin(item.id, pinned),
+        copyPath: () => props.onCopyFilePath?.(file.rel, false),
+        copyRelativePath: () => props.onCopyFilePath?.(file.rel, true),
+        close: () => props.onClose(item.id),
+        closeOthers: () => props.onCloseFiles?.(item.id, "others"),
+        closeToRight: () => props.onCloseFiles?.(item.id, "right"),
+        closeSaved: () => props.onCloseFiles?.(item.id, "saved"),
+        closeAll: () => props.onCloseFiles?.(item.id, "all"),
+      });
+    }
     if (!item.tab) {
       return [
         {
@@ -268,7 +292,7 @@ export function TabStrip(props: {
               key={item.id}
               className={item.file?.gone ? "ws-tab ws-tab-gone" : "ws-tab"}
               data-selected={selected}
-              data-pinned={tab?.pinned || undefined}
+              data-pinned={tab?.pinned || item.file?.pinned || undefined}
               data-color={tab && tab.color !== "none" ? tab.color : undefined}
               style={tab && tab.color !== "none" ? ({ "--ws-tab-color": `var(${tabColorVar(tab.color)!})` } as CSSProperties) : undefined}
               data-dragging={dragId === item.id || undefined}
@@ -313,7 +337,7 @@ export function TabStrip(props: {
                 e.stopPropagation();
                 e.preventDefault();
               }}
-              {...middleClick(item.id, !!tab?.pinned, props.onClose)}
+              {...middleClick(item.id, !!(tab?.pinned || item.file?.pinned), props.onClose)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 props.onMenu(false);
@@ -380,6 +404,13 @@ export function TabStrip(props: {
                     <>
                       {item.file ? (
                         <>
+                          {item.file.pinned && (
+                            <span className="ws-tab-pin" role="img" aria-label={t("tabMenu.pinned")} title={t("tabMenu.pinned")}>
+                              <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
+                                <path d="M10 1.5 14.5 6l-1.6.6-2.4 2.4.4 3.2-1.2 1.2L7 10.2 3.5 13.7 2.3 12.5 5.8 9 3.2 6.2 4.4 5l3.2.4L10 3z" fill="currentColor" />
+                              </svg>
+                            </span>
+                          )}
                           <span className="ws-tab-name">{fileName(item.file.rel)}</span>
                           {item.file.gone && <span className="ws-tab-gone-label">{t(`files.tab.${item.file.gone}`)}</span>}
                         </>
@@ -396,7 +427,7 @@ export function TabStrip(props: {
                 </button>
               )}
               {item.file?.dirty && <span className="ws-tab-dirty" role="img" aria-label={t("files.dirty")} title={t("files.dirty")} />}
-              {!tab?.pinned && (
+              {!tab?.pinned && !item.file?.pinned && (
               <button
                 type="button"
                 className="ws-tab-close"

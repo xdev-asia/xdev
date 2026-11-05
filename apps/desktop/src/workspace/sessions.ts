@@ -131,6 +131,8 @@ interface ClosedTab {
   profileId: PtyProfile;
   account: string | null;
   cli: TabCli;
+  /** When it closed (ms); "Reopen closed tab" compares it with the closed file tabs. */
+  at: number;
 }
 
 /** How many closed tabs `reopenClosed` can give back. */
@@ -561,10 +563,16 @@ export class Sessions {
     const entry = this.entries.get(id);
     if (!entry) return;
     const { worktree, profileId, cli } = entry.tab;
-    this.closed.push({ worktree, profileId, account: ownAccount(entry.tab), cli });
+    this.closed.push({ worktree, profileId, account: ownAccount(entry.tab), cli, at: Date.now() });
     if (this.closed.length > CLOSED_KEPT) this.closed.shift();
     this.remove([entry]);
     await entry.tab.client.dispose();
+  }
+
+  /** When the newest closed terminal tab of `worktree` closed; null when there is none. */
+  lastClosedAt(worktree: string): number | null {
+    for (let i = this.closed.length - 1; i >= 0; i--) if (this.closed[i].worktree === worktree) return this.closed[i].at;
+    return null;
   }
 
   /**
