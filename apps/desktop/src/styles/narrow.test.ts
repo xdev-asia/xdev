@@ -50,3 +50,13 @@ it("the file viewers wrap their toolbars and fix no width past 360px", () => {
   const fixed = [...files.matchAll(/(?<![-\w])(?:min-)?width:\s*(\d+)px/g)].map((m) => Number(m[1]));
   expect(fixed.filter((px) => px > 360)).toEqual([]);
 });
+
+it("the automations list fits 360px: Project and Last run go, and the list scrolls rather than spills", () => {
+  const automations = read("automations.css");
+  expect(automations).toMatch(/\.au-main\s*\{[^}]*overflow-x:\s*auto/);
+  const narrow = media(automations, "max-width: 480px");
+  for (const n of [2, 3]) {
+    expect(narrow).toMatch(new RegExp(`\\.au-list th:nth-child\\(${n}\\)[^{]*\\{[^}]*display:\\s*none`));
+    expect(narrow).toMatch(new RegExp(`\\.au-list td:nth-child\\(${n}\\)[^{]*\\{[^}]*display:\\s*none`));
+  }
+});

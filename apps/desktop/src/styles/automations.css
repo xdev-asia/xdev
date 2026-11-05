@@ -31,6 +31,11 @@
   min-width: 0;
 }
 
+/* A table wider than the pane scrolls inside it instead of pushing the page sideways. */
+.au-main {
+  overflow-x: auto;
+}
+
 .au-detail {
   display: flex;
   flex-direction: column;
@@ -366,5 +371,13 @@
   .au-table th,
   .au-table td {
     padding: var(--x-space-2);
+  }
+
+  /* Project and Last run are in the detail pane too; the list keeps Name, Status and Actions. */
+  .au-list th:nth-child(2),
+  .au-list td:nth-child(2),
+  .au-list th:nth-child(3),
+  .au-list td:nth-child(3) {
+    display: none;
   }
 }
