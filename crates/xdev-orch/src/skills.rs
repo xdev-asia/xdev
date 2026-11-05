@@ -82,6 +82,8 @@ pub enum Action {
     Replaced,
     /// Not touched: the canonical copy was kept.
     Skipped,
+    /// Taken away by an uninstall.
+    Removed,
 }
 
 /// How a target holds the skill.
@@ -112,7 +114,7 @@ pub struct InstallReport {
 
 /// What `install` may do.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct InstallOpts {
+pub struct InstallOpts<'a> {
     /// Replace edited copies, after a backup.
     pub force: bool,
     /// Report, change nothing.
@@ -122,7 +124,23 @@ pub struct InstallOpts {
     /// Touch only copies that exist: a missing one stays missing, an outdated
     /// one is updated, an edited one is kept unless `force`.
     pub present_only: bool,
+    /// Only these agents' targets (ids from [`AGENT_IDS`]); empty means all.
+    pub agents: &'a [String],
+    /// Work inside this repository (`.claude/skills`, `.agents/skills`)
+    /// instead of the user's home.
+    pub local: Option<&'a Path>,
 }
+
+/// The agent ids a target can carry, in install order.
+pub const AGENT_IDS: [&str; 5] = ["codex", "claude", "gemini", "cursor", "factory"];
+
+/// Agents that get a link only when their home folder already exists:
+/// `(id, home folder below the user's home)`.
+const OPTIONAL_AGENTS: [(&str, &str); 3] = [
+    ("gemini", ".gemini"),
+    ("cursor", ".cursor"),
+    ("factory", ".factory"),
+];
 
 /// Makes `dst` a link to the folder `src`.
 pub type Linker<'a> = &'a dyn Fn(&Path, &Path) -> io::Result<()>;
@@ -153,8 +171,8 @@ fn io_err(e: io::Error) -> OrchError {
 }
 
 /// Every place the skill `skill` goes: the canonical copy first, then a link
-/// per Claude home, then Gemini when `~/.gemini` exists. Codex reads the
-/// canonical root.
+/// per Claude home, then one per agent in `OPTIONAL_AGENTS` whose
+/// home folder exists. Codex reads the canonical root.
 pub fn targets(env: &SkillEnv, skill: &str) -> Vec<SkillTarget> {
     let mut out = vec![SkillTarget {
         agent: "codex".to_owned(),
@@ -168,15 +186,46 @@ pub fn targets(env: &SkillEnv, skill: &str) -> Vec<SkillTarget> {
             link: true,
         });
     }
-    let gemini = env.user_home.join(".gemini");
-    if gemini.is_dir() {
-        out.push(SkillTarget {
-            agent: "gemini".to_owned(),
-            dir: gemini.join("skills").join(skill),
-            link: true,
-        });
+    for (id, folder) in OPTIONAL_AGENTS {
+        let home = env.user_home.join(folder);
+        if home.is_dir() {
+            out.push(SkillTarget {
+                agent: (*id).to_owned(),
+                dir: home.join("skills").join(skill),
+                link: true,
+            });
+        }
     }
     out
+}
+
+/// The targets inside one repository: the canonical copy under
+/// `.agents/skills`, and a link under `.claude/skills`.
+pub fn local_targets(repo: &Path, skill: &str) -> Vec<SkillTarget> {
+    vec![
+        SkillTarget {
+            agent: "codex".to_owned(),
+            dir: repo.join(".agents").join("skills").join(skill),
+            link: false,
+        },
+        SkillTarget {
+            agent: "claude".to_owned(),
+            dir: repo.join(".claude").join("skills").join(skill),
+            link: true,
+        },
+    ]
+}
+
+/// The targets an operation works on: all of them, before the agent filter.
+fn scoped_targets(env: &SkillEnv, skill: &str, opts: &InstallOpts<'_>) -> Vec<SkillTarget> {
+    match opts.local {
+        Some(repo) => local_targets(repo, skill),
+        None => targets(env, skill),
+    }
+}
+
+fn wanted(opts: &InstallOpts<'_>, agent: &str) -> bool {
+    opts.agents.is_empty() || opts.agents.iter().any(|a| a == agent)
 }
 
 fn manifest(env: &SkillEnv) -> Manifest {
@@ -308,15 +357,19 @@ fn backup_dir(env: &SkillEnv) -> PathBuf {
 pub fn install_one(
     env: &SkillEnv,
     b: &Bundled,
-    opts: InstallOpts,
+    opts: InstallOpts<'_>,
     link: Linker<'_>,
 ) -> Result<InstallReport, OrchError> {
     let mut m = manifest(env);
-    let canonical = env.user_home.join(".agents").join("skills").join(b.skill);
+    let all = scoped_targets(env, b.skill, &opts);
+    let canonical = all[0].dir.clone();
+    // A link needs its canonical copy: when the filter leaves that out, the
+    // other targets get plain copies.
+    let canonical_wanted = wanted(&opts, &all[0].agent) || canonical.join(SKILL_FILE).is_file();
     let mut report = InstallReport::default();
     let mut canonical_kept = false;
 
-    for t in targets(env, b.skill) {
+    for t in all.into_iter().filter(|t| wanted(&opts, &t.agent)) {
         let state = inspect(&t.dir, &m.written, b.stub);
         let outcome = |action, how| TargetOutcome {
             skill: b.skill.to_owned(),
@@ -371,7 +424,7 @@ pub fn install_one(
             if let Some(parent) = t.dir.parent() {
                 fs::create_dir_all(parent).map_err(io_err)?;
             }
-            if link(&canonical, &t.dir).is_ok() {
+            if canonical_wanted && link(&canonical, &t.dir).is_ok() {
                 How::Link
             } else {
                 // Links refused: a plain copy keeps the agent working.
@@ -400,7 +453,7 @@ pub fn install_one(
 /// concatenated.
 pub fn install(
     env: &SkillEnv,
-    opts: InstallOpts,
+    opts: InstallOpts<'_>,
     link: Linker<'_>,
 ) -> Result<InstallReport, OrchError> {
     let mut all = InstallReport::default();
@@ -423,6 +476,8 @@ pub fn status(env: &SkillEnv) -> Result<SkillStatus, OrchError> {
         .any(|t| has(&t.dir) && inspect(&t.dir, &m.written, SKILL_MD) == State::Edited);
     let claude: Vec<&SkillTarget> = all.iter().filter(|t| t.agent == "claude").collect();
     let gemini = all.iter().find(|t| t.agent == "gemini");
+    let cursor = all.iter().find(|t| t.agent == "cursor");
+    let factory = all.iter().find(|t| t.agent == "factory");
     let agent =
         |id: &str, name: &str, detected: bool, ready: bool, path: Option<&Path>| SkillAgent {
             id: id.to_owned(),
@@ -453,6 +508,20 @@ pub fn status(env: &SkillEnv) -> Result<SkillStatus, OrchError> {
             gemini.is_some_and(|t| has(&t.dir)),
             gemini.map(|t| t.dir.as_path()),
         ),
+        agent(
+            "cursor",
+            "Cursor",
+            cursor.is_some(),
+            cursor.is_some_and(|t| has(&t.dir)),
+            cursor.map(|t| t.dir.as_path()),
+        ),
+        agent(
+            "factory",
+            "Factory",
+            factory.is_some(),
+            factory.is_some_and(|t| has(&t.dir)),
+            factory.map(|t| t.dir.as_path()),
+        ),
     ];
     Ok(SkillStatus {
         installed: has(&canonical),
@@ -461,6 +530,102 @@ pub fn status(env: &SkillEnv) -> Result<SkillStatus, OrchError> {
         agents,
         install_command: INSTALL_COMMAND.to_owned(),
     })
+}
+
+/// Takes away the copies and links xDev wrote. A folder xDev did not write
+/// is never touched; an edited copy stays (and is reported `kept`) unless
+/// `force`, which moves it to the backup folder first.
+pub fn uninstall_one(
+    env: &SkillEnv,
+    b: &Bundled,
+    opts: InstallOpts<'_>,
+) -> Result<InstallReport, OrchError> {
+    let m = manifest(env);
+    let all = scoped_targets(env, b.skill, &opts);
+    let canonical = all[0].dir.clone();
+    let mut report = InstallReport::default();
+    // Links first, so none is left pointing at a removed canonical copy.
+    let mut order: Vec<&SkillTarget> = all.iter().filter(|t| t.link).collect();
+    order.extend(all.iter().filter(|t| !t.link));
+    for t in order.into_iter().filter(|t| wanted(&opts, &t.agent)) {
+        let linked = t.link && leads_to(&t.dir, &canonical);
+        let outcome = |action, how| TargetOutcome {
+            skill: b.skill.to_owned(),
+            agent: t.agent.clone(),
+            dir: t.dir.display().to_string(),
+            action,
+            how,
+        };
+        let how = if !t.link {
+            How::Written
+        } else if linked {
+            How::Link
+        } else {
+            How::Copy
+        };
+        if fs::symlink_metadata(&t.dir).is_err() {
+            report.targets.push(outcome(Action::Unchanged, how));
+            continue;
+        }
+        // A link to something else is not ours.
+        let is_ours_link = linked;
+        let other_link = !is_ours_link && fs::symlink_metadata(&t.dir).is_ok_and(|md| is_link(&md));
+        let state = if is_ours_link {
+            State::Current
+        } else {
+            inspect(&t.dir, &m.written, b.stub)
+        };
+        let foreign = !is_ours_link && (other_link || !t.dir.join(SKILL_FILE).is_file());
+        let remove = match state {
+            _ if foreign => false,
+            State::Current | State::Outdated => true,
+            State::Edited => opts.force && t.dir.join(SKILL_FILE).is_file(),
+            State::Missing => false,
+        };
+        if !remove {
+            let action = if foreign || state == State::Missing {
+                Action::Unchanged
+            } else {
+                Action::Kept
+            };
+            report.targets.push(outcome(action, how));
+            continue;
+        }
+        if !opts.dry_run {
+            if state == State::Edited {
+                let backup = backup_dir(env);
+                let to = backup.join(format!("{}-{}-{}", b.skill, t.agent, report.targets.len()));
+                copy_tree(&t.dir, &to).map_err(io_err)?;
+                report.backup = Some(backup.display().to_string());
+            }
+            remove_ours(&t.dir, is_ours_link).map_err(io_err)?;
+        }
+        report.targets.push(outcome(Action::Removed, how));
+    }
+    Ok(report)
+}
+
+/// Removes a link, or a skill folder xDev wrote. Files beside `SKILL.md`
+/// belong to the person: they keep the folder.
+fn remove_ours(dir: &Path, link: bool) -> io::Result<()> {
+    if link {
+        return clear(dir);
+    }
+    fs::remove_file(dir.join(SKILL_FILE))?;
+    // Fails, on purpose, when the folder holds anything else.
+    let _ = fs::remove_dir(dir);
+    Ok(())
+}
+
+/// [`uninstall_one`] for every bundled skill; the reports are concatenated.
+pub fn uninstall(env: &SkillEnv, opts: InstallOpts<'_>) -> Result<InstallReport, OrchError> {
+    let mut all = InstallReport::default();
+    for b in &BUNDLED {
+        let r = uninstall_one(env, b, opts)?;
+        all.targets.extend(r.targets);
+        all.backup = all.backup.or(r.backup);
+    }
+    Ok(all)
 }
 
 /// App start: for each bundled skill that has been installed once, rewrites
@@ -584,7 +749,7 @@ mod tests {
         assert!(
             s.agents
                 .iter()
-                .all(|a| a.detected && a.ready || a.id == "codex")
+                .all(|a| a.detected == a.ready || a.id == "codex")
         );
         assert!(s.agents.iter().find(|a| a.id == "codex").unwrap().ready);
     }
@@ -812,7 +977,7 @@ mod tests {
         assert_eq!(read(&canonical(&h)), SKILL_MD);
     }
 
-    fn present_only() -> InstallOpts {
+    fn present_only() -> InstallOpts<'static> {
         InstallOpts {
             present_only: true,
             ..InstallOpts::default()
@@ -889,5 +1054,224 @@ mod tests {
                 .iter()
                 .any(|t| t.skill == "xdev-cli" && t.action == Action::Updated)
         );
+    }
+
+    fn agent_home(h: &Home, folder: &str) {
+        fs::create_dir_all(h.env.user_home.join(folder)).unwrap();
+    }
+
+    #[test]
+    fn cursor_and_factory_are_targets_only_when_their_folder_exists() {
+        let h = home(1, false);
+        let agents = |h: &Home| -> Vec<String> {
+            targets(&h.env, SKILL_NAME)
+                .into_iter()
+                .map(|t| t.agent)
+                .collect()
+        };
+        assert_eq!(agents(&h), ["codex", "claude"]);
+        agent_home(&h, ".cursor");
+        agent_home(&h, ".factory");
+        assert_eq!(agents(&h), ["codex", "claude", "cursor", "factory"]);
+        let t = targets(&h.env, SKILL_NAME);
+        assert_eq!(
+            t[2].dir,
+            h.env.user_home.join(".cursor/skills").join(SKILL_NAME)
+        );
+        assert_eq!(
+            t[3].dir,
+            h.env.user_home.join(".factory/skills").join(SKILL_NAME)
+        );
+        assert!(t[2].link && t[3].link);
+        // Installing creates the skills folder inside the agent's home.
+        install_one(&h.env, orch(), InstallOpts::default(), &copy_linker).unwrap();
+        assert_eq!(read(&t[2].dir), SKILL_MD);
+        let s = status(&h.env).unwrap();
+        assert!(s.agents.iter().find(|a| a.id == "cursor").unwrap().ready);
+    }
+
+    #[test]
+    fn the_agent_filter_installs_only_those_targets() {
+        let h = home(1, true);
+        let only = vec!["claude".to_owned()];
+        let opts = InstallOpts {
+            agents: &only,
+            ..InstallOpts::default()
+        };
+        let r = install_one(&h.env, orch(), opts, &links).unwrap();
+        assert_eq!(r.targets.len(), 1);
+        assert_eq!(r.targets[0].agent, "claude");
+        // The canonical copy is not wanted, so the claude target is a copy.
+        assert_eq!(r.targets[0].how, How::Copy);
+        assert!(!canonical(&h).exists());
+        assert!(!h.env.user_home.join(".gemini/skills").exists());
+        assert_eq!(read(&targets(&h.env, SKILL_NAME)[1].dir), SKILL_MD);
+    }
+
+    #[test]
+    fn local_installs_into_the_repo_and_never_the_home() {
+        let h = home(1, true);
+        let repo = h.env.user_home.join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let opts = InstallOpts {
+            local: Some(&repo),
+            ..InstallOpts::default()
+        };
+        let r = install_one(&h.env, orch(), opts, &links).unwrap();
+        assert_eq!(r.targets.len(), 2);
+        assert_eq!(
+            read(&repo.join(".agents/skills").join(SKILL_NAME)),
+            SKILL_MD
+        );
+        assert_eq!(
+            read(&repo.join(".claude/skills").join(SKILL_NAME)),
+            SKILL_MD
+        );
+        assert!(!canonical(&h).exists());
+        assert!(!targets(&h.env, SKILL_NAME)[1].dir.exists());
+        // The agent filter applies inside the repo too.
+        let only = vec!["codex".to_owned()];
+        let r = uninstall_one(
+            &h.env,
+            orch(),
+            InstallOpts {
+                local: Some(&repo),
+                agents: &only,
+                ..InstallOpts::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(r.targets.len(), 1);
+        assert_eq!(r.targets[0].action, Action::Removed);
+    }
+
+    #[test]
+    fn install_all_covers_every_bundled_skill() {
+        let h = home(1, false);
+        let r = install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
+        assert_eq!(r.targets.len(), 2 * BUNDLED.len());
+    }
+
+    #[test]
+    fn uninstall_removes_links_and_copies_xdev_wrote() {
+        let h = home(1, true);
+        install(&h.env, InstallOpts::default(), &links).unwrap();
+        let r = uninstall(&h.env, InstallOpts::default()).unwrap();
+        assert!(r.targets.iter().all(|t| t.action == Action::Removed));
+        for b in &BUNDLED {
+            for t in targets(&h.env, b.skill) {
+                assert!(fs::symlink_metadata(&t.dir).is_err(), "{}", t.dir.display());
+            }
+        }
+        // The skills roots stay; only the skill folders went.
+        assert!(h.env.user_home.join(".agents/skills").is_dir());
+        // Again: nothing left to do.
+        let r = uninstall(&h.env, InstallOpts::default()).unwrap();
+        assert!(r.targets.iter().all(|t| t.action == Action::Unchanged));
+    }
+
+    #[test]
+    fn uninstall_leaves_foreign_folders_and_links() {
+        let h = home(1, true);
+        let c = canonical(&h);
+        fs::create_dir_all(&c).unwrap();
+        fs::write(c.join(SKILL_FILE), "somebody else's skill").unwrap();
+        fs::write(c.join("notes.txt"), "x").unwrap();
+        // A folder without SKILL.md and a link to elsewhere.
+        let claude = targets(&h.env, SKILL_NAME)[1].dir.clone();
+        fs::create_dir_all(&claude).unwrap();
+        fs::write(claude.join("other.txt"), "x").unwrap();
+        let elsewhere = h.env.user_home.join("elsewhere");
+        fs::create_dir_all(&elsewhere).unwrap();
+        fs::write(elsewhere.join(SKILL_FILE), "theirs").unwrap();
+        let gemini = targets(&h.env, SKILL_NAME)[2].dir.clone();
+        fs::create_dir_all(gemini.parent().unwrap()).unwrap();
+        system_link(&elsewhere, &gemini).unwrap();
+        // Even `force` never reaches a folder without SKILL.md or a link
+        // that leads elsewhere.
+        let both = vec!["claude".to_owned(), "gemini".to_owned()];
+        let force = InstallOpts {
+            force: true,
+            agents: &both,
+            ..InstallOpts::default()
+        };
+        let r = uninstall_one(&h.env, orch(), force).unwrap();
+        assert!(r.targets.iter().all(|t| t.action == Action::Unchanged));
+        assert_eq!(read(&elsewhere), "theirs");
+        assert!(claude.join("other.txt").is_file());
+        assert_eq!(read(&gemini), "theirs");
+        // Without force the unknown canonical copy is kept as it is.
+        let r = uninstall_one(&h.env, orch(), InstallOpts::default()).unwrap();
+        assert_eq!(r.targets.last().unwrap().action, Action::Kept);
+        assert_eq!(read(&c), "somebody else's skill");
+        assert!(c.join("notes.txt").is_file());
+    }
+
+    #[test]
+    fn uninstall_keeps_an_edited_copy_unless_forced() {
+        let h = home(1, false);
+        install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
+        let claude = targets(&h.env, SKILL_NAME)[1].dir.clone();
+        fs::write(claude.join(SKILL_FILE), "my own notes").unwrap();
+        let r = uninstall_one(&h.env, orch(), InstallOpts::default()).unwrap();
+        let t = r.targets.iter().find(|t| t.agent == "claude").unwrap();
+        assert_eq!(t.action, Action::Kept);
+        assert_eq!(read(&claude), "my own notes");
+        assert!(!canonical(&h).exists());
+        // A dry run changes nothing even when forced.
+        let dry = InstallOpts {
+            force: true,
+            dry_run: true,
+            ..InstallOpts::default()
+        };
+        let r = uninstall_one(&h.env, orch(), dry).unwrap();
+        assert_eq!(r.backup, None);
+        assert_eq!(read(&claude), "my own notes");
+        let force = InstallOpts {
+            force: true,
+            ..InstallOpts::default()
+        };
+        let r = uninstall_one(&h.env, orch(), force).unwrap();
+        assert_eq!(
+            r.targets
+                .iter()
+                .find(|t| t.agent == "claude")
+                .unwrap()
+                .action,
+            Action::Removed
+        );
+        assert!(!claude.exists());
+        let backup = PathBuf::from(r.backup.unwrap());
+        let saved = fs::read_dir(backup)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(read(&saved), "my own notes");
+    }
+
+    #[test]
+    fn uninstall_by_agent_and_dry_run() {
+        let h = home(1, true);
+        install(&h.env, InstallOpts::default(), &copy_linker).unwrap();
+        let gemini = vec!["gemini".to_owned()];
+        let dry = InstallOpts {
+            agents: &gemini,
+            dry_run: true,
+            ..InstallOpts::default()
+        };
+        let r = uninstall_one(&h.env, orch(), dry).unwrap();
+        assert_eq!(r.targets.len(), 1);
+        assert_eq!(r.targets[0].action, Action::Removed);
+        let g = targets(&h.env, SKILL_NAME)[2].dir.clone();
+        assert_eq!(read(&g), SKILL_MD);
+        let real = InstallOpts {
+            agents: &gemini,
+            ..InstallOpts::default()
+        };
+        uninstall_one(&h.env, orch(), real).unwrap();
+        assert!(!g.exists());
+        assert_eq!(read(&canonical(&h)), SKILL_MD);
     }
 }
