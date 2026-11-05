@@ -83,3 +83,78 @@ fn full_and_json_work_from_the_binary() {
     assert_eq!(v["topic"], "cli");
     assert!(v["content"].as_str().unwrap().starts_with("# Terminals"));
 }
+
+fn skill_file(root: &Path, name: &str) -> std::path::PathBuf {
+    root.join("home/.agents/skills").join(name).join("SKILL.md")
+}
+
+#[test]
+fn install_writes_both_skills_under_a_temp_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = skills(dir.path(), &["install"]);
+    assert!(out.status.success(), "{out:?}");
+    assert!(skill_file(dir.path(), "xdev-cli").is_file());
+    assert!(skill_file(dir.path(), "xdev-orchestration").is_file());
+    let lines = text(&out.stdout);
+    assert!(lines.lines().all(|l| l.split('\t').count() == 5), "{lines}");
+}
+
+#[test]
+fn install_skill_narrows_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = skills(dir.path(), &["install", "--skill", "cli"]);
+    assert!(out.status.success());
+    assert!(skill_file(dir.path(), "xdev-cli").is_file());
+    assert!(!skill_file(dir.path(), "xdev-orchestration").exists());
+}
+
+#[test]
+fn install_unknown_skill_exits_5() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = skills(dir.path(), &["install", "--skill", "nope"]);
+    assert_eq!(out.status.code(), Some(5));
+    assert!(!dir.path().join("home/.agents").exists());
+}
+
+#[test]
+fn update_on_a_clean_home_changes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = skills(dir.path(), &["update"]);
+    assert!(out.status.success());
+    assert!(
+        text(&out.stdout)
+            .lines()
+            .all(|l| l.starts_with("unchanged\t"))
+    );
+    assert!(!dir.path().join("home/.agents/skills").exists());
+    // After an install, an update is also a no-op.
+    skills(dir.path(), &["install"]);
+    let out = skills(dir.path(), &["update", "--json"]);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        v["targets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["action"] == "unchanged")
+    );
+}
+
+#[test]
+fn update_dry_run_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    skills(dir.path(), &["install", "--skill", "cli"]);
+    let file = skill_file(dir.path(), "xdev-cli");
+    std::fs::write(&file, "mine").unwrap();
+    let out = skills(dir.path(), &["update", "--force", "--dry-run"]);
+    assert!(out.status.success());
+    assert!(text(&out.stdout).contains("replaced\t"));
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "mine");
+    assert!(!dir.path().join("home/.agents/.xdev-skill-backups").exists());
+    // Without --dry-run the edit is replaced after a backup.
+    let out = skills(dir.path(), &["update", "--force"]);
+    assert!(out.status.success());
+    assert_ne!(std::fs::read_to_string(&file).unwrap(), "mine");
+    assert!(dir.path().join("home/.agents/.xdev-skill-backups").is_dir());
+    assert!(!skill_file(dir.path(), "xdev-orchestration").exists());
+}

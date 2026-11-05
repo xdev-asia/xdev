@@ -36,12 +36,31 @@ pub enum SkillsCommand {
     },
     /// Write the bundled skills where the agent CLIs read them.
     Install {
+        /// Only this skill (a topic or folder name); repeat for more.
+        #[arg(long = "skill")]
+        skills: Vec<String>,
         /// Replace copies that were edited, after a backup.
         #[arg(long)]
         force: bool,
         /// Say what would change; change nothing.
         #[arg(long)]
         dry_run: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Refresh copies that are already installed; never adds one.
+    Update {
+        /// Only this skill (a topic or folder name); repeat for more.
+        #[arg(long = "skill")]
+        skills: Vec<String>,
+        /// Replace copies that were edited, after a backup.
+        #[arg(long)]
+        force: bool,
+        /// Say what would change; change nothing.
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -96,7 +115,7 @@ fn get_json(topic: &str, content: String) -> serde_json::Value {
     })
 }
 
-/// One line per target: `action<TAB>how<TAB>agent<TAB>dir`.
+/// One line per target: `action<TAB>how<TAB>agent<TAB>dir<TAB>skill`.
 pub fn plain(report: &InstallReport) -> String {
     let mut out = String::new();
     for t in &report.targets {
@@ -108,7 +127,10 @@ pub fn plain(report: &InstallReport) -> String {
             .ok()
             .and_then(|v| v.as_str().map(str::to_owned))
             .unwrap_or_default();
-        out.push_str(&format!("{action}\t{how}\t{}\t{}\n", t.agent, t.dir));
+        out.push_str(&format!(
+            "{action}\t{how}\t{}\t{}\t{}\n",
+            t.agent, t.dir, t.skill
+        ));
     }
     if let Some(b) = &report.backup {
         out.push_str(&format!("backup\t{b}\n"));
@@ -172,22 +194,72 @@ pub fn run(command: SkillsCommand, data_dir: &Path) -> Result<Outcome, &'static 
                 Ok(Outcome::Exit(5))
             }
         },
-        SkillsCommand::Install { force, dry_run } => {
-            let env = env_of(data_dir)?;
-            let report = skills::install(
-                &env,
-                InstallOpts {
-                    force,
-                    dry_run,
-                    ..InstallOpts::default()
-                },
-                &skills::system_link,
-            )
-            .map_err(|_| "io")?;
-            print!("{}", plain(&report));
-            Ok(Outcome::Ok)
+        SkillsCommand::Install {
+            skills,
+            force,
+            dry_run,
+            json,
+        } => change(data_dir, &skills, force, dry_run, json, false),
+        SkillsCommand::Update {
+            skills,
+            force,
+            dry_run,
+            json,
+        } => change(data_dir, &skills, force, dry_run, json, true),
+    }
+}
+
+/// The bundled skills named, or every one when none is; `Err` names the
+/// first that does not exist.
+fn select(names: &[String]) -> Result<Vec<&'static guide::Bundled>, String> {
+    if names.is_empty() {
+        return Ok(guide::BUNDLED.iter().collect());
+    }
+    let mut out: Vec<&'static guide::Bundled> = Vec::new();
+    for n in names {
+        let b = guide::find(n).ok_or_else(|| format!("no skill named {n}"))?;
+        if !out.iter().any(|o| o.skill == b.skill) {
+            out.push(b);
         }
     }
+    Ok(out)
+}
+
+/// `install` (writes what is missing) or `update` (`present_only`).
+fn change(
+    data_dir: &Path,
+    names: &[String],
+    force: bool,
+    dry_run: bool,
+    json: bool,
+    present_only: bool,
+) -> Result<Outcome, &'static str> {
+    let chosen = match select(names) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            return Ok(Outcome::Exit(5));
+        }
+    };
+    let env = env_of(data_dir)?;
+    let opts = InstallOpts {
+        force,
+        dry_run,
+        present_only,
+        ..InstallOpts::default()
+    };
+    let mut report = InstallReport::default();
+    for b in chosen {
+        let r = skills::install_one(&env, b, opts, &skills::system_link).map_err(|_| "io")?;
+        report.targets.extend(r.targets);
+        report.backup = report.backup.or(r.backup);
+    }
+    if json {
+        println!("{}", serde_json::to_string(&report).map_err(|_| "io")?);
+    } else {
+        print!("{}", plain(&report));
+    }
+    Ok(Outcome::Ok)
 }
 
 #[cfg(test)]
@@ -219,6 +291,29 @@ mod tests {
         let text = plain(&r);
         assert_eq!(text.lines().count(), guide::BUNDLED.len());
         assert!(text.starts_with("created\twritten\tcodex\t"));
+    }
+
+    #[test]
+    fn plain_adds_the_skill_column_last() {
+        let report = InstallReport {
+            targets: vec![xdev_orch::TargetOutcome {
+                skill: "xdev-cli".to_owned(),
+                agent: "codex".to_owned(),
+                dir: "/d".to_owned(),
+                action: xdev_orch::Action::Created,
+                how: xdev_orch::How::Written,
+            }],
+            backup: None,
+        };
+        assert_eq!(plain(&report), "created\twritten\tcodex\t/d\txdev-cli\n");
+    }
+
+    #[test]
+    fn select_takes_topics_or_folders_and_rejects_unknown() {
+        assert_eq!(select(&[]).unwrap().len(), guide::BUNDLED.len());
+        let one = select(&["cli".to_owned(), "xdev-cli".to_owned()]).unwrap();
+        assert_eq!(one.len(), 1);
+        assert!(select(&["nope".to_owned()]).is_err());
     }
 
     #[test]
