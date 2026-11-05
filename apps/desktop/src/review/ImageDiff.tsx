@@ -3,7 +3,7 @@ import type { CSSProperties, JSX } from "react";
 import { toApiError, type Api, type ReviewFile } from "@/api";
 import { formatBytes, mimeOf } from "@/files/viewer";
 import { useI18n } from "@/i18n";
-import { effectiveKind, modesFor, onionOpacity, swipeClip, type ImageMode } from "./imageDiff";
+import { effectiveKind, modesFor, onionOpacity, swipeClip, type ImageMode } from "./imageDiffModel";
 
 export type Side =
   | { status: "none" }

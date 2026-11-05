@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { effectiveKind, isImagePath, modesFor, onionOpacity, swipeClip } from "./imageDiff";
+import { effectiveKind, isImagePath, modesFor, onionOpacity, swipeClip } from "./imageDiffModel";
 
 it("knows the image formats the review draws as images", () => {
   for (const f of ["a.png", "b/c.JPG", "d.jpeg", "e.gif", "f.webp", "g.svg", "h.bmp", "i.ico"]) expect(isImagePath(f), f).toBe(true);

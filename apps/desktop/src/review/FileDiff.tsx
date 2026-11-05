@@ -13,7 +13,7 @@ import { diffTheme, DiffStats } from "@/components/DiffView";
 import { highlight, theme } from "@/components/Editor";
 import { useI18n, type I18n } from "@/i18n";
 import { ImageDiff } from "./ImageDiff";
-import { isImagePath } from "./imageDiff";
+import { isImagePath } from "./imageDiffModel";
 import { noteExtension, setNotes, type NoteHandlers } from "./noteWidgets";
 import { ignoreWhitespaceDiff, onlyWhitespace, whitespaceSupported } from "./whitespace";
 import type { ViewOptions } from "./viewOptions";

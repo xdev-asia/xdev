@@ -4,7 +4,7 @@ import type { JSX } from "react";
 import { toApiError, type Api } from "@/api";
 import { DiffView } from "@/components/DiffView";
 import { ImageDiff } from "@/review/ImageDiff";
-import { isImagePath } from "@/review/imageDiff";
+import { isImagePath } from "@/review/imageDiffModel";
 import { useI18n } from "@/i18n";
 
 /** What reading the file from disk gave, for the comparison. */
