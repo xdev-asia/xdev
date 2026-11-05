@@ -3607,5 +3607,18 @@
   "settings.repos.mcp.invalid.json": "JSON không hợp lệ",
   "settings.repos.mcp.invalid.shape": "Không phải cấu hình MCP",
   "settings.repos.mcp.invalid.too_large": "Quá lớn để kiểm tra",
-  "settings.repos.mcp.truncated": "Đang hiện {count} máy chủ đầu tiên"
+  "settings.repos.mcp.truncated": "Đang hiện {count} máy chủ đầu tiên",
+  "tip.eyebrow": "Mẹo",
+  "tip.cliSkill.title": "Để agent điều khiển xDev bằng skill xDev",
+  "tip.cliSkill.body": "Skill giúp agent điều phối worktree con và trao đổi giữa các worktree.",
+  "tip.cliSkill.try": "Thử hỏi:",
+  "tip.cliSkill.example": "Tách PR này thành hai worktree và mở PR cho từng cái.",
+  "tip.cliSkill.install": "Cài skill",
+  "tip.cliSkill.installing": "Đang cài…",
+  "tip.cliSkill.installed": "Đã cài",
+  "tip.cliSkill.copy": "Sao chép lệnh cài",
+  "tip.cliSkill.copied": "Đã sao chép",
+  "tip.cliSkill.later": "Để sau",
+  "tip.cliSkill.done": "Xong",
+  "tip.cliSkill.label": "Mẹo: skill xDev"
 }

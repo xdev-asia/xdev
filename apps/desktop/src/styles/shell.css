@@ -559,3 +559,39 @@
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 }
+
+/* The CLI skill tip: bottom right above the footer, under the toasts, and never wider than the window. */
+.cli-tip {
+  position: fixed;
+  right: var(--x-space-3);
+  bottom: calc(var(--h-footer) + var(--x-space-3));
+  z-index: 20;
+  width: min(360px, calc(100vw - 2 * var(--x-space-3)));
+}
+
+.cli-tip-eyebrow {
+  margin: 0 0 var(--x-space-1);
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.cli-tip-text {
+  margin: 0 0 var(--x-space-2);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.cli-tip-example {
+  margin: 0 0 var(--x-space-3);
+  padding: var(--x-space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-3);
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+.cli-tip-actions {
+  flex-wrap: wrap;
+}

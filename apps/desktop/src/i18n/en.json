@@ -3607,5 +3607,18 @@
   "settings.repos.mcp.invalid.json": "Invalid JSON",
   "settings.repos.mcp.invalid.shape": "Not an MCP config",
   "settings.repos.mcp.invalid.too_large": "Too large to inspect",
-  "settings.repos.mcp.truncated": "Showing the first {count} servers"
+  "settings.repos.mcp.truncated": "Showing the first {count} servers",
+  "tip.eyebrow": "Tip",
+  "tip.cliSkill.title": "Let agents drive xDev with the xDev skill",
+  "tip.cliSkill.body": "The skill lets agents coordinate child worktrees and talk between worktrees.",
+  "tip.cliSkill.try": "Try asking:",
+  "tip.cliSkill.example": "Split this PR into two worktrees and open a PR for each.",
+  "tip.cliSkill.install": "Install the skill",
+  "tip.cliSkill.installing": "Installing…",
+  "tip.cliSkill.installed": "Installed",
+  "tip.cliSkill.copy": "Copy install command",
+  "tip.cliSkill.copied": "Copied",
+  "tip.cliSkill.later": "Maybe later",
+  "tip.cliSkill.done": "Done",
+  "tip.cliSkill.label": "Tip: xDev skill"
 }
