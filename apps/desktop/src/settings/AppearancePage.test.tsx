@@ -160,8 +160,16 @@ it("a status bar switch flips one item and keeps the others", async () => {
   const p = await page();
   p.sw("tokenUsage").props.onClick();
   await tick();
-  expect((await p.api.uiSettingsGet()).statusBar).toEqual({ branch: true, tokenUsage: false, agents: true, version: true });
+  expect((await p.api.uiSettingsGet()).statusBar).toEqual({ branch: true, tokenUsage: false, agents: true, version: true, ports: true });
   expect(p.sw("tokenUsage").props["aria-checked"]).toBe(false);
+});
+
+it("the status bar has a Ports switch", async () => {
+  paintEnv();
+  const p = await page();
+  p.sw("ports").props.onClick();
+  await tick();
+  expect((await p.api.uiSettingsGet()).statusBar.ports).toBe(false);
 });
 
 it("a search keeps only the rows that hit", async () => {

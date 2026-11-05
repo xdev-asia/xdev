@@ -3,6 +3,8 @@ import { fenceLanguage, type Parsers } from "@/doc/plugins/highlight";
 import { loadLanguage, type Language } from "./languages";
 
 const cache: Parsers = {};
+/** What `ensureParsers` hands out; replaced only when a parser was added, so callers can compare it by identity. */
+let snapshot: Parsers = {};
 
 /** The languages named by the code fences of `text`. */
 export function fenceLanguages(text: string): Language[] {
@@ -14,7 +16,7 @@ export function fenceLanguages(text: string): Language[] {
   return [...found];
 }
 
-/** Loads (once) the parsers for `langs`; a language that fails to load stays plain. */
+/** Loads (once) the parsers for `langs`; a language that fails to load stays plain. The same object comes back while nothing new loaded. */
 export async function ensureParsers(langs: Language[]): Promise<Parsers> {
   await Promise.all(
     langs
@@ -26,5 +28,6 @@ export async function ensureParsers(langs: Language[]): Promise<Parsers> {
         ),
       ),
   );
-  return { ...cache };
+  if (Object.keys(cache).length !== Object.keys(snapshot).length) snapshot = { ...cache };
+  return snapshot;
 }

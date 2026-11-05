@@ -873,6 +873,7 @@ pub struct StatusBarItems {
     pub token_usage: bool,
     pub agents: bool,
     pub version: bool,
+    pub ports: bool,
 }
 
 impl Default for StatusBarItems {
@@ -882,6 +883,7 @@ impl Default for StatusBarItems {
             token_usage: true,
             agents: true,
             version: true,
+            ports: true,
         }
     }
 }
@@ -2345,7 +2347,7 @@ then sum up"
         assert_eq!(ui.sidebar, SidebarLook::Default);
         assert_eq!(ui.status_bar, StatusBarItems::default());
         assert!(ui.status_bar.branch && ui.status_bar.token_usage);
-        assert!(ui.status_bar.agents && ui.status_bar.version);
+        assert!(ui.status_bar.agents && ui.status_bar.version && ui.status_bar.ports);
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);
@@ -2376,7 +2378,7 @@ then sum up"
 
         fs::write(&path, r#"{"ui":{"statusBar":{"agents":false}}}"#).unwrap();
         let bar = load(&path).ui.status_bar;
-        assert!(!bar.agents && bar.branch && bar.token_usage && bar.version);
+        assert!(!bar.agents && bar.branch && bar.token_usage && bar.version && bar.ports);
     }
 
     #[test]

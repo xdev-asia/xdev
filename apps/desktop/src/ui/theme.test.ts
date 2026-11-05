@@ -152,6 +152,6 @@ it("applyAppearance feeds the editor theme with the painted theme and the pick",
 
 it("applyAppearance hands the status bar items to the footer", () => {
   setup();
-  applyAppearance({ ...UI_SETTINGS_DEFAULTS, statusBar: { branch: false, tokenUsage: true, agents: true, version: false } });
-  expect(getStatusBarItems()).toEqual({ branch: false, tokenUsage: true, agents: true, version: false });
+  applyAppearance({ ...UI_SETTINGS_DEFAULTS, statusBar: { branch: false, tokenUsage: true, agents: true, version: false, ports: true } });
+  expect(getStatusBarItems()).toEqual({ branch: false, tokenUsage: true, agents: true, version: false, ports: true });
 });

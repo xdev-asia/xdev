@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type LivePort, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MenuAction } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MenuAction } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -24,8 +24,9 @@ import { recentFiles } from "@/search/recentFiles";
 import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
-import { usePorts } from "./usePorts";
-import { endpoint, browserUrl } from "./PortsChip";
+import { livePortsByWorktree, stopFromCard } from "./livePorts";
+import type { LivePort } from "./livePorts";
+import { endpoint } from "./PortsChip";
 import { startAutoRename } from "./autoRename";
 import { startAutoTabTitle } from "./autoTabTitle";
 import { startAutoSleep } from "./autoSleep";
@@ -42,7 +43,11 @@ import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } fro
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
 import { ActivityFeed } from "@/activity/feed";
+import { Icon } from "@xdev-asia/ui";
 import { ChecksPanel } from "./ChecksPanel";
+import { PortsItem } from "@/ports/PortsItem";
+import { PortsPanel } from "@/ports/PortsPanel";
+import { PortsStore } from "@/ports/portsStore";
 import { IssuesPanel } from "@/issues/IssuesPanel";
 import { CreateWorktreeDialog, type AgentChoice, type CreateExtra, type CreateTab } from "./CreateWorktreeDialog";
 import { DetailsDialog } from "./DetailsDialog";
@@ -135,7 +140,7 @@ function storeSelected(path: string): void {
 }
 
 type View = "workspace" | "docs" | "settings";
-type PanelTab = "files" | "search" | "changes" | "checks" | "issues";
+type PanelTab = "files" | "search" | "changes" | "checks" | "issues" | "ports";
 type Creating = { repoId: string; name?: string; agents: AgentChoice[]; defaultAgent: string | null };
 type Editing = { worktree: WorktreeView; busy: boolean; error?: ApiError["code"] };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
@@ -270,6 +275,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // Pull requests and checks of every worktree, shared by the ship bar and the panels.
   const [prs] = useState(() => new PrStore(api));
   const [prComments] = useState(() => new PrCommentStore(api));
+  // The listening ports of every worktree; it polls only while the Ports tab is in front.
+  const [ports] = useState(() => new PortsStore(api));
   // The jump palette, and the settings section it asked for; a new `seq` is a new request.
   const [jumpOpen, setJumpOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -486,16 +493,24 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useSyncExternalStore(stats.subscribe, stats.snapshot, stats.snapshot);
   useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
 
-  const portsSource = sessions ? { ptyIds: (path: string) => sessions.tabs(path).map((tab) => tab.id) } : null;
-  const { ports: livePorts, rescan: rescanPorts } = usePorts(api, portsSource, paths, prefs.card.ports && !prefs.compactCards);
-  async function stopPort(wt: WorktreeView, port: LivePort): Promise<void> {
-    try {
-      await api.portStop(sessions?.tabs(wt.path).map((tab) => tab.id) ?? [], port.pid, true);
-      pushToast({ text: t("ports.stopped", { port: port.port }) });
-    } catch (e) {
-      pushToast({ text: t(`error.${toApiError(e).code}`) });
-    }
-    await rescanPorts();
+  // The cards' ports chip reads the same store as the Ports panel: one scanner, one poll.
+  useSyncExternalStore(useCallback((fn: () => void) => ports.subscribe(fn), [ports]), ports.snapshot, ports.snapshot);
+  const cardPorts = prefs.card.ports && !prefs.compactCards;
+  useEffect(() => {
+    ports.want("cards", cardPorts);
+    return () => ports.want("cards", false);
+  }, [ports, cardPorts]);
+  // A hidden window polls the ports every 30 s instead of every 5 s.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const update = () => ports.setHidden(document.visibilityState === "hidden");
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, [ports]);
+  const livePorts = cardPorts ? livePortsByWorktree(ports.state().scan) : {};
+  async function stopPort(_wt: WorktreeView, port: LivePort): Promise<void> {
+    await stopFromCard(ports, port, (key, vars) => pushToast({ text: t(key, vars) }));
   }
   const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, sessions?.dot(p) ?? null]));
   const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
@@ -509,6 +524,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const all = repos?.flatMap((r) => r.worktrees) ?? [];
   // A stored path that no longer exists falls back to the first worktree.
   const current = all.find((w) => w.path === selected) ?? all[0] ?? null;
+
+  const allPaths = JSON.stringify(all.map((w) => w.path));
+  useEffect(() => {
+    ports.setWorktrees(JSON.parse(allPaths) as string[]);
+  }, [ports, allPaths]);
+  useEffect(() => {
+    const off = ports.watch();
+    return () => {
+      void off.then((fn) => fn());
+      ports.dispose();
+    };
+  }, [ports]);
 
   // Auto sleep: once a minute, tabs of finished agents that nobody looks at and that went quiet sleep.
   // The inputs sit in a ref, so a worktree switch does not restart the timer; the settings are read on each tick.
@@ -905,6 +932,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     },
     "panel.sourceControl": () => panelKey("changes"),
     "panel.issues": () => panelKey("issues"),
+    "panel.ports": () => panelKey("ports"),
     "zoom.in": () => void stepZoom(api, ZOOM_STEP),
     "zoom.out": () => void stepZoom(api, -ZOOM_STEP),
     "zoom.reset": () => void stepZoom(api, 0),
@@ -1811,7 +1839,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             dots={dots}
             stats={stats.all()}
             ports={livePorts}
-            onOpenPort={(port) => window.open(browserUrl(port), "_blank", "noopener")}
+            onOpenPort={(port) => void api.portsOpen(port.id).catch((e: unknown) => pushToast({ text: t(`error.${toApiError(e).code}`) }))}
             onCopyPort={(port) => {
               void copy(endpoint(port));
               pushToast({ text: t("ports.copied", { address: endpoint(port) }) });
@@ -2008,6 +2036,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   <circle cx="12" cy="12" r="1.5" />
                 </svg>
               </button>
+              <button
+                type="button"
+                role="tab"
+                className="ws-panel-tab"
+                aria-selected={panelTab === "ports"}
+                aria-label={t("ports.tab")}
+                title={t("ports.tab")}
+                onClick={() => setPanelTab("ports")}
+              >
+                <Icon name="plug" size={16} />
+              </button>
             </div>
             {/* Both panels stay mounted, so the change list and the open folders survive a tab switch. */}
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
@@ -2068,6 +2107,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}
             </div>
+            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "ports"}>
+              <PortsPanel api={api} store={ports} active={current?.path ?? null} visible={rightOpen && panelTab === "ports" && view === "workspace"} />
+            </div>
           </aside>
         </div>
 
@@ -2104,6 +2146,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         onUseAccount={(provider, name) =>
           void api.accountActivate(provider, name).catch((e) => pushToast({ text: t("accounts.switch.failed", { code: toApiError(e).code }) }))
         }
+        ports={<PortsItem store={ports} active={current?.path ?? null} onOpen={() => panelKey("ports")} />}
         hidden={view === "docs"}
       />
 

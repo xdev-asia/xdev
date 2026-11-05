@@ -1,25 +1,64 @@
-import type { Api, ApiError, LivePort } from "./api";
+import type { Api, PortScan, WorkspacePort } from "./api";
 
-type PortsApi = Pick<Api, "portsScan" | "portStop">;
+type PortsApi = Pick<Api, "portsScan" | "portsStop" | "portsOpen" | "onPortsAdvertised">;
 
-/** Two listeners for any worktree that has a terminal; stopping one removes it. */
-export function createMockPorts(): PortsApi {
-  const stopped = new Set<number>();
-  const all = (path: string): LivePort[] => [
-    { port: 5173, address: "127.0.0.1", pid: 4100 + path.length, process: "node" },
-    { port: 8080, address: "0.0.0.0", pid: 5100 + path.length, process: null },
-  ];
+/** The id of the port the last `portsOpen` call asked for; for tests. */
+let lastOpened: string | null = null;
+export function lastOpenedPort(): string | null {
+  return lastOpened;
+}
+
+function port(p: Partial<WorkspacePort> & Pick<WorkspacePort, "port" | "kind">): WorkspacePort {
+  const pid = p.pid ?? null;
   return {
-    portsScan: async (queries) =>
-      queries.map((q) => ({
-        path: q.path,
-        ports: q.ptyIds.length === 0 ? [] : all(q.path).filter((p) => !stopped.has(p.pid)),
-      })),
-    portStop: (ptyIds, pid, confirmed) => {
-      if (!confirmed) return Promise.reject({ code: "needs_approval" } satisfies ApiError);
-      if (ptyIds.length === 0) return Promise.reject({ code: "port_unknown" } satisfies ApiError);
-      stopped.add(pid);
-      return Promise.resolve();
+    id: `localhost:${p.port}:${pid ?? "unknown"}`,
+    bindHost: "::",
+    connectHost: "localhost",
+    pid,
+    processName: null,
+    protocol: "http",
+    worktree: null,
+    evidence: null,
+    url: `http://localhost:${p.port}`,
+    advertised: false,
+    ...p,
+  } satisfies WorkspacePort;
+}
+
+/** Ports in memory: a dev server of the demo worktree, a container service and an outside database. */
+export function createMockPorts(root: string): PortsApi {
+  let ports: WorkspacePort[] = [
+    port({ port: 5173, pid: 4101, processName: "node", kind: "workspace", worktree: root, evidence: "terminal", advertised: true }),
+    port({ port: 8080, pid: 4102, processName: "java", kind: "container" }),
+    port({ port: 5432, pid: 4103, processName: "postgres", kind: "external", protocol: "unknown", url: "http://localhost:5432" }),
+  ];
+  const scan = (): PortScan => ({
+    platform: "windows",
+    scannedAt: Date.now(),
+    ports: ports.map((p) => ({ ...p })),
+    unavailable: null,
+    detail: null,
+    retryIn: null,
+  });
+  return {
+    async portsScan() {
+      return scan();
+    },
+    async portsStop(_worktrees, id, consent) {
+      const target = ports.find((p) => p.id === id);
+      if (!consent.confirmed) throw Object.assign(new Error("port_stop_unconfirmed"), { code: "port_stop_unconfirmed" });
+      if (!target) throw Object.assign(new Error("port_gone"), { code: "port_gone" });
+      if (target.evidence !== "terminal" && !consent.outsideTerminal) {
+        throw Object.assign(new Error("port_not_started_by_app"), { code: "port_not_started_by_app" });
+      }
+      ports = ports.filter((p) => p.id !== id);
+      return scan();
+    },
+    async portsOpen(id) {
+      lastOpened = id;
+    },
+    async onPortsAdvertised() {
+      return () => undefined;
     },
   };
 }

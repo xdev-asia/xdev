@@ -3,4 +3,4 @@
 /**
  * Settings → Appearance → Status bar: one switch per footer item.
  */
-export type StatusBarItems = { branch: boolean, tokenUsage: boolean, agents: boolean, version: boolean, };
+export type StatusBarItems = { branch: boolean, tokenUsage: boolean, agents: boolean, version: boolean, ports: boolean, };

@@ -1,7 +1,13 @@
 import { useState } from "react";
-import type { JSX } from "react";
+import type { JSX, MouseEvent } from "react";
 import { Dialog, PanZoom, ZoomBar, clampZoom, stepZoom, zoomAt, type PanZoomState } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
+
+// The SVG is mermaid's output and may hold links; like the preview, none of them navigates the WebView.
+const blockLinks = (e: MouseEvent<HTMLElement>): void => {
+  const target = e.target as { closest?: (selector: string) => unknown } | null;
+  if (target?.closest?.("a")) e.preventDefault();
+};
 
 /** A diagram at full size inside a dialog, with pan and zoom. `svg` is mermaid's own output (strict level). */
 export function MermaidDialog(props: { svg: string; onClose: () => void }): JSX.Element {
@@ -20,7 +26,7 @@ export function MermaidDialog(props: { svg: string; onClose: () => void }): JSX.
       />
       <div className="image-stage md-mermaid-stage">
         <PanZoom zoom={view.zoom} x={view.x} y={view.y} onZoom={setView} onPan={(x, y) => setView((v) => ({ ...v, x, y }))} label={t("files.preview.mermaid.title")}>
-          <div className="md-mermaid-full" dangerouslySetInnerHTML={{ __html: props.svg }} />
+          <div className="md-mermaid-full" onClick={blockLinks} onAuxClick={blockLinks} dangerouslySetInnerHTML={{ __html: props.svg }} />
         </PanZoom>
       </div>
     </Dialog>
