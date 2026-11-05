@@ -110,6 +110,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.bell", "settings.terminal.bell.label", ["bell", "beep", "flash", "sound", "visual", "chuông", "chuong", "âm thanh", "am thanh"], "settings.terminal.bell.hint"),
   e("terminal.wordSeparators", "settings.terminal.words.label", ["word", "separator", "double click", "select", "từ", "tu", "phân tách", "phan tach", "bấm đúp", "bam dup"], "settings.terminal.words.hint"),
   e("terminal.scrollback", "settings.terminal.scrollback", ["buffer", "history", "lines", "lịch sử", "lich su"], "settings.terminal.scrollbackHint"),
+  only(["mac"], e("terminal.optionAsAlt", "settings.terminal.keyboard.optionAsAlt", ["option", "alt", "meta", "esc", "keyboard", "layout", "mac", "bàn phím", "ban phim", "phím", "phim"], "settings.terminal.keyboard.optionAsAltHint")),
   e("terminal.copyOnSelect", "settings.terminal.copyOnSelect", ["clipboard", "copy", "select", "sao chép", "sao chep"]),
   e("terminal.rightClickPaste", "settings.terminal.rightClickPaste", ["clipboard", "paste", "mouse", "dán", "dan"]),
   e("terminal.osc52Clipboard", "settings.terminal.osc52Clipboard", ["clipboard", "osc52", "osc 52"], "settings.terminal.osc52ClipboardHint"),

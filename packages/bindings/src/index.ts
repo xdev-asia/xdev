@@ -98,6 +98,7 @@ export type { LineHit } from "./LineHit";
 export type { Linked } from "./Linked";
 export type { LivePort } from "./LivePort";
 export type { LoginStart } from "./LoginStart";
+export type { MacOptionAsAlt } from "./MacOptionAsAlt";
 export type { MadeBy } from "./MadeBy";
 export type { MemoryFile } from "./MemoryFile";
 export type { MemoryIssue } from "./MemoryIssue";

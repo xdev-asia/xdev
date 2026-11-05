@@ -13,8 +13,10 @@ name = "xdev_desktop"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+arboard = { version = "3", features = ["wayland-data-control"] }
 blake3.workspace = true
 notify-debouncer-full.workspace = true
+png = "0.18"
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = ["devtools", "image-png"] }
@@ -32,6 +34,7 @@ xdev-awake.workspace = true
 xdev-core.workspace = true
 xdev-git.workspace = true
 xdev-id.workspace = true
+xdev-input-source.workspace = true
 xdev-ipc.workspace = true
 xdev-kit.workspace = true
 xdev-orch.workspace = true

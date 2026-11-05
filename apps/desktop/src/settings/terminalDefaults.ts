@@ -25,6 +25,7 @@ export const TERMINAL_DEFAULTS: TerminalSettings = {
   fastScrollSensitivity: 5,
   minimumContrast: 1,
   focusFollowsMouse: false,
+  macOptionAsAlt: "auto",
 };
 
 // The double-click word separators when none are set (`DEFAULT_WORD_SEPARATORS` in Rust).
