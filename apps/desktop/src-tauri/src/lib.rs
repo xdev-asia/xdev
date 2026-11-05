@@ -8,6 +8,7 @@ mod app_menu;
 mod app_stats;
 mod applog;
 mod atomic;
+mod attribution;
 mod automation_runs_summary;
 mod automations;
 #[cfg(test)]
@@ -144,6 +145,7 @@ pub fn run() {
         .manage(profiles::ProfilesLock::default())
         .manage(files::Searches::default())
         .manage(file_watch::FileWatches::default())
+        .manage(attribution::Attribution::default())
         .manage(status::Shown::default())
         .manage(power::Awake::default())
         .manage(app_stats::AppStatsHub::default())
@@ -293,6 +295,7 @@ pub fn run() {
                     }
                 }
             });
+            attribution::listen(app.handle());
             // Without the watcher panes still run; they just show no status.
             if let Some(dir) = hooks_dir {
                 boot.run("hooks_watcher", || {
@@ -566,6 +569,11 @@ pub fn run() {
             files::files_search_cancel,
             file_watch::files_watch,
             file_watch::files_unwatch,
+            attribution::attribution_files,
+            attribution::attribution_recent,
+            attribution::attribution_versions,
+            attribution::attribution_version_read,
+            attribution::attribution_restore,
             ship::worktree_ship,
             ship::worktree_push,
             ship::worktree_pull,

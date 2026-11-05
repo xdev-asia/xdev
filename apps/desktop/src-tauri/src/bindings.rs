@@ -345,6 +345,12 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_orch::FailReason::export_all(cfg)?;
     xdev_orch::FailoverKind::export_all(cfg)?;
     crate::conversation::Conversation::export_all(cfg)?;
+    crate::attribution::AttributionEvent::export_all(cfg)?;
+    crate::attribution::AttributionSource::export_all(cfg)?;
+    crate::attribution::AttributionChanged::export_all(cfg)?;
+    crate::attribution::FileAttribution::export_all(cfg)?;
+    crate::attribution::Toucher::export_all(cfg)?;
+    crate::attribution::FileVersion::export_all(cfg)?;
     Ok(())
 }
 
