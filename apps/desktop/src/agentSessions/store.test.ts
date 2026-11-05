@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import { Sessions } from "@/workspace/sessions";
-import { AgentSessionsStore, PAGE, POLL_MS, READING_MS, REFRESH_MS } from "./store";
+import { AgentSessionsStore, DEFAULT_VIEW, PAGE, POLL_MS, READING_MS, REFRESH_MS, VIEW_KEY } from "./store";
 
 const A = "/demo/wt/xdev-oak";
 
@@ -231,3 +231,43 @@ describe("AgentSessionsStore search and paging", () => {
     expect(store.state.query.limit).toBe(500);
   });
 });
+
+describe("the saved view", () => {
+  const memory = () => {
+    const data = new Map<string, string>();
+    return { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v), data };
+  };
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("starts from the defaults, keeps a change, and a new store reads it back", () => {
+    const storage = memory();
+    vi.stubGlobal("localStorage", storage);
+    const first = new AgentSessionsStore(createMockApi({}), null);
+    expect(first.view).toEqual(DEFAULT_VIEW);
+    const listener = vi.fn();
+    first.subscribe(listener);
+    first.setView({ groupBy: "folder", history: 30 });
+    expect(listener).toHaveBeenCalledOnce();
+    expect(JSON.parse(storage.data.get(VIEW_KEY) ?? "null")).toEqual({ groupBy: "folder", hideEmpty: true, history: 30 });
+    expect(new AgentSessionsStore(createMockApi({}), null).view).toEqual({ groupBy: "folder", hideEmpty: true, history: 30 });
+    first.dispose();
+  });
+
+  it("falls back to the defaults on bad text or no storage", () => {
+    vi.stubGlobal("localStorage", { getItem: () => '{"groupBy":"nope","history":5}', setItem: () => {} });
+    expect(new AgentSessionsStore(createMockApi({}), null).view).toEqual(DEFAULT_VIEW);
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("denied");
+      },
+      setItem: () => {
+        throw new Error("denied");
+      },
+    });
+    const store = new AgentSessionsStore(createMockApi({}), null);
+    expect(store.view).toEqual(DEFAULT_VIEW);
+    store.setView({ hideEmpty: false });
+    expect(store.view.hideEmpty).toBe(false);
+  });
+});
+

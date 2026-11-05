@@ -1,5 +1,6 @@
 import { toApiError, type Api, type ApiError, type SessionQuery, type SessionRow } from "@/api";
 import type { Sessions } from "@/workspace/sessions";
+import { GROUP_BYS, HISTORY_DAYS, type GroupBy, type HistoryDays } from "./sessionsView";
 
 /** A visible panel re-reads the logs this often. */
 export const REFRESH_MS = 60_000;
@@ -31,6 +32,43 @@ export interface AgentSessionsState {
 
 export const DEFAULT_QUERY: SessionQuery = { text: null, scope: { kind: "all" }, agent: null, homeId: null, sort: "lastDesc", limit: PAGE };
 
+/** How the panel lays its rows out; kept on this computer. */
+export interface ViewPrefs {
+  groupBy: GroupBy;
+  /** A group with no row has no header. */
+  hideEmpty: boolean;
+  /** Rows older than this many days by last activity are left out; null shows them all. */
+  history: HistoryDays;
+}
+
+export const VIEW_KEY = "xdev.agentSessions.view";
+export const DEFAULT_VIEW: ViewPrefs = { groupBy: "day", hideEmpty: true, history: null };
+
+/** The saved view; the defaults when nothing is saved, the text is not JSON, or storage cannot be read. */
+export function loadView(): ViewPrefs {
+  try {
+    const raw = localStorage.getItem(VIEW_KEY);
+    const o: unknown = raw === null ? null : JSON.parse(raw);
+    if (!o || typeof o !== "object") return DEFAULT_VIEW;
+    const v = o as Record<string, unknown>;
+    return {
+      groupBy: GROUP_BYS.find((g) => g === v.groupBy) ?? DEFAULT_VIEW.groupBy,
+      hideEmpty: typeof v.hideEmpty === "boolean" ? v.hideEmpty : DEFAULT_VIEW.hideEmpty,
+      history: HISTORY_DAYS.find((h) => h === v.history) ?? DEFAULT_VIEW.history,
+    };
+  } catch {
+    return DEFAULT_VIEW;
+  }
+}
+
+function saveView(view: ViewPrefs): void {
+  try {
+    localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+  } catch {
+    // The choice only fails to survive a restart.
+  }
+}
+
 /**
  * The agent session list the panel and the palette share: the last query and its rows. `refresh` has
  * Rust read new log bytes; `setQuery` only filters what the index holds.
@@ -47,6 +85,7 @@ export class AgentSessionsStore {
     reading: false,
   };
   private readonly listeners = new Set<() => void>();
+  private prefs = loadView();
   private serial = 0;
   private watchers = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -72,6 +111,18 @@ export class AgentSessionsStore {
 
   get state(): AgentSessionsState {
     return this.current;
+  }
+
+  /** How the panel groups and limits its rows. */
+  get view(): ViewPrefs {
+    return this.prefs;
+  }
+
+  /** Changes the view and keeps it; the rows themselves are not read again. */
+  setView(patch: Partial<ViewPrefs>): void {
+    this.prefs = { ...this.prefs, ...patch };
+    saveView(this.prefs);
+    for (const l of [...this.listeners]) l();
   }
 
   subscribe = (listener: () => void): (() => void) => {

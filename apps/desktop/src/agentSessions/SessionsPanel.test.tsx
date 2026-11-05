@@ -142,4 +142,62 @@ describe("SessionsPanel", () => {
     expect(html(props([]))).not.toContain(translate("en", "agentSessions.home.all"));
     expect(html(props([], {}, { homes: ["a", "b"] }))).toContain(translate("en", "agentSessions.home.all"));
   });
+
+  it("groups by folder or agent from the view, and shows an empty group's note", () => {
+    const rows = [row("a", "One", NOW), row("b", "Two", NOW, { worktree: "/p/lib", repo: "/p/lib" })];
+    const folder = html(props(rows, { view: { groupBy: "folder", hideEmpty: true, history: null } }));
+    expect(folder).toContain(">app<");
+    expect(folder).toContain(">lib<");
+    const agent = html(props(rows, { view: { groupBy: "agent", hideEmpty: false, history: null } }));
+    expect(agent).toContain(translate("en", "agentSessions.agent.codex"));
+    expect(agent).toContain(translate("en", "agentSessions.group.none"));
+    expect(html(props(rows, { view: { groupBy: "agent", hideEmpty: true, history: null } }))).not.toContain(translate("en", "agentSessions.group.none"));
+  });
+
+  it("the history depth leaves older rows out", () => {
+    const rows = [row("a", "New one", NOW), row("b", "Old one", NOW - 40 * DAY)];
+    const markup = html(props(rows, { view: { groupBy: "day", hideEmpty: true, history: 30 } }));
+    expect(markup).toContain("New one");
+    expect(markup).not.toContain("Old one");
+  });
+
+  it("the toolbar menus report the choice", () => {
+    const onView = vi.fn();
+    const menus = nodes(SessionsPanel(props([], { onView }))).filter((n) => n.props.className === "as-select as-menu");
+    expect(menus.map((m) => m.props.label)).toEqual([translate("en", "agentSessions.group.label"), translate("en", "agentSessions.history.label")]);
+    const [group, history] = menus.map((m) => (m.props.items as { label?: string; checked?: boolean; onSelect?: () => void }[]).filter((i) => i.onSelect));
+    expect(group?.map((i) => [i.label, i.checked])).toEqual([["Day", true], ["Folder", false], ["Agent", false], ["Hide empty groups", true]]);
+    group?.[1]?.onSelect?.();
+    group?.[3]?.onSelect?.();
+    history?.[1]?.onSelect?.();
+    history?.[3]?.onSelect?.();
+    expect(onView.mock.calls).toEqual([[{ groupBy: "folder" }], [{ hideEmpty: false }], [{ history: 30 }], [{ history: null }]]);
+  });
+
+  it("each row has a More menu; Jump is in it only for an open session and runs the Open call", () => {
+    const onPrimary = vi.fn();
+    const onHandOff = vi.fn();
+    const onCopyCommand = vi.fn();
+    const r = row("a", "One", NOW);
+    const items = (tab: string | null) => {
+      const menu = nodes(SessionsPanel(props([r], { openTab: () => tab, onPrimary, onHandOff, onCopyCommand }))).find((n) => n.props.className === "as-menu-btn");
+      return menu?.props.items as { label: string; onSelect(): void }[];
+    };
+    expect(items(null).map((i) => i.label)).toEqual(["Hand off…", "Copy resume command"]);
+    const open = items("tab-9");
+    expect(open.map((i) => i.label)).toEqual(["Jump to open pane", "Hand off…", "Copy resume command"]);
+    open[0]?.onSelect();
+    expect(onPrimary).toHaveBeenCalledWith(r, "tab-9");
+    open[1]?.onSelect();
+    expect(onHandOff).toHaveBeenCalledWith(r);
+    open[2]?.onSelect();
+    expect(onCopyCommand).toHaveBeenCalledWith("claude --resume a");
+  });
+
+  it("a row can start a drag unless it cannot resume; the drop zone shows only while dragging", () => {
+    const rows = [row("a", "One", NOW), row("b", "Two", NOW, { resumable: false, worktree: null })];
+    const main = nodes(SessionsPanel(props(rows))).filter((n) => n.props.className === "as-main");
+    expect(main).toHaveLength(2);
+    expect(html(props(rows))).not.toContain(translate("en", "agentSessions.drop"));
+  });
 });

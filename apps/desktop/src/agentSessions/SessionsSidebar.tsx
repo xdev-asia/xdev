@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import type { SessionRow, SessionScope } from "@/api";
+import type { PtyProfile, SessionRow, SessionScope } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
+import { copyText } from "@/ui/clipboard";
 import type { Sessions, Tab } from "@/workspace/sessions";
+import { pushToast } from "@/workspace/toastStore";
+import { HandOffDialog, type HandOffChoice } from "./HandOffDialog";
 import { SessionsPanel, type ScopeKind } from "./SessionsPanel";
 import { confirmResume, startResume, type PendingResume } from "./resumeFlow";
+import { FIRST_PROMPT_MAX, handoffPrompt } from "./handoff";
 import { baseName } from "./sessionsView";
 import type { AgentSessionsStore } from "./store";
 
@@ -42,6 +46,8 @@ export function SessionsSidebar(props: {
     () => "",
   );
   const open = useMemo(() => new Map(resumedKey === "" ? [] : resumedKey.split("|").map((p) => p.split("=") as [string, string])), [resumedKey]);
+  const view = useSyncExternalStore(store.subscribe, () => store.view, () => store.view);
+  const [handingOff, setHandingOff] = useState<{ row: SessionRow; source: string } | null>(null);
   const [asking, setAsking] = useState<PendingResume | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -71,6 +77,23 @@ export function SessionsSidebar(props: {
     if (tab) props.onOpened(tab);
   };
 
+  const agentName = (agent: string) => t(`agentSessions.agent.${agent}`);
+  // Opens the chosen agent with the session's first prompt as its own; a stored session has no terminal text to carry.
+  const handOff = (pending: { row: SessionRow; source: string }, choice: HandOffChoice) => {
+    const s = pending.row.session;
+    const title = s.title?.trim();
+    const text = handoffPrompt({
+      fromProfile: agentName(s.agent),
+      worktree: pending.source,
+      branch: s.branch,
+      firstPrompt: title ? Array.from(title).slice(0, FIRST_PROMPT_MAX).join("") : null,
+      lines: [],
+    });
+    props.onOpened(sessions.open(choice.worktree, choice.profileId as PtyProfile, null, undefined, { prompt: text }));
+    pushToast({ text: t("agentFork.handedOff") });
+  };
+  const handOffPaths = handingOff ? [...new Set([handingOff.source, path].filter((p): p is string => !!p))] : [];
+
   return (
     <>
       <SessionsPanel
@@ -89,7 +112,27 @@ export function SessionsSidebar(props: {
         onPrimary={(row, tab) => (tab ? props.onFocusTab(tab) : resume(row))}
         onCopyId={(row) => void navigator.clipboard?.writeText(row.session.id).catch(() => {})}
         onGoTo={(row) => row.worktree && props.onGoTo(row.worktree)}
+        view={view}
+        onView={(patch) => store.setView(patch)}
+        onHandOff={(row) => {
+          const source = row.worktree ?? path;
+          if (source) setHandingOff({ row, source });
+        }}
+        onCopyCommand={(command) => void copyText(command).then((ok) => pushToast({ text: t(ok ? "agentSessions.commandCopied" : "agentSessions.copyFailed") }))}
       />
+      {handingOff && (
+        <HandOffDialog
+          profiles={(["claude", "codex"] as const).map((id) => ({ value: id, label: agentName(id) }))}
+          worktrees={handOffPaths.map((p) => ({ value: p, label: baseName(p) || p }))}
+          sourceProfile={handingOff.row.session.agent}
+          sourceWorktree={handingOff.source}
+          onConfirm={(choice) => {
+            handOff(handingOff, choice);
+            setHandingOff(null);
+          }}
+          onCancel={() => setHandingOff(null)}
+        />
+      )}
       <ConfirmDialog
         open={asking !== null}
         title={t("agentSessions.mismatch.title")}

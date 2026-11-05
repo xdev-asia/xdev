@@ -34,6 +34,7 @@
 }
 
 .as-panel {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -207,6 +208,63 @@
 .as-act[aria-disabled="true"] {
   opacity: 0.5;
   cursor: default;
+}
+
+.as-row .as-main {
+  padding-right: 40px;
+}
+
+.as-menu-btn {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.as-menu-btn:hover,
+.as-menu-btn:focus-visible {
+  background: var(--bg-3);
+}
+
+.as-menu {
+  cursor: pointer;
+}
+
+/* Over the toolbar while a row is dragged, so nothing below it moves under the pointer. */
+.as-drop {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-s);
+  background: var(--bg-3);
+  color: var(--text-1);
+  font-size: 12px;
+  text-align: center;
+}
+
+.as-panel[data-dragging="true"] {
+  user-select: none;
+}
+
+.as-none {
+  margin: 0 12px 4px;
+  color: var(--text-3);
+  font-size: 12px;
 }
 
 .as-more {
