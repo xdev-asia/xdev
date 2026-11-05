@@ -16,6 +16,16 @@ fn split_addr(addr: &str, sep: char) -> Option<(String, u16)> {
     Some((host.to_owned(), port))
 }
 
+/// macOS prints a socket bound to every interface as `*`; the rest of the
+/// crate, and the IP parsers, know it as `0.0.0.0`.
+fn wildcard_host(host: String) -> String {
+    if host == "*" {
+        "0.0.0.0".to_owned()
+    } else {
+        host
+    }
+}
+
 /// `netstat -ano -p tcp` and `-p tcpv6` on Windows.
 ///
 /// The state word is localised, so a row counts as a listener by its shape: a
@@ -58,7 +68,7 @@ pub fn parse_lsof(text: &str) -> Vec<Listener> {
             'n' if !rest.contains("->") => {
                 if let Some((host, port)) = split_addr(rest, ':') {
                     out.push(Listener {
-                        bind_host: host,
+                        bind_host: wildcard_host(host),
                         port,
                         pid,
                     });
@@ -81,7 +91,7 @@ pub fn parse_netstat_macos(text: &str) -> Vec<Listener> {
             }
             let (host, port) = split_addr(cols[3], '.')?;
             Some(Listener {
-                bind_host: host,
+                bind_host: wildcard_host(host),
                 port,
                 pid: None,
             })
@@ -180,7 +190,8 @@ Active Connections
         assert_eq!(
             parse_lsof(text),
             vec![
-                l("*", 5173, Some(812)),
+                // A wildcard bind reads as every IPv4 interface.
+                l("0.0.0.0", 5173, Some(812)),
                 l("::1", 3000, Some(812)),
                 l("127.0.0.1", 5432, Some(900)),
             ]
@@ -201,7 +212,7 @@ tcp4       0      0  127.0.0.1.3000         127.0.0.1.50000        ESTABLISHED
             parse_netstat_macos(text),
             vec![
                 l("127.0.0.1", 3000, None),
-                l("*", 5173, None),
+                l("0.0.0.0", 5173, None),
                 l("::1", 8080, None),
             ]
         );

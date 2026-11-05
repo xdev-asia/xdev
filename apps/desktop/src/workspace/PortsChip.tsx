@@ -4,9 +4,9 @@ import { Icon } from "@xdev-asia/ui";
 import type { LivePort } from "./livePorts";
 import { useI18n } from "@/i18n";
 
-/** `host:port` as shown and copied. */
+/** What the chip shows and copies: the connect host as the Ports panel has it. */
 export function endpoint(port: LivePort): string {
-  return `${port.address.includes(":") ? `[${port.address}]` : port.address}:${port.port}`;
+  return port.endpoint;
 }
 
 /** The plug and the count on a card; nothing at zero. A span with a button role: it sits inside the row's own button. */
