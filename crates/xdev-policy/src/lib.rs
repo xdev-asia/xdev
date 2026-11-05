@@ -194,7 +194,7 @@ impl Gate for Policy {
             // (the endpoint sends `family` only for writes downwards), pass;
             // anything else is the person's call.
             Action::CliWorktree { op, scope, .. } => {
-                let family = scope == "family" && (op == "create" || op == "set");
+                let family = scope == "family" && matches!(op.as_str(), "create" | "set" | "send");
                 if scope == "own" || family {
                     Verdict::Allow
                 } else {

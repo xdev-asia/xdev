@@ -2480,6 +2480,7 @@
   "cli.ask": "{who} muốn {verb} {target}.",
   "cli.ask.set": "đổi thông tin của",
   "cli.ask.create": "tạo worktree dưới",
+  "cli.ask.send": "gõ vào một terminal của",
   "cli.ask.external": "Một script ngoài xDev",
   "cli.ask.allow": "Cho phép",
   "cli.ask.deny": "Từ chối",

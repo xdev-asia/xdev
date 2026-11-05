@@ -9,6 +9,7 @@ mod automations;
 #[cfg(test)]
 mod bindings;
 mod cli_path;
+mod cli_terminal;
 mod cli_verbs;
 mod clipboard;
 mod commands;
@@ -54,6 +55,7 @@ mod squads;
 mod startup;
 mod status;
 mod tasks;
+mod term_tail;
 mod terminal_themes;
 mod tray;
 mod updater;
@@ -117,6 +119,7 @@ pub fn run() {
         .manage(status::Shown::default())
         .manage(power::Awake::default())
         .manage(ports::Ports::default())
+        .manage(term_tail::TermTails::default())
         .manage(cli_verbs::CliHub::default())
         .manage(orchestration::OrchHub::default())
         .manage(keybindings::LastSent::default())

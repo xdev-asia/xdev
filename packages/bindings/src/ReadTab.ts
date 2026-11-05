@@ -3,4 +3,8 @@
 /**
  * Payload of `orchestration://read-tab`; answered by `orchestration_read_answer`.
  */
-export type ReadTab = { request: number, tab: string, maxChars: number, };
+export type ReadTab = { request: number, tab: string, maxChars: number, 
+/**
+ * Set: the last this many lines of the screen, not cut to `max_chars`.
+ */
+maxLines?: number, };

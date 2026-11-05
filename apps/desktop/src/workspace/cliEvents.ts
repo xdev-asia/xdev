@@ -19,10 +19,17 @@ function leaf(path: string): string {
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
 }
 
+/** The words for each verb that can ask; another verb reads as a change of details. */
+const VERB_KEYS: Record<string, string> = {
+  "worktree.create": "cli.ask.create",
+  "worktree.set": "cli.ask.set",
+  "terminal.send": "cli.ask.send",
+};
+
 /** The toast for one `cli://ask`: Allow / Deny, gone after 60 s with no answer sent. */
 export function askToast(api: Api, ask: CliAsk, t: T): string {
   const id = `cli-ask-${ask.request}`;
-  const verb = t(ask.verb === "worktree.create" ? "cli.ask.create" : "cli.ask.set");
+  const verb = t(VERB_KEYS[ask.verb] ?? "cli.ask.set");
   const who = ask.caller === null ? t("cli.ask.external") : leaf(ask.caller);
   const answer = (allow: boolean) => () => {
     dismissToast(id);

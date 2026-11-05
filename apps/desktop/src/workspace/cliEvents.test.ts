@@ -44,6 +44,15 @@ describe("CLI events", () => {
     expect(getToasts()).toEqual([]);
   });
 
+  it("says a send types into a terminal, not that it changes details", async () => {
+    const api = createMockApi({});
+    startCliEvents(api, { reload() {}, openTab() {}, t });
+    await flush();
+    api.__cliAsk({ request: 6, caller: "/w/lead", verb: "terminal.send", target: "/w/other" });
+    expect(getToasts()[0].text).toBe("lead wants to type into a terminal of other.");
+    expect(translate("vi", "cli.ask.send")).not.toBe("cli.ask.send");
+  });
+
   it("names an outside caller and goes away after 60 s without an answer", async () => {
     vi.useFakeTimers();
     const api = createMockApi({});

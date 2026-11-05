@@ -25,6 +25,7 @@ use crate::orchestration::{self, OrchHub};
 use crate::pty::Ptys;
 use crate::settings::OrchestrationSettings;
 use crate::settings_store;
+use crate::term_tail::TermTails;
 use crate::workspace::{WorkspaceLock, clock, update};
 
 /// One terminal tab as the UI sees it; the UI owns the state machine.
@@ -47,7 +48,7 @@ pub struct TabReport {
 
 impl TabReport {
     /// What `terminal list` shows: the status, or `exited`.
-    fn state(&self) -> &str {
+    pub(crate) fn state(&self) -> &str {
         if self.exited { "exited" } else { &self.status }
     }
 }
@@ -70,7 +71,7 @@ pub struct CliAsk {
     pub request: u64,
     /// The caller's worktree path; null for a caller outside the app.
     pub caller: Option<String>,
-    /// `worktree.create` or `worktree.set`.
+    /// `worktree.create`, `worktree.set` or `terminal.send`.
     pub verb: String,
     /// The worktree path the write is for.
     pub target: String,
@@ -108,6 +109,26 @@ fn reached(tab: &TabReport, want: WaitFor, now_ms: i64) -> Option<String> {
         WaitFor::NeedsYou => tab.status == "needs-you",
     };
     hit.then(|| tab.status.clone())
+}
+
+/// The tab whose id is `tab`, else the one whose id starts with it:
+/// `not_found` for none, `ambiguous` for more than one.
+fn find_tab<'a>(tabs: &'a [TabReport], tab: &str) -> Result<&'a TabReport, AppError> {
+    if let Some(t) = tabs.iter().find(|t| t.id == tab) {
+        return Ok(t);
+    }
+    match tabs
+        .iter()
+        .filter(|t| t.id.starts_with(tab))
+        .collect::<Vec<_>>()[..]
+    {
+        [t] => Ok(t),
+        [] => Err(AppError::new("not_found", format!("no tab {tab}"))),
+        _ => Err(AppError::new(
+            "ambiguous",
+            format!("more than one tab starts with {tab}"),
+        )),
+    }
 }
 
 #[derive(Default)]
@@ -172,26 +193,7 @@ impl TabBoard {
     ) -> Result<(String, i64), AppError> {
         let deadline = Instant::now() + timeout;
         let mut board = self.lock();
-        let id = {
-            let ids: Vec<&str> = board.tabs.iter().map(|t| t.id.as_str()).collect();
-            match ids.iter().find(|i| **i == tab) {
-                Some(id) => (*id).to_owned(),
-                None => match ids
-                    .iter()
-                    .filter(|i| i.starts_with(tab))
-                    .collect::<Vec<_>>()[..]
-                {
-                    [id] => (*id).to_owned(),
-                    [] => return Err(AppError::new("not_found", format!("no tab {tab}"))),
-                    _ => {
-                        return Err(AppError::new(
-                            "ambiguous",
-                            format!("more than one tab starts with {tab}"),
-                        ));
-                    }
-                },
-            }
-        };
+        let id = find_tab(&board.tabs, tab)?.id.clone();
         loop {
             if board.stopped {
                 return Err(AppError::new("app_stopped", "xDev is quitting"));
@@ -219,6 +221,11 @@ impl TabBoard {
                 .unwrap_or_else(PoisonError::into_inner)
                 .0;
         }
+    }
+
+    /// The tab `tab` names, by id or a unique prefix of one.
+    pub fn resolve(&self, tab: &str) -> Result<TabReport, AppError> {
+        find_tab(&self.lock().tabs, tab).cloned()
     }
 
     pub(crate) fn tabs(&self) -> (Vec<TabReport>, Option<String>) {
@@ -302,7 +309,7 @@ impl From<CmdError> for AppError {
     }
 }
 
-fn bad_request(message: impl Into<String>) -> AppError {
+pub(crate) fn bad_request(message: impl Into<String>) -> AppError {
     AppError::new("bad_request", message)
 }
 
@@ -318,6 +325,8 @@ pub struct Ctx<'a> {
     pub data: &'a Path,
     pub lock: &'a WorkspaceLock,
     pub board: &'a TabBoard,
+    /// What each PTY printed, escape-stripped.
+    pub tails: &'a TermTails,
     /// The folder a PTY started in.
     pub cwd_of: &'a dyn Fn(&str) -> Option<PathBuf>,
     pub emit: &'a dyn Fn(&str, Value),
@@ -340,7 +349,7 @@ pub struct Ctx<'a> {
 }
 
 /// One worktree as the verbs know it.
-struct Listed {
+pub(crate) struct Listed {
     repo_id: String,
     repo: String,
     view: WorktreeView,
@@ -367,7 +376,7 @@ struct Row<'a> {
     agents: Vec<String>,
 }
 
-fn params<T: for<'de> Deserialize<'de>>(req: &Request) -> Result<T, AppError> {
+pub(crate) fn params<T: for<'de> Deserialize<'de>>(req: &Request) -> Result<T, AppError> {
     let value = if req.params.is_null() {
         json!({})
     } else {
@@ -378,7 +387,7 @@ fn params<T: for<'de> Deserialize<'de>>(req: &Request) -> Result<T, AppError> {
 
 impl Ctx<'_> {
     /// Every repo's worktrees, brought in line with git, as the sidebar does.
-    fn listed(&self) -> Result<Vec<Listed>, AppError> {
+    pub(crate) fn listed(&self) -> Result<Vec<Listed>, AppError> {
         let repos: Vec<RepoView> = update(self.data, self.lock, list)?;
         Ok(repos
             .into_iter()
@@ -393,13 +402,13 @@ impl Ctx<'_> {
             .collect())
     }
 
-    fn registry(&self) -> Result<Registry, AppError> {
+    pub(crate) fn registry(&self) -> Result<Registry, AppError> {
         Ok(Registry::load(self.data).map_err(CmdError::from)?)
     }
 
     /// The caller's worktree, from the folder its PTY started in. The PTY id
     /// is the client's claim, not checked (see `Caller`, risk R1).
-    fn caller_worktree(&self, caller: &Caller) -> Result<Option<PathBuf>, AppError> {
+    pub(crate) fn caller_worktree(&self, caller: &Caller) -> Result<Option<PathBuf>, AppError> {
         let Some(cwd) = caller.pty.as_deref().and_then(|p| (self.cwd_of)(p)) else {
             return Ok(None);
         };
@@ -580,7 +589,7 @@ impl Ctx<'_> {
     /// The policy gate for a write. `own`, and `family` for create and set,
     /// pass; anything else asks the person once per (caller, target) for
     /// the session. Every decision has an audit line.
-    fn gate(
+    pub(crate) fn gate(
         &self,
         verb: &str,
         op: &str,
@@ -714,7 +723,7 @@ pub fn worktree_set(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Val
 
 /// Family writes go down only: on the caller's own parent a write is
 /// `Other`, so the person is asked, as for any other worktree.
-fn downward(scope: Scope, all: &[Listed], me: Option<&Path>, target: &Path) -> Scope {
+pub(crate) fn downward(scope: Scope, all: &[Listed], me: Option<&Path>, target: &Path) -> Scope {
     if scope != Scope::Family {
         return scope;
     }
@@ -916,6 +925,9 @@ pub fn dispatch(
         "worktree.set" => worktree_set(ctx, req, caller),
         "worktree.create" => worktree_create(ctx, req, caller),
         "terminal.wait" => terminal_wait(ctx, req, gone),
+        "terminal.show" => crate::cli_terminal::terminal_show(ctx, req),
+        "terminal.read" => crate::cli_terminal::terminal_read(ctx, req),
+        "terminal.send" => crate::cli_terminal::terminal_send(ctx, req, caller),
         m if m.starts_with("orchestration.") => orchestration::handle(ctx, req, caller, gone),
         other => Err(bad_request(format!("unknown method {other}"))),
     }
@@ -939,6 +951,7 @@ impl Handler for AppVerbs {
         let lock = app.state::<WorkspaceLock>();
         let hub = app.state::<CliHub>();
         let ptys = app.state::<Ptys>();
+        let tails = app.state::<TermTails>();
         let cwd_of = |id: &str| ptys.cwd_of(id);
         let write_pty = |id: &str, bytes: &[u8]| ptys.with(id, |s| s.write(bytes.to_vec())).is_ok();
         let orch = app.state::<OrchHub>();
@@ -951,6 +964,7 @@ impl Handler for AppVerbs {
             data,
             lock: &lock,
             board: &hub.board,
+            tails: &tails,
             cwd_of: &cwd_of,
             emit: &emit,
             approvals: &hub.approvals,
@@ -998,6 +1012,7 @@ pub(crate) mod tests {
         pub other: PathBuf,
         pub lock: WorkspaceLock,
         pub board: TabBoard,
+        pub tails: TermTails,
         pub events: Mutex<Vec<(String, Value)>>,
         pub approvals: Approvals,
         pub orch: OrchHub,
@@ -1005,6 +1020,8 @@ pub(crate) mod tests {
         pub answer: Option<bool>,
         /// The fake UI: answers every `open-worker` with this, or never.
         pub open_answer: Option<orchestration::WorkerOpenOutcome>,
+        /// The fake UI: answers every `read-tab` with this text, or never.
+        pub read_answer: Option<String>,
         /// `nested_worker_max_depth` the calls run under.
         pub max_depth: u32,
         /// Whether a write to a PTY lands; what was written.
@@ -1061,11 +1078,13 @@ pub(crate) mod tests {
             other,
             lock: WorkspaceLock::default(),
             board: TabBoard::default(),
+            tails: TermTails::default(),
             events: Mutex::default(),
             approvals: Approvals::default(),
             orch: OrchHub::default(),
             answer: None,
             open_answer: None,
+            read_answer: None,
             max_depth: 1,
             pty_alive: true,
             pty_writes: Mutex::default(),
@@ -1103,6 +1122,12 @@ pub(crate) mod tests {
                     let id = payload["dispatch"].as_str().unwrap().to_owned();
                     self.orch.opens.answer(&id, outcome.clone());
                 }
+                if event == "orchestration://read-tab"
+                    && let Some(text) = &self.read_answer
+                {
+                    let request = payload["request"].as_u64().unwrap();
+                    self.orch.reads.answer(&request, text.clone());
+                }
                 self.events
                     .lock()
                     .unwrap()
@@ -1112,6 +1137,7 @@ pub(crate) mod tests {
                 data: &self.data,
                 lock: &self.lock,
                 board: &self.board,
+                tails: &self.tails,
                 cwd_of: &cwd_of,
                 emit: &emit,
                 approvals: &self.approvals,
@@ -1673,6 +1699,24 @@ pub(crate) mod tests {
         });
         rx.recv().unwrap();
         waiter
+    }
+
+    #[test]
+    fn resolve_takes_an_id_or_a_unique_prefix() {
+        let (board, _) = fake_board();
+        board.replace(
+            vec![
+                tab("agent-1", Path::new("/w"), true, "done"),
+                tab("agent-10", Path::new("/w"), true, "idle"),
+                tab("shell-2", Path::new("/w"), false, "idle"),
+            ],
+            None,
+        );
+        // An exact id wins over the longer one it prefixes.
+        assert_eq!(board.resolve("agent-1").unwrap().id, "agent-1");
+        assert_eq!(board.resolve("sh").unwrap().id, "shell-2");
+        assert_eq!(board.resolve("nope").unwrap_err().code, "not_found");
+        assert_eq!(board.resolve("agent").unwrap_err().code, "ambiguous");
     }
 
     #[test]

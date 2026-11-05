@@ -2480,6 +2480,7 @@
   "cli.ask": "{who} wants to {verb} {target}.",
   "cli.ask.set": "change the details of",
   "cli.ask.create": "make a worktree under",
+  "cli.ask.send": "type into a terminal of",
   "cli.ask.external": "A script outside xDev",
   "cli.ask.allow": "Allow",
   "cli.ask.deny": "Deny",
