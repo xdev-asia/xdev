@@ -55,6 +55,8 @@ xdev-pty.workspace = true
 xdev-ssh.workspace = true
 xdev-store.workspace = true
 xdev-workspace.workspace = true
+# CPU and memory of each tab's process tree (Resource manager).
+sysinfo.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Only to read the notification permission (Settings → Notifications).
@@ -78,7 +80,6 @@ tauri = { version = "2", features = ["tray-icon"] }
 
 [dev-dependencies]
 rusqlite.workspace = true
-sysinfo.workspace = true
 tempfile.workspace = true
 ts-rs.workspace = true
 # Only the test that writes `packages/bindings` needs the TypeScript derives.

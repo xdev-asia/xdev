@@ -28,6 +28,7 @@ import "./styles/review.css";
 import "./styles/ports.css";
 import "./styles/settings.css";
 import "./styles/usageStats.css";
+import "./styles/tabOutput.css";
 import "./styles/quickCommands.css";
 import "./styles/ssh.css";
 import "katex/dist/katex.min.css";

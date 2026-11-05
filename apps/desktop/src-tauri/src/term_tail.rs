@@ -249,6 +249,79 @@ pub fn feed(app: &tauri::AppHandle, id: &str, bytes: &[u8]) {
     app.state::<TermTails>().feed(id, bytes);
 }
 
+/// The most lines `term_tail_read` returns.
+pub const TAB_TAIL_MAX_LINES: usize = 20_000;
+/// The most bytes `transcript_save` writes.
+pub const TRANSCRIPT_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+/// The last `limit_lines` lines of a tab's output, ANSI stripped; empty for an unknown tab.
+pub fn tab_text(tails: &TermTails, id: &str, limit_lines: usize) -> String {
+    let limit = limit_lines.clamp(1, TAB_TAIL_MAX_LINES);
+    tails
+        .read(id, None, limit)
+        .map(|r| r.text)
+        .unwrap_or_default()
+}
+
+/// The last lines a tab printed, for the hover card and the merged transcript. The tab id is the
+/// PTY id; a tab with no output (or none) gives an empty text.
+#[tauri::command]
+pub fn term_tail_read(
+    tails: tauri::State<'_, TermTails>,
+    id: String,
+    limit_lines: usize,
+) -> String {
+    tab_text(&tails, &id, limit_lines)
+}
+
+/// Asks where to save in a native dialog opened here, then writes `text`. `None` when cancelled.
+#[tauri::command(async)]
+pub fn transcript_save(
+    app: tauri::AppHandle,
+    default_name: String,
+    text: String,
+) -> Result<Option<String>, crate::commands::CmdError> {
+    use tauri_plugin_dialog::DialogExt;
+    let io = |e: String| crate::commands::CmdError {
+        code: "io",
+        detail: Some(e),
+    };
+    if text.len() > TRANSCRIPT_MAX_BYTES {
+        return Err(crate::commands::CmdError {
+            code: "too_large",
+            detail: None,
+        });
+    }
+    let name: String = default_name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .take(80)
+        .collect();
+    let name = if name.is_empty() {
+        "transcript".to_owned()
+    } else {
+        name
+    };
+    let Some(picked) = app
+        .dialog()
+        .file()
+        .set_file_name(format!("{name}.txt"))
+        .add_filter("Text", &["txt"])
+        .blocking_save_file()
+    else {
+        return Ok(None);
+    };
+    let mut path = picked.into_path().map_err(|e| io(e.to_string()))?;
+    if path
+        .extension()
+        .is_none_or(|e| !e.eq_ignore_ascii_case("txt"))
+    {
+        path.set_extension("txt");
+    }
+    crate::atomic::write_atomic(&path, text.as_bytes()).map_err(|e| io(e.to_string()))?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,5 +436,15 @@ mod tests {
         tails.forget("p1");
         assert_eq!(tails.read("p1", None, 10), None);
         assert_eq!(tails.read("p2", None, 10).unwrap().text, "y");
+    }
+
+    #[test]
+    fn tab_text_gives_the_last_lines_and_nothing_for_an_unknown_tab() {
+        let tails = TermTails::default();
+        assert_eq!(tab_text(&tails, "none", 8), "");
+        tails.feed("t1", b"\x1b[31m1\x1b[0m\r\n2\r\n3\r\n");
+        assert_eq!(tab_text(&tails, "t1", 2), "2\n3\n");
+        assert_eq!(tab_text(&tails, "t1", 0), "3\n");
+        assert_eq!(tab_text(&tails, "t1", 100), "1\n2\n3\n");
     }
 }

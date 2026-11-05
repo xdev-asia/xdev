@@ -5,7 +5,7 @@ import { useI18n } from "@/i18n";
 const STATUSES: WorkStatus[] = ["todo", "in-progress", "in-review", "completed"];
 
 /** Shown above the list while two or more worktrees are selected. */
-export function BulkBar(props: { count: number; allPinned: boolean; canSleep: boolean; onArchive(): void; onDelete(): void; onPin(): void; onSleep(): void; onStatus(status: WorkStatus): void; onClear(): void; onSendPrompt?(): void }): JSX.Element {
+export function BulkBar(props: { count: number; allPinned: boolean; canSleep: boolean; onArchive(): void; onDelete(): void; onPin(): void; onSleep(): void; onStatus(status: WorkStatus): void; onClear(): void; onSendPrompt?(): void; onMerge?(): void }): JSX.Element {
   const { t } = useI18n();
   return (
     <div className="ws-bulk-bar" role="toolbar" aria-label={t("bulk.bar.label")}>
@@ -25,6 +25,11 @@ export function BulkBar(props: { count: number; allPinned: boolean; canSleep: bo
       {props.onSendPrompt && (
         <button type="button" className="btn-secondary" onClick={props.onSendPrompt}>
           {t("bulk.bar.sendPrompt")}
+        </button>
+      )}
+      {props.onMerge && (
+        <button type="button" className="btn-secondary" onClick={props.onMerge}>
+          {t("bulk.bar.merge")}
         </button>
       )}
       <select

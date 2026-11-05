@@ -163,6 +163,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::agent_path::PathEntry::export_all(cfg)?;
     AwakeView::export_all(cfg)?;
     AppStatsView::export_all(cfg)?;
+    crate::resources::ResourceSnapshot::export_all(cfg)?;
     UsageSettings::export_all(cfg)?;
     XdevIdSettings::export_all(cfg)?;
     OrchestrationSettings::export_all(cfg)?;

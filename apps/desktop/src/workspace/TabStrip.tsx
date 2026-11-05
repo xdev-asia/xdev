@@ -14,7 +14,7 @@ import type { TabStatus } from "./status";
 import type { DropZone } from "./sessions";
 import { beforeOf, insertAt, pastThreshold, zoneFor } from "./tabDrag";
 import { TabIndicator } from "./TabIndicator";
-import { CardPortal, HOVER_DELAY_MS, TabHoverCard, useTabHover } from "./TabHoverCard";
+import { CardPortal, HOVER_DELAY_MS, TabHoverCard, useTabHover, useTabOutput } from "./TabHoverCard";
 import { cacheLeftMs, formatCacheLeft, useNow } from "./cacheTimer";
 import { PaneChips } from "@/terminal/chips/PaneChips";
 import { noteRuns } from "@/terminal/chips/runClocks";
@@ -179,6 +179,7 @@ export function TabStrip(props: {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropMark, setDropMark] = useState<{ id: string; after: boolean } | null>(null);
   const hover = useTabHover();
+  const hoverOutput = useTabOutput(props.api, hover.open?.id ?? null);
   // A strip narrower than this folds its chips behind one button.
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [narrow, setNarrow] = useState(false);
@@ -544,6 +545,7 @@ export function TabStrip(props: {
             at={hover.open}
             labels={{ agent: t("workspace.tabs.card.agent"), status: t("workspace.tabs.card.status"), cwd: t("workspace.tabs.card.cwd") }}
             data={{ title: shownName(hoverTab), agent: name(hoverTab), status: statusLabel(hoverTab.status), cwd: hoverTab.worktree }}
+            output={hoverOutput}
           />
         </CardPortal>
       )}

@@ -48,3 +48,16 @@ it("shows Send prompt only when the bar can open the composer, and it calls onSe
   (button.props.onClick as () => void)();
   expect(onSendPrompt).toHaveBeenCalledTimes(1);
 });
+
+it("shows Merge output only when the bar can merge, and it calls onMerge", () => {
+  const find = (props: Partial<Parameters<typeof BulkBar>[0]>) =>
+    walk(BulkBar({ count: 2, allPinned: false, canSleep: true, onArchive() {}, onDelete() {}, onPin() {}, onSleep() {}, onStatus() {}, onClear() {}, ...props })).find(
+      (n) => n.type === "button" && n.props.children === en("bulk.bar.merge"),
+    );
+  expect(find({})).toBeUndefined();
+  const onMerge = vi.fn();
+  const button = find({ onMerge })!;
+  expect(button.props.type).toBe("button");
+  (button.props.onClick as () => void)();
+  expect(onMerge).toHaveBeenCalledTimes(1);
+});
