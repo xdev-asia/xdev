@@ -113,7 +113,7 @@ import { worktreeTarget } from "./groups";
 import { WorktreeList } from "./WorktreeList";
 import { NameDialog } from "./NameDialog";
 import { flattenRepos, keptByRepo } from "./sidebarModel";
-import { clear as clearPicked, click as pickClick, runBulk, selectAll, type BulkResult, type Selection } from "./selection";
+import { bulkSleepable, clear as clearPicked, click as pickClick, runBulk, selectAll, type BulkResult, type Selection } from "./selection";
 import { BulkBar } from "./BulkBar";
 import { BulkRemoveDialog } from "./BulkRemoveDialog";
 import { ReviewBranchesDialog } from "./ReviewBranchesDialog";
@@ -1860,6 +1860,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 const pin = !all.filter((w) => picked.paths.has(w.path)).every((w) => w.pinned);
                 void bulkEach((path) => api.worktreePin(path, pin));
               }}
+              canSleep={bulkSleepable(picked.paths, sleepableMap)}
+              onSleep={() => void Promise.all([...picked.paths].map((p) => sessions?.sleepWorktree(p, sessionFallback(api))))}
               onStatus={(status: WorkStatus) => void bulkEach((path) => api.worktreeDetails(path, { status }))}
               onClear={() => setPicked(clearPicked())}
             />
@@ -1928,7 +1930,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             unread={unreadMap}
             asleep={asleepMap}
             sleepable={sleepableMap}
-            onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
+            onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api))}
+            onSleepNested={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
             onWake={(wt) => [wt.path, ...all.filter((c) => c.parent === wt.path).map((c) => c.path)].forEach((p) => sessions?.wakeWorktree(p))}
             onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
             onMarkRead={(wt) => sessions?.markRead(wt.path)}

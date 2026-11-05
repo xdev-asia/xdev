@@ -27,6 +27,10 @@ export interface WorktreeMenuContext {
   sleepable?: boolean;
   /** Puts every tab of the worktree to sleep; without it the item is left out. */
   onSleep?(): void;
+  /** False when neither the worktree nor a nested one has an awake tab: Sleep with nested worktrees is disabled; the default is true. */
+  nestedSleepable?: boolean;
+  /** Puts the worktree and its nested worktrees to sleep; shown only with children and while the worktree is awake. */
+  onSleepNested?(): void;
   /** Wakes the worktree's tabs; without it the item is left out. */
   onWake?(): void;
   /** The parent the row hangs under (the Set item then reads Change). */
@@ -109,8 +113,11 @@ export function worktreeMenuItems(ctx: WorktreeMenuContext): MenuItem[] {
   const sleep: MenuItem[] =
     ctx.asleep && ctx.onWake
       ? [{ id: "wake", labelKey: "sleep.wake", run: ctx.onWake }]
-      : !ctx.asleep && ctx.sleepable !== false && ctx.onSleep
-        ? [{ id: "sleep", labelKey: "sleep.menu", run: ctx.onSleep }]
+      : !ctx.asleep
+        ? [
+            ...(ctx.sleepable !== false && ctx.onSleep ? [{ id: "sleep", labelKey: "sleep.menu", run: ctx.onSleep }] : []),
+            ...((ctx.children ?? 0) > 0 && ctx.onSleepNested ? [{ id: "sleepNested", labelKey: "sleep.menu.nested", disabled: ctx.nestedSleepable === false, run: ctx.onSleepNested }] : []),
+          ]
         : [];
   const linked = !wt.primary;
   const lineage: MenuItem[] = [
