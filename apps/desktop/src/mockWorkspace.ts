@@ -1231,6 +1231,16 @@ export function createMockWorkspace(
       if (how === "keep_deletion" && !confirmed) return reject("needs_approval", `discard ${file}`);
       state.entries = state.entries.filter((e) => e.path !== file);
       state.files = state.files.filter((f) => f !== file);
+      // `git add` or `git rm`: the file is staged, as kept or as deleted.
+      const set = stagedFiles.get(path) ?? new Set<string>();
+      set.add(file);
+      stagedFiles.set(path, set);
+      const pending = changes.get(path) ?? [];
+      const change = pending.find((c) => c.path === file);
+      if (how === "keep_deletion") {
+        if (change) change.kind = "deleted";
+        else changes.set(path, [...pending, { path: file, kind: "deleted" }]);
+      }
     },
     async worktreeBranches(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Button } from "@xdev-asia/ui";
 import { ProblemNote } from "@/components/ChangesPanel";
-import { createMockApi, type Api, type WorktreeChange, type WorktreeView } from "@/api";
+import { createMockApi, type Api, type ConflictState, type WorktreeChange, type WorktreeView } from "@/api";
 import { DiffView } from "@/components/DiffView";
 import { FileDiff } from "@/review/FileDiff";
 import { ReviewView } from "@/review/ReviewView";
@@ -909,7 +909,7 @@ it("hands the palette its Stage all and Discard all handlers", async () => {
 // ---- Conflicts ----
 
 const REBASE = { op: "rebase" as const, files: ["src/session.ts"], onto: "main", step: [3, 7] as [number, number], entries: [{ path: "src/session.ts", kind: "both_modified" as const, present: true }] };
-const conflicted = (state = REBASE) => createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), conflicts: { [OAK]: state } } });
+const conflicted = (state: ConflictState = REBASE) => createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), conflicts: { [OAK]: state } } });
 const sections = (view: ReturnType<typeof changes>) => view.all().filter((n) => n.type === "section").map((n) => n.props["data-group"]);
 const bar = (view: ReturnType<typeof changes>) => view.find((n) => n.props["data-conflict-bar"] !== undefined);
 const barButton = (view: ReturnType<typeof changes>, label: string) => nodes(bar(view)).find((n) => n.type === "button" && n.props.children === label)!;
@@ -941,13 +941,13 @@ it("opens a conflicted file in the file tab like any row", async () => {
   expect(view.onOpenFile).toHaveBeenCalledWith("src/session.ts");
 });
 
-it("has Continue off while a file is conflicted, and on once Stage marks it resolved", async () => {
+it("has Continue off while a file is conflicted, and on once Mark as resolved settles it", async () => {
   const api = conflicted();
   const view = changes(api, undefined, { onResolveConflicts: vi.fn() });
   await tick();
   expect(barButton(view, en("conflicts.continue")).props.disabled).toBe(true);
   expect(barButton(view, en("conflicts.resolve")).props.disabled).toBeFalsy();
-  nodes(group(view, "conflicts")).find((n) => n.type === "button" && n.props["aria-label"] === en("conflicts.stage", { path: "src/session.ts" }))!.props.onClick();
+  nodes(group(view, "conflicts")).find((n) => n.type === "button" && n.props.children === en("conflicts.resolve.mark"))!.props.onClick();
   await tick();
   // No unmerged file is left, so the group is gone and Continue is on; the file is staged.
   expect(sections(view)).not.toContain("conflicts");
@@ -1023,6 +1023,92 @@ it("Resolve with agent hands the agent the operation, branch and files; hidden w
   await tick();
   expect(nodes(bar(off)).some((n) => n.props.children === en("conflicts.resolve"))).toBe(false);
   expect(nodes(bar(off)).some((n) => n.props.children === en("conflicts.abort"))).toBe(true);
+});
+
+const DELETED = {
+  op: "merge" as const,
+  files: ["src/session.ts", "src/status.ts"],
+  onto: "topic",
+  step: null,
+  entries: [
+    { path: "src/session.ts", kind: "both_modified" as const, present: true },
+    { path: "src/status.ts", kind: "deleted_by_them" as const, present: true },
+  ],
+};
+const row = (view: ReturnType<typeof changes>, path: string) =>
+  nodes(group(view, "conflicts")).find((n) => n.type === "li" && nodes(n).some((c) => c.props.title === path))!;
+const rowButton = (view: ReturnType<typeof changes>, path: string, label: string) => nodes(row(view, path)).find((n) => n.type === "button" && n.props.children === label);
+const deletionDialog = (view: ReturnType<typeof changes>) => view.find((n) => n.type === ConfirmDialog && n.props.confirmLabel === en("conflicts.resolve.keepDeletion"))!;
+
+it("titles the conflicts group by operation and adds the note", async () => {
+  for (const [op, title] of [["rebase", "conflicts.title.rebase"], ["merge", "conflicts.title.merge"], ["cherry-pick", "conflicts.title.review"], ["revert", "conflicts.title.review"]] as const) {
+    const view = changes(conflicted({ ...REBASE, op }));
+    await tick();
+    const html = renderToStaticMarkup(group(view, "conflicts") as ReactElement);
+    expect(html, op).toContain(`>${en(title)}<`);
+    expect(html, op).toContain(en("conflicts.note"));
+  }
+});
+
+it("shows each conflicted file's kind, hint and the resolutions it offers", async () => {
+  const view = changes(conflicted(DELETED));
+  await tick();
+  const modified = renderToStaticMarkup(row(view, "src/session.ts") as ReactElement);
+  expect(modified).toContain(en("conflicts.kind.both_modified"));
+  expect(modified).toContain(en("conflicts.hint.markers"));
+  expect(rowButton(view, "src/session.ts", en("conflicts.resolve.mark"))).toBeDefined();
+  expect(rowButton(view, "src/session.ts", en("conflicts.resolve.keepDeletion"))).toBeUndefined();
+  const deleted = renderToStaticMarkup(row(view, "src/status.ts") as ReactElement);
+  expect(deleted).toContain(en("conflicts.kind.deleted_by_them"));
+  expect(deleted).toContain(en("conflicts.hint.keepOrDelete"));
+  expect(rowButton(view, "src/status.ts", en("conflicts.resolve.keepFile"))).toBeDefined();
+  expect(rowButton(view, "src/status.ts", en("conflicts.resolve.keepDeletion"))).toBeDefined();
+  expect(rowButton(view, "src/status.ts", en("conflicts.resolve.mark"))).toBeUndefined();
+});
+
+it("Keep file resolves at once with the kind the row showed", async () => {
+  const api = conflicted(DELETED);
+  const resolve = vi.spyOn(api, "worktreeConflictResolve");
+  const view = changes(api);
+  await tick();
+  rowButton(view, "src/status.ts", en("conflicts.resolve.keepFile"))!.props.onClick();
+  await tick();
+  expect(resolve).toHaveBeenCalledWith(OAK, "src/status.ts", "deleted_by_them", "keep_file", false);
+  expect(row(view, "src/status.ts")).toBeUndefined();
+});
+
+it("Keep deletion asks first, names the file, and goes through with the person's yes", async () => {
+  const api = conflicted(DELETED);
+  const resolve = vi.spyOn(api, "worktreeConflictResolve");
+  const view = changes(api);
+  await tick();
+  expect(deletionDialog(view).props.open).toBe(false);
+  rowButton(view, "src/status.ts", en("conflicts.resolve.keepDeletion"))!.props.onClick();
+  expect(deletionDialog(view).props.open).toBe(true);
+  expect(deletionDialog(view).props.title).toBe(en("conflicts.resolve.confirmDeletion", { path: "src/status.ts" }));
+  deletionDialog(view).props.onCancel();
+  await tick();
+  expect(resolve).not.toHaveBeenCalled();
+  rowButton(view, "src/status.ts", en("conflicts.resolve.keepDeletion"))!.props.onClick();
+  deletionDialog(view).props.onConfirm();
+  await tick();
+  expect(resolve).toHaveBeenCalledWith(OAK, "src/status.ts", "deleted_by_them", "keep_deletion", true);
+  expect(deletionDialog(view).props.open).toBe(false);
+  expect(row(view, "src/status.ts")).toBeUndefined();
+});
+
+it("a stale row says to refresh, naming the file, and the list reads again", async () => {
+  const api = conflicted(DELETED);
+  vi.spyOn(api, "worktreeConflictResolve").mockRejectedValue({ code: "conflict_gone", detail: "src/session.ts" });
+  const read = vi.spyOn(api, "worktreeConflicts");
+  const view = changes(api);
+  await tick();
+  const before = read.mock.calls.length;
+  rowButton(view, "src/session.ts", en("conflicts.resolve.mark"))!.props.onClick();
+  await tick();
+  const alert = view.all().find((n) => n.props["data-stale"] !== undefined)!;
+  expect(renderToStaticMarkup(alert as ReactElement)).toContain(en("error.conflict_gone", { path: "src/session.ts" }));
+  expect(read.mock.calls.length).toBeGreaterThan(before);
 });
 
 const groupNames = (view: ReturnType<typeof changes>) =>
