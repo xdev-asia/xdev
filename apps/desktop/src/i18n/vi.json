@@ -3903,5 +3903,6 @@
   "settings.appearance.titlebar.custom": "Tùy chỉnh",
   "settings.appearance.titlebarHint": "Hệ thống giữ khung cửa sổ của hệ điều hành; Tùy chỉnh dùng thanh tiêu đề riêng của xDev. Áp dụng ngay, không cần khởi động lại.",
   "settings.appearance.titlebarName": "Hiện tên ứng dụng trên thanh tiêu đề",
-  "settings.appearance.titlebarNameHint": "Chỉ áp dụng cho thanh tiêu đề tùy chỉnh."
+  "settings.appearance.titlebarNameHint": "Chỉ áp dụng cho thanh tiêu đề tùy chỉnh.",
+  "cli.ask.automation": "đổi một automation chạy trong"
 }

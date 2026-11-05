@@ -185,6 +185,7 @@ import type {
   QuickCommand,
   FileCommands,
   CliAsk,
+  CliOpenFile,
   CliOpenTab,
   TabReport,
   CrashDetail,
@@ -298,7 +299,7 @@ export type { FsChanged, FsEvent, FsEventKind } from "@xdev/bindings";
 export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase, UpdateDeferral, ReleaseBuild, ReleaseList };
 export type { AiKeyStatus } from "@xdev/bindings";
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
-export type { CliAsk, CliOpenTab, TabReport };
+export type { CliAsk, CliOpenFile, CliOpenTab, TabReport };
 export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, WorkerOpenOutcome, WorkerClose, ReadTab, WorkerChanged };
 export type { CliStatus } from "@xdev/bindings";
 export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
@@ -1440,6 +1441,8 @@ export interface Api {
   onCliOpenTab(cb: (e: CliOpenTab) => void): Promise<() => void>;
   // A CLI write that needs the person (`cli://ask`); answer with `cliApprove`.
   onCliAsk(cb: (e: CliAsk) => void): Promise<() => void>;
+  // `xdev file open` (`cli://open-file`): a file of a known worktree to show; the window is in front already.
+  onCliOpenFile(cb: (e: CliOpenFile) => void): Promise<() => void>;
   // Orchestration. The skill card, the strip over a worker's terminal, and the answers the UI owes the backend.
   orchestrationSkillStatus(): Promise<SkillStatus>;
   orchestrationSkillInstall(force?: boolean): Promise<SkillStatus>;
@@ -2117,6 +2120,7 @@ const tauriApi: Api = {
   onAutomationDispatch: (cb) => listen<AutomationDispatch>("automation://dispatch", (e) => cb(e.payload)),
   onAutomationsChanged: (cb) => listen<AutomationsChanged>("automations://changed", (e) => cb(e.payload)),
   onCliAsk: (cb) => listen<CliAsk>("cli://ask", (e) => cb(e.payload)),
+  onCliOpenFile: (cb) => listen<CliOpenFile>("cli://open-file", (e) => cb(e.payload)),
   orchestrationSkillStatus: () => call("orchestration_skill_status"),
   orchestrationSkillInstall: (force = false) => call("orchestration_skill_install", { force }),
   orchestrationWorkerLifetime: (tab) => call("orchestration_worker_lifetime", { tab }),

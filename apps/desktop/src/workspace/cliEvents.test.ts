@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import { translate } from "@/i18n";
 import { ASK_TTL_MS, startCliEvents } from "./cliEvents";
+import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { getToasts, resetToastsForTests } from "./toastStore";
 
 const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
@@ -65,5 +66,30 @@ describe("CLI events", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(getToasts()).toEqual([]);
     expect(api.__cliAnswers()).toEqual([]);
+  });
+
+  it("opens the file the CLI names, with its position when it has one", async () => {
+    const api = createMockApi({});
+    const seen: OpenFileRequest[] = [];
+    const off = onOpenFile((req) => seen.push(req));
+    const stop = startCliEvents(api, { reload() {}, openTab() {}, t });
+    await flush();
+    api.__cliOpenFile({ worktree: "/w/lead", path: "src/a.ts", line: 12, column: null });
+    api.__cliOpenFile({ worktree: "/w/lead", path: "b.ts", line: null, column: null });
+    expect(seen).toEqual([
+      { worktree: "/w/lead", rel: "src/a.ts", line: 12, column: undefined },
+      { worktree: "/w/lead", rel: "b.ts", line: undefined, column: undefined },
+    ]);
+    stop();
+    off();
+  });
+
+  it("words an automation write as a change to one that runs in the worktree", async () => {
+    const api = createMockApi({});
+    startCliEvents(api, { reload() {}, openTab() {}, t });
+    await flush();
+    api.__cliAsk({ request: 8, caller: "/w/lead", verb: "automation.remove", target: "/w/other" });
+    expect(getToasts()[0].text).toBe("lead wants to change an automation that runs in other.");
+    expect(translate("vi", "cli.ask.automation")).not.toBe("cli.ask.automation");
   });
 });
