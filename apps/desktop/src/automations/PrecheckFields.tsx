@@ -3,7 +3,9 @@ import { Field, Select } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import { TIMEOUT_OPTIONS } from "./schedule";
 
-const label = (seconds: number, t: (k: string) => string) => (TIMEOUT_OPTIONS.includes(seconds) ? t(`automations.precheck.timeout.${seconds}`) : `${seconds} s`);
+/** An option's label; a stored timeout outside the options reads "{seconds} s". */
+export const timeoutLabel = (seconds: number, t: (k: string, vars?: Record<string, string | number>) => string) =>
+  TIMEOUT_OPTIONS.includes(seconds) ? t(`automations.precheck.timeout.${seconds}`) : t("automations.precheck.timeout.seconds", { seconds });
 
 /** The optional precheck: a command that must exit 0 in the run's folder, and how long it may take. */
 export function PrecheckFields(props: { command: string; timeout: number; onChange(next: { command: string; timeout: number }): void }): JSX.Element {
@@ -26,7 +28,7 @@ export function PrecheckFields(props: { command: string; timeout: number; onChan
         <Select
           value={String(props.timeout)}
           data-act="precheck-timeout"
-          options={values.map((v) => ({ value: String(v), label: label(v, t) }))}
+          options={values.map((v) => ({ value: String(v), label: timeoutLabel(v, t) }))}
           onChange={(e) => props.onChange({ command: props.command, timeout: Number(e.target.value) })}
         />
       </label>

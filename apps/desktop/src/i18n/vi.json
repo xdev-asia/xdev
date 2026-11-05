@@ -3120,6 +3120,7 @@
   "automations.precheck.timeout.60": "1 phút",
   "automations.precheck.timeout.120": "2 phút",
   "automations.precheck.timeout.300": "5 phút",
+  "automations.precheck.timeout.seconds": "{seconds} giây",
   "automations.precheck.timeout.600": "10 phút",
   "automations.editor.titleCreate": "Tạo tự động hóa",
   "automations.editor.titleEdit": "Sửa tự động hóa",

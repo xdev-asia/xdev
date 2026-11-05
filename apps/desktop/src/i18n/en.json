@@ -3120,6 +3120,7 @@
   "automations.precheck.timeout.60": "1 min",
   "automations.precheck.timeout.120": "2 min",
   "automations.precheck.timeout.300": "5 min",
+  "automations.precheck.timeout.seconds": "{seconds} s",
   "automations.precheck.timeout.600": "10 min",
   "automations.editor.titleCreate": "Create automation",
   "automations.editor.titleEdit": "Edit automation",
