@@ -53,6 +53,10 @@ function Expanded(props: { session: ImageSession; name: string; onClose: () => v
   const { t } = useI18n();
   const { session, name, onClose } = props;
   const view = useMemo(() => session.view(), [session]);
+  useEffect(() => {
+    view.attach();
+    return () => view.dispose();
+  }, [view]);
   useSyncExternalStore(view.subscribe, view.get);
   const img = useRef<HTMLImageElement | null>(null);
   const copy = async () => {

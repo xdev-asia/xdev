@@ -142,4 +142,50 @@ describe("ImageSession", () => {
       expect(s.get()).toMatchObject({ zoom: 1, pan: null });
     });
   });
+
+  describe("the expanded view", () => {
+    it("follows the parent's current URL after a reload, but keeps its own zoom", async () => {
+      const { s, u } = await ready("a.png");
+      const v = s.view();
+      expect(v.get().url).toBe("blob:0");
+      v.setNatural(800, 400);
+      v.setBox(432, 232);
+      v.zoomIn();
+      await s.load();
+      expect(s.get().url).toBe("blob:1");
+      expect(v.get().url).toBe("blob:1");
+      expect(v.get().zoom).toBe(1.25);
+      expect(u.revoked).toEqual(["blob:0"]);
+    });
+    it("shows nothing while the parent reloads, and the error if it fails", async () => {
+      const u = urls();
+      const api = { fileBytes: vi.fn().mockResolvedValueOnce(new Uint8Array(1)).mockRejectedValueOnce({ code: "io" }) };
+      const s = new ImageSession(api, "W", "a.png", u.api);
+      await s.load();
+      const v = s.view();
+      const reload = s.load();
+      expect(v.get()).toMatchObject({ status: "loading", url: null });
+      await reload;
+      expect(v.get()).toMatchObject({ status: "error", error: "io", url: null });
+    });
+    it("picks the parent up again when re-attached (a remounted effect)", async () => {
+      const { s } = await ready("a.png");
+      const v = s.view();
+      v.dispose();
+      await s.load();
+      v.attach();
+      expect(v.get().url).toBe(s.get().url);
+      await s.load();
+      expect(v.get().url).toBe(s.get().url);
+    });
+    it("stops following when disposed, and never revokes the parent's URL", async () => {
+      const { s, u } = await ready("a.png");
+      const v = s.view();
+      v.dispose();
+      expect(u.revoked).toEqual([]);
+      await s.load();
+      expect(v.get().url).toBeNull();
+      expect(u.revoked).toEqual(["blob:0"]);
+    });
+  });
 });
