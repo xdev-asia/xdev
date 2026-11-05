@@ -40,8 +40,13 @@ pub trait Probe: Send + Sync {
     fn listeners(&self, timeout: Duration) -> Result<Vec<Listener>, ScanError>;
     /// Every process this user can see.
     fn processes(&self) -> Result<Vec<Proc>, ScanError>;
-    /// Ends one process. A process that is already gone counts as success.
+    /// Asks `pid` and every process under it to end: SIGTERM to the tree on
+    /// Unix, `taskkill /T /F` on Windows, which has no soft signal for a
+    /// console program. A tree that is already gone counts as success.
     fn terminate(&self, pid: u32) -> Result<(), ScanError>;
+    /// Ends `pid` and every process under it now: SIGKILL to the tree on
+    /// Unix, `taskkill /T /F` on Windows.
+    fn kill(&self, pid: u32) -> Result<(), ScanError>;
 }
 
 /// The real machine.
@@ -56,7 +61,10 @@ impl Probe for OsProbe {
         crate::os::processes()
     }
     fn terminate(&self, pid: u32) -> Result<(), ScanError> {
-        crate::os::terminate(pid)
+        crate::os::stop_tree(pid, false)
+    }
+    fn kill(&self, pid: u32) -> Result<(), ScanError> {
+        crate::os::stop_tree(pid, true)
     }
 }
 

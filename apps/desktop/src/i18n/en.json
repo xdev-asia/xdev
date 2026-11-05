@@ -527,6 +527,7 @@
   "error.port_changed": "The process on this port changed since the last scan, so nothing was stopped.",
   "error.port_stop_unconfirmed": "Confirm the stop first. Nothing was stopped.",
   "error.port_not_started_by_app": "This process was not started by an xDev terminal, so it was not stopped. Stop it from the Ports panel to confirm a second time.",
+  "error.port_still_listening": "The process was told to stop, but the port is still open. Try again or stop it from its terminal.",
   "error.stop_failed": "The process could not be stopped.",
   "error.open_failed": "The address could not be opened.",
   "ptyd.truncated": "— output truncated —",

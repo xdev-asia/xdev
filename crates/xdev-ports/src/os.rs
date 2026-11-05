@@ -92,12 +92,34 @@ pub(crate) fn already_gone(text: &str) -> bool {
     text.contains("no such process") || text.contains("not found") || text.contains("no running")
 }
 
-/// Ends one process, a single process and not its tree.
-pub(crate) fn terminate(pid: u32) -> Result<(), ScanError> {
+/// `pid` and every process under it, parents before children, from the
+/// parent links in `procs`. Read before any signal: a child whose parent has
+/// ended is moved under another parent and could not be found after.
+#[cfg(any(unix, test))]
+pub(crate) fn tree_of(pid: u32, procs: &[Proc]) -> Vec<u32> {
+    let mut out = vec![pid];
+    let mut i = 0;
+    while i < out.len() {
+        let parent = out[i];
+        for p in procs {
+            if p.ppid == Some(parent) && p.pid != parent && !out.contains(&p.pid) {
+                out.push(p.pid);
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Ends `pid` and its tree, the same way `xdev_ai::process::kill_tree` does
+/// on Windows (`taskkill /T /F`). On Unix the listener is seldom a group
+/// leader, so each pid of the tree gets the signal: TERM, or KILL when `hard`.
+pub(crate) fn stop_tree(pid: u32, hard: bool) -> Result<(), ScanError> {
     #[cfg(windows)]
     let mut cmd = {
+        let _ = hard;
         let mut cmd = Command::new("taskkill");
-        cmd.args(["/PID", &pid.to_string(), "/F"]);
+        cmd.args(["/PID", &pid.to_string(), "/T", "/F"]);
         std::os::windows::process::CommandExt::creation_flags(&mut cmd, CREATE_NO_WINDOW);
         cmd
     };
@@ -108,8 +130,10 @@ pub(crate) fn terminate(pid: u32) -> Result<(), ScanError> {
         } else {
             "kill"
         };
+        let pids = tree_of(pid, &processes().unwrap_or_default());
         let mut cmd = Command::new(program);
-        cmd.args(["-TERM", &pid.to_string()]);
+        cmd.arg(if hard { "-KILL" } else { "-TERM" }).arg("--");
+        cmd.args(pids.iter().map(u32::to_string));
         cmd
     };
     let output = cmd
@@ -124,6 +148,7 @@ pub(crate) fn terminate(pid: u32) -> Result<(), ScanError> {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    // On Unix one pid of the tree may have ended between the read and the signal.
     if already_gone(&said) {
         return Ok(());
     }
@@ -226,6 +251,35 @@ pub(crate) fn listeners(_timeout: Duration) -> Result<Vec<Listener>, ScanError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn p(pid: u32, ppid: Option<u32>) -> Proc {
+        Proc {
+            pid,
+            ppid,
+            name: String::new(),
+            cmd: String::new(),
+            cwd: None,
+            start: None,
+        }
+    }
+
+    #[test]
+    fn the_tree_holds_every_descendant_once_and_survives_a_loop() {
+        let procs = [
+            p(1, None),
+            p(10, Some(1)),
+            p(11, Some(10)),
+            p(12, Some(10)),
+            p(13, Some(12)),
+            p(20, Some(1)),
+            // A loop must not hang the walk.
+            p(30, Some(31)),
+            p(31, Some(30)),
+        ];
+        assert_eq!(tree_of(10, &procs), vec![10, 11, 12, 13]);
+        assert_eq!(tree_of(30, &procs), vec![30, 31]);
+        assert_eq!(tree_of(99, &procs), vec![99]);
+    }
 
     #[test]
     fn a_process_that_is_already_gone_counts_as_stopped() {

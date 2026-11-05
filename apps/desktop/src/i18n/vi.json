@@ -527,6 +527,7 @@
   "error.port_changed": "Tiến trình trên cổng này đã thay đổi từ lần quét trước nên chưa dừng gì.",
   "error.port_stop_unconfirmed": "Hãy xác nhận trước khi dừng. Chưa dừng gì.",
   "error.port_not_started_by_app": "Tiến trình này không do terminal của xDev khởi chạy nên chưa bị dừng. Hãy dừng từ bảng Cổng để xác nhận lần thứ hai.",
+  "error.port_still_listening": "Đã yêu cầu tiến trình dừng nhưng cổng vẫn mở. Hãy thử lại hoặc dừng nó từ terminal của nó.",
   "error.stop_failed": "Không thể dừng tiến trình.",
   "error.open_failed": "Không thể mở địa chỉ.",
   "ptyd.truncated": "— output đã bị cắt bớt —",

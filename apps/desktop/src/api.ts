@@ -441,6 +441,7 @@ export type ErrorCode =
   | "port_changed"
   | "port_stop_unconfirmed"
   | "port_not_started_by_app"
+  | "port_still_listening"
   | "stop_failed"
   | "open_failed"
   | "ptyd_unreachable"
@@ -1189,6 +1190,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "port_changed",
   "port_stop_unconfirmed",
   "port_not_started_by_app",
+  "port_still_listening",
   "stop_failed",
   "open_failed",
   "ptyd_unreachable",

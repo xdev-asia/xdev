@@ -14,6 +14,11 @@ use crate::{
 /// How long one command may run.
 pub const SCAN_TIMEOUT: Duration = Duration::from_secs(4);
 /// The first pause after a timeout.
+/// How long a stopped tree has to close its port, once after TERM and once
+/// more after KILL.
+pub const STOP_GRACE: Duration = Duration::from_secs(2);
+/// How often the port is read while waiting for it to close.
+const STOP_POLL: Duration = Duration::from_millis(100);
 const PAUSE_FIRST: Duration = Duration::from_secs(60);
 /// The longest pause.
 const PAUSE_MAX: Duration = Duration::from_secs(300);
@@ -51,6 +56,10 @@ pub enum StopError {
     /// The process on the port is not the one the list showed.
     #[error("the process on the port changed")]
     Changed,
+    /// The tree was told to end, but the port still had a listener after
+    /// the grace time and a hard kill.
+    #[error("the port is still listening")]
+    StillListening,
     #[error("{0}")]
     Failed(String),
 }
@@ -67,6 +76,7 @@ impl StopError {
             Self::OwnProcess => "port_own_process",
             Self::Unavailable => "port_scan_unavailable",
             Self::Changed => "port_changed",
+            Self::StillListening => "port_still_listening",
             Self::Failed(_) => "stop_failed",
         }
     }
@@ -109,6 +119,7 @@ pub struct Scanner<P: Probe> {
     clock: fn() -> Instant,
     state: Mutex<State>,
     running: Mutex<()>,
+    grace: Duration,
 }
 
 fn now_ms() -> u64 {
@@ -134,7 +145,14 @@ impl<P: Probe> Scanner<P> {
             clock,
             state: Mutex::new(State::default()),
             running: Mutex::new(()),
+            grace: STOP_GRACE,
         }
+    }
+
+    /// The same scanner with another wait for a stopped port to close.
+    pub fn with_grace(mut self, grace: Duration) -> Self {
+        self.grace = grace;
+        self
     }
 
     pub fn probe(&self) -> &P {
@@ -275,7 +293,11 @@ impl<P: Probe> Scanner<P> {
     /// it, then reads the live tables once more right before the signal: the
     /// pid must still exist, still listen on that port, and keep the name and
     /// start time the scan saw, so a reused pid is never hit. `protected`
-    /// pids are refused. Returns the list after the stop.
+    /// pids are refused.
+    ///
+    /// The pid and its tree get TERM, then KILL when the port is still open
+    /// after the grace time. Succeeds only once a read of the live table
+    /// shows nothing listening on the port, and returns the list after it.
     pub fn stop(
         &self,
         id: &str,
@@ -316,10 +338,37 @@ impl<P: Probe> Scanner<P> {
             .cloned()
             .ok_or(StopError::Changed)?;
         self.still_the_same(pid, port.port, &seen)?;
+        let number = port.port;
         self.probe
             .terminate(pid)
             .map_err(|e| StopError::Failed(e.to_string()))?;
+        if !self.closes(number) {
+            self.probe
+                .kill(pid)
+                .map_err(|e| StopError::Failed(e.to_string()))?;
+            if !self.closes(number) {
+                return Err(StopError::StillListening);
+            }
+        }
         Ok(self.scan(roots, worktrees, urls, true))
+    }
+
+    /// Whether nothing listens on `port` within the grace time. A failed read
+    /// proves nothing, so it waits on.
+    fn closes(&self, port: u16) -> bool {
+        let end = Instant::now() + self.grace;
+        loop {
+            if let Ok(listeners) = self.probe.listeners(SCAN_TIMEOUT)
+                && !listeners.iter().any(|l| l.port == port)
+            {
+                return true;
+            }
+            let left = end.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            std::thread::sleep(left.min(STOP_POLL));
+        }
     }
 
     /// Reads the live tables: `pid` still runs as `seen` and listens on `port`.
@@ -379,11 +428,22 @@ mod tests {
         /// From the second process read on, when set: the table changed.
         later: Arc<Mutex<Option<Vec<Proc>>>>,
         proc_calls: Arc<AtomicUsize>,
+        /// Pids given a hard kill.
+        hard: Arc<Mutex<Vec<u32>>>,
+        /// 0 ends on TERM, 1 only on KILL, 2 never.
+        stubborn: Arc<AtomicUsize>,
     }
 
     impl Fake {
         fn queue(&self, r: Result<Vec<Listener>, ScanError>) {
             self.listeners.lock().unwrap().push(r);
+        }
+
+        /// The process ends: its sockets leave every queued table.
+        fn end(&self, pid: u32) {
+            for table in self.listeners.lock().unwrap().iter_mut().flatten() {
+                table.retain(|l| l.pid != Some(pid));
+            }
         }
     }
 
@@ -408,6 +468,16 @@ mod tests {
         }
         fn terminate(&self, pid: u32) -> Result<(), ScanError> {
             self.killed.lock().unwrap().push(pid);
+            if self.stubborn.load(Ordering::SeqCst) == 0 {
+                self.end(pid);
+            }
+            Ok(())
+        }
+        fn kill(&self, pid: u32) -> Result<(), ScanError> {
+            self.hard.lock().unwrap().push(pid);
+            if self.stubborn.load(Ordering::SeqCst) <= 1 {
+                self.end(pid);
+            }
             Ok(())
         }
     }
@@ -447,7 +517,7 @@ mod tests {
     fn setup() -> (Scanner<Fake>, Fake, Mutex<AdvertisedUrls>, Vec<PathBuf>) {
         OFFSET.with(|o| o.set(0));
         let fake = Fake::default();
-        let scanner = Scanner::new(fake.clone(), clock);
+        let scanner = Scanner::new(fake.clone(), clock).with_grace(Duration::from_millis(50));
         (
             scanner,
             fake,
@@ -716,9 +786,37 @@ mod tests {
             confirmed: true,
             outside_terminal: false,
         };
-        s.stop("127.0.0.1:5173:7", once, &[root(7)], &wts, &urls, &[])
+        let after = s
+            .stop("127.0.0.1:5173:7", once, &[root(7)], &wts, &urls, &[])
             .unwrap();
         assert_eq!(*f.killed.lock().unwrap(), vec![7]);
+        // TERM closed the port, so there was no hard kill.
+        assert!(f.hard.lock().unwrap().is_empty());
+        assert!(after.ports.iter().all(|p| p.port != 5173));
+    }
+
+    #[test]
+    fn a_tree_that_ignores_term_gets_a_kill_after_the_grace() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        f.stubborn.store(1, Ordering::SeqCst);
+        let after = s
+            .stop("127.0.0.1:5173:7", YES, &[root(7)], &wts, &urls, &[])
+            .unwrap();
+        assert_eq!(*f.killed.lock().unwrap(), vec![7]);
+        assert_eq!(*f.hard.lock().unwrap(), vec![7]);
+        assert!(after.ports.iter().all(|p| p.port != 5173));
+    }
+
+    #[test]
+    fn a_port_still_open_after_the_kill_is_not_reported_stopped() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        f.stubborn.store(2, Ordering::SeqCst);
+        let err = s
+            .stop("127.0.0.1:5173:7", YES, &[root(7)], &wts, &urls, &[])
+            .unwrap_err();
+        assert_eq!(err, StopError::StillListening);
+        assert_eq!(err.code(), "port_still_listening");
+        assert_eq!(*f.hard.lock().unwrap(), vec![7]);
     }
 
     #[test]
