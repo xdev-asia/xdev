@@ -443,7 +443,8 @@ fn same_process(pid: u32, was: &Identity, procs: &[Proc]) -> bool {
             .any(|p| p.pid == pid && Identity::of(p) == *was)
 }
 
-/// `pid` and every process under it in `procs`, parents before children.
+/// `pid` and every process under it in `procs`, parents before children,
+/// through the links `Proc::is_parent_of` accepts.
 fn tree_of(pid: u32, procs: &[Proc]) -> Vec<&Proc> {
     let Some(top) = procs.iter().find(|p| p.pid == pid) else {
         return Vec::new();
@@ -453,10 +454,7 @@ fn tree_of(pid: u32, procs: &[Proc]) -> Vec<&Proc> {
     while i < out.len() {
         let parent = out[i];
         for p in procs {
-            if p.ppid == Some(parent.pid)
-                && p.pid != parent.pid
-                && !out.iter().any(|o| o.pid == p.pid)
-            {
+            if parent.is_parent_of(p) && !out.iter().any(|o| o.pid == p.pid) {
                 out.push(p);
             }
         }
@@ -989,6 +987,19 @@ mod tests {
         s.stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
             .unwrap();
         assert_eq!(*f.killed.lock().unwrap(), vec![7, 8, 9]);
+    }
+
+    #[test]
+    fn a_child_link_to_a_reused_parent_pid_is_not_followed() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        // 8 names 7 as parent but started before it: its parent was another
+        // process that ended before 7 took the pid.
+        let mut stale = child(8, 7);
+        stale.start = Some(500);
+        f.procs.lock().unwrap().extend([stale, child(9, 8)]);
+        s.stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
+            .unwrap();
+        assert_eq!(*f.killed.lock().unwrap(), vec![7]);
     }
 
     #[test]

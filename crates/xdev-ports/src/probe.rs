@@ -24,6 +24,18 @@ pub struct Proc {
     pub start: Option<u64>,
 }
 
+impl Proc {
+    /// Whether `self` is the parent of `child`. The OS may keep a parent pid
+    /// after that parent ended and the pid went to a new process, so the link
+    /// holds only when both start times are known and the parent started no
+    /// later than the child.
+    pub fn is_parent_of(&self, child: &Proc) -> bool {
+        child.ppid == Some(self.pid)
+            && child.pid != self.pid
+            && matches!((self.start, child.start), (Some(p), Some(c)) if p <= c)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ScanError {
     #[error("the scan took too long")]
