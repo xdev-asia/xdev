@@ -1614,6 +1614,7 @@
   "workspace.agentPicker.setDefault": "Set as default",
   "workspace.agentPicker.isDefault": "Current default",
   "workspace.agentPicker.manage": "Manage agents",
+  "workspace.agentUnusable": "{name} is off or not installed, so no agent started.",
   "workspace.tabs.agentPicker": "Agent…",
   "workspace.tabs.skip": "skip",
   "workspace.tabs.skipHint": "This agent runs without asking before it acts.",

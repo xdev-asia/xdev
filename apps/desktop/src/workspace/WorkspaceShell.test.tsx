@@ -621,6 +621,47 @@ it("a create with extras opens the picked agent, keeps it as the default and sav
   expect(details.mock.calls[0][1]).toEqual({ title: "🚀 birch", item: { kind: "issue", url: "https://x.test/i/7", title: null } });
 });
 
+it("a create that picks an agent that is not installed opens no agent, sends no prompt and says why", async () => {
+  const api = createMockApi({});
+  const spawn = vi.spyOn(api, "ptySpawn");
+  const view = await harness(api);
+  view.list().props.onCreate();
+  await tick();
+  view.draw();
+  // Gemini is not installed in the mock.
+  view.of(CreateWorktreeDialog)[0].props.onCreate("demo-xdev", "rocket-birch", null, {
+    title: null,
+    agent: "gemini",
+    setDefault: false,
+    parent: null,
+    item: null,
+    prompt: "fix it",
+  });
+  await tick();
+  await tick();
+  await tick();
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  expect(sessions.tabs("/demo/wt/xdev-rocket-birch")).toEqual([]);
+  expect(spawn).not.toHaveBeenCalled();
+  const name = (await api.profiles()).profiles.find((p) => p.profile.id === "gemini")!.profile.name;
+  const toast = getToasts().find((x) => x.text === en("workspace.agentUnusable", { name }))!;
+  expect(toast.actions[0].label).toBe(en("workspace.agentPicker.manage"));
+  for (const x of getToasts()) dismissToast(x.id);
+});
+
+it("a CLI open of an agent that is not installed opens nothing", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  attend(view);
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  const before = sessions.tabs(OAK).length;
+  const name = (await api.profiles()).profiles.find((p) => p.profile.id === "gemini")!.profile.name;
+  api.__cliOpenTab({ worktree: OAK, profile: "gemini", prompt: "fix it" });
+  await vi.waitFor(() => expect(getToasts().some((x) => x.text === en("workspace.agentUnusable", { name }))).toBe(true));
+  expect(sessions.tabs(OAK)).toHaveLength(before);
+  for (const x of getToasts()) dismissToast(x.id);
+});
+
 it("new_worktree_skips_uninstalled_default", async () => {
   const api = createMockApi({});
   // Gemini is not installed in the mock: the first usable agent of the auto order starts.

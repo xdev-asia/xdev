@@ -1342,14 +1342,23 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
-  // A new worktree starts with the agent picked for it when that one is on and installed, else the
-  // resolved default agent; with no agent at all, the default shell, and nothing is typed into it.
+  // A new worktree starts with the agent picked for it, else the resolved default agent; with no
+  // agent at all, the default shell, and nothing is typed into it. A picked agent that is off or not
+  // installed opens nothing, and a toast says why: another agent never takes its place or its prompt.
   async function openDefaultAgent(path: string, pick?: string | null, prompt?: string): Promise<void> {
     if (!sessions || pick === null) return;
     try {
       const view = await api.profiles();
       const usable = (id: string) => view.profiles.some((p) => p.profile.id === id && p.profile.enabled && p.installed);
-      const agent = pick !== undefined && usable(pick) ? pick : view.resolvedDefault;
+      if (pick !== undefined && !usable(pick)) {
+        const name = view.profiles.find((p) => p.profile.id === pick)?.profile.name ?? pick;
+        pushToast({
+          text: t("workspace.agentUnusable", { name }),
+          actions: [{ label: t("workspace.agentPicker.manage"), run: () => openSettings("agents") }],
+        });
+        return;
+      }
+      const agent = pick ?? view.resolvedDefault;
       const shell = view.shells.some((s) => s.id === view.defaultShell) ? view.defaultShell : view.shells[0]?.id;
       const id = agent ?? shell;
       if (!id) return;

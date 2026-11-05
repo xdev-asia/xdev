@@ -1614,6 +1614,7 @@
   "workspace.agentPicker.setDefault": "Đặt làm mặc định",
   "workspace.agentPicker.isDefault": "Mặc định hiện tại",
   "workspace.agentPicker.manage": "Quản lý agent",
+  "workspace.agentUnusable": "{name} đang tắt hoặc chưa được cài, nên không có agent nào được khởi động.",
   "workspace.tabs.agentPicker": "Agent…",
   "workspace.tabs.skip": "skip",
   "workspace.tabs.skipHint": "Agent này chạy mà không hỏi trước khi làm.",
