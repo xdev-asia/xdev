@@ -5,7 +5,7 @@
 mod macos;
 
 use crate::applog;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -36,21 +36,35 @@ struct NotificationClick {
     pty_id: String,
 }
 
-/// The pane each recent notification was shown for, by notification id.
+/// A notification's title and body, as the OS shows them.
+type Text = (String, String);
+
+/// One recent notification: its id, its pane and its text.
+struct Entry {
+    id: i32,
+    pty_id: String,
+    text: Text,
+}
+
+/// The pane and text of each recent notification, by notification id.
 #[derive(Default)]
 pub struct Shown {
     next: AtomicI32,
-    recent: Mutex<VecDeque<(i32, String)>>,
+    recent: Mutex<VecDeque<Entry>>,
 }
 
 impl Shown {
-    fn add(&self, pty_id: &str) -> i32 {
+    fn add(&self, pty_id: &str, title: &str, body: &str) -> i32 {
         let id = self.next.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
         let mut recent = self.recent.lock().unwrap_or_else(PoisonError::into_inner);
         if recent.len() == KEEP_SHOWN {
             recent.pop_front();
         }
-        recent.push_back((id, pty_id.to_owned()));
+        recent.push_back(Entry {
+            id,
+            pty_id: pty_id.to_owned(),
+            text: (title.to_owned(), body.to_owned()),
+        });
         id
     }
 
@@ -59,15 +73,26 @@ impl Shown {
         let recent = self.recent.lock().unwrap_or_else(PoisonError::into_inner);
         recent
             .iter()
-            .filter(|(_, p)| p == pty_id)
-            .map(|(n, _)| *n)
+            .filter(|e| e.pty_id == pty_id)
+            .map(|e| e.id)
             .collect()
+    }
+
+    /// The texts remembered for one pane, and those remembered for the others.
+    // Only the macOS removal reads them.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn texts_of(&self, pty_id: &str) -> (Vec<Text>, Vec<Text>) {
+        let recent = self.recent.lock().unwrap_or_else(PoisonError::into_inner);
+        let (mine, others): (Vec<&Entry>, Vec<&Entry>) =
+            recent.iter().partition(|e| e.pty_id == pty_id);
+        let texts = |entries: Vec<&Entry>| entries.into_iter().map(|e| e.text.clone()).collect();
+        (texts(mine), texts(others))
     }
 
     /// Drops what is remembered for one pane.
     fn forget(&self, pty_id: &str) {
         let mut recent = self.recent.lock().unwrap_or_else(PoisonError::into_inner);
-        recent.retain(|(_, p)| p != pty_id);
+        recent.retain(|e| e.pty_id != pty_id);
     }
 
     fn pty_of(&self, id: i32) -> Option<String> {
@@ -75,8 +100,73 @@ impl Shown {
         recent
             .iter()
             .rev()
-            .find(|(n, _)| *n == id)
-            .map(|(_, p)| p.clone())
+            .find(|e| e.id == id)
+            .map(|e| e.pty_id.clone())
+    }
+}
+
+/// Which of the `delivered` notifications to remove for a pane, by index.
+/// Several panes can show the same text, so a delivered one is removed only
+/// when it cannot be another pane's: per text, at most the pane's own count,
+/// and only what is delivered beyond the other panes' count.
+// Only the macOS removal calls it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn to_remove(mine: &[Text], others: &[Text], delivered: &[Text]) -> Vec<usize> {
+    let count = |texts: &[Text], text: &Text| texts.iter().filter(|t| *t == text).count();
+    let mut budget: HashMap<&Text, usize> = HashMap::new();
+    for text in mine {
+        budget.entry(text).or_insert_with(|| {
+            count(mine, text).min(count(delivered, text).saturating_sub(count(others, text)))
+        });
+    }
+    let mut picked = Vec::new();
+    for (i, text) in delivered.iter().enumerate() {
+        if let Some(left) = budget.get_mut(text)
+            && *left > 0
+        {
+            *left -= 1;
+            picked.push(i);
+        }
+    }
+    picked
+}
+
+/// Removes from Notification Centre the delivered notifications `to_remove`
+/// picks for one pane. The notification plugin hands the OS neither our id
+/// nor `extra`, so title and body are what matches them. Skipped in a dev run,
+/// where they go out under the terminal's name and the bundle id is
+/// impersonated, and without a bundle id, where the centre cannot be asked.
+#[cfg(target_os = "macos")]
+fn remove_delivered(app: &AppHandle, mine: Vec<Text>, others: Vec<Text>) {
+    if tauri::is_dev() || macos::bundle_id().is_none() {
+        return;
+    }
+    // The centre's callbacks arrive on the main thread; ask it there too.
+    let result = app.run_on_main_thread(move || {
+        // The plugin shows them through this centre, deprecated or not.
+        #[allow(deprecated)]
+        {
+            use objc2_foundation::NSUserNotificationCenter;
+            let center = NSUserNotificationCenter::defaultUserNotificationCenter();
+            let delivered = center.deliveredNotifications().to_vec();
+            let texts: Vec<Text> = delivered
+                .iter()
+                .map(|n| {
+                    (
+                        n.title().map(|s| s.to_string()).unwrap_or_default(),
+                        n.informativeText()
+                            .map(|s| s.to_string())
+                            .unwrap_or_default(),
+                    )
+                })
+                .collect();
+            for i in to_remove(&mine, &others, &texts) {
+                center.removeDeliveredNotification(&delivered[i]);
+            }
+        }
+    });
+    if let Err(e) = result {
+        applog::warn("status dismiss", &e.to_string());
     }
 }
 
@@ -275,7 +365,7 @@ pub fn status_notify(
     body: String,
     pty_id: String,
 ) -> Result<(), CmdError> {
-    let id = shown.add(&pty_id);
+    let id = shown.add(&pty_id, &title, &body);
     let result = app
         .notification()
         .builder()
@@ -288,14 +378,22 @@ pub fn status_notify(
 }
 
 /// Removes the OS notifications still shown for one pane, once the person
-/// has read it. Never fails. Linux closes them; macOS and Windows keep them,
-/// because the notification plugin cannot remove a shown one there.
+/// has read it. Never fails. Linux closes them through the notification
+/// plugin; macOS removes them from Notification Centre in a bundled build
+/// (not in a dev run); Windows keeps them, because the plugin cannot remove a
+/// shown one there.
 #[tauri::command(async)]
 pub fn status_dismiss(app: AppHandle, shown: State<'_, Shown>, pty_id: String) {
     let ids = shown.ids_of(&pty_id);
     if ids.is_empty() {
         return;
     }
+    #[cfg(target_os = "macos")]
+    {
+        let (mine, others) = shown.texts_of(&pty_id);
+        remove_delivered(&app, mine, others);
+    }
+    #[cfg(not(target_os = "macos"))]
     if let Err(e) = app.notification().remove_active(ids) {
         applog::warn("status dismiss", &e.to_string());
     }
@@ -553,13 +651,13 @@ mod tests {
     #[test]
     fn shown_maps_ids_to_panes_and_forgets_old_ones() {
         let shown = Shown::default();
-        let first = shown.add("a");
-        let second = shown.add("b");
+        let first = shown.add("a", "t", "b");
+        let second = shown.add("b", "t", "b");
         assert_ne!(first, second);
         assert_eq!(shown.pty_of(first).as_deref(), Some("a"));
         assert_eq!(shown.pty_of(second).as_deref(), Some("b"));
         for _ in 0..KEEP_SHOWN {
-            shown.add("c");
+            shown.add("c", "t", "b");
         }
         assert_eq!(shown.pty_of(first), None);
     }
@@ -567,15 +665,15 @@ mod tests {
     #[test]
     fn shown_ids_of_pty_after_wrap() {
         let shown = Shown::default();
-        let a1 = shown.add("a");
-        let b1 = shown.add("b");
-        let a2 = shown.add("a");
+        let a1 = shown.add("a", "t", "b");
+        let b1 = shown.add("b", "t", "b");
+        let a2 = shown.add("a", "t", "b");
         assert_eq!(shown.ids_of("a"), vec![a1, a2]);
         assert_eq!(shown.ids_of("b"), vec![b1]);
         assert!(shown.ids_of("none").is_empty());
         // Past the keep limit the oldest ids are gone from the list too.
         for _ in 0..KEEP_SHOWN {
-            shown.add("c");
+            shown.add("c", "t", "b");
         }
         assert!(shown.ids_of("a").is_empty());
         assert_eq!(shown.ids_of("c").len(), KEEP_SHOWN);
@@ -584,12 +682,75 @@ mod tests {
     #[test]
     fn forget_drops_ids() {
         let shown = Shown::default();
-        shown.add("a");
-        let b = shown.add("b");
+        shown.add("a", "t", "b");
+        let b = shown.add("b", "t", "b");
         shown.forget("a");
         assert!(shown.ids_of("a").is_empty());
         assert_eq!(shown.ids_of("b"), vec![b]);
         assert_eq!(shown.pty_of(b).as_deref(), Some("b"));
+    }
+
+    fn text(title: &str, body: &str) -> Text {
+        (title.to_owned(), body.to_owned())
+    }
+
+    #[test]
+    fn texts_of_splits_one_pane_from_the_others() {
+        let shown = Shown::default();
+        shown.add("a", "a waits", "1");
+        shown.add("b", "b done", "2");
+        shown.add("a", "a done", "3");
+        let (mine, others) = shown.texts_of("a");
+        assert_eq!(mine, vec![text("a waits", "1"), text("a done", "3")]);
+        assert_eq!(others, vec![text("b done", "2")]);
+        shown.forget("a");
+        assert_eq!(shown.texts_of("a"), (vec![], vec![text("b done", "2")]));
+        // The keep limit drops texts with their ids.
+        for _ in 0..KEEP_SHOWN {
+            shown.add("c", "c", "");
+        }
+        assert_eq!(
+            shown.texts_of("b"),
+            (vec![], vec![text("c", ""); KEEP_SHOWN])
+        );
+    }
+
+    #[test]
+    fn to_remove_picks_the_panes_own_text() {
+        let mine = [text("a waits", "x"), text("a done", "y")];
+        let others = [text("b done", "y")];
+        let delivered = [
+            text("b done", "y"),
+            text("a done", "y"),
+            text("someone else", "x"),
+            text("a waits", "x"),
+        ];
+        assert_eq!(to_remove(&mine, &others, &delivered), vec![1, 3]);
+        // Title and body both have to match.
+        assert!(to_remove(&mine, &others, &[text("a waits", "y")]).is_empty());
+        assert!(to_remove(&mine, &others, &[]).is_empty());
+        assert!(to_remove(&[], &others, &delivered).is_empty());
+    }
+
+    #[test]
+    fn to_remove_never_takes_more_than_the_pane_showed() {
+        let mine = [text("a", "x")];
+        let delivered = [text("a", "x"), text("a", "x"), text("a", "x")];
+        assert_eq!(to_remove(&mine, &[], &delivered), vec![0]);
+        let twice = [text("a", "x"), text("a", "x")];
+        assert_eq!(to_remove(&twice, &[], &delivered), vec![0, 1]);
+    }
+
+    #[test]
+    fn to_remove_leaves_a_text_another_pane_may_own() {
+        // Two panes with the same name showed the same text.
+        let mine = [text("same", "x")];
+        let others = [text("same", "x")];
+        // Only one is left: it may be the other pane's.
+        assert!(to_remove(&mine, &others, &[text("same", "x")]).is_empty());
+        // Both are left: one of them is this pane's.
+        let both = [text("same", "x"), text("same", "x")];
+        assert_eq!(to_remove(&mine, &others, &both), vec![0]);
     }
 
     #[test]
