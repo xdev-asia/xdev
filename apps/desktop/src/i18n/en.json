@@ -4051,5 +4051,13 @@
   "ssh.auth.confirmHint": "Type yes to accept or no to refuse.",
   "ssh.auth.continue": "Continue",
   "ssh.auth.cancel": "Cancel",
-  "ssh.footer.item": "SSH {count}"
+  "ssh.footer.item": "SSH {count}",
+  "settings.appearance.appIcon": "App icon",
+  "settings.appearance.appIconHint": "Changes the window and taskbar icon, or the Dock icon on macOS. The installed app file keeps the default icon.",
+  "settings.appearance.appIcon.default": "Default",
+  "settings.appearance.appIcon.midnight": "Midnight",
+  "settings.appearance.appIcon.light": "Light",
+  "settings.appearance.appIcon.sunset": "Sunset",
+  "settings.appearance.appIcon.forest": "Forest",
+  "settings.appearance.appIcon.mono": "Mono"
 }

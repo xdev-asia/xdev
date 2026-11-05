@@ -1,5 +1,6 @@
 import type { NetworkSettings, AgentsSettings, OrchestrationSettings, Api, AutomationsSettings, UsageSettings, DiffSettings, EditorSettings, KeySettings, NavigationSettings, SettingsChanged, SettingsSection, CardProps, SidebarPrefs, TerminalSettings, UiSettings } from "./api";
 import { clampEditorSettings, EDITOR_DEFAULTS } from "./files/editorDefaults";
+import { knownAppIcon } from "./ui/appIcon";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
 import { AUTOMATIONS_DEFAULTS, DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./settings/generalDefaults";
 import { CACHE_TTL_LONG_MS, CACHE_TTL_SHORT_MS, USAGE_DEFAULTS } from "./settings/usageDefaults";
@@ -17,6 +18,7 @@ type SettingsApi = Pick<
   | "keySettingsPut"
   | "uiSettingsGet"
   | "uiSettingsPut"
+  | "appIconSet"
   | "editorSettings"
   | "editorSettingsPut"
   | "sidebarPrefsGet"
@@ -87,6 +89,7 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   statusBar: { branch: true, tokenUsage: true, agents: true, version: true, ports: true, keepAwake: true },
   titlebar: "native",
   showTitlebarName: true,
+  appIcon: "default",
 };
 /** `UI_FONT_MAX` in Rust. */
 export const UI_FONT_MAX = 120;
@@ -174,7 +177,13 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
         zoom: Math.max(ZOOM_LIMITS.min, Math.min(ZOOM_LIMITS.max, zoom)),
         uiFont: cleanUiFont(next.uiFont ?? ""),
         statusBar: { ...UI_SETTINGS_DEFAULTS.statusBar, ...next.statusBar },
+        appIcon: knownAppIcon(next.appIcon ?? ""),
       };
+      hub.emit(["ui"]);
+      return { ...ui };
+    },
+    async appIconSet(id) {
+      ui = { ...ui, appIcon: knownAppIcon(id) };
       hub.emit(["ui"]);
       return { ...ui };
     },

@@ -59,6 +59,9 @@ xdev-workspace.workspace = true
 block2 = "0.6.2"
 objc2-foundation = "0.3.2"
 objc2-user-notifications = "0.3.2"
+# The Dock icon from Settings → Appearance → App icon.
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSImage"] }
 
 [target.'cfg(windows)'.dependencies]
 # The user Path in the registry and the environment change broadcast (cli_install).

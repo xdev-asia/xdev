@@ -978,6 +978,10 @@ pub struct UiSettings {
     /// The app name shows in the custom title bar.
     #[serde(deserialize_with = "lenient_show_titlebar_name")]
     pub show_titlebar_name: bool,
+    /// Settings → Appearance → App icon: one of `APP_ICONS`. An unknown id,
+    /// or a value that is no string, reads as `APP_ICON_DEFAULT`.
+    #[serde(deserialize_with = "lenient_app_icon")]
+    pub app_icon: String,
 }
 
 /// The longest `UiSettings::ui_font`, in characters.
@@ -1000,8 +1004,29 @@ impl Default for UiSettings {
             status_bar: StatusBarItems::default(),
             titlebar: TitlebarMode::Native,
             show_titlebar_name: true,
+            app_icon: APP_ICON_DEFAULT.to_string(),
         }
     }
+}
+
+/// The app icon ids `UiSettings::app_icon` may hold, in the picker's order.
+pub const APP_ICONS: [&str; 6] = ["default", "midnight", "light", "sunset", "forest", "mono"];
+
+/// The icon the app ships with.
+pub const APP_ICON_DEFAULT: &str = "default";
+
+/// `id` when it is one of `APP_ICONS`, else `APP_ICON_DEFAULT`.
+pub fn known_app_icon(id: &str) -> &'static str {
+    APP_ICONS
+        .iter()
+        .find(|known| **known == id)
+        .copied()
+        .unwrap_or(APP_ICON_DEFAULT)
+}
+
+fn lenient_app_icon<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
+    let raw: String = lenient_or(de, APP_ICON_DEFAULT.to_string())?;
+    Ok(known_app_icon(&raw).to_string())
 }
 
 /// Token names `UiSettings::sidebar_tint` may hold.
@@ -1188,6 +1213,7 @@ impl UiSettings {
             SIDEBAR_TINT_OPACITY_DEFAULT
         };
         self.hidden_apps = clean_hidden_apps(&self.hidden_apps);
+        self.app_icon = known_app_icon(&self.app_icon).to_string();
         self
     }
 }
@@ -3094,6 +3120,42 @@ then sum up"
         assert_eq!(odd.sidebar_tint_opacity, 0.10);
         assert!(!odd.reduce_effects);
         assert!(odd.hidden_apps.is_empty());
+    }
+
+    #[test]
+    fn app_icon_defaults_for_an_old_file() {
+        assert_eq!(UiSettings::default().app_icon, "default");
+        let old: UiSettings = serde_json::from_str(r#"{"zoom":1.5}"#).unwrap();
+        assert_eq!(old.app_icon, "default");
+    }
+
+    #[test]
+    fn app_icon_falls_back_to_default_when_unknown() {
+        let odd: UiSettings = serde_json::from_str(r#"{"zoom":1.5,"appIcon":"rainbow"}"#).unwrap();
+        assert_eq!(odd.zoom, 1.5);
+        assert_eq!(odd.app_icon, "default");
+        let wrong: UiSettings = serde_json::from_str(r#"{"zoom":1.5,"appIcon":4}"#).unwrap();
+        assert_eq!(wrong.zoom, 1.5);
+        assert_eq!(wrong.app_icon, "default");
+        let put = UiSettings {
+            app_icon: "../icon".into(),
+            ..UiSettings::default()
+        };
+        assert_eq!(put.clamped().app_icon, "default");
+    }
+
+    #[test]
+    fn app_icon_keeps_a_known_id_and_round_trips() {
+        for id in APP_ICONS {
+            let ui = UiSettings {
+                app_icon: id.into(),
+                ..UiSettings::default()
+            };
+            let json = serde_json::to_string(&ui).unwrap();
+            assert!(json.contains(&format!(r#""appIcon":"{id}""#)));
+            assert_eq!(serde_json::from_str::<UiSettings>(&json).unwrap(), ui);
+            assert_eq!(ui.clone().clamped(), ui);
+        }
     }
 
     #[test]

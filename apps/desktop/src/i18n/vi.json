@@ -4051,5 +4051,13 @@
   "ssh.auth.confirmHint": "Gõ yes để chấp nhận hoặc no để từ chối.",
   "ssh.auth.continue": "Tiếp tục",
   "ssh.auth.cancel": "Huỷ",
-  "ssh.footer.item": "SSH {count}"
+  "ssh.footer.item": "SSH {count}",
+  "settings.appearance.appIcon": "Biểu tượng ứng dụng",
+  "settings.appearance.appIconHint": "Đổi biểu tượng của cửa sổ và thanh tác vụ, hoặc biểu tượng trên Dock với macOS. Tệp ứng dụng đã cài vẫn giữ biểu tượng mặc định.",
+  "settings.appearance.appIcon.default": "Mặc định",
+  "settings.appearance.appIcon.midnight": "Nửa đêm",
+  "settings.appearance.appIcon.light": "Sáng",
+  "settings.appearance.appIcon.sunset": "Hoàng hôn",
+  "settings.appearance.appIcon.forest": "Rừng",
+  "settings.appearance.appIcon.mono": "Đơn sắc"
 }
