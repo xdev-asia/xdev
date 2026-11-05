@@ -364,3 +364,59 @@ fn verified(vault: &Vault, path: &str) -> String {
         .verified
         .unwrap_or_else(|| "-".to_owned())
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+    use xdev_orch::guide::BUNDLED;
+
+    use super::Cli;
+
+    /// Every code-fenced line that starts with `xdev `, `<x>` placeholders
+    /// replaced by `x`.
+    fn command_lines(text: &str) -> Vec<String> {
+        let mut fenced = false;
+        let mut out = Vec::new();
+        for line in text.lines() {
+            if line.trim_start().starts_with("```") {
+                fenced = !fenced;
+            } else if fenced && line.starts_with("xdev ") {
+                let mut s = String::new();
+                let mut skip = false;
+                for c in line.chars() {
+                    match c {
+                        '<' => {
+                            skip = true;
+                            s.push('x');
+                        }
+                        '>' => skip = false,
+                        _ if skip => {}
+                        _ => s.push(c),
+                    }
+                }
+                out.push(s);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn every_xdev_line_in_the_bundled_guides_parses() {
+        let mut seen = 0;
+        for b in &BUNDLED {
+            let texts = [b.main]
+                .into_iter()
+                .chain(b.references.iter().map(|(_, t)| *t));
+            for text in texts {
+                for line in command_lines(text) {
+                    let words: Vec<&str> = line.split_whitespace().collect();
+                    if let Err(e) = Cli::try_parse_from(&words) {
+                        panic!("{}: `{line}` does not parse: {e}", b.topic);
+                    }
+                    seen += 1;
+                }
+            }
+        }
+        assert!(seen >= 10, "only {seen} command lines found");
+    }
+}
