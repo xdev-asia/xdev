@@ -60,7 +60,7 @@ it("shows the templates when there is nothing yet", async () => {
 it("has the toolbar: search, filters, refresh, the secondary template button and the one primary", async () => {
   const { m } = await open();
   const all = m.all();
-  expect(all.find((n) => n.props.placeholder === "Search...")).toBeDefined();
+  expect(all.find((n) => n.props.placeholder === "Search…")).toBeDefined();
   expect(act(all, "refresh")).toBeDefined();
   // Refresh, New automation, then Start from a template.
   const buttons = all.filter((n) => ["refresh", "new", "templates"].includes(n.props["data-act"]));
@@ -82,7 +82,7 @@ it("lists the automations with their project and schedule", async () => {
 it("says nothing matches a search, and nothing matches the filters", async () => {
   const { m } = await open(async (api) => void (await api.automationCreate(input())));
   find(m.all(), AutomationList);
-  const search = m.all().find((n) => n.props.placeholder === "Search...")!;
+  const search = m.all().find((n) => n.props.placeholder === "Search…")!;
   search.props.onChange(typed("zzzz"));
   await m.settle();
   const emptySearch = find(m.all(), AutomationList);
