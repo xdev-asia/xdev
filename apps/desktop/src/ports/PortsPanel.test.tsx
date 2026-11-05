@@ -1,0 +1,160 @@
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createMockApi, type Api, type PortScan, type WorkspacePort } from "@/api";
+import { translate } from "@/i18n";
+import { lastOpenedPort } from "@/mockPorts";
+import { PortsPanel } from "./PortsPanel";
+import { PortsStore } from "./portsStore";
+
+const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
+vi.mock("react", async (original) => {
+  const react = await original<typeof import("react")>();
+  const state = (initial: unknown) => {
+    const index = hooks.cursor++;
+    const values = hooks.values;
+    if (!(index in values)) values[index] = typeof initial === "function" ? initial() : initial;
+    return [values[index], (value: unknown) => { values[index] = typeof value === "function" ? value(values[index]) : value; }];
+  };
+  return {
+    ...react,
+    useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
+    useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
+    useCallback: (fn: any, deps: any) => (hooks.active ? fn : react.useCallback(fn, deps)),
+    useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
+  };
+});
+vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+
+type Node = ReactElement<Record<string, any>>;
+function nodes(value: unknown): Node[] {
+  if (Array.isArray(value)) return value.flatMap(nodes);
+  if (!value || typeof value !== "object" || !("props" in value)) return [];
+  const node = value as Node;
+  return [node, ...nodes(node.props.children), ...nodes(node.props.title), ...nodes(node.props.trailing), ...nodes(node.props.leading), ...nodes(node.props.meta)];
+}
+const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
+const OAK = "/demo/wt/xdev-oak";
+
+function mount(api: Api, store: PortsStore, active: string | null = OAK, visible = true) {
+  const values: unknown[] = [];
+  const draw = () => {
+    hooks.values = values;
+    hooks.cursor = 0;
+    hooks.active = true;
+    try { return PortsPanel({ api, store, active, visible }); } finally { hooks.active = false; }
+  };
+  const before = hooks.effects.length;
+  draw();
+  const cleanups = hooks.effects.slice(before).map((effect) => effect());
+  return { all: () => nodes(draw()), html: () => renderToStaticMarkup(draw()), cleanups };
+}
+
+function port(p: Partial<WorkspacePort> & { port: number }): WorkspacePort {
+  return {
+    id: `localhost:${p.port}:1`, bindHost: "::", connectHost: "localhost", pid: 1, processName: null, protocol: "http",
+    kind: "workspace", worktree: null, evidence: null, url: `http://localhost:${p.port}`, advertised: false, ...p,
+  };
+}
+function scan(ports: WorkspacePort[], extra: Partial<PortScan> = {}): PortScan {
+  return { platform: "windows", scannedAt: 1, ports, unavailable: null, detail: null, retryIn: null, ...extra };
+}
+function storeWith(api: Api, result: PortScan | Error): PortsStore {
+  vi.spyOn(api, "portsScan").mockImplementation(async () => { if (result instanceof Error) throw result; return result; });
+  const store = new PortsStore(api);
+  store.setWorktrees([OAK]);
+  return store;
+}
+
+beforeEach(() => {
+  hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false;
+  vi.stubGlobal("window", new EventTarget());
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it("groups ports and shows the process, the address and the owner", async () => {
+  const api = createMockApi({});
+  const store = storeWith(api, scan([
+    port({ port: 5173, pid: 41, processName: "node", worktree: OAK, evidence: "terminal" }),
+    port({ port: 3000, pid: 42, processName: null, worktree: "/demo/wt/other", evidence: "cwd" }),
+    port({ port: 8080, pid: null, kind: "container" }),
+    port({ port: 5432, pid: 7, processName: "postgres", kind: "external" }),
+  ]));
+  await store.refresh();
+  const html = mount(api, store).html();
+  for (const key of ["ports.section.active", "ports.section.other", "ports.section.external"]) expect(html).toContain(en(key));
+  expect(html).toContain(":5173");
+  expect(html).toContain(">node<");
+  expect(html).toContain("localhost:5173");
+  expect(html).toContain("xdev-oak");
+  expect(html).toContain(en("ports.evidence.terminal"));
+  expect(html).toContain(en("ports.process.pid", { pid: 42 }));
+  expect(html).toContain(en("ports.process.unknown"));
+  expect(html).toContain(en("ports.owner.container"));
+  expect(html).toContain(en("ports.owner.unassigned"));
+  // Stop is offered only for a workspace port with a pid.
+  expect(html.match(new RegExp(`aria-label="${en("ports.stop")}"`, "g")) ?? []).toHaveLength(2);
+});
+
+it("says why there is nothing to show", async () => {
+  const api = createMockApi({});
+  const idle = new PortsStore(api);
+  expect(mount(api, idle, null).html()).toContain(en("ports.empty.noWorkspace"));
+  expect(mount(api, idle).html()).toContain(en("ports.empty.scanning"));
+  const store = storeWith(api, scan([]));
+  await store.refresh();
+  expect(mount(api, store).html()).toContain(en("ports.empty.none"));
+  const outside = storeWith(api, scan([port({ port: 1, kind: "external" })]));
+  await outside.refresh();
+  expect(mount(api, outside).html()).toContain(en("ports.empty.noLocal"));
+});
+
+it("shows an unavailable scan and a pause", async () => {
+  const api = createMockApi({});
+  const down = storeWith(api, scan([], { unavailable: "scan_failed", detail: "netstat missing" }));
+  await down.refresh();
+  expect(mount(api, down).html()).toContain(en("ports.unavailable", { platform: "windows", reason: "netstat missing" }));
+  const paused = storeWith(api, scan([], { unavailable: "scan_timeout", retryIn: 45 }));
+  await paused.refresh();
+  expect(mount(api, paused).html()).toContain(en("ports.paused", { seconds: 45 }));
+});
+
+it("shows a failed call with its error string", async () => {
+  const api = createMockApi({});
+  const store = storeWith(api, Object.assign(new Error("x"), { code: "scan_failed" }));
+  await store.refresh();
+  expect(mount(api, store).html()).toContain(en("error.scan_failed"));
+});
+
+it("opens a port in the browser by id", async () => {
+  const api = createMockApi({});
+  const store = storeWith(api, scan([port({ port: 5173, worktree: OAK })]));
+  await store.refresh();
+  const m = mount(api, store);
+  m.all().find((n) => n.props["aria-label"] === en("ports.open") || n.props.label === en("ports.open"))?.props.onClick();
+  await tick();
+  expect(lastOpenedPort()).toBe("localhost:5173:1");
+});
+
+it("stops a process and tells the person", async () => {
+  const api = createMockApi({});
+  const store = storeWith(api, scan([port({ port: 5173, pid: 9, worktree: OAK })]));
+  await store.refresh();
+  const stop = vi.spyOn(store, "stop").mockResolvedValue();
+  const m = mount(api, store);
+  m.all().find((n) => n.props.label === en("ports.stop"))?.props.onClick();
+  await tick();
+  expect(stop).toHaveBeenCalledWith("localhost:5173:1");
+  expect(m.html()).toContain(en("ports.stopped", { port: 5173 }));
+});
+
+it("is polled only while visible", () => {
+  const api = createMockApi({});
+  const store = new PortsStore(api);
+  const vis = vi.spyOn(store, "setVisible");
+  const m = mount(api, store, OAK, true);
+  expect(vis).toHaveBeenLastCalledWith(true);
+  m.cleanups.forEach((c) => typeof c === "function" && c());
+  expect(vis).toHaveBeenLastCalledWith(false);
+});

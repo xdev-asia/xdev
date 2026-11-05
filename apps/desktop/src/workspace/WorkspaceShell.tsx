@@ -40,7 +40,10 @@ import { eventOn, getStatusSettings, loadStatusSettings, useStatusSettings } fro
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
 import { ActivityFeed } from "@/activity/feed";
+import { Icon } from "@xdev-asia/ui";
 import { ChecksPanel } from "./ChecksPanel";
+import { PortsPanel } from "@/ports/PortsPanel";
+import { PortsStore } from "@/ports/portsStore";
 import { IssuesPanel } from "@/issues/IssuesPanel";
 import { CreateWorktreeDialog, type AgentChoice, type CreateExtra, type CreateTab } from "./CreateWorktreeDialog";
 import { DetailsDialog } from "./DetailsDialog";
@@ -126,7 +129,7 @@ function storeSelected(path: string): void {
 }
 
 type View = "workspace" | "docs" | "settings";
-type PanelTab = "files" | "search" | "changes" | "checks" | "issues";
+type PanelTab = "files" | "search" | "changes" | "checks" | "issues" | "ports";
 type Creating = { repoId: string; name?: string; agents: AgentChoice[]; defaultAgent: string | null };
 type Editing = { worktree: WorktreeView; busy: boolean; error?: ApiError["code"] };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
@@ -255,6 +258,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [docsKey, setDocsKey] = useState(0);
   // Pull requests and checks of every worktree, shared by the ship bar and the panels.
   const [prs] = useState(() => new PrStore(api));
+  // The listening ports of every worktree; it polls only while the Ports tab is in front.
+  const [ports] = useState(() => new PortsStore(api));
   // The jump palette, and the settings section it asked for; a new `seq` is a new request.
   const [jumpOpen, setJumpOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -483,6 +488,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const all = repos?.flatMap((r) => r.worktrees) ?? [];
   // A stored path that no longer exists falls back to the first worktree.
   const current = all.find((w) => w.path === selected) ?? all[0] ?? null;
+
+  const allPaths = JSON.stringify(all.map((w) => w.path));
+  useEffect(() => {
+    ports.setWorktrees(JSON.parse(allPaths) as string[]);
+  }, [ports, allPaths]);
+  useEffect(() => {
+    const off = ports.watch();
+    return () => {
+      void off.then((fn) => fn());
+      ports.dispose();
+    };
+  }, [ports]);
 
   // Auto sleep: once a minute, tabs of finished agents that nobody looks at and that went quiet sleep.
   // The inputs sit in a ref, so a worktree switch does not restart the timer; the settings are read on each tick.
@@ -1915,6 +1932,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   <circle cx="12" cy="12" r="1.5" />
                 </svg>
               </button>
+              <button
+                type="button"
+                role="tab"
+                className="ws-panel-tab"
+                aria-selected={panelTab === "ports"}
+                aria-label={t("ports.tab")}
+                title={t("ports.tab")}
+                onClick={() => setPanelTab("ports")}
+              >
+                <Icon name="plug" size={16} />
+              </button>
             </div>
             {/* Both panels stay mounted, so the change list and the open folders survive a tab switch. */}
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
@@ -1973,6 +2001,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}
+            </div>
+            <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "ports"}>
+              <PortsPanel api={api} store={ports} active={current?.path ?? null} visible={rightOpen && panelTab === "ports" && view === "workspace"} />
             </div>
           </aside>
         </div>
