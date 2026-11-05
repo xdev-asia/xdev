@@ -1084,7 +1084,7 @@ export interface Api {
   fileOpenDefault(worktree: string, rel: string): Promise<void>;
   // http(s) only; `bad_arg` otherwise.
   openUrl(url: string): Promise<void>;
-  // Hosted URL of the file at `line` (to `endLine`); `no_remote` when there is none.
+  // Hosted URL of the file at `line` (to `endLine`); `no_web_remote` when there is none.
   fileRemoteUrl(worktree: string, rel: string, line: number, endLine: number | null): Promise<string>;
   // Search. Same `worktree` rule as Files. Both walk the worktree with `.gitignore` applied,
   // hidden files included, `.git` and links out of it skipped.

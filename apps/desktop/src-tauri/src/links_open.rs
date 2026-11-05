@@ -1,18 +1,27 @@
 //! Terminal links: resolve a printed path to a worktree file, open a file or a URL with the OS,
 //! and build the hosted URL of a file line. No shell is involved anywhere: a program is started
 //! with its arguments, so URL text is never parsed by a shell.
+//!
+//! `open_url` is called from the webview, so its input is checked here and not only in the UI:
+//! only `http` and `https` URLs without whitespace, control characters or quotes, at most 2 048
+//! bytes. Any other scheme (`file:`, `javascript:`, `data:`, ...) is refused. The URL then goes to
+//! the opener plugin from Rust, the way the history panel opens a commit; the webview has no
+//! permission to call the plugin itself. Unlike the history panel, a terminal URL may name any
+//! host, which is the point of a terminal link and is a deliberate choice.
 
-use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
-use tauri::State;
-use xdev_git::{GitError, Repo, hosted_file_url};
+use tauri::{AppHandle, State};
+use xdev_git::{GitError, HostRepo, Repo, file_url};
 use xdev_workspace::{entry_path, link_rel, media_kind};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
+use crate::history::{PluginOpener, UrlOpener};
 use crate::reveal::reveal;
 use crate::workspace::{bad_arg, known_checkout};
 
@@ -21,69 +30,14 @@ const MAX_PATHS: usize = 64;
 const MAX_PATH_BYTES: usize = 4096;
 /// The longest URL `open_url` takes.
 const MAX_URL_BYTES: usize = 2048;
+/// The whole `file_remote_url` lookup answers within this, or it is a `timeout`.
+const REMOTE_DEADLINE: Duration = Duration::from_secs(5);
 
 fn io_error(e: &io::Error) -> CmdError {
     CmdError {
         code: "io",
         detail: Some(e.to_string()),
     }
-}
-
-/// What `open_url` and `file_open_default` start; tests record it instead of starting it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Launch {
-    Url(String),
-    File(PathBuf),
-}
-
-fn start(launch: Launch) -> io::Result<()> {
-    match launch {
-        Launch::File(path) => reveal(&path, false),
-        Launch::Url(url) => {
-            let (program, args) = url_launch(&url);
-            let mut command = Command::new(program);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                command.creation_flags(CREATE_NO_WINDOW);
-                // One raw argument after the entry point: `&`, `%` and `^` stay as they are.
-                for arg in &args {
-                    command.raw_arg(arg);
-                }
-            }
-            #[cfg(not(windows))]
-            command.args(&args);
-            let mut child = command
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()?;
-            // Reaped off the command thread; a browser launcher's exit code means nothing.
-            std::thread::spawn(move || {
-                let _ = child.wait();
-            });
-            Ok(())
-        }
-    }
-}
-
-#[cfg(windows)]
-fn url_launch(url: &str) -> (&'static str, Vec<OsString>) {
-    (
-        "rundll32.exe",
-        vec!["url.dll,FileProtocolHandler".into(), url.into()],
-    )
-}
-
-#[cfg(target_os = "macos")]
-fn url_launch(url: &str) -> (&'static str, Vec<OsString>) {
-    ("open", vec![url.into()])
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn url_launch(url: &str) -> (&'static str, Vec<OsString>) {
-    ("xdg-open", vec![url.into()])
 }
 
 /// The person's home folder, for `~/` in printed paths.
@@ -137,7 +91,7 @@ fn open_default_in(
     data: &Path,
     worktree: &Path,
     rel: &str,
-    run: impl FnOnce(Launch) -> io::Result<()>,
+    run: impl FnOnce(&Path) -> io::Result<()>,
 ) -> Result<(), CmdError> {
     known_checkout(data, worktree)?;
     let path = entry_path(&worktree.to_string_lossy(), rel)?;
@@ -154,7 +108,7 @@ fn open_default_in(
             detail: Some(rel.to_owned()),
         });
     }
-    run(Launch::File(path)).map_err(|e| io_error(&e))
+    run(&path).map_err(|e| io_error(&e))
 }
 
 /// An `http` or `https` URL without control characters, spaces or quotes, at most 2 048 bytes.
@@ -173,26 +127,37 @@ fn web_url(url: &str) -> bool {
     })
 }
 
-fn open_url_with(url: &str, run: impl FnOnce(Launch) -> io::Result<()>) -> Result<(), CmdError> {
+fn open_url_with(opener: &dyn UrlOpener, url: &str) -> Result<(), CmdError> {
     if !web_url(url) {
         return Err(bad_arg("url"));
     }
-    run(Launch::Url(url.to_owned())).map_err(|e| io_error(&e))
+    opener.open(url)
 }
 
-fn no_remote() -> CmdError {
-    CmdError {
-        code: "no_remote",
-        detail: None,
-    }
+type Target = Option<(HostRepo, String)>;
+
+/// Runs `find` on a thread so the caller can stop waiting after `deadline`. Git calls inside have
+/// their own limits; a lookup that outlives the deadline is left to finish and its answer dropped.
+fn lookup_within(
+    worktree: PathBuf,
+    deadline: Duration,
+    find: impl FnOnce(PathBuf) -> Result<Target, GitError> + Send + 'static,
+) -> Result<Target, GitError> {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(find(worktree));
+    });
+    rx.recv_timeout(deadline).unwrap_or(Err(GitError::Timeout))
 }
 
-fn remote_url_in(
+fn remote_url_with(
     data: &Path,
     worktree: &Path,
     rel: &str,
     line: u32,
     end_line: Option<u32>,
+    deadline: Duration,
+    find: impl FnOnce(PathBuf) -> Result<Target, GitError> + Send + 'static,
 ) -> Result<String, CmdError> {
     known_checkout(data, worktree)?;
     // The file must exist inside the worktree; the URL is built from its clean path.
@@ -205,8 +170,7 @@ fn remote_url_in(
         })
         .collect::<Vec<_>>()
         .join("/");
-    let repo = Repo::discover(worktree)?;
-    let found = match repo.remote_file_ref() {
+    let found = match lookup_within(worktree.to_path_buf(), deadline, find) {
         Ok(found) => found,
         Err(GitError::Timeout) => {
             return Err(CmdError {
@@ -216,8 +180,26 @@ fn remote_url_in(
         }
         Err(e) => return Err(e.into()),
     };
-    let (url, git_ref) = found.ok_or_else(no_remote)?;
-    hosted_file_url(&url, &clean, &git_ref, line, end_line).ok_or_else(no_remote)
+    let (host, git_ref) = found.ok_or(GitError::NoWebRemote)?;
+    Ok(file_url(&host, &git_ref, &clean, Some(line), end_line))
+}
+
+fn remote_url_in(
+    data: &Path,
+    worktree: &Path,
+    rel: &str,
+    line: u32,
+    end_line: Option<u32>,
+) -> Result<String, CmdError> {
+    remote_url_with(
+        data,
+        worktree,
+        rel,
+        line,
+        end_line,
+        REMOTE_DEADLINE,
+        |dir| Repo::discover(&dir)?.file_host_target(),
+    )
 }
 
 /// For each candidate as printed (`src/a.ts`, `./a.ts`, `/abs/a.ts`, `E:\wt\a.ts`, `~/wt/a.ts`,
@@ -242,17 +224,17 @@ pub fn file_open_default(
     worktree: PathBuf,
     rel: String,
 ) -> Result<(), CmdError> {
-    open_default_in(data_dir(&state)?, &worktree, &rel, start)
+    open_default_in(data_dir(&state)?, &worktree, &rel, |p| reveal(p, false))
 }
 
-/// Opens an http(s) URL in the system browser. `bad_arg`, `io`.
+/// Opens an http(s) URL in the system browser. `bad_arg` for any other scheme, `open_failed`.
 #[tauri::command(async)]
-pub fn open_url(url: String) -> Result<(), CmdError> {
-    open_url_with(&url, start)
+pub fn open_url(app: AppHandle, url: String) -> Result<(), CmdError> {
+    open_url_with(&PluginOpener(&app), &url)
 }
 
-/// The hosted web URL of `rel` at `line` (to `end_line` when greater). `no_remote` when no
-/// GitHub/GitLab/Bitbucket remote gives one; `timeout` after 5 s.
+/// The hosted web URL of `rel` at `line` (to `end_line` when greater). `no_web_remote` when no
+/// GitHub/GitLab/Bitbucket remote gives one; `timeout` after 5 s in all.
 #[tauri::command(async)]
 pub fn file_remote_url(
     state: State<'_, AppState>,
@@ -409,14 +391,32 @@ mod tests {
 
     // ---- open_url -----------------------------------------------------------------------------
 
-    fn url_launch_of(url: &str) -> Result<Launch, &'static str> {
-        let seen = RefCell::new(None);
-        open_url_with(url, |l| {
-            *seen.borrow_mut() = Some(l);
+    /// Records the URLs it is asked to open instead of starting a browser.
+    struct Recorder {
+        seen: RefCell<Vec<String>>,
+        fail: bool,
+    }
+
+    impl UrlOpener for Recorder {
+        fn open(&self, url: &str) -> Result<(), CmdError> {
+            if self.fail {
+                return Err(CmdError {
+                    code: "open_failed",
+                    detail: Some("no browser".to_owned()),
+                });
+            }
+            self.seen.borrow_mut().push(url.to_owned());
             Ok(())
-        })
-        .map_err(|e| e.code)?;
-        Ok(seen.into_inner().expect("launched"))
+        }
+    }
+
+    fn url_launch_of(url: &str) -> Result<Vec<String>, &'static str> {
+        let rec = Recorder {
+            seen: RefCell::default(),
+            fail: false,
+        };
+        open_url_with(&rec, url).map_err(|e| e.code)?;
+        Ok(rec.seen.into_inner())
     }
 
     #[test]
@@ -427,15 +427,18 @@ mod tests {
             "HTTP://x.dev/UPPER",
             "HtTpS://x.dev/a?b=1&c=%20d",
         ] {
-            assert_eq!(url_launch_of(url), Ok(Launch::Url(url.to_owned())), "{url}");
+            assert_eq!(url_launch_of(url), Ok(vec![url.to_owned()]), "{url}");
         }
         for url in [
             "javascript:alert(1)",
+            "JavaScript:alert(1)",
             "file:///etc/passwd",
+            "FILE:///etc/passwd",
             "mailto:a@b.c",
             "ssh://h/x",
             "ftp://h/x",
             "data:text/html,x",
+            "vbscript:x",
             "x.dev/a",
             "",
             "https://",
@@ -446,6 +449,7 @@ mod tests {
             "https://x.dev/a\0",
             "https://x.dev/\"quoted\"",
             " https://x.dev",
+            "http:file:///etc/passwd",
         ] {
             assert_eq!(url_launch_of(url), Err("bad_arg"), "{url:?}");
         }
@@ -455,46 +459,27 @@ mod tests {
     fn open_url_has_a_2048_byte_limit() {
         let head = "https://x.dev/";
         let ok = format!("{head}{}", "a".repeat(2048 - head.len()));
-        assert_eq!(url_launch_of(&ok), Ok(Launch::Url(ok.clone())));
+        assert_eq!(url_launch_of(&ok), Ok(vec![ok.clone()]));
         assert_eq!(url_launch_of(&format!("{ok}a")), Err("bad_arg"));
     }
 
     #[test]
-    fn open_url_reports_a_launcher_that_fails() {
-        let err = open_url_with("https://x.dev", |_| {
-            Err(io::Error::new(io::ErrorKind::NotFound, "xdg-open missing"))
-        })
-        .unwrap_err();
-        assert_eq!(err.code, "io");
-        assert_eq!(err.detail.as_deref(), Some("xdg-open missing"));
-    }
-
-    #[test]
-    fn the_launcher_gets_the_url_as_one_argument() {
-        let url = "https://x.dev/a?b=1&c=%20d^e#f";
-        let (program, args) = url_launch(url);
-        assert_eq!(args.last().unwrap(), &OsString::from(url));
-        if cfg!(windows) {
-            assert_eq!(program, "rundll32.exe");
-            assert_eq!(
-                args,
-                vec![
-                    OsString::from("url.dll,FileProtocolHandler"),
-                    OsString::from(url)
-                ]
-            );
-        } else {
-            assert_eq!(args, vec![OsString::from(url)]);
-            assert!(program == "xdg-open" || program == "open");
-        }
+    fn open_url_reports_an_opener_that_fails() {
+        let rec = Recorder {
+            seen: RefCell::default(),
+            fail: true,
+        };
+        let err = open_url_with(&rec, "https://x.dev").unwrap_err();
+        assert_eq!(err.code, "open_failed");
+        assert_eq!(err.detail.as_deref(), Some("no browser"));
     }
 
     // ---- file_open_default --------------------------------------------------------------------
 
-    fn file_launch_of(fx: &Fixture, rel: &str) -> Result<Launch, &'static str> {
+    fn file_launch_of(fx: &Fixture, rel: &str) -> Result<PathBuf, &'static str> {
         let seen = RefCell::new(None);
-        open_default_in(&fx.data, &fx.repo, rel, |l| {
-            *seen.borrow_mut() = Some(l);
+        open_default_in(&fx.data, &fx.repo, rel, |p| {
+            *seen.borrow_mut() = Some(p.to_path_buf());
             Ok(())
         })
         .map_err(|e| e.code)?;
@@ -506,11 +491,11 @@ mod tests {
         let fx = fixture();
         assert_eq!(
             file_launch_of(&fx, "notes.txt"),
-            Ok(Launch::File(fx.repo.join("notes.txt")))
+            Ok(fx.repo.join("notes.txt"))
         );
         assert_eq!(
             file_launch_of(&fx, "./notes.txt"),
-            Ok(Launch::File(fx.repo.join("notes.txt")))
+            Ok(fx.repo.join("notes.txt"))
         );
     }
 
@@ -571,10 +556,7 @@ mod tests {
             assert_eq!(file_launch_of(&fx, name), Err("denied"), "{name}");
         }
         fs::write(fx.repo.join("Doc.PDF"), "x").unwrap();
-        assert_eq!(
-            file_launch_of(&fx, "Doc.PDF"),
-            Ok(Launch::File(fx.repo.join("Doc.PDF")))
-        );
+        assert_eq!(file_launch_of(&fx, "Doc.PDF"), Ok(fx.repo.join("Doc.PDF")));
     }
 
     #[cfg(unix)]
@@ -585,7 +567,7 @@ mod tests {
         let doc = fx.repo.join("a.pdf");
         fs::write(&doc, "x").unwrap();
         fs::set_permissions(&doc, fs::Permissions::from_mode(0o755)).unwrap();
-        assert_eq!(file_launch_of(&fx, "a.pdf"), Ok(Launch::File(doc)));
+        assert_eq!(file_launch_of(&fx, "a.pdf"), Ok(doc));
     }
 
     #[cfg(unix)]
@@ -599,16 +581,16 @@ mod tests {
     // ---- file_remote_url ----------------------------------------------------------------------
 
     #[test]
-    fn remote_url_says_no_remote_without_a_hosted_one() {
+    fn remote_url_says_no_web_remote_without_a_hosted_one() {
         let fx = fixture();
         assert_eq!(
             code(remote_url_in(&fx.data, &fx.repo, "src/a.ts", 3, None)),
-            "no_remote"
+            "no_web_remote"
         );
         git(&fx.repo, &["remote", "add", "origin", "/srv/git/local.git"]);
         assert_eq!(
             code(remote_url_in(&fx.data, &fx.repo, "src/a.ts", 3, None)),
-            "no_remote"
+            "no_web_remote"
         );
     }
 
@@ -619,10 +601,10 @@ mod tests {
             &fx.repo,
             &["remote", "add", "origin", "git@github.com:o/r.git"],
         );
-        // No tracking ref and no `origin/HEAD` yet: nothing to name the file by.
+        // No tracking ref and no `origin/HEAD` yet: the same fallback as the history panel.
         assert_eq!(
-            code(remote_url_in(&fx.data, &fx.repo, "src/a.ts", 3, None)),
-            "no_remote"
+            remote_url_in(&fx.data, &fx.repo, "src/a.ts", 3, None).unwrap(),
+            "https://github.com/o/r/blob/main/src/a.ts#L3"
         );
         git(
             &fx.repo,
@@ -640,6 +622,63 @@ mod tests {
             remote_url_in(&fx.data, &fx.repo, "./src/a.ts", 3, Some(7)).unwrap(),
             format!("https://github.com/o/r/blob/{id}/src/a.ts#L3-L7")
         );
+    }
+
+    #[test]
+    fn remote_url_reads_the_remotes_the_history_panel_reads() {
+        let fx = fixture();
+        git(
+            &fx.repo,
+            &[
+                "remote",
+                "add",
+                "origin",
+                "ssh://git@ssh.github.com:443/o/r%20x.git",
+            ],
+        );
+        assert_eq!(
+            remote_url_in(&fx.data, &fx.repo, "notes.txt", 2, None).unwrap(),
+            "https://github.com/o/r%20x/blob/main/notes.txt#L2"
+        );
+    }
+
+    #[test]
+    fn remote_url_gives_up_after_one_overall_deadline() {
+        let fx = fixture();
+        let (release, hold) = std::sync::mpsc::channel::<()>();
+        let err = remote_url_with(
+            &fx.data,
+            &fx.repo,
+            "notes.txt",
+            1,
+            None,
+            Duration::from_secs(2),
+            move |_| {
+                // A lookup that is still running when the deadline passes.
+                let _ = hold.recv();
+                Ok(None)
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err.code, "timeout");
+        let _ = release.send(());
+    }
+
+    #[test]
+    fn remote_url_passes_a_lookup_that_answers_in_time() {
+        let fx = fixture();
+        let host = xdev_git::parse_host_remote("git@gitlab.com:g/s/r.git").unwrap();
+        let url = remote_url_with(
+            &fx.data,
+            &fx.repo,
+            "src/a.ts",
+            4,
+            Some(6),
+            Duration::from_secs(30),
+            move |_| Ok(Some((host, "dev".to_owned()))),
+        )
+        .unwrap();
+        assert_eq!(url, "https://gitlab.com/g/s/r/-/blob/dev/src/a.ts#L4-6");
     }
 
     #[test]

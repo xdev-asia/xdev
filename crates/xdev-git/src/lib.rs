@@ -9,7 +9,6 @@ mod diff;
 mod gh;
 mod history;
 mod host_url;
-mod hosted;
 mod log;
 mod range;
 mod remote;
@@ -35,7 +34,6 @@ pub use gh::{
 };
 pub use history::Commit;
 pub use host_url::{HostKind, HostRepo, commit_url, file_url, parse_host_remote};
-pub use hosted::hosted_file_url;
 pub use log::{CommitRef, LOG_LIMIT, LOG_LIMIT_MAX, LogCommit, LogRef, RefKind, RepoLog};
 pub use remote::{BaseRange, BaseRefresh, Upstream};
 pub use review::{Branch, StageState};

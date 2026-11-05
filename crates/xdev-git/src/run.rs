@@ -86,16 +86,6 @@ pub(crate) fn run_status(
     Ok((out.status, out.stdout))
 }
 
-/// Like `run_status`, with the caller's own time limit.
-pub(crate) fn run_status_within(
-    workdir: &Path,
-    args: &[&str],
-    limit: Duration,
-) -> Result<(Option<i32>, Vec<u8>), GitError> {
-    let out = spawn(workdir, args, None, true, limit)?;
-    Ok((out.status, out.stdout))
-}
-
 pub(crate) struct Output {
     pub(crate) status: Option<i32>,
     pub(crate) stdout: Vec<u8>,

@@ -57,7 +57,7 @@ export function gutterMenuItems(ctx: GutterContext): MenuItem[] {
       run: () => {
         const { line, endLine } = remoteRange(ctx.line, ctx.selection);
         void ctx.api.fileRemoteUrl(ctx.worktree, ctx.rel, line, endLine).then(copy, (e: unknown) => {
-          ctx.toast(ctx.t(toApiError(e).code === "no_remote" ? "editor.gutter.noRemote" : "editor.gutter.copyFailed"));
+          ctx.toast(ctx.t(toApiError(e).code === "no_web_remote" ? "editor.gutter.noRemote" : "editor.gutter.copyFailed"));
         });
       },
     },

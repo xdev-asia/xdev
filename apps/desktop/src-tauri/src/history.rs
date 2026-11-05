@@ -123,7 +123,7 @@ fn open_file_with(
 
 /// The opener plugin, called from Rust only; the webview has no permission
 /// to call it.
-struct PluginOpener<'a>(&'a AppHandle);
+pub(crate) struct PluginOpener<'a>(pub(crate) &'a AppHandle);
 
 impl UrlOpener for PluginOpener<'_> {
     fn open(&self, url: &str) -> Result<(), CmdError> {

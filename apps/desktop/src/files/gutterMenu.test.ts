@@ -61,7 +61,7 @@ describe("gutterMenuItems", () => {
   });
 
   it("says when there is no remote, and when copying or the lookup fails", async () => {
-    const none = ctx({ api: { fileRemoteUrl: () => Promise.reject({ code: "no_remote" }) } });
+    const none = ctx({ api: { fileRemoteUrl: () => Promise.reject({ code: "no_web_remote" }) } });
     await run(gutterMenuItems(none.c), "copyRemote");
     expect(none.toasts).toEqual(["No GitHub, GitLab or Bitbucket remote for this file"]);
     const slow = ctx({ api: { fileRemoteUrl: () => Promise.reject({ code: "timeout" }) } });
