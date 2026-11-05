@@ -42,6 +42,8 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("general.openIn", "settings.general.openIn", ["open in", "apps", "ide", "mở bằng", "mo bang", "ứng dụng", "ung dung"]),
   e("general.updates", "settings.general.updates", ["update", "version", "upgrade", "check", "restart", "cập nhật", "cap nhat", "phiên bản", "phien ban", "kiểm tra", "kiem tra"], "settings.general.updates.idle"),
   e("general.updateChannel", "settings.general.updates.channel", ["update", "channel", "release candidate", "rc", "stable", "beta", "kênh", "kenh", "ổn định", "on dinh", "thử nghiệm", "thu nghiem"], "settings.general.updates.channelHint"),
+  e("general.updateDelay", "settings.general.updates.delay", ["update", "delay", "wait", "days", "later", "hold back", "trì hoãn", "tri hoan", "chờ", "cho", "ngày", "ngay"], "settings.general.updates.delayHint"),
+  e("general.updateBuild", "settings.general.updates.build", ["update", "build", "release", "version", "downgrade", "older", "tag", "bản dựng", "ban dung", "phiên bản", "phien ban", "hạ cấp", "ha cap"], "settings.general.updates.buildHint"),
   e("general.diffView", "settings.general.diffView", ["diff", "inline", "split", "side by side", "view", "chế độ", "che do", "tách", "tach"]),
   e("general.diff.ignoreWhitespace", "settings.general.ignoreWhitespace", ["diff", "whitespace", "space", "khoảng trắng", "khoang trang"]),
   e("general.diff.collapseUnchanged", "settings.general.collapseUnchanged", ["diff", "collapse", "unchanged", "thu gọn", "thu gon"]),

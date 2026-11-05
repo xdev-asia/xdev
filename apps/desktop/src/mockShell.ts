@@ -1,4 +1,4 @@
-import type { Api, CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdatePhase } from "./api";
+import type { Api, CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ReleaseBuild, ShellLabels, ShellSettings, UpdatePhase } from "./api";
 import type { SettingsEmit } from "./mockSettings";
 
 type ShellApi = Pick<
@@ -17,6 +17,9 @@ type ShellApi = Pick<
   | "updateCheck"
   | "updatePhase"
   | "onUpdatePhase"
+  | "updateDeferred"
+  | "updateReleases"
+  | "updateInstallTag"
 >;
 
 export type MockShell = ShellApi & {
@@ -42,7 +45,15 @@ export const SHELL_DEFAULTS: ShellSettings = {
   menuBarIcon: true,
   trayNoticeShown: false,
   updateChannel: "stable",
+  updateDelayDays: 0,
 };
+
+/** What the mock build picker lists; the running mock version is newer than the last one. */
+export const MOCK_BUILDS: ReleaseBuild[] = [
+  { tag: "v0.4.0-rc.1", publishedAt: "2026-03-01T10:00:00Z", prerelease: true, older: false },
+  { tag: "v0.3.1", publishedAt: "2026-02-20T08:30:00Z", prerelease: false, older: false },
+  { tag: "v0.2.0", publishedAt: "2026-01-05T08:30:00Z", prerelease: false, older: true },
+];
 
 /**
  * The shell commands in memory. A check finds nothing unless `update` seeds a version; then it walks
@@ -118,6 +129,19 @@ export function createMockShell(emit: SettingsEmit = () => {}, update: string | 
       return phase;
     },
     async updatePhase() {
+      return phase;
+    },
+    async updateDeferred() {
+      return null;
+    },
+    async updateReleases() {
+      return { kind: "loaded", builds: MOCK_BUILDS.filter((b) => !b.prerelease || settings.updateChannel === "rc") };
+    },
+    async updateInstallTag(tag) {
+      const version = tag.replace(/^v/, "");
+      setPhase({ kind: "checking" });
+      setPhase({ kind: "downloading", version, percent: null });
+      setPhase({ kind: "ready", version, notes: null });
       return phase;
     },
     async onUpdatePhase(cb) {

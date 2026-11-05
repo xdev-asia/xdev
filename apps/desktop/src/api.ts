@@ -78,6 +78,9 @@ import type {
   UpdateInfo,
   UpdatePhase,
   UpdateChannel,
+  UpdateDeferral,
+  ReleaseBuild,
+  ReleaseList,
   ShellSettings,
   ShellLabels,
   CloseIntent,
@@ -279,7 +282,7 @@ export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } fr
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind } from "@xdev/bindings";
-export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase };
+export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase, UpdateDeferral, ReleaseBuild, ReleaseList };
 export type { AiKeyStatus } from "@xdev/bindings";
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
@@ -708,6 +711,12 @@ export interface Api {
   updateCheck(rc: boolean): Promise<UpdatePhase>;
   updatePhase(): Promise<UpdatePhase>;
   onUpdatePhase(cb: (phase: UpdatePhase) => void): Promise<() => void>;
+  // The release the last check held back for the update delay, with the date it will be offered.
+  updateDeferred(): Promise<UpdateDeferral | null>;
+  // Recent releases of the app for the build picker; a failure is a value, not a rejection.
+  updateReleases(): Promise<ReleaseList>;
+  // Downloads the release `tag` through the update path, older versions included.
+  updateInstallTag(tag: string): Promise<UpdatePhase>;
   // Settings → General, Window and Updates groups; the put returns what was stored.
   shellSettings(): Promise<ShellSettings>;
   shellSettingsPut(settings: ShellSettings): Promise<ShellSettings>;
@@ -1619,6 +1628,9 @@ const tauriApi: Api = {
   updateCheck: (rc) => call("update_check", { rc }),
   updatePhase: () => call("update_phase"),
   onUpdatePhase: (cb) => listen<UpdatePhase>("update-phase", (e) => cb(e.payload)),
+  updateDeferred: () => call("update_deferred"),
+  updateReleases: () => call("update_releases"),
+  updateInstallTag: (tag) => call("update_install_tag", { tag }),
   shellSettings: () => call("shell_settings_get"),
   shellSettingsPut: (settings) => call("shell_settings_put", { settings }),
   shellCloseRequested: (noticeTitle, noticeBody) => call("shell_close_requested", { noticeTitle, noticeBody }),
