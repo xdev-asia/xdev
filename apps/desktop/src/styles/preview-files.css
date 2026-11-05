@@ -57,3 +57,42 @@
 .media-player audio {
   width: 100%;
 }
+
+/* Markdown preview: callouts, task lists, math, code tokens. */
+.preview-body .md-callout {
+  margin: var(--x-space-3) 0;
+  padding: var(--x-space-2) var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-sm);
+  background: var(--x-color-accent-soft);
+}
+.preview-body .md-callout p { margin: var(--x-space-1) 0; }
+.preview-body .md-callout-title { font-weight: 600; }
+.preview-body .md-callout-tip { background: var(--x-color-ok-soft); }
+.preview-body .md-callout-important { background: var(--x-color-signal-soft); }
+.preview-body .md-callout-warning { background: var(--x-color-warn-soft); border-color: var(--x-color-warn-line); }
+.preview-body .md-callout-caution { background: var(--x-color-danger-soft); }
+.preview-body .md-task-item { list-style: none; margin-left: calc(var(--x-space-4) * -1); }
+.preview-body .md-task { margin-right: var(--x-space-2); }
+.preview-body .md-code {
+  overflow: auto;
+  padding: var(--x-space-3);
+  border-radius: var(--x-radius-sm);
+  background: var(--x-color-code-bg);
+  font-family: var(--x-font-mono);
+}
+.preview-body .md-math-error { color: var(--x-color-danger); font-family: var(--x-font-mono); }
+.preview-body .md-frontmatter { margin-bottom: var(--x-space-3); color: var(--x-color-muted); }
+.preview-body .md-frontmatter pre { overflow: auto; }
+.preview-body .md-mermaid { overflow: auto; margin: var(--x-space-3) 0; }
+.preview-body .tok-keyword,
+.preview-body .tok-operator { color: var(--x-color-signal); }
+.preview-body .tok-string,
+.preview-body .tok-string2 { color: var(--x-color-ok); }
+.preview-body .tok-comment { color: var(--x-color-muted); font-style: italic; }
+.preview-body .tok-number,
+.preview-body .tok-bool,
+.preview-body .tok-typeName,
+.preview-body .tok-className { color: var(--x-color-accent); }
+.preview-body .tok-propertyName,
+.preview-body .tok-variableName2 { color: var(--x-color-ink); }
