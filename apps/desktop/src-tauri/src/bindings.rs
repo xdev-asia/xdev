@@ -41,8 +41,8 @@ use crate::settings::{
     AgentsSettings, AutomationsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings,
     IssuesPreset, KeySettings, MacOptionAsAlt, NavigationSettings, NetworkSettings, OpenInSettings,
     OrchestrationSettings, RestoreMode, SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs,
-    StatusBarItems, StatusSettings, TerminalLinkClick, TerminalSettings, Theme, UiSettings,
-    UpdateChannel, UsageSettings, XdevIdSettings,
+    StatusBarItems, StatusSettings, TerminalLinkClick, TerminalSettings, Theme, TitlebarMode,
+    UiSettings, UpdateChannel, UsageSettings, XdevIdSettings,
 };
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
@@ -126,6 +126,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     UiSettings::export_all(cfg)?;
     RestoreMode::export_all(cfg)?;
     Theme::export_all(cfg)?;
+    TitlebarMode::export_all(cfg)?;
     CustomScheme::export_all(cfg)?;
     SchemePreview::export_all(cfg)?;
     TermConfigDetected::export_all(cfg)?;

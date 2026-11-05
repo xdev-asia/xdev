@@ -55,6 +55,8 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("appearance.sidebar", "settings.appearance.sidebar", ["sidebar", "tint", "tinted", "colour", "color", "thanh bên", "thanh ben", "ánh màu", "anh mau"], "settings.appearance.sidebarHint"),
   e("appearance.sidebarTint", "settings.appearance.tint", ["sidebar", "tint", "colour", "color", "opacity", "swatch", "thanh bên", "thanh ben", "ánh màu", "anh mau", "độ đậm", "do dam"], "settings.appearance.tintHint"),
   e("appearance.reduceEffects", "settings.appearance.reduceEffects", ["reduce", "effects", "motion", "animation", "blur", "transition", "giảm", "giam", "hiệu ứng", "hieu ung", "chuyển động", "chuyen dong", "làm mờ", "lam mo"], "settings.appearance.reduceEffectsHint"),
+  e("appearance.titlebar", "settings.appearance.titlebar", ["title bar", "titlebar", "window", "frame", "native", "custom", "decorations", "thanh tiêu đề", "thanh tieu de", "cửa sổ", "cua so", "khung"], "settings.appearance.titlebarHint"),
+  e("appearance.titlebarName", "settings.appearance.titlebarName", ["title bar", "titlebar", "app name", "name", "xdev", "thanh tiêu đề", "thanh tieu de", "tên ứng dụng", "ten ung dung"], "settings.appearance.titlebarNameHint"),
   ...(["docs", "changes", "tasks", "squads", "agents", "kit", "accounts", "terminal"] as const).map((id) =>
     e(`appearance.app.${id}`, `apps.${id}`, ["activity bar", "apps", "app", "show", "hide", "sidebar", id, "thanh hoạt động", "thanh hoat dong", "ứng dụng", "ung dung", "ẩn", "an", "hiện", "hien"], "settings.appearance.appsHint"),
   ),

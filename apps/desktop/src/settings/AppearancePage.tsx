@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { FontField, Segmented, Select, ThemeSwitch, UI_FONT_SUGGESTIONS } from "@xdev-asia/ui";
-import { toApiError, type ApiError, type EditorTheme, type SidebarLook, type StatusBarItems, type UiSettings } from "@/api";
+import { FontField, Segmented, Select, Switch, ThemeSwitch, UI_FONT_SUGGESTIONS } from "@xdev-asia/ui";
+import { toApiError, type ApiError, type EditorTheme, type SidebarLook, type StatusBarItems, type TitlebarMode, type UiSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import { APPS } from "@/shell/apps";
 import { clampTintOpacity, SIDEBAR_TINTS, TINT_OPACITY } from "@/ui/sidebarTint";
@@ -11,9 +11,10 @@ import type { SettingsSectionProps } from "./sections";
 
 export const EDITOR_THEMES: EditorTheme[] = ["app", "light", "dark"];
 export const SIDEBAR_LOOKS: SidebarLook[] = ["default", "tinted"];
+export const TITLEBAR_MODES: TitlebarMode[] = ["native", "custom"];
 export const STATUS_BAR_ITEMS = ["branch", "tokenUsage", "agents", "ports", "keepAwake", "version"] as const satisfies readonly (keyof StatusBarItems)[];
 
-const LOOK_IDS = ["appearance.theme", "appearance.font", "appearance.sidebar", "appearance.sidebarTint", "appearance.reduceEffects"];
+const LOOK_IDS = ["appearance.theme", "appearance.font", "appearance.sidebar", "appearance.sidebarTint", "appearance.reduceEffects", "appearance.titlebar", "appearance.titlebarName"];
 const APP_IDS = APPS.map((id) => `appearance.app.${id}`);
 const EDITOR_IDS = ["appearance.editorTheme"];
 const STATUS_IDS = STATUS_BAR_ITEMS.map((k) => `appearance.statusBar.${k}`);
@@ -209,6 +210,41 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
                   aria-label={t("settings.appearance.reduceEffects")}
                   disabled={busy}
                   onClick={() => void patch({ reduceEffects: !ui.reduceEffects })}
+                />
+              )}
+            </li>
+          </ul>
+        </SettingRow>
+        <SettingRow id="appearance.titlebar" filter={filter}>
+          <div className="ws-fields">
+            <div className="ws-field" data-field="titlebar">
+              <span>{t("settings.appearance.titlebar")}</span>
+              {ui && (
+                <Segmented
+                  label={t("settings.appearance.titlebar")}
+                  value={ui.titlebar}
+                  disabled={busy}
+                  options={TITLEBAR_MODES.map((v) => ({ value: v, label: t(`settings.appearance.titlebar.${v}`) }))}
+                  onChange={(next) => void patch({ titlebar: next as TitlebarMode })}
+                />
+              )}
+              <small className="settings-hint">{t("settings.appearance.titlebarHint")}</small>
+            </div>
+          </div>
+        </SettingRow>
+        <SettingRow id="appearance.titlebarName" filter={filter}>
+          <ul className="settings-list">
+            <li className="settings-item" data-switch="titlebarName">
+              <div className="settings-item-text">
+                <strong>{t("settings.appearance.titlebarName")}</strong>
+                <small className="settings-hint">{t("settings.appearance.titlebarNameHint")}</small>
+              </div>
+              {ui && (
+                <Switch
+                  aria-label={t("settings.appearance.titlebarName")}
+                  checked={ui.showTitlebarName}
+                  disabled={busy || ui.titlebar === "native"}
+                  onChange={() => void patch({ showTitlebarName: !ui.showTitlebarName })}
                 />
               )}
             </li>

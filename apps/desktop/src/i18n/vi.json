@@ -3892,5 +3892,16 @@
   "settings.advanced.machineName.hint": "Hiện trong phần Giới thiệu và tệp chẩn đoán. Để trống để dùng tên máy của hệ điều hành.",
   "settings.advanced.save": "Lưu thay đổi",
   "error.bad_proxy": "Không dùng được địa chỉ proxy. Nhập địa chỉ http, https hoặc socks5.",
-  "error.bad_mirror": "Không dùng được địa chỉ bản sao Node. Nhập địa chỉ http hoặc https."
+  "error.bad_mirror": "Không dùng được địa chỉ bản sao Node. Nhập địa chỉ http hoặc https.",
+  "titlebar.appName": "xDev",
+  "titlebar.minimize": "Thu nhỏ",
+  "titlebar.maximize": "Phóng to",
+  "titlebar.restore": "Khôi phục kích thước",
+  "titlebar.close": "Đóng cửa sổ",
+  "settings.appearance.titlebar": "Thanh tiêu đề",
+  "settings.appearance.titlebar.native": "Hệ thống",
+  "settings.appearance.titlebar.custom": "Tùy chỉnh",
+  "settings.appearance.titlebarHint": "Hệ thống giữ khung cửa sổ của hệ điều hành; Tùy chỉnh dùng thanh tiêu đề riêng của xDev. Áp dụng ngay, không cần khởi động lại.",
+  "settings.appearance.titlebarName": "Hiện tên ứng dụng trên thanh tiêu đề",
+  "settings.appearance.titlebarNameHint": "Chỉ áp dụng cho thanh tiêu đề tùy chỉnh."
 }

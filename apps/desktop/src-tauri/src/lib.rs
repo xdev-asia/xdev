@@ -68,6 +68,7 @@ mod tray;
 mod updater;
 mod usage_share;
 mod visibility;
+mod window_chrome;
 mod workspace;
 mod xdev_id;
 
@@ -193,6 +194,7 @@ pub fn run() {
             tray::sync(app.handle());
             app_menu::listen(app.handle());
             app_menu::install(app.handle());
+            window_chrome::apply(app.handle(), settings_store::read(app.handle()).ui.titlebar);
             if let Some(data) = xdev_core::data_dir() {
                 app.manage(automations::AutomationService::open(&data));
                 automations::start(app.handle());

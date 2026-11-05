@@ -198,7 +198,10 @@ pub fn ui_settings_put(
     app: AppHandle,
     settings: settings::UiSettings,
 ) -> Result<settings::UiSettings, CmdError> {
-    settings_store::write(&app, &[SettingsSection::Ui], |s| s.ui = settings.clamped()).map(|s| s.ui)
+    let ui = settings_store::write(&app, &[SettingsSection::Ui], |s| s.ui = settings.clamped())
+        .map(|s| s.ui)?;
+    crate::window_chrome::apply(&app, ui.titlebar);
+    Ok(ui)
 }
 
 /// Settings → Editor as stored; the defaults when nothing is.

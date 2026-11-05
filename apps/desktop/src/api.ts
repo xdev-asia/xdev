@@ -303,7 +303,7 @@ export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, Wo
 export type { CliStatus } from "@xdev/bindings";
 export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
-export type { Theme, EditorTheme, SidebarLook, StatusBarItems } from "@xdev/bindings";
+export type { Theme, EditorTheme, SidebarLook, StatusBarItems, TitlebarMode } from "@xdev/bindings";
 export type { CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview } from "@xdev/bindings";
 export type { ConfigKind, TermConfigDetected, TermConfigPreview } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
