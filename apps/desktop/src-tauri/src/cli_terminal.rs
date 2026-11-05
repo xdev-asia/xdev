@@ -1,11 +1,16 @@
 //! `terminal.show | read | send`: one tab of the running app, looked at,
 //! read and typed into from the CLI.
 
+use std::path::PathBuf;
+use std::thread;
+use std::time::Duration;
+
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::cli_verbs::{Ctx, TabReport, bad_request, params};
-use crate::endpoint::{AppError, Request};
+use crate::cli_verbs::{Ctx, TabReport, bad_request, downward, params};
+use crate::endpoint::{AppError, Caller, Request, scope_of};
+use crate::orch_pump::{ENTER_DELAY_MS, is_idle};
 use crate::orchestration::ReadTab;
 use crate::term_tail::TailRead;
 
@@ -16,6 +21,8 @@ pub const READ_LIMIT_MAX: usize = 5000;
 const SCREEN_MAX_CHARS: u32 = 200_000;
 /// How many lines `terminal show` previews.
 pub const SHOW_PREVIEW_LINES: usize = 20;
+/// The most text one `terminal send` types.
+pub const SEND_MAX_BYTES: usize = 64 * 1024;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +38,17 @@ struct ReadParams {
     cursor: Option<u64>,
     #[serde(default)]
     screen: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SendParams {
+    tab: String,
+    text: Option<String>,
+    #[serde(default)]
+    enter: bool,
+    #[serde(default)]
+    interrupt: bool,
 }
 
 fn kind(t: &TabReport) -> &'static str {
@@ -137,12 +155,103 @@ pub(crate) fn terminal_read(ctx: &Ctx<'_>, req: &Request) -> Result<Value, AppEr
     }))
 }
 
+/// The bytes one send writes, and whether a `\r` follows after a delay.
+/// Ctrl-C first with `interrupt`. With `enter`, an agent gets the text as a
+/// bracketed paste without ESC bytes (so it cannot end the paste early) and
+/// the `\r` later; a shell gets text and `\r` at once. Without `enter` the
+/// text goes as it is.
+pub(crate) fn send_bytes(
+    text: Option<&str>,
+    enter: bool,
+    interrupt: bool,
+    agent: bool,
+) -> (Vec<u8>, bool) {
+    let mut out = Vec::new();
+    if interrupt {
+        out.push(0x03);
+    }
+    match text {
+        Some(text) if enter && agent => {
+            out.extend_from_slice(b"\x1b[200~");
+            out.extend(text.bytes().filter(|b| *b != 0x1b));
+            out.extend_from_slice(b"\x1b[201~");
+            return (out, true);
+        }
+        Some(text) => out.extend_from_slice(text.as_bytes()),
+        None => {}
+    }
+    if enter {
+        out.push(b'\r');
+    }
+    (out, false)
+}
+
+/// `terminal.send`: types into a tab. Outside the caller's own worktree or
+/// family it asks the person, as `worktree set` does.
+pub(crate) fn terminal_send(
+    ctx: &Ctx<'_>,
+    req: &Request,
+    caller: &Caller,
+) -> Result<Value, AppError> {
+    let p: SendParams = params(req)?;
+    if p.text.is_none() && !p.enter && !p.interrupt {
+        return Err(bad_request(
+            "nothing to send: give --text, --enter or --interrupt",
+        ));
+    }
+    if p.text.as_ref().is_some_and(|t| t.len() > SEND_MAX_BYTES) {
+        return Err(bad_request(format!(
+            "--text is at most {SEND_MAX_BYTES} bytes"
+        )));
+    }
+    let t = ctx.board.resolve(&p.tab)?;
+    let closed = || AppError::new("closed", format!("tab {} has exited", t.id));
+    if t.exited {
+        return Err(closed());
+    }
+    // Ctrl-C is meant for a busy tab, so it may come with --enter.
+    if p.enter && t.agent && !p.interrupt && !is_idle(&t) {
+        return Err(AppError::new(
+            "busy",
+            format!("tab {} is {}; wait for it to be idle", t.id, t.state()),
+        ));
+    }
+    let all = ctx.listed()?;
+    let me = ctx.caller_worktree(caller)?;
+    let target = PathBuf::from(&t.worktree);
+    let scope = downward(
+        scope_of(me.as_deref(), &target, &ctx.registry()?),
+        &all,
+        me.as_deref(),
+        &target,
+    );
+    ctx.gate("terminal.send", "send", me.as_deref(), &target, scope)?;
+    let (bytes, then_enter) = send_bytes(p.text.as_deref(), p.enter, p.interrupt, t.agent);
+    if !(ctx.write_pty)(&t.id, &bytes) {
+        return Err(closed());
+    }
+    let mut written = bytes.len();
+    let mut entered = p.enter && !then_enter;
+    if then_enter {
+        // As the wake pump: give the agent time to take the paste, then
+        // press Enter only if it is still waiting for input.
+        thread::sleep(Duration::from_millis(ENTER_DELAY_MS));
+        let still = ctx.board.resolve(&t.id).is_ok_and(|now| is_idle(&now));
+        if still && (ctx.write_pty)(&t.id, b"\r") {
+            written += 1;
+            entered = true;
+        }
+    }
+    Ok(json!({ "handle": t.id, "bytes": written, "entered": entered }))
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use serde_json::{Value, json};
 
+    use super::*;
     use crate::cli_verbs::tests::{fixture, tab};
 
     #[test]
@@ -327,5 +436,180 @@ mod tests {
             json!({"tab": "p-other", "screen": true, "cursor": 0}),
         );
         assert_eq!(e.unwrap_err().code, "bad_request");
+    }
+
+    #[test]
+    fn send_bytes_writes_raw_text_as_it_is() {
+        assert_eq!(
+            send_bytes(Some("a\x1b[Ab"), false, false, true),
+            (b"a\x1b[Ab".to_vec(), false)
+        );
+    }
+
+    #[test]
+    fn send_bytes_puts_the_interrupt_first() {
+        assert_eq!(
+            send_bytes(Some("ls"), false, true, false),
+            (b"\x03ls".to_vec(), false)
+        );
+        assert_eq!(
+            send_bytes(None, false, true, true),
+            (b"\x03".to_vec(), false)
+        );
+    }
+
+    #[test]
+    fn send_bytes_pastes_into_an_agent_without_esc_and_enters_later() {
+        assert_eq!(
+            send_bytes(Some("hi\x1b[201~ there"), true, false, true),
+            (b"\x1b[200~hi[201~ there\x1b[201~".to_vec(), true)
+        );
+        // Enter alone is a plain CR.
+        assert_eq!(send_bytes(None, true, false, true), (b"\r".to_vec(), false));
+    }
+
+    #[test]
+    fn send_bytes_types_into_a_shell_then_cr() {
+        assert_eq!(
+            send_bytes(Some("make test"), true, false, false),
+            (b"make test\r".to_vec(), false)
+        );
+    }
+
+    fn writes(f: &crate::cli_verbs::tests::Fixture) -> Vec<(String, Vec<u8>)> {
+        f.pty_writes.lock().unwrap().clone()
+    }
+
+    #[test]
+    fn send_to_an_idle_agent_pastes_then_enters() {
+        let f = fixture();
+        f.board
+            .replace(vec![tab("p-child", &f.child, true, "idle")], None);
+        let started = std::time::Instant::now();
+        let r = f
+            .call(
+                Some("p-lead"),
+                "terminal.send",
+                json!({"tab": "p-child", "text": "go on", "enter": true}),
+            )
+            .unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+        assert_eq!(r["handle"], "p-child");
+        assert_eq!(r["entered"], true);
+        let w = writes(&f);
+        assert_eq!(w.len(), 2, "{w:?}");
+        assert_eq!(
+            w[0],
+            ("p-child".to_owned(), b"\x1b[200~go on\x1b[201~".to_vec())
+        );
+        assert_eq!(w[1], ("p-child".to_owned(), b"\r".to_vec()));
+        assert_eq!(r["bytes"], w[0].1.len() + 1);
+        // In the caller's family: nobody was asked.
+        assert!(
+            f.events
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(e, _)| e != "cli://ask")
+        );
+    }
+
+    #[test]
+    fn send_with_enter_to_a_busy_agent_is_busy() {
+        let f = fixture();
+        f.board
+            .replace(vec![tab("p-child", &f.child, true, "working")], None);
+        let e = f.call(
+            Some("p-lead"),
+            "terminal.send",
+            json!({"tab": "p-child", "text": "x", "enter": true}),
+        );
+        assert_eq!(e.unwrap_err().code, "busy");
+        assert!(writes(&f).is_empty());
+        // Without --enter the bytes go through.
+        let r = f
+            .call(
+                Some("p-lead"),
+                "terminal.send",
+                json!({"tab": "p-child", "text": "y"}),
+            )
+            .unwrap();
+        assert_eq!(r["entered"], false);
+        assert_eq!(writes(&f), vec![("p-child".to_owned(), b"y".to_vec())]);
+    }
+
+    #[test]
+    fn send_to_an_exited_tab_is_closed() {
+        let mut f = fixture();
+        let mut gone = tab("p-child", &f.child, false, "idle");
+        gone.exited = true;
+        f.board.replace(vec![gone], None);
+        let send = |f: &crate::cli_verbs::tests::Fixture| {
+            f.call(
+                Some("p-lead"),
+                "terminal.send",
+                json!({"tab": "p-child", "text": "x"}),
+            )
+        };
+        assert_eq!(send(&f).unwrap_err().code, "closed");
+        // A PTY that is gone though the board still lists it.
+        f.board
+            .replace(vec![tab("p-child", &f.child, false, "idle")], None);
+        f.pty_alive = false;
+        assert_eq!(send(&f).unwrap_err().code, "closed");
+    }
+
+    #[test]
+    fn send_to_another_family_asks_and_denied_is_7() {
+        let mut f = fixture();
+        f.answer = Some(false);
+        f.board
+            .replace(vec![tab("p-other", &f.other, false, "idle")], None);
+        let e = f.call(
+            Some("p-lead"),
+            "terminal.send",
+            json!({"tab": "p-other", "text": "x"}),
+        );
+        assert_eq!(e.unwrap_err().code, "denied");
+        assert!(writes(&f).is_empty());
+        let asks: Vec<Value> = f
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(e, _)| e == "cli://ask")
+            .map(|(_, p)| p.clone())
+            .collect();
+        assert_eq!(asks.len(), 1);
+        assert_eq!(asks[0]["verb"], "terminal.send");
+        assert_eq!(asks[0]["target"], f.other.display().to_string());
+        // Allowed: it is typed.
+        f.answer = Some(true);
+        f.call(
+            Some("p-lead"),
+            "terminal.send",
+            json!({"tab": "p-other", "text": "x"}),
+        )
+        .unwrap();
+        assert_eq!(writes(&f), vec![("p-other".to_owned(), b"x".to_vec())]);
+    }
+
+    #[test]
+    fn send_over_64_kib_is_a_bad_request() {
+        let f = fixture();
+        f.board
+            .replace(vec![tab("p-child", &f.child, false, "idle")], None);
+        let send = |p: Value| f.call(Some("p-lead"), "terminal.send", p);
+        let big = "x".repeat(SEND_MAX_BYTES + 1);
+        let e = send(json!({"tab": "p-child", "text": big}));
+        assert_eq!(e.unwrap_err().code, "bad_request");
+        let e = send(json!({"tab": "p-child"}));
+        assert_eq!(e.unwrap_err().code, "bad_request");
+        assert!(writes(&f).is_empty());
+        send(json!({"tab": "p-child", "text": "x".repeat(SEND_MAX_BYTES)})).unwrap();
     }
 }

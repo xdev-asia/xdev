@@ -71,7 +71,7 @@ pub struct CliAsk {
     pub request: u64,
     /// The caller's worktree path; null for a caller outside the app.
     pub caller: Option<String>,
-    /// `worktree.create` or `worktree.set`.
+    /// `worktree.create`, `worktree.set` or `terminal.send`.
     pub verb: String,
     /// The worktree path the write is for.
     pub target: String,
@@ -349,7 +349,7 @@ pub struct Ctx<'a> {
 }
 
 /// One worktree as the verbs know it.
-struct Listed {
+pub(crate) struct Listed {
     repo_id: String,
     repo: String,
     view: WorktreeView,
@@ -387,7 +387,7 @@ pub(crate) fn params<T: for<'de> Deserialize<'de>>(req: &Request) -> Result<T, A
 
 impl Ctx<'_> {
     /// Every repo's worktrees, brought in line with git, as the sidebar does.
-    fn listed(&self) -> Result<Vec<Listed>, AppError> {
+    pub(crate) fn listed(&self) -> Result<Vec<Listed>, AppError> {
         let repos: Vec<RepoView> = update(self.data, self.lock, list)?;
         Ok(repos
             .into_iter()
@@ -402,13 +402,13 @@ impl Ctx<'_> {
             .collect())
     }
 
-    fn registry(&self) -> Result<Registry, AppError> {
+    pub(crate) fn registry(&self) -> Result<Registry, AppError> {
         Ok(Registry::load(self.data).map_err(CmdError::from)?)
     }
 
     /// The caller's worktree, from the folder its PTY started in. The PTY id
     /// is the client's claim, not checked (see `Caller`, risk R1).
-    fn caller_worktree(&self, caller: &Caller) -> Result<Option<PathBuf>, AppError> {
+    pub(crate) fn caller_worktree(&self, caller: &Caller) -> Result<Option<PathBuf>, AppError> {
         let Some(cwd) = caller.pty.as_deref().and_then(|p| (self.cwd_of)(p)) else {
             return Ok(None);
         };
@@ -589,7 +589,7 @@ impl Ctx<'_> {
     /// The policy gate for a write. `own`, and `family` for create and set,
     /// pass; anything else asks the person once per (caller, target) for
     /// the session. Every decision has an audit line.
-    fn gate(
+    pub(crate) fn gate(
         &self,
         verb: &str,
         op: &str,
@@ -723,7 +723,7 @@ pub fn worktree_set(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Val
 
 /// Family writes go down only: on the caller's own parent a write is
 /// `Other`, so the person is asked, as for any other worktree.
-fn downward(scope: Scope, all: &[Listed], me: Option<&Path>, target: &Path) -> Scope {
+pub(crate) fn downward(scope: Scope, all: &[Listed], me: Option<&Path>, target: &Path) -> Scope {
     if scope != Scope::Family {
         return scope;
     }
@@ -927,6 +927,7 @@ pub fn dispatch(
         "terminal.wait" => terminal_wait(ctx, req, gone),
         "terminal.show" => crate::cli_terminal::terminal_show(ctx, req),
         "terminal.read" => crate::cli_terminal::terminal_read(ctx, req),
+        "terminal.send" => crate::cli_terminal::terminal_send(ctx, req, caller),
         m if m.starts_with("orchestration.") => orchestration::handle(ctx, req, caller, gone),
         other => Err(bad_request(format!("unknown method {other}"))),
     }
