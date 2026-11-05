@@ -223,7 +223,7 @@ fn create_from_another_branch_starts_at_that_commit() {
 fn remove_refuses_primary() {
     let (mut reg, _id, main) = registered();
     assert_eq!(
-        remove_worktree(&mut reg, main.path(), true, 0)
+        remove_worktree(&mut reg, main.path(), true, true, 0)
             .unwrap_err()
             .code(),
         "primary_worktree"
@@ -235,7 +235,7 @@ fn unknown_paths_are_refused() {
     let (mut reg, _id, main) = registered();
     let nowhere = main.path().join("nowhere");
     assert_eq!(
-        remove_worktree(&mut reg, &nowhere, true, 0)
+        remove_worktree(&mut reg, &nowhere, true, true, 0)
             .unwrap_err()
             .code(),
         "worktree_unknown"
@@ -252,12 +252,12 @@ fn remove_dirty_needs_force_and_deletes_branch() {
     let wt = create_worktree(&mut reg, &id, "dirty", None, 1, 0).unwrap();
     fs::write(Path::new(&wt.path).join("new.txt"), "x").unwrap();
     assert_eq!(
-        remove_worktree(&mut reg, Path::new(&wt.path), false, 0)
+        remove_worktree(&mut reg, Path::new(&wt.path), false, false, 0)
             .unwrap_err()
             .code(),
         "worktree_dirty"
     );
-    remove_worktree(&mut reg, Path::new(&wt.path), true, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&wt.path), true, true, 0).unwrap();
     assert!(!Path::new(&wt.path).exists());
     assert!(reg.worktrees.is_empty());
     assert!(
@@ -272,7 +272,7 @@ fn remove_dirty_needs_force_and_deletes_branch() {
 fn remove_clean_worktree_without_force() {
     let (mut reg, id, _main) = registered();
     let wt = create_worktree(&mut reg, &id, "clean", None, 1, 0).unwrap();
-    remove_worktree(&mut reg, Path::new(&wt.path), false, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&wt.path), false, false, 0).unwrap();
     assert!(!Path::new(&wt.path).exists());
 }
 
@@ -287,7 +287,7 @@ fn remove_keeps_the_branch_of_an_imported_worktree() {
     let mut reg = Registry::default();
     let view = add_repo(&mut reg, main.path(), 0).unwrap();
     let path = view.worktrees[1].path.clone();
-    remove_worktree(&mut reg, Path::new(&path), false, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), false, false, 0).unwrap();
     assert!(!Path::new(&path).exists());
     assert!(
         Repo::discover(main.path())
@@ -418,7 +418,7 @@ fn adopted_worktree_keeps_its_branch_on_remove() {
     let (mut reg, _id, main) = registered();
     let outside = outside_worktree(main.path(), "late");
     adopt_worktree(&mut reg, &outside, 1).unwrap();
-    remove_worktree(&mut reg, &outside, false, 0).unwrap();
+    remove_worktree(&mut reg, &outside, false, false, 0).unwrap();
     assert!(
         Repo::discover(main.path())
             .unwrap()
@@ -490,7 +490,7 @@ fn worktree_with_commit() -> (Registry, TestRepo, String, Repo) {
 #[test]
 fn remove_without_force_keeps_a_branch_with_unmerged_commits() {
     let (mut reg, _main, path, repo) = worktree_with_commit();
-    remove_worktree(&mut reg, Path::new(&path), false, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), false, false, 0).unwrap();
     assert!(!Path::new(&path).exists());
     assert!(reg.worktrees.is_empty());
     assert!(repo.branch_exists("work").unwrap());
@@ -499,15 +499,45 @@ fn remove_without_force_keeps_a_branch_with_unmerged_commits() {
 #[test]
 fn remove_with_force_deletes_a_branch_with_unmerged_commits() {
     let (mut reg, _main, path, repo) = worktree_with_commit();
-    remove_worktree(&mut reg, Path::new(&path), true, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), true, true, 0).unwrap();
     assert!(!repo.branch_exists("work").unwrap());
+}
+
+#[test]
+fn delete_unmerged_deletes_the_branch_without_force() {
+    let (mut reg, _main, path, repo) = worktree_with_commit();
+    remove_worktree(&mut reg, Path::new(&path), false, true, 0).unwrap();
+    assert!(!repo.branch_exists("work").unwrap());
+}
+
+#[test]
+fn force_on_a_dirty_tree_keeps_the_unmerged_branch() {
+    let (mut reg, _main, path, repo) = worktree_with_commit();
+    fs::write(Path::new(&path).join("extra.txt"), "x").unwrap();
+    let removed = remove_worktree(&mut reg, Path::new(&path), true, false, 0).unwrap();
+    assert!(!Path::new(&path).exists());
+    assert!(repo.branch_exists("work").unwrap());
+    assert_eq!(removed.deleted_branch, None);
+    assert_eq!(
+        removed.kept.unwrap().reason,
+        xdev_workspace::KeptReason::Deleted
+    );
+}
+
+#[test]
+fn a_branch_not_made_here_is_kept_even_with_delete_unmerged() {
+    let (mut reg, _main, path, repo) = worktree_with_commit();
+    reg.worktrees[0].made_here = false;
+    let removed = remove_worktree(&mut reg, Path::new(&path), true, true, 0).unwrap();
+    assert!(repo.branch_exists("work").unwrap());
+    assert!(removed.kept.is_some());
 }
 
 #[test]
 fn remove_without_force_deletes_a_merged_branch() {
     let (mut reg, main, path, repo) = worktree_with_commit();
     git(main.path(), &["merge", "-q", "--ff-only", "work"]);
-    remove_worktree(&mut reg, Path::new(&path), false, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&path), false, false, 0).unwrap();
     assert!(!repo.branch_exists("work").unwrap());
 }
 
@@ -553,7 +583,7 @@ fn records_survive_a_repo_added_through_a_link() {
     assert_eq!(repos[0].worktrees[1].name, "kept");
     assert!(repos[0].worktrees[1].pinned);
     // Removing it still deletes the branch the app made.
-    remove_worktree(&mut reg, Path::new(&wt.path), false, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&wt.path), false, false, 0).unwrap();
     assert!(
         !Repo::discover(&repo_path)
             .unwrap()
@@ -1134,7 +1164,7 @@ fn main_is_intact(main: &TestRepo) {
 fn remove_keeps_the_shared_folder_of_the_main_checkout() {
     let (mut reg, main, path) = with_shared();
     // The links are untracked in the worktree, yet they are not changes.
-    remove_worktree(&mut reg, &path, false, 0).unwrap();
+    remove_worktree(&mut reg, &path, false, false, 0).unwrap();
     assert!(!path.exists());
     main_is_intact(&main);
 }
@@ -1143,7 +1173,7 @@ fn remove_keeps_the_shared_folder_of_the_main_checkout() {
 #[test]
 fn forced_remove_keeps_the_shared_folder_too() {
     let (mut reg, main, path) = with_shared();
-    remove_worktree(&mut reg, &path, true, 0).unwrap();
+    remove_worktree(&mut reg, &path, true, true, 0).unwrap();
     assert!(!path.exists());
     main_is_intact(&main);
 }
@@ -1162,7 +1192,7 @@ fn archive_keeps_the_shared_folder_too() {
 fn a_real_change_still_blocks_remove_and_keeps_the_links() {
     let (mut reg, main, path) = with_shared();
     fs::write(path.join("mine.txt"), "x").unwrap();
-    let err = remove_worktree(&mut reg, &path, false, 0).unwrap_err();
+    let err = remove_worktree(&mut reg, &path, false, false, 0).unwrap_err();
     assert!(matches!(err, WorkspaceError::Dirty(_)));
     assert!(path.join("node_modules/x").is_file());
     main_is_intact(&main);
@@ -1649,7 +1679,7 @@ fn an_existing_branch_gets_a_worktree_that_does_not_own_it() {
     assert_eq!(view.branch.as_deref(), Some("feat/old"));
     assert!(!reg.worktrees[0].made_here);
     assert!(Path::new(&view.path).ends_with(format!("{}-old", reg.repos[0].short_name)));
-    remove_worktree(&mut reg, Path::new(&view.path), true, 0).unwrap();
+    remove_worktree(&mut reg, Path::new(&view.path), true, true, 0).unwrap();
     assert!(
         Repo::discover(main.path())
             .unwrap()

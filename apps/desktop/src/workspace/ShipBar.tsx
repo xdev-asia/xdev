@@ -35,6 +35,10 @@ export function ShipBar(props: {
   checked: number;
   prs: PrStore;
   onCommit(): void;
+  // Commits the checked files and then pushes; without it the More menu has no Commit and push.
+  onCommitPush?(): void;
+  // The commit cannot be made yet (no message, nothing checked, busy): Commit and push is off too.
+  commitBlocked?: boolean;
   // After an action that moved the branch.
   onChanged(): void;
   refreshKey?: number;
@@ -206,6 +210,21 @@ export function ShipBar(props: {
       </div>
       {menu && (
         <div className="ws-ship-menu" role="menu">
+          {props.onCommitPush && (
+            <button
+              type="button"
+              role="menuitem"
+              className="ws-ship-item"
+              data-action="commit-push"
+              disabled={props.commitBlocked === true}
+              onClick={() => {
+                setMenu(false);
+                props.onCommitPush?.();
+              }}
+            >
+              {t("ship.more.commitPush")}
+            </button>
+          )}
           <button type="button" role="menuitem" className="ws-ship-item" onClick={() => void run(() => api.worktreePull(worktree))}>
             {t("ship.more.pull")}
           </button>

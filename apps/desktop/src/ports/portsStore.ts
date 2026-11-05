@@ -21,6 +21,7 @@ export class PortsStore {
   private worktrees: string[] = [];
   private running: Promise<void> | null = null;
   private visible = false;
+  private wanted = new Set<string>();
   private poll: ReturnType<typeof setInterval> | null = null;
   private timers = new Set<ReturnType<typeof setTimeout>>();
   private failures = 0;
@@ -48,8 +49,20 @@ export class PortsStore {
     if (this.visible) void this.refresh();
   }
 
-  /** Polling runs only while visible; becoming visible scans at once. */
+  /** The Ports panel is in front. */
   setVisible(visible: boolean): void {
+    this.want("panel", visible);
+  }
+
+  /** Something on screen reads the list: the panel, or the Ports part of the cards. Polling runs while any does. */
+  want(who: string, on: boolean): void {
+    if (on) this.wanted.add(who);
+    else this.wanted.delete(who);
+    this.apply(this.wanted.size > 0);
+  }
+
+  /** Polling runs only while wanted; becoming wanted scans at once. */
+  private apply(visible: boolean): void {
     if (visible === this.visible) return;
     this.visible = visible;
     if (this.poll) clearInterval(this.poll);
@@ -100,7 +113,8 @@ export class PortsStore {
   }
 
   dispose(): void {
-    this.setVisible(false);
+    this.wanted.clear();
+    this.apply(false);
     for (const t of this.timers) clearTimeout(t);
     this.timers.clear();
   }

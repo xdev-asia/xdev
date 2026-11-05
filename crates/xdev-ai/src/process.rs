@@ -37,6 +37,21 @@ pub fn kill_tree(pid: u32) {
     }
 }
 
+/// The soft stop: SIGTERM to the group on POSIX. Windows has no signal; the
+/// caller closes stdin instead.
+pub fn term_group(pid: u32) {
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill")
+            .args(["-TERM", "--", &format!("-{pid}")])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(not(unix))]
+    let _ = pid;
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{BufRead, BufReader};
@@ -115,5 +130,17 @@ mod tests {
             );
             thread::sleep(Duration::from_millis(100));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn term_group_stops_the_group_without_a_kill() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "sleep 30"]).stdin(Stdio::null());
+        own_group(&mut cmd);
+        let mut child = cmd.spawn().unwrap();
+        term_group(child.id());
+        let status = child.wait().unwrap();
+        assert!(!status.success());
     }
 }
