@@ -9,6 +9,7 @@ import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
+import { onTabJump } from "./tabJump";
 import { PaletteHost } from "@/palette/PaletteHost";
 import { NavButtons } from "@/nav/NavButtons";
 import { useNavHistory } from "@/nav/useNavHistory";
@@ -270,7 +271,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const statusSettings = useStatusSettings();
   const automationsSettings = useAutomationsSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string) => {}, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {}, automationSetup: async (_w: string, _r: string, _d: SetupDecision) => {} }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string): boolean => false, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {}, automationSetup: async (_w: string, _r: string, _d: SetupDecision) => {} }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -711,14 +712,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
   const showInHistory = (sessionId: string) => openSessionsPanel(sessionId);
 
-  function jumpTo(id: string): void {
-    if (!sessions) return;
+  function jumpTo(id: string): boolean {
+    if (!sessions) return false;
     const tab = sessions
       .worktrees()
       .flatMap((w) => sessions.tabs(w))
       .find((x) => x.id === id);
     const wt = tab ? all.find((w) => w.path === tab.worktree) : undefined;
-    if (!tab || !wt) return;
+    if (!tab || !wt) return false;
     select(wt);
     show("workspace");
     setBellOpen(false);
@@ -729,6 +730,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       const pane = [...document.querySelectorAll<HTMLElement>(".ws-tab-pane")].find((el) => el.dataset.tab === tab.id);
       pane?.querySelector<HTMLElement>(".xterm-helper-textarea")?.focus();
     }, 0);
+    return true;
   }
   live.repos = repos;
   live.t = t;
@@ -745,6 +747,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setFront((f) => ({ worktree: wt.path, id: fileTabId(req.rel), seq: (f?.seq ?? 0) + 1 }));
   };
   useEffect(() => onOpenFile((req) => live.openFileTab(req)), [live]);
+  // Settings asks for the tab of a running terminal; the latest render knows where it is.
+  useEffect(() => onTabJump((id) => live.jump(id)), [live]);
   live.selected = current?.path ?? null;
   live.reload = () => void load();
   // A worktree the backend made (a worker's `--worktree new-*`) has had no setup: run the same flow the UI runs
