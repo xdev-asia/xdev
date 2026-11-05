@@ -13,7 +13,9 @@ use crate::{Listener, Proc, ScanError};
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Runs `cmd` and returns its standard output, or `Timeout` once `limit` has
-/// passed (the child is killed then).
+/// passed (the child is killed then). Linux reads `/proc` instead, so only
+/// the tests call it there.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub(crate) fn run_with_timeout(cmd: &mut Command, limit: Duration) -> Result<String, ScanError> {
     #[cfg(windows)]
     std::os::windows::process::CommandExt::creation_flags(cmd, CREATE_NO_WINDOW);
