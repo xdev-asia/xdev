@@ -1,12 +1,12 @@
 import { createElement, useState } from "react";
 import type { JSX } from "react";
 import { profileName, profilePermissions, useProfiles } from "@/agents/profileStore";
-import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile } from "@/api";
+import { toApiError, type Api, type ApiError, type PtyInfo, type PtyProfile, type LaunchOverrides } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import type { PtyClient } from "./ptyClient";
 
-type Asking = { profile: PtyProfile; account: string | null; resume?: string; fork?: boolean; extraArgs?: string[]; reason: string; retry: () => void; cancel: () => void };
+type Asking = { profile: PtyProfile; account: string | null; resume?: string; fork?: boolean; extraArgs?: string[]; overrides?: LaunchOverrides; reason: string; retry: () => void; cancel: () => void };
 
 /**
  * The approval flow of an agent start: a refused start asks once, approves in the policy,
@@ -32,7 +32,7 @@ export function useApprovedStart(api: Api): {
    * opens the dialog and, once approved, calls `retry`; anything else becomes `error`.
    * `cancel` runs when the start is given up: declined, refused again, or failed otherwise.
    */
-  ask(profile: PtyProfile, error: ApiError, alreadyApproved: boolean, retry: () => void, cancel?: () => void, account?: string | null, resume?: string, fork?: boolean, extraArgs?: string[]): void;
+  ask(profile: PtyProfile, error: ApiError, alreadyApproved: boolean, retry: () => void, cancel?: () => void, account?: string | null, resume?: string, fork?: boolean, extraArgs?: string[], overrides?: LaunchOverrides | null): void;
   error: ApiError | null;
   setError(error: ApiError | null): void;
   dialog: JSX.Element;
@@ -53,10 +53,12 @@ export function useApprovedStart(api: Api): {
     fork?: boolean,
     /** An automation's extra agent arguments: the gate keys on the full launch line. */
     extraArgs?: string[],
+    /** A launch with options: its overrides are part of the launch line too. */
+    overrides?: LaunchOverrides | null,
   ) => {
     // Approval is asked once per start; a second refusal is shown as is.
     if (e.code === "needs_approval" && !alreadyApproved) {
-      setAsking({ profile, account, ...(resume === undefined ? {} : { resume }), ...(fork ? { fork } : {}), ...(extraArgs?.length ? { extraArgs } : {}), reason: e.detail ?? "", retry, cancel });
+      setAsking({ profile, account, ...(resume === undefined ? {} : { resume }), ...(fork ? { fork } : {}), ...(extraArgs?.length ? { extraArgs } : {}), ...(overrides ? { overrides } : {}), reason: e.detail ?? "", retry, cancel });
       return;
     }
     // A plain ssh tab that does not start usually has no OpenSSH client behind it.
@@ -66,10 +68,11 @@ export function useApprovedStart(api: Api): {
 
   const approve = async () => {
     if (!asking) return;
-    const { profile, account, resume, fork, extraArgs, retry, cancel } = asking;
+    const { profile, account, resume, fork, extraArgs, overrides, retry, cancel } = asking;
     setAsking(null);
     try {
-      if (extraArgs) await api.ptyApprove(profile, account, resume, fork || undefined, extraArgs);
+      if (overrides) await api.ptyApprove(profile, account, resume, fork || undefined, extraArgs, overrides);
+      else if (extraArgs) await api.ptyApprove(profile, account, resume, fork || undefined, extraArgs);
       else if (resume === undefined) await api.ptyApprove(profile, account);
       else if (fork) await api.ptyApprove(profile, account, resume, true);
       else await api.ptyApprove(profile, account, resume);

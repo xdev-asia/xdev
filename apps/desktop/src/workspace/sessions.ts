@@ -1,4 +1,4 @@
-import { PROVIDERS, toApiError, type AccountSource, type Api, type HookDetail, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
+import { PROVIDERS, toApiError, type AccountSource, type Api, type HookDetail, type LaunchOverrides, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
 import { setPrime } from "@/terminal/restorePrime";
 import { translate } from "@/i18n";
@@ -63,6 +63,8 @@ export interface Tab {
   forkOf: string | null;
   /** Extra agent arguments the tab started with (an automation's); null for none. Not restored. */
   extraArgs: string[] | null;
+  /** The model, effort and arguments of a launch with options; null for a plain launch. Not restored. */
+  overrides?: LaunchOverrides | null;
   /** The agent's own session id, from its hooks (latest wins) or the resumed id; null until known. */
   agentSession: string | null;
   /** When the tab was opened or resumed, in ms. */
@@ -203,9 +205,9 @@ export class Sessions {
    * adds the tab behind the pane's active one; `prompt` is the agent's first prompt, given on its
    * first launch only. `extraArgs` is an automation's extra agent arguments. The selected worktree is the caller's to keep.
    */
-  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean; prompt?: string; extraArgs?: string[] } = {}): Tab {
+  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean; prompt?: string; extraArgs?: string[]; overrides?: LaunchOverrides } = {}): Tab {
     if (opts.id && this.entries.has(opts.id)) throw new Error("tab id in use");
-    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, opts.title ?? null, opts.id, null, opts.prompt, opts.extraArgs);
+    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, opts.title ?? null, opts.id, null, opts.prompt, opts.extraArgs, opts.overrides);
     if (opts.title !== undefined) entry.tab = { ...entry.tab, renamed: true };
     this.entries.set(entry.tab.id, entry);
     this.cache.delete(worktree);
@@ -1122,7 +1124,7 @@ export class Sessions {
     this.emit();
   }
 
-  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID(), forkOf: string | null = null, prompt?: string, extraArgs?: string[]): Entry {
+  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID(), forkOf: string | null = null, prompt?: string, extraArgs?: string[], overrides?: LaunchOverrides): Entry {
     const tab: Tab = {
       id,
       worktree,
@@ -1143,11 +1145,12 @@ export class Sessions {
       resumeOf,
       forkOf,
       extraArgs: extraArgs?.length ? [...extraArgs] : null,
+      overrides: overrides ?? null,
       agentSession: resumeOf,
       openedAt: this.now(),
       pinned: false,
       color: "none",
-      client: new PtyClient(this.api, id, forkOf ?? resumeOf ?? undefined, forkOf !== null, prompt, extraArgs?.length ? [...extraArgs] : undefined),
+      client: new PtyClient(this.api, id, forkOf ?? resumeOf ?? undefined, forkOf !== null, prompt, extraArgs?.length ? [...extraArgs] : undefined, overrides),
     };
     // Caps stay off until the pty says whether it got hook flags.
     return { tab, state: start(), caps: NO_CAPS, programTitle: null, autoTitle: null };

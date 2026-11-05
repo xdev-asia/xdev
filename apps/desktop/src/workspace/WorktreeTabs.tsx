@@ -31,6 +31,8 @@ import { sendToOpenedTab } from "./agentPrompt";
 import { pushToast } from "./toastStore";
 import { showsPaneLayout, terminalMenuItems } from "@/terminal/terminalMenu";
 import { registerTerminal } from "@/terminal/terminalRegistry";
+import { LaunchOptionsDialog, type LaunchChoice } from "@/agentLaunch/LaunchOptionsDialog";
+import { SpawnFailure } from "@/terminal/SpawnFailure";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import {
@@ -168,6 +170,11 @@ export function WorktreeTabs(props: {
   // Views started per tab; a retry after approval mounts a fresh view on the same pty id.
   const [attempts, setAttempts] = useState<Record<string, number>>({});
   const { ask, error, setError, dialog } = useApprovedStart(api);
+  // The profile of the tab whose start failed last, for the words of the failure banner.
+  const [failedProfile, setFailedProfile] = useState<PtyProfile | null>(null);
+  // The launch options dialog: the agent and the pane it opens in; the picker's options mode leads to it.
+  const [options, setOptions] = useState<{ profile: PtyProfile; pane: string } | null>(null);
+  const [pickerOptions, setPickerOptions] = useState(false);
   // The one review tab; a reveal opens it (or points it at another file).
   const [review, setReview] = useState<Reveal | null>(null);
   const [revealed, setRevealed] = useState(0);
@@ -295,6 +302,19 @@ export function WorktreeTabs(props: {
     const at = sessions.layout(worktree);
     if (pane && at && at.focused !== pane) setLayout(focusPane(at, pane));
     return sessions.open(worktree, profile, null, cliFor(profile));
+  }
+
+  // A new agent tab with this launch's overrides and first prompt, in `pane`.
+  function launchWith(profile: PtyProfile, pane: string, choice: LaunchChoice): void {
+    setMenuPane(null);
+    setPickerPane(null);
+    setError(null);
+    const at = sessions.layout(worktree);
+    if (at && at.focused !== pane) setLayout(focusPane(at, pane));
+    sessions.open(worktree, profile, null, cliFor(profile), {
+      ...(choice.prompt === null ? {} : { prompt: choice.prompt }),
+      ...(choice.overrides === null ? {} : { overrides: choice.overrides }),
+    });
   }
 
   // An agent launch waits for the setup tab when the gate says so; a shell never does.
@@ -626,6 +646,7 @@ export function WorktreeTabs(props: {
 
   function failed(tab: Tab, e: ApiError): void {
     const tries = attempts[tab.id] ?? 0;
+    setFailedProfile(tab.profileId);
     ask(
       tab.profileId,
       e,
@@ -637,6 +658,7 @@ export function WorktreeTabs(props: {
       tab.forkOf ?? tab.resumeOf ?? undefined,
       tab.forkOf !== null,
       tab.extraArgs ?? undefined,
+      tab.overrides,
     );
   }
 
@@ -756,6 +778,16 @@ export function WorktreeTabs(props: {
         }}
         onCloseAll={closeAllTabs}
         onLaunch={(profile) => launchGated(profile, leaf.id)}
+        onLaunchOptions={view ? (profile) => setOptions({ profile, pane: leaf.id }) : undefined}
+        onLaunchOptionsPicker={
+          view
+            ? () => {
+                setMenuPane(null);
+                setPickerOptions(true);
+                setPickerPane(leaf.id);
+              }
+            : undefined
+        }
         onAgentPicker={() => {
           setMenuPane(null);
           setPickerPane(leaf.id);
@@ -768,9 +800,16 @@ export function WorktreeTabs(props: {
               onPick={(id) => {
                 setPickerPane(null);
                 const profile = id ?? defaultShell;
-                if (profile !== null) launchGated(profile, leaf.id);
+                if (profile === null) return;
+                const agent = !profile.startsWith("shell") && !profile.startsWith("xdev:");
+                if (pickerOptions && agent) setOptions({ profile, pane: leaf.id });
+                else launchGated(profile, leaf.id);
+                setPickerOptions(false);
               }}
-              onClose={() => setPickerPane(null)}
+              onClose={() => {
+                setPickerPane(null);
+                setPickerOptions(false);
+              }}
               onManage={() => props.onManageAgents?.()}
               onView={updateProfiles}
             />
@@ -829,10 +868,7 @@ export function WorktreeTabs(props: {
       <PtydBanner api={api} />
       {error && (
         <div className="banner banner-warn ws-tabs-banner" role="alert">
-          <div className="banner-text">
-            <span>{t(`error.${error.code}`)}</span>
-            {error.detail && <pre className="commands">{error.detail}</pre>}
-          </div>
+          <SpawnFailure api={api} error={error} profile={failedProfile} />
         </div>
       )}
 
@@ -985,6 +1021,20 @@ export function WorktreeTabs(props: {
         </div>
       )}
       {dialog}
+      {options && view && view.profiles.some((p) => p.profile.id === options.profile) && (
+        <LaunchOptionsDialog
+          api={api}
+          profile={view.profiles.find((p) => p.profile.id === options.profile)!}
+          worktree={worktree}
+          onCancel={() => setOptions(null)}
+          onLaunch={(choice) => {
+            const { profile, pane } = options;
+            setOptions(null);
+            if (props.gate?.defer(worktree, () => launchWith(profile, pane, choice))) return;
+            launchWith(profile, pane, choice);
+          }}
+        />
+      )}
       {visible && switcher && (
         <RecentTabSwitcher
           items={switcherItems(switcher.list)}

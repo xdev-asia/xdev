@@ -44,6 +44,9 @@ pub struct AgentSpec {
     pub accept_edits: &'static [&'static str],
     pub docs_url: &'static str,
     pub trust: Option<TrustKind>,
+    /// Model names known to work with the agent's model flag; the launch
+    /// options offer them next to free text. Empty when none is known.
+    pub models: &'static [&'static str],
 }
 
 const fn row(
@@ -64,6 +67,7 @@ const fn row(
         accept_edits: &[],
         docs_url,
         trust: None,
+        models: &[],
     }
 }
 
@@ -74,6 +78,7 @@ static SPECS: [AgentSpec; 13] = [
         auto: &["--permission-mode", "auto"],
         accept_edits: &["--permission-mode", "acceptEdits"],
         trust: Some(TrustKind::Claude),
+        models: &["opus", "sonnet", "haiku"],
         ..row(
             Cli::Claude,
             "Claude Code",
@@ -103,6 +108,7 @@ static SPECS: [AgentSpec; 13] = [
     AgentSpec {
         skip: &["--approval-mode", "yolo"],
         accept_edits: &["--approval-mode", "auto_edit"],
+        models: &["gemini-2.5-pro", "gemini-2.5-flash"],
         ..row(
             Cli::Gemini,
             "Gemini CLI",
@@ -234,6 +240,11 @@ pub const AUTO_ORDER: [Cli; 13] = [
     Cli::QwenCode,
     Cli::Devin,
 ];
+
+/// The model names of `cli` for the launch options; may be empty.
+pub fn models(cli: Cli) -> &'static [&'static str] {
+    spec(cli).models
+}
 
 pub fn spec(cli: Cli) -> &'static AgentSpec {
     SPECS

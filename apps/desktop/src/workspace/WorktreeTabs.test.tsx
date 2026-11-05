@@ -773,7 +773,7 @@ it("plus_menu_lists_agents_and_shells", async () => {
   const live = (sessions = new Sessions(api));
   const view = harness(api, live);
   openMenu(view, live);
-  expect(items(group(view, en("workspace.tabs.agents")))).toEqual([en("terminal.profile.claude"), "Aider", en("workspace.tabs.agentPicker")]);
+  expect(items(group(view, en("workspace.tabs.agents")))).toEqual([en("terminal.profile.claude"), "Aider", en("workspace.tabs.agentPicker"), en("workspace.tabs.launchOptions")]);
   expect(items(group(view, en("workspace.tabs.shells")))).toEqual(["PowerShell", "CMD", "WSL Ubuntu"]);
   // Each group says what it holds.
   expect(view.html()).toContain(`>${en("workspace.tabs.agents")}<`);

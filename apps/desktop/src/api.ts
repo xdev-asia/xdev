@@ -41,6 +41,8 @@ import type {
   Models,
   Profile,
   ProfilesView,
+  LaunchOverrides,
+  LaunchVerdict,
   Provider,
   PtyAttached,
   PtyExit,
@@ -336,6 +338,8 @@ export type {
   Profile,
   ProfileView,
   ProfilesView,
+  LaunchOverrides,
+  LaunchVerdict,
   ShellView,
   Provider,
   PtyAttached,
@@ -937,9 +941,9 @@ export interface Api {
   // A terminal per tab. Output arrives on `onData` until the tab calls `ptyKill`; an agent profile
   // rejects with `needs_approval` / `denied` until `ptyApprove` records it in the policy.
   // `resume` is an agent session id (A-Z, a-z, 0-9, `_`, `-`): the CLI continues that session.
-  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string, fork?: boolean, prompt?: string, extraArgs?: string[]): Promise<PtyInfo>;
+  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string, fork?: boolean, prompt?: string, extraArgs?: string[], overrides?: LaunchOverrides): Promise<PtyInfo>;
   // Approves the launch `ptySpawn` was refused for; pass the same `resume` and `fork`, as they are part of the launch line.
-  ptyApprove(profileId: PtyProfile, account: string | null, resume?: string, fork?: boolean, extraArgs?: string[]): Promise<void>;
+  ptyApprove(profileId: PtyProfile, account: string | null, resume?: string, fork?: boolean, extraArgs?: string[], overrides?: LaunchOverrides): Promise<void>;
   // Agent profiles and the shells of the `+` menu; each write returns the whole view.
   profiles(): Promise<ProfilesView>;
   profilePut(p: Profile): Promise<ProfilesView>;
@@ -948,6 +952,8 @@ export interface Api {
   profilesDefaults(approvals: Approvals, defaultAgent: DefaultAgent, defaultShell: string | null): Promise<ProfilesView>;
   // Re-reads the shell PATH (macOS and Linux) and detects the agents again.
   agentsRefresh(): Promise<ProfilesView>;
+  // Runs `--version` of the built-in agent `id` once and says what came of it. No network use by xDev.
+  agentProbe(id: string): Promise<LaunchVerdict>;
   // Opens the built-in agent's docs or install page in the browser.
   agentDocsOpen(id: string): Promise<void>;
   shellPut(s: CustomShell): Promise<ProfilesView>;
@@ -1849,19 +1855,20 @@ const tauriApi: Api = {
   exportWrite: (expected) => call("export_write", { expected }),
   docFreshness: (path) => call("doc_freshness", { path }),
   staleDocs: () => call("stale_docs"),
-  ptySpawn(id, cwd, profileId, account, cols, rows, onData, resume, fork, prompt, extraArgs) {
+  ptySpawn(id, cwd, profileId, account, cols, rows, onData, resume, fork, prompt, extraArgs, overrides) {
     // Rust sends raw bytes, which arrive as an ArrayBuffer.
     const out = new Channel<ArrayBuffer | number[]>();
     out.onmessage = (msg) => onData(toBytes(msg));
-    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null, fork: fork ?? null, prompt: prompt ?? null, extraArgs: extraArgs ?? null });
+    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null, fork: fork ?? null, prompt: prompt ?? null, extraArgs: extraArgs ?? null, ...(overrides ? { overrides } : {}) });
   },
-  ptyApprove: (profileId, account, resume, fork, extraArgs) => call("pty_approve", { profileId, account, resume: resume ?? null, fork: fork ?? null, extraArgs: extraArgs ?? null }),
+  ptyApprove: (profileId, account, resume, fork, extraArgs, overrides) => call("pty_approve", { profileId, account, resume: resume ?? null, fork: fork ?? null, extraArgs: extraArgs ?? null, ...(overrides ? { overrides } : {}) }),
   profiles: () => call("profiles_list"),
   profilePut: (profile) => call("profile_put", { profile }),
   profileRemove: (id) => call("profile_remove", { id }),
   profileReset: (id) => call("profile_reset", { id }),
   profilesDefaults: (approvals, defaultAgent, defaultShell) => call("profiles_defaults", { approvals, defaultAgent, defaultShell }),
   agentsRefresh: () => call("agents_refresh"),
+  agentProbe: (id) => call("agent_probe", { id }),
   agentDocsOpen: (id) => call("agent_docs_open", { id }),
   shellPut: (shell) => call("shell_put", { shell }),
   shellRemove: (id) => call("shell_remove", { id }),

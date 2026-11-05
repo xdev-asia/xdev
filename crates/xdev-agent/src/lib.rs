@@ -29,8 +29,8 @@ use xdev_git::GitError;
 use xdev_policy::Verdict;
 
 pub use catalog::{
-    AUTO_ORDER, AgentSpec, PromptMode, TrustKind, has_permission_args, modes, permission_env,
-    pick_agent, prompt_args, spec,
+    AUTO_ORDER, AgentSpec, PromptMode, TrustKind, has_permission_args, models, modes,
+    permission_env, pick_agent, prompt_args, spec,
 };
 pub use codex_home::{
     CODEX_HOME_DIR, CODEX_HOOKS_SINCE, CODEX_INTERRUPT_SINCE, codex_hooks_json, hook_command,
@@ -44,7 +44,7 @@ pub use hooks::{
     SESSION_MAX, append_hook, append_hook_detail, hook_args, hook_file, hooks_off, set_hooks_off,
     valid_pty_id, valid_session_id,
 };
-pub use launch::{AccountSource, Context, Launch, LaunchError, resolve};
+pub use launch::{AccountSource, Context, Launch, LaunchError, LaunchOverrides, resolve};
 pub use profiles::{
     Approvals, Cli, CustomShell, DefaultAgent, EnvVar, Permissions, Profile, ProfileError,
     Profiles, builtin, valid_id,
@@ -64,7 +64,9 @@ pub use squad::{
 pub use squad_run::{QuotaCheck, RunnerFor, SquadDeps};
 pub use store::TaskStore;
 pub use trust::{TrustError, TrustTarget, trust_folder};
-pub use version::{CliVersion, cli_version};
+pub use version::{
+    CliVersion, Probe, Verdict as LaunchVerdict, cli_version, min_version, probe_version, verdict,
+};
 
 /// Tools an agent gets when the caller names none: file work only.
 pub const DEFAULT_TOOLS: [&str; 5] = ["Read", "Edit", "Write", "Grep", "Glob"];

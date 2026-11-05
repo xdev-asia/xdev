@@ -9,7 +9,7 @@ use xdev_ai::{AiError, Provider, Registry, codex_home};
 
 use crate::catalog::{PromptMode, has_permission_args, permission_env, prompt_args, spec};
 use crate::codex_home::{codex_hook_events, prepare_codex_home};
-use crate::flags::flags;
+use crate::flags::{efforts, flags};
 use crate::hooks::{HookEvent, hook_args, hook_events};
 use crate::profiles::{Cli, Permissions, Profile, ProfileError, Profiles};
 use crate::shells::{ShellEntry, default_shell_id};
@@ -154,6 +154,127 @@ impl Launch {
                 .filter(|s| !s.is_empty())
                 .map_or_else(|| PathBuf::from("/bin/sh"), PathBuf::from);
             wrap_posix(&shell, &self.startup, &program, &args)
+        }
+    }
+}
+
+/// What one launch changes on its profile: the model, the effort and extra
+/// arguments. A blank field leaves the profile as it is. Nothing is stored.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct LaunchOverrides {
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    /// Appended after every other argument, one word each.
+    pub extra_args: Vec<String>,
+}
+
+/// The longest model name, effort or extra argument a launch takes, and the
+/// most extra arguments.
+pub const OVERRIDE_TEXT_MAX: usize = 200;
+pub const OVERRIDE_ARGS_MAX: usize = 32;
+
+impl LaunchOverrides {
+    /// The overrides with blanks dropped, texts trimmed and cut to
+    /// `OVERRIDE_TEXT_MAX` chars, and at most `OVERRIDE_ARGS_MAX` extra
+    /// arguments. A control character in any text drops that text.
+    pub fn clamped(&self) -> LaunchOverrides {
+        let clean = |text: &str| {
+            let text = text.trim();
+            (!text.is_empty() && !text.chars().any(char::is_control))
+                .then(|| text.chars().take(OVERRIDE_TEXT_MAX).collect::<String>())
+        };
+        LaunchOverrides {
+            model: self.model.as_deref().and_then(clean),
+            effort: self.effort.as_deref().and_then(clean),
+            extra_args: self
+                .extra_args
+                .iter()
+                .filter_map(|a| clean(a))
+                .take(OVERRIDE_ARGS_MAX)
+                .collect(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        let c = self.clamped();
+        c.model.is_none() && c.effort.is_none() && c.extra_args.is_empty()
+    }
+}
+
+/// The model flag and its value as `args` carries them, removed. Handles
+/// `--model x`, `--model=x` and, for CLIs that use it, `-m x`.
+fn strip_option(args: &mut Vec<String>, names: &[&str]) {
+    let mut i = 0;
+    while i < args.len() {
+        let hit = names.iter().any(|n| {
+            args[i] == *n || (n.starts_with("--") && args[i].starts_with(&format!("{n}=")))
+        });
+        if hit && !args[i].contains('=') && i + 1 < args.len() {
+            args.drain(i..=i + 1);
+        } else if hit {
+            args.remove(i);
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// `args` for `cli` with the launch's overrides applied: a model or effort
+/// replaces the profile's (no flag is left twice), blank keeps the profile's,
+/// and the extra arguments go last.
+pub fn apply_overrides(cli: Option<Cli>, args: &mut Vec<String>, overrides: &LaunchOverrides) {
+    let o = overrides.clamped();
+    if let Some(cli) = cli {
+        // After a codex subcommand (`resume <id>`), where its options start.
+        let at = if cli == Cli::Codex
+            && matches!(args.first().map(String::as_str), Some("resume" | "fork"))
+        {
+            2.min(args.len())
+        } else {
+            0
+        };
+        let mut head: Vec<String> = Vec::new();
+        if let Some(model) = &o.model {
+            strip_option(
+                args,
+                if cli == Cli::Claude {
+                    &["--model"]
+                } else {
+                    &["--model", "-m"]
+                },
+            );
+            head.extend(flags(cli, Some(model), None, Permissions::Ask));
+        }
+        if let Some(effort) = o.effort.as_deref().filter(|_| !efforts(cli).is_empty()) {
+            if cli == Cli::Claude {
+                strip_option(args, &["--effort"]);
+            } else {
+                // codex: `-c model_reasoning_effort=<x>` pair
+                let mut i = 0;
+                while i + 1 < args.len() {
+                    if args[i] == "-c" && args[i + 1].starts_with("model_reasoning_effort=") {
+                        args.drain(i..=i + 1);
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+            head.extend(flags(cli, None, Some(effort), Permissions::Ask));
+        }
+        let at = at.min(args.len());
+        args.splice(at..at, head);
+    }
+    args.extend(o.extra_args);
+}
+
+impl Launch {
+    /// Applies a launch's overrides to `args`; see `apply_overrides`. A shell
+    /// takes none.
+    pub fn apply_overrides(&mut self, overrides: &LaunchOverrides) {
+        if self.agent {
+            apply_overrides(self.cli, &mut self.args, overrides);
         }
     }
 }
@@ -1437,5 +1558,112 @@ mod tests {
         ] {
             assert_eq!(base64(input.as_bytes()), expected, "{input:?}");
         }
+    }
+
+    fn strs(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    fn over(model: &str, effort: &str, extra: &[&str]) -> LaunchOverrides {
+        LaunchOverrides {
+            model: (!model.is_empty()).then(|| model.to_owned()),
+            effort: (!effort.is_empty()).then(|| effort.to_owned()),
+            extra_args: strs(extra),
+        }
+    }
+
+    #[test]
+    fn override_model_replaces_the_profile_model_for_claude() {
+        let mut args = strs(&["--model", "sonnet", "--effort", "low", "--verbose"]);
+        apply_overrides(
+            Some(Cli::Claude),
+            &mut args,
+            &over("opus", "high", &["--x"]),
+        );
+        assert_eq!(
+            args,
+            ["--model", "opus", "--effort", "high", "--verbose", "--x"]
+        );
+        assert_eq!(args.iter().filter(|a| *a == "--model").count(), 1);
+    }
+
+    #[test]
+    fn override_removes_the_inline_form_too() {
+        let mut args = strs(&["--model=sonnet", "--effort=low"]);
+        apply_overrides(Some(Cli::Claude), &mut args, &over("opus", "max", &[]));
+        assert_eq!(args, ["--model", "opus", "--effort", "max"]);
+    }
+
+    #[test]
+    fn empty_overrides_leave_the_profile() {
+        for cli in [Cli::Claude, Cli::Codex, Cli::Gemini, Cli::Cursor] {
+            let mut args = strs(&["-m", "keep", "--flag"]);
+            let before = args.clone();
+            apply_overrides(Some(cli), &mut args, &over("", " ", &[]));
+            assert_eq!(args, before, "{cli:?}");
+        }
+    }
+
+    #[test]
+    fn override_wins_for_codex_and_others() {
+        let mut args = strs(&["-m", "old", "-c", "model_reasoning_effort=low", "--k"]);
+        apply_overrides(
+            Some(Cli::Codex),
+            &mut args,
+            &over("gpt-x", "high", &["--e"]),
+        );
+        assert_eq!(
+            args,
+            [
+                "-m",
+                "gpt-x",
+                "-c",
+                "model_reasoning_effort=high",
+                "--k",
+                "--e"
+            ]
+        );
+        let mut gem = strs(&["-m", "old"]);
+        apply_overrides(
+            Some(Cli::Gemini),
+            &mut gem,
+            &over("gemini-2.5-pro", "high", &[]),
+        );
+        // Gemini has no effort flag; the effort is ignored.
+        assert_eq!(gem, ["-m", "gemini-2.5-pro"]);
+    }
+
+    #[test]
+    fn extra_args_go_last_and_a_resume_subcommand_stays_first() {
+        let mut args = strs(&["resume", "abc", "-m", "old", "--hook"]);
+        apply_overrides(Some(Cli::Codex), &mut args, &over("new", "", &["--z", "1"]));
+        assert_eq!(args, ["resume", "abc", "-m", "new", "--hook", "--z", "1"]);
+    }
+
+    #[test]
+    fn a_custom_program_only_gets_the_extra_args() {
+        let mut args = strs(&["--model", "keep"]);
+        apply_overrides(None, &mut args, &over("m", "e", &["--a"]));
+        assert_eq!(args, ["--model", "keep", "--a"]);
+    }
+
+    #[test]
+    fn overrides_load_from_old_json_and_clamp() {
+        let o: LaunchOverrides = serde_json::from_str("{}").unwrap();
+        assert_eq!(o, LaunchOverrides::default());
+        assert!(o.is_empty());
+        let o: LaunchOverrides =
+            serde_json::from_str(r#"{"model":"  ","extraArgs":["a\nb"," ok "]}"#).unwrap();
+        let c = o.clamped();
+        assert_eq!(c.model, None);
+        assert_eq!(c.extra_args, ["ok"]);
+        let long = LaunchOverrides {
+            model: Some("m".repeat(500)),
+            effort: None,
+            extra_args: (0..100).map(|i| i.to_string()).collect(),
+        };
+        let c = long.clamped();
+        assert_eq!(c.model.unwrap().chars().count(), OVERRIDE_TEXT_MAX);
+        assert_eq!(c.extra_args.len(), OVERRIDE_ARGS_MAX);
     }
 }

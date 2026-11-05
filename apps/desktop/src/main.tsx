@@ -13,6 +13,7 @@ import { loadTerminalSettings, startSettingsSync } from "./terminal/terminalSett
 import "@xdev-asia/ui/styles.css";
 import "./styles/base.css";
 import "./styles/welcome.css";
+import "./styles/agentLaunch.css";
 import "./styles/shell.css";
 import "./styles/docs.css";
 import "./styles/changes.css";

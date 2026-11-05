@@ -140,6 +140,8 @@ export type { KeySettings } from "./KeySettings";
 export type { KeybindingsChanged } from "./KeybindingsChanged";
 export type { KeybindingsText } from "./KeybindingsText";
 export type { KitText } from "./KitText";
+export type { LaunchOverrides } from "./LaunchOverrides";
+export type { LaunchVerdict } from "./LaunchVerdict";
 export type { LineCount } from "./LineCount";
 export type { LineHit } from "./LineHit";
 export type { Linked } from "./Linked";

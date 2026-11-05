@@ -100,6 +100,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     AiKeyStatus::export_all(cfg)?;
     UpdateInfo::export_all(cfg)?;
     ProfilesView::export_all(cfg)?;
+    xdev_agent::LaunchOverrides::export_all(cfg)?;
+    xdev_agent::LaunchVerdict::export_all(cfg)?;
     xdev_agent::CustomShell::export_all(cfg)?;
     PtyInfo::export_all(cfg)?;
     PtyExit::export_all(cfg)?;
