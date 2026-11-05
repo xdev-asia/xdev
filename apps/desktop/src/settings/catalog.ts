@@ -80,6 +80,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("agents.defaultShell", "settings.agents.defaultShell", ["default", "shell", "mặc định", "mac dinh"]),
   e("agents.profiles", "settings.agents.profiles", ["claude", "codex", "copilot", "opencode", "gemini", "aider", "goose", "amp", "cursor", "droid", "kimi", "qwen", "devin", "grok", "kiro", "kilo", "cline", "antigravity", "pi", "command code", "install", "detect", "refresh", "profile", "enable", "cài đặt", "cai dat", "hồ sơ", "ho so"]),
   e("agents.shells", "settings.agents.shells", ["shell", "bash", "powershell", "zsh", "program", "args"]),
+  e("agents.path", "settings.path.title", ["path", "environment", "env", "folder", "directory", "prepend", "append", "bin", "thư mục", "thu muc"]),
   e("agents.accountSwitch", "settings.agents.accountSwitch.label", ["account", "switch", "restart", "keep", "ask", "running", "agent", "tài khoản", "tai khoan", "chuyển", "chuyen", "khởi động lại", "khoi dong lai", "giữ", "giu"], "settings.agents.accountSwitch.hint"),
   e("agents.keepAwake", "settings.agents.keepAwake.label", ["awake", "sleep", "keep", "power", "caffeinate", "agent", "ngủ", "ngu", "thức", "thuc", "giữ máy", "giu may"], "settings.agents.keepAwake.hint"),
   e("agents.autoTabTitle", "settings.agents.autoTabTitle.label", ["tab", "title", "name", "prompt", "rename", "tên", "ten", "tiêu đề", "tieu de"], "settings.agents.autoTabTitle.hint"),

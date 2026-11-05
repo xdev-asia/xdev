@@ -4,6 +4,8 @@ import { knownAppIcon } from "./ui/appIcon";
 import { KEY_SETTINGS_DEFAULTS } from "./keys/bindingsStore";
 import { AUTOMATIONS_DEFAULTS, DIFF_DEFAULTS, NAVIGATION_DEFAULTS } from "./settings/generalDefaults";
 import { CACHE_TTL_LONG_MS, CACHE_TTL_SHORT_MS, USAGE_DEFAULTS } from "./settings/usageDefaults";
+import { cleanEntries, layoutPath } from "./settings/agents/pathEntries";
+import { cleanAppOrder } from "./shell/apps";
 import { clampTerminalSettings, TERMINAL_DEFAULTS } from "./settings/terminalDefaults";
 
 /** Called by a mock's settings write, the way Rust emits `settings://changed`. */
@@ -29,6 +31,7 @@ type SettingsApi = Pick<
   | "diffSettingsPut"
   | "agentsSettings"
   | "agentsSettingsPut"
+  | "pathEffective"
   | "orchestrationSettings"
   | "orchestrationSettingsPut"
   | "usageSettings"
@@ -86,6 +89,7 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   sidebarTintOpacity: 0.1,
   reduceEffects: false,
   hiddenApps: [],
+  appOrder: [],
   statusBar: { branch: true, tokenUsage: true, agents: true, version: true, ports: true, keepAwake: true },
   titlebar: "native",
   showTitlebarName: true,
@@ -112,7 +116,12 @@ export const AGENTS_SETTINGS_DEFAULTS: AgentsSettings = {
   sleepAfterMin: 30,
   sessionSearch: false,
   workspaceTrust: true,
+  pathPrepend: [],
+  pathAppend: [],
 };
+
+/** The system PATH the mock reports; the last folder is one that does not exist. */
+const MOCK_SYSTEM_PATH = ["/usr/local/bin", "/usr/bin", "/bin", "/opt/missing/bin"];
 
 /** `OrchestrationSettings::default()` in Rust, and the range the depth is clamped to. */
 export const ORCHESTRATION_DEFAULTS: OrchestrationSettings = { nestedWorkerMaxDepth: 1, workerAutoClose: true };
@@ -178,6 +187,7 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
         uiFont: cleanUiFont(next.uiFont ?? ""),
         statusBar: { ...UI_SETTINGS_DEFAULTS.statusBar, ...next.statusBar },
         appIcon: knownAppIcon(next.appIcon ?? ""),
+        appOrder: cleanAppOrder(next.appOrder ?? []),
       };
       hub.emit(["ui"]);
       return { ...ui };
@@ -223,9 +233,18 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
       return { ...agents };
     },
     async agentsSettingsPut(next) {
-      agents = { ...AGENTS_SETTINGS_DEFAULTS, ...next };
+      agents = {
+        ...AGENTS_SETTINGS_DEFAULTS,
+        ...next,
+        pathPrepend: cleanEntries(next.pathPrepend ?? [], ":"),
+        pathAppend: cleanEntries(next.pathAppend ?? [], ":"),
+      };
       hub.emit(["agents"]);
       return { ...agents };
+    },
+    async pathEffective() {
+      // A folder named "missing" stands for one that does not exist.
+      return layoutPath(MOCK_SYSTEM_PATH, agents.pathPrepend, agents.pathAppend, (p) => !p.includes("missing"));
     },
     async orchestrationSettings() {
       return { ...orchestration };

@@ -26,6 +26,7 @@ import { ago } from "@/workspace/ago";
 import { freeId } from "./agentForm";
 
 import { ProfileEditor } from "./ProfileEditor";
+import { PathSection } from "./PathSection";
 import { ShellsSection } from "./ShellsSection";
 
 /** The note under the default agent select when the saved one is missing; one per page. */
@@ -425,6 +426,10 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
           onAdd={(s) => void act(() => api.shellPut(s))}
           onRemove={(id) => void act(() => api.shellRemove(id))}
         />
+      </SettingRow>
+
+      <SettingRow id="agents.path" filter={filter}>
+        <PathSection api={api} />
       </SettingRow>
 
       <SettingRow id="agents.accountSwitch" filter={filter}>

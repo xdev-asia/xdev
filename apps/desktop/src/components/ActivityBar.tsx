@@ -4,12 +4,12 @@ import { countLabel } from "@/changes/changes";
 import { useI18n } from "@/i18n";
 import { visibleApps, type AppId } from "@/shell/apps";
 
-export function ActivityBar(props: { active: AppId; changeCount: number | null; onSelect(app: AppId): void; /** App ids Settings > Appearance hides. */ hidden?: readonly string[] }): JSX.Element {
+export function ActivityBar(props: { active: AppId; changeCount: number | null; onSelect(app: AppId): void; /** App ids Settings > Appearance hides. */ hidden?: readonly string[]; /** The order Settings > Appearance sets; none is the default. */ order?: readonly string[] }): JSX.Element {
   const { t } = useI18n();
   const pending = props.changeCount !== null && props.changeCount > 0 ? props.changeCount : null;
   return (
     <nav className="activitybar" aria-label={t("apps.label")}>
-      {visibleApps(props.hidden ?? []).map((id) => {
+      {visibleApps(props.hidden ?? [], props.order ?? []).map((id) => {
         const label = id === "changes" && pending !== null ? t("apps.changesCount", { count: pending }) : t(`apps.${id}`);
         return (
           <button

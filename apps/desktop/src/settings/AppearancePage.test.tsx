@@ -316,3 +316,52 @@ it("has catalog entries for both title bar rows", () => {
   const ids = SETTING_ENTRIES.map((x) => x.id);
   expect(ids).toEqual(expect.arrayContaining(["appearance.titlebar", "appearance.titlebarName"]));
 });
+
+const keyOf = (key: string, extra: Record<string, boolean> = {}) => ({ key, altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, target: { dataset: {} }, preventDefault: vi.fn(), ...extra });
+const row = (p: Awaited<ReturnType<typeof page>>, id: string) => p.all().find((n) => n.props["data-switch"] === `app-${id}`)!;
+const order = (p: Awaited<ReturnType<typeof page>>) => p.all().filter((n) => n.type === "li" && String(n.props["data-switch"] ?? "").startsWith("app-")).map((n) => String(n.props["data-switch"]).slice(4));
+
+it("workspace parts: Alt+Arrow moves a part, saves the order and tells screen readers", async () => {
+  paintEnv();
+  const p = await page();
+  expect(order(p)).toEqual(["docs", "changes", "tasks", "squads", "agents", "kit", "accounts", "terminal"]);
+  const e = keyOf("ArrowUp");
+  row(p, "kit").props.onKeyDown(e);
+  await tick();
+  expect(e.preventDefault).toHaveBeenCalled();
+  expect((await p.api.uiSettingsGet()).appOrder).toEqual(["docs", "changes", "tasks", "squads", "kit", "agents", "accounts", "terminal"]);
+  expect(order(p).slice(4, 6)).toEqual(["kit", "agents"]);
+  const status = p.all().find((n) => n.props.role === "status" && n.props["data-testid"] === "parts-status")!;
+  expect(status.props.children).toBe(translate("en", "settings.parts.moved", { app: translate("en", "apps.kit"), place: 5, total: 8 }));
+});
+
+it("workspace parts: a plain arrow key or a move past the end does nothing", async () => {
+  paintEnv();
+  const p = await page();
+  const plain = keyOf("ArrowDown", { altKey: false });
+  row(p, "docs").props.onKeyDown(plain);
+  row(p, "docs").props.onKeyDown(keyOf("ArrowUp"));
+  row(p, "terminal").props.onKeyDown(keyOf("ArrowDown"));
+  await tick();
+  expect(plain.preventDefault).not.toHaveBeenCalled();
+  expect((await p.api.uiSettingsGet()).appOrder).toEqual([]);
+});
+
+it("workspace parts: the move buttons carry names and reorder; reset restores the default", async () => {
+  paintEnv();
+  const p = await page();
+  const kit = nodes(row(p, "kit"));
+  const down = kit.find((n) => n.props["data-part-control"] === "down")!;
+  expect(down.props.label).toBe(translate("en", "settings.parts.down", { app: translate("en", "apps.kit") }));
+  down.props.onClick();
+  await tick();
+  expect(order(p).slice(5, 7)).toEqual(["accounts", "kit"]);
+  p.sw("app-docs").props.onClick();
+  await tick();
+  p.all().find((n) => n.props["data-act"] === "parts-reset")!.props.onClick();
+  await tick();
+  const ui = await p.api.uiSettingsGet();
+  expect(ui.appOrder).toEqual([]);
+  expect(ui.hiddenApps).toEqual([]);
+  expect(order(p)[5]).toBe("kit");
+});

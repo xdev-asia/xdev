@@ -8,7 +8,7 @@ import { SETTING_ENTRIES } from "./catalog";
 // fails here. The source is scanned, not rendered: pages load their data async and need a store.
 const PAGES: Record<string, string[]> = {
   general: ["GeneralPage.tsx", "UpdatesSetting.tsx"],
-  appearance: ["AppearancePage.tsx"],
+  appearance: ["AppearancePage.tsx", "workspaceParts.tsx"],
   account: ["account/AccountPage.tsx", "account/ServerRow.tsx", "account/RoutingSection.tsx"],
   agents: ["agents/AgentsPage.tsx"],
   orchestration: ["orchestration/OrchestrationPage.tsx"],
