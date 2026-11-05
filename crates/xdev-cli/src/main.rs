@@ -3,9 +3,12 @@ mod agent;
 mod agent_hook;
 mod ai;
 mod app;
+mod automations;
 mod context;
+mod file;
 mod mcp;
 mod orch;
+mod ports;
 mod skills;
 mod squad;
 mod task;
@@ -119,6 +122,19 @@ enum Command {
         #[command(subcommand)]
         command: app::TerminalCommand,
     },
+    /// Files in the running app: `open <path>[:line[:col]]`.
+    File {
+        #[command(subcommand)]
+        command: file::FileCommand,
+    },
+    /// Listening ports with their process and worktree; `--all` for every
+    /// worktree.
+    Ports(ports::PortsArgs),
+    /// Scheduled agent runs: `list`, `show`, `run`, `runs`, `enable`, `disable`, `remove`.
+    Automations {
+        #[command(subcommand)]
+        command: automations::AutomationsCommand,
+    },
     /// Bundled guides and skills: `list`, `get`, `install`, `update`, `installed`.
     Skills {
         #[command(subcommand)]
@@ -167,6 +183,9 @@ fn main() -> ExitCode {
         Command::Worktree { command } => app::AppCommand::Worktree(command),
         Command::Terminal { command } => app::AppCommand::Terminal(command),
         Command::Orchestration(a) => app::AppCommand::Orchestration(Box::new(a)),
+        Command::File { command } => app::AppCommand::File(command),
+        Command::Ports(a) => app::AppCommand::Ports(a),
+        Command::Automations { command } => app::AppCommand::Automations(command),
         other => return finish(run(other)),
     };
     // The app verbs need only the local folder, where the endpoint lives.
@@ -212,7 +231,10 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         | Command::Status(_)
         | Command::Orchestration(_)
         | Command::Worktree { .. }
-        | Command::Terminal { .. } => return Ok(Outcome::Ok),
+        | Command::Terminal { .. }
+        | Command::File { .. }
+        | Command::Ports(_)
+        | Command::Automations { .. } => return Ok(Outcome::Ok),
         Command::Mcp { dir } => {
             let dir = dir.unwrap_or_else(|| {
                 let docs = PathBuf::from("docs");
