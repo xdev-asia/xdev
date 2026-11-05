@@ -1,13 +1,13 @@
 //! What a terminal runs: the user's shell or an agent CLI, by profile id.
 
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use xdev_ai::{AiError, Provider, Registry, codex_home};
 
-use crate::catalog::{has_permission_args, permission_env};
+use crate::catalog::{PromptMode, has_permission_args, permission_env, prompt_args, spec};
 use crate::codex_home::{codex_hook_events, prepare_codex_home};
 use crate::flags::flags;
 use crate::hooks::{HookEvent, hook_args, hook_events};
@@ -51,6 +51,15 @@ pub struct Launch {
     /// The hook events the launch reports, each once; empty without hooks.
     /// A codex on its private home reports more than on `notify` alone.
     pub hook_events: Vec<HookEvent>,
+    /// A first prompt the terminal types once the agent has started: the
+    /// agent takes none on its command line, or the program is a Windows
+    /// shim that must not get it as an argument. Never part of the policy
+    /// fingerprint.
+    pub prompt_after: Option<String>,
+    /// The first prompt as arguments, for agents that take it on the command
+    /// line. `command` puts them last; they are not in `args`, so the policy
+    /// fingerprint ignores them.
+    pub prompt_argv: Vec<String>,
 }
 
 impl Launch {
@@ -132,17 +141,19 @@ impl Launch {
     /// lines, a shell that runs the lines and then the CLI. The wrapper
     /// quotes the CLI's program and args, so each stays one argument.
     pub fn command(&self) -> (PathBuf, Vec<String>) {
+        let mut args = self.args.clone();
+        args.extend(self.prompt_argv.iter().cloned());
         if self.startup.is_empty() {
-            return (self.program.clone(), self.args.clone());
+            return (self.program.clone(), args);
         }
         let program = self.program.to_string_lossy();
         if cfg!(windows) {
-            wrap_powershell(&self.startup, &program, &self.args)
+            wrap_powershell(&self.startup, &program, &args)
         } else {
             let shell = env::var_os("SHELL")
                 .filter(|s| !s.is_empty())
                 .map_or_else(|| PathBuf::from("/bin/sh"), PathBuf::from);
-            wrap_posix(&shell, &self.startup, &program, &self.args)
+            wrap_posix(&shell, &self.startup, &program, &args)
         }
     }
 }
@@ -189,6 +200,8 @@ pub struct Context<'a> {
     /// An account that replaces the profile's own (a restart keeps the
     /// tab's account).
     pub account: Option<&'a str>,
+    /// A first prompt for the agent; see `Launch::prompt_after`.
+    pub prompt: Option<&'a str>,
 }
 
 /// The launch of the agent profile or shell `id`: `shell` (the default
@@ -224,6 +237,7 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         None => Vec::new(),
     };
     args.extend(profile.args.iter().cloned());
+    let (prompt_argv, prompt_after) = place_prompt(profile.cli, &program, ctx.prompt);
 
     let mut env: Vec<(String, OsString)> = profile
         .env
@@ -300,7 +314,38 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         cli: profile.cli,
         hooks: false,
         hook_events: Vec::new(),
+        prompt_after,
+        prompt_argv,
     })
+}
+
+/// Splits `prompt` into the arguments that carry it (agents that take it on
+/// their command line) and the text to type once the agent has started
+/// (after-start agents, custom programs, a Windows `.cmd`/`.bat` shim, and a
+/// prompt an argument parser would read as a flag).
+fn place_prompt(
+    cli: Option<Cli>,
+    program: &Path,
+    prompt: Option<&str>,
+) -> (Vec<String>, Option<String>) {
+    let Some(prompt) = prompt.filter(|p| !p.trim().is_empty()) else {
+        return (Vec::new(), None);
+    };
+    let typed = || (Vec::new(), Some(prompt.to_owned()));
+    let Some(cli) = cli else {
+        return typed();
+    };
+    let line = prompt_args(cli, prompt);
+    let shim = cfg!(windows)
+        && program
+            .extension()
+            .and_then(OsStr::to_str)
+            .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
+    let flag_like = spec(cli).prompt == PromptMode::Argv && prompt.starts_with('-');
+    if line.is_empty() || shim || flag_like {
+        return typed();
+    }
+    (line, None)
 }
 
 /// A shell is never an agent: no policy gate, no account, no startup lines.
@@ -327,6 +372,8 @@ fn resolve_shell(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         cli: None,
         hooks: false,
         hook_events: Vec::new(),
+        prompt_after: None,
+        prompt_argv: Vec::new(),
     })
 }
 
@@ -494,6 +541,7 @@ mod tests {
                 shells: &[],
                 find,
                 account,
+                prompt: None,
             },
         )
     }
@@ -516,6 +564,73 @@ mod tests {
         assert_eq!(l.profile, "claude");
         // Args opt out of the global switch, so no mode flag.
         assert_eq!(l.permissions, Permissions::Ask);
+    }
+
+    fn run_prompt(profiles: &Profiles, id: &str, program: &str, prompt: &str) -> Launch {
+        let accounts = accounts();
+        let find = |_: &Profile| Some(PathBuf::from(program));
+        resolve(
+            id,
+            &Context {
+                profiles,
+                accounts: &accounts,
+                shells: &[],
+                find: &find,
+                account: None,
+                prompt: Some(prompt),
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn prompt_goes_in_argv_per_mode() {
+        let p = Profiles::default();
+        let l = run_prompt(&p, "claude", "/bin/claude", "fix it");
+        assert_eq!(l.prompt_argv, ["fix it"]);
+        assert_eq!(l.command().1, ["fix it"]);
+        assert!(l.args.is_empty());
+        assert_eq!(l.prompt_after, None);
+        let l = run_prompt(&p, "devin", "/bin/devin", "fix it");
+        assert_eq!(l.prompt_argv, ["--", "fix it"]);
+        let l = run_prompt(&p, "gemini", "/bin/gemini", "fix it");
+        assert_eq!(l.prompt_argv, ["--prompt-interactive", "fix it"]);
+        // After-start agents and custom programs get it typed.
+        let l = run_prompt(&p, "aider", "/bin/aider", "fix it");
+        assert!(l.args.is_empty());
+        assert_eq!(l.prompt_after.as_deref(), Some("fix it"));
+        let l = run_prompt(&with(custom("mine")), "mine", "/bin/x", "fix it");
+        assert_eq!(l.prompt_after.as_deref(), Some("fix it"));
+        // A prompt that looks like a flag is typed, not passed.
+        let l = run_prompt(&p, "claude", "/bin/claude", "--help me");
+        assert!(l.args.is_empty());
+        assert_eq!(l.prompt_after.as_deref(), Some("--help me"));
+        // A blank prompt is no prompt.
+        let l = run_prompt(&p, "claude", "/bin/claude", "  ");
+        assert!(l.prompt_argv.is_empty() && l.prompt_after.is_none());
+    }
+
+    #[test]
+    fn prompt_is_not_in_the_fingerprint_input() {
+        // The fingerprint reads `args`, `program` and the mode; the prompt is
+        // in `prompt_argv`, so a launch with it is the same approved agent.
+        let p = Profiles::default();
+        let with_prompt = run_prompt(&p, "claude", "/bin/found", "x");
+        let without = run(&p, "claude", None, &|_| Some(PathBuf::from("/bin/found"))).unwrap();
+        assert_eq!(with_prompt.args, without.args);
+        assert_eq!(with_prompt.program, without.program);
+        assert_eq!(with_prompt.permissions, without.permissions);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cmd_shim_gets_the_prompt_typed() {
+        let p = Profiles::default();
+        let l = run_prompt(&p, "claude", "C:/n/claude.cmd", "fix it");
+        assert!(l.prompt_argv.is_empty());
+        assert_eq!(l.prompt_after.as_deref(), Some("fix it"));
+        let l = run_prompt(&p, "claude", "C:/n/claude.exe", "fix it");
+        assert_eq!(l.prompt_argv, ["fix it"]);
     }
 
     #[test]
@@ -621,6 +736,7 @@ mod tests {
                 shells: &shells,
                 find: &|_| panic!("a shell is not detected as a profile"),
                 account: Some("work"),
+                prompt: None,
             },
         )
     }
@@ -775,6 +891,7 @@ mod tests {
                 shells: &[],
                 find: &found,
                 account,
+                prompt: None,
             },
         )
     }
@@ -920,6 +1037,8 @@ mod tests {
             cli: None,
             hooks: false,
             hook_events: Vec::new(),
+            prompt_after: None,
+            prompt_argv: Vec::new(),
         }
     }
 

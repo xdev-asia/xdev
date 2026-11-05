@@ -470,6 +470,7 @@ pub(crate) fn launch_for(
         shells: &shells,
         find: &find,
         account,
+        prompt: None,
     };
     let mut launch = resolve(id, &ctx)?;
     match (resume, fork) {
@@ -578,6 +579,7 @@ pub(crate) fn spawn_launch(
         }
     }
     let (program, args) = launch.command();
+    let prompt_after = launch.prompt_after;
     let mut env = launch.env;
     env.push(("XDEV_PTY_ID".to_owned(), OsString::from(&id)));
     // Agents run `xdev orchestration ...` from here.
@@ -596,7 +598,7 @@ pub(crate) fn spawn_launch(
         hooks: launch.hooks,
         hook_events: launch.hook_events,
         cli: launch.cli,
-        prompt_after: None,
+        prompt_after,
     };
     // What the service lists the PTY with; `info` comes back on attach.
     let meta = serde_json::json!({
@@ -831,6 +833,8 @@ pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdErr
         cli: None,
         hooks: false,
         hook_events: Vec::new(),
+        prompt_after: None,
+        prompt_argv: Vec::new(),
     })
 }
 
@@ -1089,6 +1093,8 @@ mod tests {
             cli: Some(Cli::Claude),
             hooks: false,
             hook_events: Vec::new(),
+            prompt_after: None,
+            prompt_argv: Vec::new(),
         }
     }
 

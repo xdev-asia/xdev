@@ -2654,7 +2654,8 @@ then sum up"
                     "autoTabTitle": false,
                     "autoSleep": false,
                     "sleepAfterMin": 30,
-                    "sessionSearch": false
+                    "sessionSearch": false,
+                    "workspaceTrust": true
                 })
             );
             fs::write(
