@@ -7,7 +7,7 @@ import { type Link, mdTarget, type Resolve, wikiTarget } from "./links";
 type RuleInline = Parameters<MarkdownIt["inline"]["ruler"]["before"]>[2];
 type StateInline = Parameters<RuleInline>[0];
 type RenderRule = NonNullable<MarkdownIt["renderer"]["rules"]["link_open"]>;
-type Env = { from: string; resolve: Resolve };
+export type Env = { from: string; resolve: Resolve };
 
 const OPEN = 0x5b; // [
 const BANG = 0x21; // !
@@ -45,18 +45,22 @@ function linkAttrs(token: Parameters<RenderRule>[0][number], env: Env): [string,
   return path === null ? [["data-broken", ""]] : [["href", "#"], ["data-doc", path]];
 }
 
-const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
-md.inline.ruler.before("link", "wiki_link", wikiLink);
+/** The inert renderer: wiki links, vault links and image placeholders. `renderRich` builds on it. */
+export function createMarkdown(): MarkdownIt {
+  const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
+  md.inline.ruler.before("link", "wiki_link", wikiLink);
+  md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+    tokens[idx].attrs = linkAttrs(tokens[idx], env as Env);
+    return self.renderToken(tokens, idx, options);
+  };
+  md.renderer.rules.image = (tokens, idx, options, env, self) => {
+    const alt = self.renderInlineAsText(tokens[idx].children ?? [], options, env);
+    return `<span class="md-image" title="${md.utils.escapeHtml(tokens[idx].attrGet("src") ?? "")}">${md.utils.escapeHtml(alt)}</span>`;
+  };
+  return md;
+}
 
-md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
-  tokens[idx].attrs = linkAttrs(tokens[idx], env as Env);
-  return self.renderToken(tokens, idx, options);
-};
-
-md.renderer.rules.image = (tokens, idx, options, env, self) => {
-  const alt = self.renderInlineAsText(tokens[idx].children ?? [], options, env);
-  return `<span class="md-image" title="${md.utils.escapeHtml(tokens[idx].attrGet("src") ?? "")}">${md.utils.escapeHtml(alt)}</span>`;
-};
+const md = createMarkdown();
 
 /** HTML for a doc body (frontmatter already removed); links point at vault paths via `data-doc`. */
 export function renderMarkdown(body: string, from: string, resolve: Resolve): string {
