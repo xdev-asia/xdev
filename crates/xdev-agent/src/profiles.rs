@@ -535,9 +535,13 @@ impl Profiles {
     }
 }
 
+/// Ids a profile cannot take: they are the `DefaultAgent` values, so a
+/// default set to such a profile would read back as that value.
+const RESERVED_PROFILES: [&str; 2] = ["auto", "blank"];
+
 /// The profile as it may be stored: shape checked, built-in CLI pinned.
 fn checked(mut profile: Profile) -> Result<Profile, ProfileError> {
-    if !valid_id(&profile.id) {
+    if !valid_id(&profile.id) || RESERVED_PROFILES.contains(&profile.id.as_str()) {
         return Err(invalid("id"));
     }
     if profile.name.trim().is_empty() {
@@ -571,14 +575,17 @@ fn checked(mut profile: Profile) -> Result<Profile, ProfileError> {
     Ok(profile)
 }
 
-/// A stored custom profile (a program, no CLI) whose id is now a built-in id is renamed
+/// A stored custom profile (a program, no CLI) whose id is now a built-in or
+/// reserved id is renamed
 /// to the first free `<id>-custom`, `<id>-custom-2`, ...; the default agent
 /// follows. Its program and args stay. The file is rewritten on the next save.
 fn rename_clashes(profiles: &mut [Profile], default_agent: &mut DefaultAgent) {
     let taken: Vec<String> = profiles.iter().map(|p| p.id.clone()).collect();
     let mut used = taken.clone();
     for profile in profiles.iter_mut() {
-        if profile.cli.is_some() || profile.program.is_none() || Cli::of_id(&profile.id).is_none() {
+        let clash =
+            Cli::of_id(&profile.id).is_some() || RESERVED_PROFILES.contains(&profile.id.as_str());
+        if profile.cli.is_some() || profile.program.is_none() || !clash {
             continue;
         }
         let old = std::mem::take(&mut profile.id);
@@ -929,6 +936,30 @@ mod tests {
         let p = Profiles::load(d.path()).unwrap();
         assert_eq!(p.default_agent, DefaultAgent::Auto);
         assert_eq!(ids(&p), CLI_IDS);
+    }
+
+    #[test]
+    fn auto_and_blank_are_not_profile_ids() {
+        let mut p = Profiles::default();
+        for id in ["auto", "blank"] {
+            assert!(
+                matches!(p.put(custom(id)), Err(ProfileError::Invalid(_))),
+                "{id}"
+            );
+        }
+        // Stored ones are kept under a free id.
+        let d = tempdir();
+        fs::write(
+            d.path().join(FILE),
+            r#"{"version":1,"profiles":[
+              {"id":"auto","name":"A","program":"a"},
+              {"id":"blank","name":"B","program":"b"}]}"#,
+        )
+        .unwrap();
+        let p = Profiles::load(d.path()).unwrap();
+        assert!(p.get("auto").is_none() && p.get("blank").is_none());
+        assert_eq!(p.get("auto-custom").unwrap().program.as_deref(), Some("a"));
+        assert_eq!(p.get("blank-custom").unwrap().program.as_deref(), Some("b"));
     }
 
     #[test]

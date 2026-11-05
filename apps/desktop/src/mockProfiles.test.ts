@@ -7,6 +7,11 @@ const custom = (id: string) => ({
 });
 
 describe("mock profiles", () => {
+  it("auto and blank are not profile ids", async () => {
+    const api = createMockApi({});
+    for (const id of ["auto", "blank"]) await expect(api.profilePut(custom(id))).rejects.toMatchObject({ code: "invalid_profile" });
+  });
+
   it("mock_profile_put_round_trips", async () => {
     const api = createMockApi({});
     const first = await api.profiles();

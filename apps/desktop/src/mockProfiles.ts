@@ -67,6 +67,8 @@ function reject(code: ApiError["code"], detail?: string): Promise<never> {
 }
 
 const validId = (id: string) => ID.test(id) && id !== "shell";
+/** Ids a profile cannot take: they are the default agent values; mirrors `RESERVED_PROFILES`. */
+const RESERVED_PROFILES = ["auto", "blank"];
 const invalid = () => reject("invalid_profile");
 
 export interface MockProfiles extends ProfilesApi {
@@ -143,7 +145,7 @@ export function createMockProfiles(): MockProfiles {
     },
     async profilePut(input) {
       const p = structuredClone(input);
-      if (!validId(p.id) || !p.name.trim()) return invalid();
+      if (!validId(p.id) || RESERVED_PROFILES.includes(p.id) || !p.name.trim()) return invalid();
       if (isCli(p.id)) p.cli = p.id;
       else if (p.cli !== null) return invalid();
       // Only a CLI with an effort flag takes one.

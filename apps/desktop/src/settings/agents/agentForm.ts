@@ -84,7 +84,10 @@ export function accountsFor(view: ProfileView | null, accounts: Account[]): Acco
   return accounts.filter((a) => a.provider === cli);
 }
 
-/** A free id made from a name: `[a-z0-9-]{1,32}`, not in `taken`. */
+/** Ids no profile takes: the default shell and the default agent values. */
+const RESERVED = ["shell", "auto", "blank"];
+
+/** A free id made from a name: `[a-z0-9-]{1,32}`, not in `taken` or reserved. */
 export function freeId(name: string, taken: string[], fallback: string): string {
   const base =
     name
@@ -92,7 +95,7 @@ export function freeId(name: string, taken: string[], fallback: string): string 
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
       .slice(0, 28) || fallback;
-  if (!taken.includes(base) && base !== "shell") return base;
+  if (!taken.includes(base) && !RESERVED.includes(base)) return base;
   for (let n = 2; ; n++) {
     const id = `${base}-${n}`;
     if (!taken.includes(id)) return id;
