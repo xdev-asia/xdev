@@ -44,7 +44,7 @@ export function MarkdownPreview(props: { api: Api; worktree: string; rel: string
   useEffect(() => {
     const el = host.current;
     return el ? fillImages(el, { api, worktree, rel }) : undefined;
-  }, [rendered, api, worktree, rel]);
+  }, [rendered.html, api, worktree, rel]);
 
   useEffect(() => {
     const el = host.current;

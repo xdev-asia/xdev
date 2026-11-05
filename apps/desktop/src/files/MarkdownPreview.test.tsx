@@ -7,12 +7,12 @@ import { MarkdownPreview } from "./MarkdownPreview";
 import { MermaidDialog } from "./MermaidDialog";
 import { fillMermaid, mermaidTheme, type MermaidLabels } from "./mermaid";
 
-const hooks = vi.hoisted(() => ({ active: false }));
+const hooks = vi.hoisted(() => ({ active: false, deps: [] as unknown[][] }));
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
   return {
     ...react,
-    useEffect: (e: any, d?: any) => (hooks.active ? undefined : react.useEffect(e, d)),
+    useEffect: (e: any, d?: any) => (hooks.active ? void hooks.deps.push(d ?? []) : react.useEffect(e, d)),
     useMemo: (f: any, d: any) => (hooks.active ? f() : react.useMemo(f, d)),
     useRef: (v: any) => (hooks.active ? { current: v } : react.useRef(v)),
     useState: (i: any) => (hooks.active ? [typeof i === "function" ? i() : i, () => {}] : react.useState(i)),
@@ -93,4 +93,17 @@ it("the expanded diagram is a wide dialog titled Diagram with zoom and pan", () 
   expect(list.find((n) => n.props.dangerouslySetInnerHTML)!.props.dangerouslySetInnerHTML.__html).toBe("<svg></svg>");
   dialog.props.onConfirm();
   expect(onClose).toHaveBeenCalled();
+});
+
+it("the image effect is keyed on the html, so a rerender with the same html keeps its images", () => {
+  const api = createMockApi({});
+  const deps = () => {
+    hooks.deps = [];
+    run(() => MarkdownPreview({ api, worktree: "C:/wt/a", rel: "a.md", text: "![a](p.png)" }));
+    return hooks.deps.find((d) => d.includes("C:/wt/a"))!;
+  };
+  const first = deps();
+  const second = deps();
+  expect(first.some((d) => typeof d === "string" && d.includes("md-image"))).toBe(true);
+  expect(second.every((d, i) => Object.is(d, first[i]))).toBe(true);
 });
