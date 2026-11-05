@@ -1846,6 +1846,9 @@ pub struct GitRecipes {
     /// Asks an agent to address the review comments queued from a pull request.
     #[serde(deserialize_with = "lenient")]
     pub address_comments: Recipe,
+    /// Asks an agent to review one changed hunk of the diff review screen.
+    #[serde(deserialize_with = "lenient")]
+    pub review_hunk: Recipe,
 }
 
 impl Recipe {
@@ -1875,6 +1878,7 @@ impl GitRecipes {
             branch_name: self.branch_name.normalized(),
             resolve_conflicts: self.resolve_conflicts.normalized(),
             address_comments: self.address_comments.normalized(),
+            review_hunk: self.review_hunk.normalized(),
         }
     }
 }

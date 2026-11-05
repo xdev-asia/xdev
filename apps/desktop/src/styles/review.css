@@ -428,3 +428,125 @@
   color: var(--danger);
   font-size: 12px;
 }
+
+/* AI review: status line, the AI mark on a finding, and the image diff. */
+.rv-ai {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.rv-ai .error-text {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.rv-ai-skipped {
+  flex-basis: 100%;
+}
+
+.rv-ai-skipped summary {
+  min-height: 24px;
+  cursor: pointer;
+}
+
+.rv-base-button,
+.rv-note-actions button,
+.rv-layout button {
+  min-height: 24px;
+}
+
+.rv-mark-ai {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.rv-mark-severity[data-severity="warning"] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.rv-mark-severity[data-severity="problem"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.rv-image {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  min-width: 0;
+}
+
+.rv-image .rv-layout {
+  align-self: flex-start;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.rv-image-sides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.rv-image-fig {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+}
+
+.rv-image-caption,
+.rv-image-captions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.rv-image-label {
+  color: var(--text-1);
+}
+
+.rv-image-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+}
+
+.rv-image-stack {
+  display: grid;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.rv-image-stack > .rv-image-img {
+  grid-area: 1 / 1;
+  justify-self: start;
+}
+
+.rv-image-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.rv-image-slider input {
+  flex: 1;
+  min-width: 0;
+  min-height: 24px;
+}

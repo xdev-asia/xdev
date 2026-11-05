@@ -92,7 +92,7 @@ pub struct StageState {
 
 /// A checkout the registry knows: its start commit (`None` for a primary
 /// checkout) and its repo's base ref.
-fn known(data: &Path, path: &Path) -> Result<(Option<String>, String), CmdError> {
+pub(crate) fn known(data: &Path, path: &Path) -> Result<(Option<String>, String), CmdError> {
     let key = path_key(path);
     let reg = Registry::load(data)?;
     if let Some(m) = reg.worktrees.iter().find(|m| path_key(&m.path) == key) {
@@ -114,7 +114,7 @@ fn bad_ref(name: &str) -> CmdError {
     WorkspaceError::BadRef(name.to_owned()).into()
 }
 
-fn is_hex_id(id: &str) -> bool {
+pub(crate) fn is_hex_id(id: &str) -> bool {
     (4..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_hexdigit())
 }
 

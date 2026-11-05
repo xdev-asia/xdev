@@ -121,6 +121,9 @@ import type {
   WorktreeFileDiff,
   ReviewBranch,
   ReviewData,
+  ReviewAiPlan,
+  ReviewAiHunk,
+  ReviewFinding,
   ReviewNote,
   Note,
   ContextUsage,
@@ -460,6 +463,9 @@ export type {
   ReviewBase,
   ReviewBranch,
   ReviewData,
+  ReviewAiPlan,
+  ReviewAiHunk,
+  ReviewFinding,
   ReviewFile,
   ReviewNote,
   Note,
@@ -1225,6 +1231,12 @@ export interface Api {
   worktreeFileDiff(path: string, file: string): Promise<WorktreeFileDiff>;
   /** A file at HEAD and on disk now; the base for change markers. */
   worktreeFileHead(path: string, file: string): Promise<WorktreeFileDiff>;
+  /** The bytes of `file` at the commit `base` (HEAD when null), up to 20 MB. Rejects with `not_found` or `too_large`. */
+  worktreeFileHeadBytes(path: string, file: string, base: string | null): Promise<Uint8Array>;
+  /** The changed hunks against `base` (a commit id), bounded to 40 hunks and 60 KB; no agent runs. */
+  worktreeReviewAiPlan(path: string, base: string): Promise<ReviewAiPlan>;
+  /** What the review recipe's agent finds in one hunk of the plan. */
+  worktreeReviewAiHunk(path: string, hunk: ReviewAiHunk): Promise<ReviewFinding[]>;
   // The new commit's id, or null when none of `files` had a change. Rejects with `empty_message`.
   worktreeCommit(path: string, files: string[], message: string): Promise<string | null>;
   // Line counts against the start ref (against HEAD for the primary checkout), untracked files included.
@@ -2207,6 +2219,9 @@ const tauriApi: Api = {
   worktreeChanges: (path) => call("worktree_changes", { path }),
   worktreeFileDiff: (path, file) => call("worktree_file_diff", { path, file }),
   worktreeFileHead: (path, file) => call("worktree_file_head", { path, file }),
+  worktreeFileHeadBytes: async (path, file, base) => new Uint8Array(await call<ArrayBuffer | number[]>("worktree_file_head_bytes", { path, file, base })),
+  worktreeReviewAiPlan: (path, base) => call("worktree_review_ai_plan", { path, base }),
+  worktreeReviewAiHunk: (path, hunk) => call("worktree_review_ai_hunk", { path, hunk }),
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
   worktreeStat: (path) => call("worktree_stat", { path }),
   worktreeShip: (path) => call("worktree_ship", { path }),

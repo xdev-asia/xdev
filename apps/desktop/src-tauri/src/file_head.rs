@@ -63,6 +63,57 @@ pub fn worktree_file_head(
     head_diff(data_dir(&state)?, &path, &file)
 }
 
+/// Most bytes of an image's old side the viewer reads.
+pub(crate) const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+
+fn code_err(code: &'static str) -> CmdError {
+    CmdError { code, detail: None }
+}
+
+/// What the size of the old blob allows: no blob is `not_found`, one over the limit `too_large`.
+fn within_limit(size: Option<u64>, max: u64) -> Result<(), CmdError> {
+    match size {
+        None => Err(code_err("not_found")),
+        Some(n) if n > max => Err(code_err("too_large")),
+        Some(_) => Ok(()),
+    }
+}
+
+/// The bytes of `file` at the commit `at` (HEAD when `None`), at most `MAX_IMAGE_BYTES`.
+/// Sized before it is read, so a large blob is never loaded.
+fn head_bytes(data: &Path, path: &Path, file: &str, at: Option<&str>) -> Result<Vec<u8>, CmdError> {
+    known_checkout(data, path)?;
+    let disk = inside(path, file).ok_or_else(|| bad_arg(file))?;
+    if !parent_within(path, &disk)? {
+        return Err(bad_arg(file));
+    }
+    let repo = Repo::discover(path)?;
+    let rev = match at {
+        Some(id) if id.len() >= 4 && id.bytes().all(|b| b.is_ascii_hexdigit()) => {
+            id.to_ascii_lowercase()
+        }
+        Some(other) => return Err(bad_arg(other)),
+        None => repo.head_id()?.ok_or_else(|| code_err("not_found"))?,
+    };
+    within_limit(repo.blob_size(&rev, file)?, MAX_IMAGE_BYTES)?;
+    repo.show(&rev, file)?.ok_or_else(|| code_err("not_found"))
+}
+
+/// The old side of an image: the bytes of `file` at `base` (a commit id) or at HEAD.
+/// Rejects with `not_found` when the file is not there and `too_large` over 20 MB.
+#[tauri::command(async)]
+pub fn worktree_file_head_bytes(
+    state: State<'_, AppState>,
+    path: std::path::PathBuf,
+    file: String,
+    base: Option<String>,
+) -> Result<tauri::ipc::Response, CmdError> {
+    let bytes = head_bytes(data_dir(&state)?, &path, &file, base.as_deref())?;
+    Ok(tauri::ipc::Response::new(
+        tauri::ipc::InvokeResponseBody::Raw(bytes),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -165,5 +216,62 @@ mod tests {
         let d = head_diff(&fx.data, &fx.repo, "bin.dat").unwrap();
         assert_eq!(d.skip, Some(Skip::Binary));
         assert_eq!((d.old, d.new), (None, None));
+    }
+
+    #[test]
+    fn the_size_limit_of_the_old_side() {
+        let code = |r: Result<(), CmdError>| r.unwrap_err().code;
+        assert_eq!(code(within_limit(None, 10)), "not_found");
+        assert_eq!(code(within_limit(Some(11), 10)), "too_large");
+        assert!(within_limit(Some(10), 10).is_ok());
+        assert_eq!(MAX_IMAGE_BYTES, 20 * 1024 * 1024);
+    }
+
+    #[test]
+    fn head_bytes_reads_the_committed_side() {
+        let fx = fixture(true);
+        fs::write(fx.repo.join("a.txt"), "two").unwrap();
+        assert_eq!(
+            head_bytes(&fx.data, &fx.repo, "a.txt", None).unwrap(),
+            b"one"
+        );
+        // Binary content is returned as it is.
+        assert_eq!(
+            head_bytes(&fx.data, &fx.repo, "bin.dat", None).unwrap(),
+            b"ab\0cd"
+        );
+        let head = Repo::discover(&fx.repo)
+            .unwrap()
+            .head_id()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            head_bytes(&fx.data, &fx.repo, "a.txt", Some(&head)).unwrap(),
+            b"one"
+        );
+    }
+
+    #[test]
+    fn head_bytes_says_not_found_and_refuses_odd_names() {
+        let fx = fixture(true);
+        fs::write(fx.repo.join("new.png"), "x").unwrap();
+        let code = |r: Result<Vec<u8>, CmdError>| r.unwrap_err().code;
+        assert_eq!(
+            code(head_bytes(&fx.data, &fx.repo, "new.png", None)),
+            "not_found"
+        );
+        assert_eq!(
+            code(head_bytes(&fx.data, &fx.repo, "../x", None)),
+            "bad_arg"
+        );
+        assert_eq!(
+            code(head_bytes(&fx.data, &fx.repo, "a.txt", Some("main"))),
+            "bad_arg"
+        );
+        let unborn = fixture(false);
+        assert_eq!(
+            code(head_bytes(&unborn.data, &unborn.repo, "a.txt", None)),
+            "not_found"
+        );
     }
 }

@@ -62,6 +62,7 @@ mod repo_env;
 mod resources;
 mod reveal;
 mod review;
+mod review_ai;
 mod review_notes;
 mod scheme_formats;
 mod session;
@@ -538,6 +539,9 @@ pub fn run() {
             workspace::worktree_stat,
             workspace::worktree_file_diff,
             file_head::worktree_file_head,
+            file_head::worktree_file_head_bytes,
+            review_ai::worktree_review_ai_plan,
+            review_ai::worktree_review_ai_hunk,
             review::worktree_review,
             review::worktree_review_file,
             review::worktree_stage,

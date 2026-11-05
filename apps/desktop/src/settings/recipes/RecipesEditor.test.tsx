@@ -58,7 +58,7 @@ async function mount(recipes: GitRecipes = DEFAULT_GIT_SETTINGS.recipes) {
 it("lists the six recipes with their variables, and args only for the drafts", async () => {
   const v = await mount();
   const ids = v.all().filter((n) => n.type === "details").map((n) => n.props["data-recipe"]);
-  expect(ids).toEqual(["commitMessage", "pullRequest", "fixCommitFailure", "fixPushFailure", "fixChecks", "addressComments", "resolveConflicts"]);
+  expect(ids).toEqual(["commitMessage", "pullRequest", "fixCommitFailure", "fixPushFailure", "fixChecks", "addressComments", "resolveConflicts", "reviewHunk"]);
   expect(v.field("resolveConflicts", "input", "args")).toBeUndefined();
   const conflict = v.within("resolveConflicts").filter((n) => n.props["data-var"]).map((n) => n.props["data-var"]);
   expect(conflict).toEqual(["basePrompt", "branch", "operation", "files", "onto"]);

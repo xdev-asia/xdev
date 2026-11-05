@@ -420,7 +420,7 @@ fn unfence(answer: &str) -> String {
 }
 
 /// Asks the agent, with no tools, and returns its unfenced answer.
-fn ask(
+pub(crate) fn ask(
     runner: &dyn Runner,
     repo: &Repo,
     prompt: String,
@@ -602,7 +602,11 @@ fn draft_runner_with(
     Ok(make(provider))
 }
 
-fn draft_runner(data: &Path, path: &Path, recipe: &Recipe) -> Result<Box<dyn Runner>, CmdError> {
+pub(crate) fn draft_runner(
+    data: &Path,
+    path: &Path,
+    recipe: &Recipe,
+) -> Result<Box<dyn Runner>, CmdError> {
     draft_runner_with(data, path, recipe, &gate(data)?, &detect, |p| {
         provider_runner(p, None)
     })

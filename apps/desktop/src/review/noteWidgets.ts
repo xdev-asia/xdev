@@ -4,6 +4,8 @@ import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ReviewNote } from "@/api";
 import { I18nContext, type I18n } from "@/i18n";
+import { AiNoteCard } from "./AiNoteCard";
+import { isAiNote } from "./aiFindings";
 import { NoteCard, noteLabel } from "./NoteCard";
 import { NoteComposer } from "./NoteComposer";
 import type { PostBlock } from "./postable";
@@ -19,6 +21,9 @@ export type NoteHandlers = {
   post?(note: ReviewNote): Promise<void>;
   /** Why a note cannot be posted yet; `null` when it can. */
   postBlock?(note: ReviewNote): PostBlock | null;
+  /** The AI review's findings: drop one, or turn it into a note of the person's. */
+  dismissAi?(id: string): void;
+  convertAi?(id: string, range: NoteRange): void;
 };
 
 /** The selection's lines as a range; a selection that ends at the start of a line stops on the line before. */
@@ -94,6 +99,16 @@ function build(state: EditorState, ctx: Ctx, notes: ReviewNote[], composer: Note
     if (note.file !== ctx.file || note.line > lines || note.startLine < 1) continue;
     for (let n = note.startLine; n <= note.line; n++) out.push(tint.range(state.doc.line(n).from));
     // The key covers everything the card shows, so an edited note draws again.
+    if (isAiNote(note)) {
+      widgetAt(note.line, `${note.id}|${note.body}|${note.line}`, (view) =>
+        createElement(AiNoteCard, {
+          note,
+          onDismiss: () => ctx.handlers().dismissAi?.(note.id),
+          onConvert: () => ctx.handlers().convertAi?.(note.id, rangeOfLines(view.state, note.line, note.line)),
+        }),
+      );
+      continue;
+    }
     const post = ctx.handlers().post;
     const blocked = post ? ctx.handlers().postBlock?.(note) ?? null : null;
     const key = `${note.id}|${note.body}|${note.sentAt}|${note.outdated}|${note.startLine}-${note.line}|${post ? "pr" : ""}|${blocked ?? ""}`;
