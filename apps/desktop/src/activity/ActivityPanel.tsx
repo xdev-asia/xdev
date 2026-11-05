@@ -6,9 +6,10 @@ import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { profileName } from "@/agents/profileStore";
 import { AgentIcon } from "@/workspace/AgentIcon";
 import { ago } from "@/workspace/ago";
+import { useStatusSettings } from "@/status/statusSettings";
 import type { Sessions } from "@/workspace/sessions";
 import type { ActivityFeed, FeedEntry } from "./feed";
-import { loadActivityOptions, saveActivityOptions, type ActivityOptions } from "./options";
+import { loadActivityOptions, saveActivityOptions, type ActivityFilter, type ActivityGroupBy, type ActivityOptions } from "./options";
 import { activityThreads, hasAgentThreads, type ThreadGroup, type WorktreeName } from "./threads";
 
 export type ActivityTab = "threads" | "feed";
@@ -31,21 +32,22 @@ export interface ActivityViewProps {
   onOptions(options: ActivityOptions): void;
   onMenu(at: { x: number; y: number } | null): void;
   onJump(tabId: string): void;
+  /** Marks these tabs read or unread. */
+  onMarkRead(ids: string[]): void;
+  onMarkUnread(ids: string[]): void;
   onClearFeed(): void;
 }
 
-/** The menu items for the two options, each a choice with a check. */
+/** The menu items for the two on/off options, each a choice with a check. */
 export function optionItems(options: ActivityOptions, onOptions: (o: ActivityOptions) => void): MenuItem[] {
   return [
     { id: "showIdle", labelKey: "activity.option.showIdle", checked: options.showIdle, run: () => onOptions({ ...options, showIdle: !options.showIdle }) },
-    {
-      id: "groupByWorktree",
-      labelKey: "activity.option.groupByWorktree",
-      checked: options.groupBy === "worktree",
-      run: () => onOptions({ ...options, groupBy: options.groupBy === "worktree" ? "none" : "worktree" }),
-    },
+    { id: "compact", labelKey: "activity.option.compact", checked: options.compact, run: () => onOptions({ ...options, compact: !options.compact }) },
   ];
 }
+
+const GROUP_OPTIONS: readonly ActivityGroupBy[] = ["none", "status", "worktree", "agent"];
+const FILTER_OPTIONS: readonly ActivityFilter[] = ["all", "unread"];
 
 /** The header text of a group: the status word, the worktree's name or the agent's name. */
 function groupLabel(group: ThreadGroup, t: T): string {
@@ -103,6 +105,8 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
   const { t } = useI18n();
   const { tab, query, options } = props;
   const items = optionItems(options, props.onOptions);
+  const visible = props.groups.flatMap((g) => g.threads);
+  const anyUnread = visible.some((th) => th.tab.unread);
   const list =
     tab === "threads"
       ? threadRows(props.groups, props.now, t, props.onJump)
@@ -143,6 +147,23 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
             >
               {t("activity.options")}
             </Button>
+            <div className="act-controls-row">
+              <Segmented
+                label={t("activity.filter.label")}
+                value={options.filter}
+                options={FILTER_OPTIONS.map((v) => ({ value: v, label: t(`activity.filter.${v}`) }))}
+                onChange={(v) => props.onOptions({ ...options, filter: v as ActivityFilter })}
+              />
+              <Segmented
+                label={t("activity.group.label")}
+                value={options.groupBy}
+                options={GROUP_OPTIONS.map((v) => ({ value: v, label: t(`activity.group.${v}`) }))}
+                onChange={(v) => props.onOptions({ ...options, groupBy: v as ActivityGroupBy })}
+              />
+              <Button variant="secondary" type="button" disabled={!anyUnread} onClick={() => props.onMarkRead(visible.map((th) => th.tab.id))}>
+                {t("attention.markAllRead")}
+              </Button>
+            </div>
           </>
         ) : (
           <Button variant="secondary" type="button" disabled={props.feed.length === 0} onClick={props.onClearFeed}>
@@ -153,7 +174,7 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
       {list.length === 0 ? (
         <EmptyState title={t(emptyKey)} />
       ) : (
-        <ul className="act-list">{list}</ul>
+        <ul className="act-list" data-density={options.compact ? "compact" : undefined}>{list}</ul>
       )}
       {props.menuAt && <ContextMenu at={props.menuAt} items={items} onClose={() => props.onMenu(null)} />}
     </section>
@@ -176,6 +197,7 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
   const [asked, setAsked] = useState(props.ask?.seq);
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState<ActivityOptions>(loadActivityOptions);
+  const statusSettings = useStatusSettings();
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   if (props.ask && props.ask.seq !== asked) {
     setAsked(props.ask.seq);
@@ -194,7 +216,7 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
     .worktrees()
     .flatMap((w) => sessions.tabs(w))
     .map((tb) => ({ tab: tb, lastOutput: sessions.lastOutput(tb.id) }));
-  const groups = activityThreads(sources, props.names, query, options);
+  const groups = activityThreads(sources, props.names, query, options, statusSettings);
   const anyThreads = hasAgentThreads(sources);
 
   return (
@@ -216,6 +238,8 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
       }}
       onMenu={setMenuAt}
       onJump={props.onJump}
+      onMarkRead={(ids) => ids.forEach((id) => sessions.markTabRead(id))}
+      onMarkUnread={(ids) => ids.forEach((id) => sessions.markTabUnread(id))}
       onClearFeed={() => feed.clear()}
     />
   );

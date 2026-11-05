@@ -262,3 +262,16 @@
   font-size: 11px;
   text-transform: none;
 }
+
+.act-controls-row {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Compact rows: one line, no meta line. */
+.act-list[data-density="compact"] .x-list-row-meta {
+  display: none;
+}

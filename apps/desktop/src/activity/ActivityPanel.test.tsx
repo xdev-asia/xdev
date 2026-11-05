@@ -27,12 +27,12 @@ const tab = (id: string, over: Partial<Tab> = {}) => ({ id, worktree: "/a", prof
 const off: ActivityOptions = { showIdle: false, groupBy: "none", filter: "all", compact: false };
 
 function view(over: Partial<ActivityViewProps> = {}) {
-  const calls = { tab: [] as string[], query: [] as string[], options: [] as unknown[], menu: [] as unknown[], jump: [] as string[], clear: 0 };
+  const calls = { read: [] as string[][], unread: [] as string[][], tab: [] as string[], query: [] as string[], options: [] as unknown[], menu: [] as unknown[], jump: [] as string[], clear: 0 };
   const sources = [{ tab: tab("a"), lastOutput: NOW - 1000 }, { tab: tab("b"), lastOutput: NOW - 60_000 }];
   const props: ActivityViewProps = {
     tab: "threads", query: "", options: off, groups: activityThreads(sources, names, "", off), anyThreads: true, feed: [], names, now: NOW, menuAt: null,
     onTab: (v) => void calls.tab.push(v), onQuery: (v) => void calls.query.push(v), onOptions: (v) => void calls.options.push(v),
-    onMenu: (v) => void calls.menu.push(v), onJump: (v) => void calls.jump.push(v), onClearFeed: () => void calls.clear++, ...over,
+    onMenu: (v) => void calls.menu.push(v), onJump: (v) => void calls.jump.push(v), onClearFeed: () => void calls.clear++, onMarkRead: (v) => void calls.read.push(v), onMarkUnread: (v) => void calls.unread.push(v), ...over,
   };
   return { calls, tree: nodes(ActivityView(props)) };
 }
@@ -72,10 +72,10 @@ it("the options button asks for the menu; its items toggle with a check", () => 
   expect(calls.menu).toEqual([{ x: 4, y: 9 }]);
   const picked: unknown[] = [];
   const items = optionItems({ ...off, showIdle: true }, (o) => void picked.push(o));
-  expect(items.map((i) => [i.id, i.checked])).toEqual([["showIdle", true], ["groupByWorktree", false]]);
+  expect(items.map((i) => [i.id, i.checked])).toEqual([["showIdle", true], ["compact", false]]);
   items[0]!.run!();
   items[1]!.run!();
-  expect(picked).toEqual([{ ...off, showIdle: false }, { ...off, showIdle: true, groupBy: "worktree" }]);
+  expect(picked).toEqual([{ ...off, showIdle: false }, { ...off, showIdle: true, compact: true }]);
 });
 
 it("grouped threads get a heading per worktree", () => {
@@ -106,4 +106,35 @@ it("the feed lists changes and a row jumps; Clear empties it", () => {
   expect(clear.props.variant).toBe("secondary");
   clear.props.onClick();
   expect(calls.clear).toBe(1);
+});
+
+it("the toolbar has the filter and group controls that set the options", () => {
+  const { calls, tree } = view({ options: { ...off, groupBy: "status", filter: "unread" } });
+  const [, filter, group] = of(tree, Segmented);
+  expect(filter!.props.value).toBe("unread");
+  expect(filter!.props.options.map((o: { value: string }) => o.value)).toEqual(["all", "unread"]);
+  expect(filter!.props.options.map((o: { label: string }) => o.label)).toEqual([en("activity.filter.all"), en("activity.filter.unread")]);
+  expect(group!.props.label).toBe(en("activity.group.label"));
+  expect(group!.props.value).toBe("status");
+  expect(group!.props.options.map((o: { value: string }) => o.value)).toEqual(["none", "status", "worktree", "agent"]);
+  filter!.props.onChange("all");
+  group!.props.onChange("agent");
+  expect(calls.options).toEqual([{ ...off, groupBy: "status", filter: "all" }, { ...off, groupBy: "agent", filter: "unread" }]);
+});
+
+it("Mark all read passes the visible ids, and waits for something unread", () => {
+  const sources = [{ tab: tab("a", { unread: true }), lastOutput: 2 }, { tab: tab("b"), lastOutput: 1 }];
+  const { calls, tree } = view({ groups: activityThreads(sources, names, "", off) });
+  const button = of(tree, Button).find((b) => b.props.children === en("attention.markAllRead"))!;
+  expect(button.props.variant).toBe("secondary");
+  expect(button.props.disabled).toBe(false);
+  button.props.onClick();
+  expect(calls.read).toEqual([["a", "b"]]);
+  const quiet = view();
+  expect(of(quiet.tree, Button).find((b) => b.props.children === en("attention.markAllRead"))!.props.disabled).toBe(true);
+});
+
+it("the compact option sets data-density on the list", () => {
+  expect(view().tree.find((n) => n.props.className === "act-list")!.props["data-density"]).toBeUndefined();
+  expect(view({ options: { ...off, compact: true } }).tree.find((n) => n.props.className === "act-list")!.props["data-density"]).toBe("compact");
 });
