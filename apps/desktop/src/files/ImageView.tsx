@@ -31,9 +31,10 @@ function Stage(props: { session: ImageSession; name: string; label: string; imgR
     return () => ro.disconnect();
   }, [session]);
   const o = session.origin();
+  const { min, max } = session.limits();
   return (
     <div className="image-stage" ref={host}>
-      <PanZoom zoom={session.scale()} x={o.x} y={o.y} onZoom={session.onZoom} onPan={session.onPan} label={label}>
+      <PanZoom zoom={session.scale()} x={o.x} y={o.y} min={min} max={max} onZoom={session.onZoom} onPan={session.onPan} onReset={session.onReset} label={label}>
         {state.url && (
           <img
             ref={props.imgRef}
@@ -52,6 +53,10 @@ function Expanded(props: { session: ImageSession; name: string; onClose: () => v
   const { t } = useI18n();
   const { session, name, onClose } = props;
   const view = useMemo(() => session.view(), [session]);
+  useEffect(() => {
+    view.attach();
+    return () => view.dispose();
+  }, [view]);
   useSyncExternalStore(view.subscribe, view.get);
   const img = useRef<HTMLImageElement | null>(null);
   const copy = async () => {

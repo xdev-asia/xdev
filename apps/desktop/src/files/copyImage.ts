@@ -1,12 +1,15 @@
 /** The pixel ratio of a copied PNG, and the longest side it may have. */
 export const COPY_RATIO = 2;
 export const COPY_MAX_SIDE = 16384;
+/** The most pixels a copied PNG canvas may have (browsers refuse or crash on larger canvases). */
+export const COPY_MAX_AREA = 32_000_000;
 
-/** The canvas size for an image of `w` x `h`: 2x, scaled down so no side passes the cap. */
+/** The canvas size for an image of `w` x `h`: 2x, scaled down so no side and not the total area passes its cap. */
 export function pngSize(w: number, h: number): { w: number; h: number } {
   const longest = Math.max(w, h, 1);
-  const k = Math.min(COPY_RATIO, COPY_MAX_SIDE / longest);
-  return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) };
+  const bySide = Math.min(COPY_RATIO, COPY_MAX_SIDE / longest);
+  const k = Math.min(bySide, Math.sqrt(COPY_MAX_AREA / Math.max(1, w * h)));
+  return { w: Math.max(1, Math.floor(w * k)), h: Math.max(1, Math.floor(h * k)) };
 }
 
 /** What drawing and writing need; the default uses the page's canvas and clipboard. */

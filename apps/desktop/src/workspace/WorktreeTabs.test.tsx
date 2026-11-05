@@ -20,7 +20,7 @@ import { addTab, leaves, paneOf, removeTab, resize, selectTab, single, splitPane
 import { PaneView } from "./PaneView";
 import { TabStrip } from "./TabStrip";
 import { TabTitleDialog } from "./TabTitleDialog";
-import { WorktreeTabs } from "./WorktreeTabs";
+import { PREVIEW_DEBOUNCE_MS, WorktreeTabs } from "./WorktreeTabs";
 
 // Hooks are stubbed only while the tabs component itself is called; each harness keeps its own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -1513,6 +1513,15 @@ describe("markdown preview tabs", () => {
     const items = view.find((n) => n.type === TabStrip)!.props.items as { id: string; preview?: { rel: string } }[];
     expect(items.map((i) => i.id)).toEqual(["file:docs/a.md", "preview:docs/a.md"]);
     expect(items[1].preview).toEqual({ rel: "docs/a.md" });
+  });
+
+  it("the side preview gets the live text debounced by 200 ms, and knows when its tab is hidden", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "docs/a.md");
+    expect(handlers(view)["file.markdownPreview"]!()).toBe(true);
+    settle(view);
+    expect(PREVIEW_DEBOUNCE_MS).toBe(200);
+    expect(view.find((n) => n.type === MarkdownPreview)!.props).toMatchObject({ debounceMs: 200, hidden: expect.any(Boolean) });
   });
 
   it("the key declines for a file that is not Markdown and when no file is in front", () => {
