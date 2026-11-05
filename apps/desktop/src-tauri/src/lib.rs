@@ -534,7 +534,8 @@ mod tests {
     #[test]
     fn each_plugin_is_registered_once() {
         // The builder chain is read as text: registering it needs a running app.
-        let src = include_str!("lib.rs");
+        // A Windows checkout may hold CRLF line endings, so they are folded to LF first.
+        let src = include_str!("lib.rs").replace("\r\n", "\n");
         let chain = &src[src.find("    builder\n        .plugin(").unwrap()..];
         let chain = &chain[..chain.find(".manage(").unwrap()];
         let mut plugins: Vec<&str> = chain
