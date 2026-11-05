@@ -30,15 +30,19 @@ pub(crate) const WEEKLY_MINUTES: i64 = 10_080;
 pub(crate) struct ProbeTimeouts {
     pub init: Duration,
     pub rpc: Duration,
+    /// After stdin is closed, how long the probe may take to exit by itself.
     pub drain: Duration,
+    /// After the TERM, how long before the kill.
+    pub term: Duration,
 }
 
 impl Default for ProbeTimeouts {
     fn default() -> Self {
         ProbeTimeouts {
-            init: Duration::from_secs(30),
+            init: Duration::from_secs(10),
             rpc: Duration::from_secs(10),
-            drain: Duration::from_secs(5),
+            drain: Duration::from_secs(1),
+            term: Duration::from_secs(2),
         }
     }
 }
@@ -49,13 +53,28 @@ impl Default for ProbeTimeouts {
 pub(crate) enum ProbeError {
     /// The binary is not there.
     NoCodex,
-    /// An RPC error, or stderr matched an auth phrase.
+    /// An RPC error message or stderr matched an auth phrase.
     Auth(String),
     Timeout,
     /// Closed before the answer.
     Exited(Option<i32>),
     Rpc(String),
     Io(io::Error),
+}
+
+/// A failure is kept for the reuse window like a reading, so it is cloned;
+/// an I/O error keeps its kind and text.
+impl Clone for ProbeError {
+    fn clone(&self) -> Self {
+        match self {
+            ProbeError::NoCodex => ProbeError::NoCodex,
+            ProbeError::Auth(s) => ProbeError::Auth(s.clone()),
+            ProbeError::Timeout => ProbeError::Timeout,
+            ProbeError::Exited(c) => ProbeError::Exited(*c),
+            ProbeError::Rpc(s) => ProbeError::Rpc(s.clone()),
+            ProbeError::Io(e) => ProbeError::Io(io::Error::new(e.kind(), e.to_string())),
+        }
+    }
 }
 
 /// A line from a pipe, or its end.
@@ -88,6 +107,16 @@ fn send(stdin: &mut ChildStdin, msg: &Value) {
     let _ = writeln!(stdin, "{msg}").and_then(|()| stdin.flush());
 }
 
+/// After stdout ends, how long stderr may take to reach its own end.
+const STDERR_TAIL: Duration = Duration::from_secs(2);
+
+fn keep_stderr(stderr: &mut String, l: &str) {
+    if stderr.len() < 16 << 10 {
+        stderr.push_str(l);
+        stderr.push('\n');
+    }
+}
+
 /// Waits for the response to request `id`. Lines that are not JSON, and
 /// other messages, are skipped.
 fn await_response(
@@ -98,6 +127,7 @@ fn await_response(
 ) -> Result<Value, ProbeError> {
     let deadline = Instant::now() + timeout;
     let mut stderr = String::new();
+    let mut stderr_done = false;
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         match rx.recv_timeout(left) {
@@ -107,20 +137,19 @@ fn await_response(
                 if is_auth_error(&l) {
                     return Err(ProbeError::Auth(l));
                 }
-                if stderr.len() < 16 << 10 {
-                    stderr.push_str(&l);
-                    stderr.push('\n');
-                }
+                keep_stderr(&mut stderr, &l);
             }
-            Ok(Ev::ErrEof) => {}
+            Ok(Ev::ErrEof) => stderr_done = true,
             Ok(Ev::OutEof) => {
-                // The error text may still be in flight on the other pipe.
-                let grace = Instant::now() + Duration::from_millis(500);
-                while let Ok(ev) = rx.recv_timeout(grace.saturating_duration_since(Instant::now()))
-                {
-                    if let Ev::Err(l) = ev {
-                        stderr.push_str(&l);
-                        stderr.push('\n');
+                // The error text may still be in flight on the other pipe:
+                // read it to its end, or for at most STDERR_TAIL.
+                let until = Instant::now() + STDERR_TAIL;
+                while !stderr_done {
+                    match rx.recv_timeout(until.saturating_duration_since(Instant::now())) {
+                        Ok(Ev::Err(l)) => keep_stderr(&mut stderr, &l),
+                        Ok(Ev::ErrEof) => stderr_done = true,
+                        Ok(_) => {}
+                        Err(_) => break,
                     }
                 }
                 return Err(exited(child, &stderr));
@@ -137,11 +166,13 @@ fn await_response(
                         .get("message")
                         .and_then(Value::as_str)
                         .unwrap_or("rpc error");
-                    // A method the server does not know is not a sign-in problem.
-                    return Err(if e.get("code").and_then(Value::as_i64) == Some(-32601) {
-                        ProbeError::Rpc(text.to_owned())
-                    } else {
+                    // Only a message with a sign-in phrase is a sign-in
+                    // problem; any other error (an unknown method, an
+                    // internal fault) lets the caller read the session log.
+                    return Err(if is_auth_error(text) {
                         ProbeError::Auth(text.to_owned())
+                    } else {
+                        ProbeError::Rpc(text.to_owned())
                     });
                 }
                 return Ok(msg.get("result").cloned().unwrap_or(Value::Null));
@@ -164,25 +195,72 @@ fn exited(child: &mut Child, stderr: &str) -> ProbeError {
     }
 }
 
-/// Closes stdin, asks the group to stop, waits `drain`, then kills the tree.
-/// The kill comes last: a probe that is refreshing its token must be able to
-/// finish writing it.
-fn shutdown(mut child: Child, stdin: ChildStdin, drain: Duration) {
-    drop(stdin);
-    if matches!(child.try_wait(), Ok(Some(_))) {
-        return;
+/// The steps of stopping a probe, apart so their order can be tested.
+trait Stop {
+    fn close_stdin(&mut self);
+    fn exited(&mut self) -> bool;
+    fn term(&mut self);
+    fn kill(&mut self);
+}
+
+struct Probe {
+    child: Child,
+    stdin: Option<ChildStdin>,
+}
+
+impl Stop for Probe {
+    fn close_stdin(&mut self) {
+        self.stdin = None;
     }
-    term_group(child.id());
-    let until = Instant::now() + drain;
-    while Instant::now() < until {
-        if matches!(child.try_wait(), Ok(Some(_))) {
-            return;
+    fn exited(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(Some(_)))
+    }
+    fn term(&mut self) {
+        term_group(self.child.id());
+    }
+    fn kill(&mut self) {
+        kill_tree(self.child.id());
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// Polls `exited` until it is true or `wait` has passed.
+fn exits_within(p: &mut impl Stop, wait: Duration) -> bool {
+    let until = Instant::now() + wait;
+    loop {
+        if p.exited() {
+            return true;
+        }
+        if Instant::now() >= until {
+            return false;
         }
         thread::sleep(Duration::from_millis(20));
     }
-    kill_tree(child.id());
-    let _ = child.kill();
-    let _ = child.wait();
+}
+
+/// Closes stdin and waits `drain` for the probe to leave on its own; only
+/// then asks the group to stop, waits `term`, and kills the tree. A probe
+/// that is refreshing its token gets the drain to finish writing it before
+/// any signal.
+fn stop_in_order(p: &mut impl Stop, drain: Duration, term: Duration) {
+    p.close_stdin();
+    if exits_within(p, drain) {
+        return;
+    }
+    p.term();
+    if exits_within(p, term) {
+        return;
+    }
+    p.kill();
+}
+
+fn shutdown(child: Child, stdin: ChildStdin, t: ProbeTimeouts) {
+    let mut probe = Probe {
+        child,
+        stdin: Some(stdin),
+    };
+    stop_in_order(&mut probe, t.drain, t.term);
 }
 
 /// Spawns `cmd` (already carrying args, env, cwd), runs the handshake and
@@ -233,7 +311,7 @@ pub(crate) fn read_rate_limits(
         );
         await_response(&rx, &mut child, 2, t.rpc)
     })();
-    shutdown(child, stdin, t.drain);
+    shutdown(child, stdin, t);
 
     let windows = parse_rpc_rate_limits(&answer?, now);
     if windows.is_empty() {
@@ -510,6 +588,9 @@ pub(crate) mod tests {
                     "rpc-auth" => reply(
                         json!({ "error": { "code": -32600, "message": "Please sign in again" } }),
                     ),
+                    "rpc-other" => {
+                        reply(json!({ "error": { "code": -32603, "message": "internal error" } }))
+                    }
                     "rpc-missing" => {
                         reply(json!({ "error": { "code": -32601, "message": "method not found" } }))
                     }
@@ -553,6 +634,7 @@ pub(crate) mod tests {
             init: Duration::from_secs(10),
             rpc: Duration::from_secs(10),
             drain: Duration::from_secs(5),
+            term: Duration::from_secs(2),
         }
     }
 
@@ -566,9 +648,15 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn an_rpc_error_means_sign_in_again() {
+    fn an_rpc_auth_error_means_sign_in_again() {
         let e = read_rate_limits(fake("rpc-auth"), quick(), 0).unwrap_err();
         assert!(matches!(e, ProbeError::Auth(_)), "{e:?}");
+    }
+
+    #[test]
+    fn an_rpc_error_without_auth_text_is_not_an_auth_error() {
+        let e = read_rate_limits(fake("rpc-other"), quick(), 0).unwrap_err();
+        assert!(matches!(e, ProbeError::Rpc(_)), "{e:?}");
     }
 
     #[test]
@@ -586,6 +674,27 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn stderr_that_ends_after_stdout_is_still_read_to_its_end() {
+        // stdout closes first; the sign-in text comes 700 ms later, then
+        // stderr closes. Nothing is decided before stderr's end or 2 s.
+        let (tx, rx) = mpsc::channel();
+        tx.send(Ev::OutEof).unwrap();
+        let late = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(700));
+            tx.send(Ev::Err("Error: Not logged in".into())).unwrap();
+            tx.send(Ev::ErrEof).unwrap();
+            // Keep the channel open, so only the stderr end can stop the wait.
+            thread::sleep(Duration::from_secs(3));
+        });
+        let mut child = fake("exit3").spawn().unwrap();
+        let e = await_response(&rx, &mut child, 1, Duration::from_secs(10)).unwrap_err();
+        assert!(matches!(e, ProbeError::Auth(_)), "{e:?}");
+        let _ = child.wait();
+        drop(rx);
+        late.join().unwrap();
+    }
+
+    #[test]
     fn an_early_exit_reports_the_code() {
         let e = read_rate_limits(fake("exit3"), quick(), 0).unwrap_err();
         assert!(matches!(e, ProbeError::Exited(Some(3))), "{e:?}");
@@ -597,6 +706,7 @@ pub(crate) mod tests {
             init: Duration::from_secs(2),
             rpc: Duration::from_secs(2),
             drain: Duration::from_secs(2),
+            term: Duration::from_secs(2),
         };
         let start = Instant::now();
         let e = read_rate_limits(fake("hang"), t, 0).unwrap_err();
@@ -643,6 +753,92 @@ pub(crate) mod tests {
             assert!(Instant::now() < deadline, "server {pid} survived");
             thread::sleep(Duration::from_millis(100));
         }
+    }
+
+    /// Records each stop step; the child exits after `exits_after` polls.
+    struct Recorder {
+        steps: Vec<&'static str>,
+        polls: usize,
+        exits_after: Option<usize>,
+    }
+
+    impl Stop for Recorder {
+        fn close_stdin(&mut self) {
+            self.steps.push("close");
+        }
+        fn exited(&mut self) -> bool {
+            self.polls += 1;
+            self.exits_after.is_some_and(|n| self.polls > n)
+        }
+        fn term(&mut self) {
+            self.steps.push("term");
+        }
+        fn kill(&mut self) {
+            self.steps.push("kill");
+        }
+    }
+
+    fn recorder(exits_after: Option<usize>) -> Recorder {
+        Recorder {
+            steps: Vec::new(),
+            polls: 0,
+            exits_after,
+        }
+    }
+
+    #[test]
+    fn a_child_that_exits_in_the_drain_gets_no_signal() {
+        let mut r = recorder(Some(3));
+        stop_in_order(&mut r, Duration::from_secs(2), Duration::from_secs(2));
+        assert_eq!(r.steps, ["close"]);
+    }
+
+    #[test]
+    fn a_child_that_stops_on_term_is_not_killed() {
+        let mut r = recorder(None);
+        let start = Instant::now();
+        // Exits on the first poll after the TERM.
+        stop_in_order(
+            &mut ExitOnTerm(&mut r),
+            Duration::from_millis(100),
+            Duration::from_secs(2),
+        );
+        assert_eq!(r.steps, ["close", "term"]);
+        // The TERM waited for the whole drain.
+        assert!(start.elapsed() >= Duration::from_millis(100));
+    }
+
+    struct ExitOnTerm<'a>(&'a mut Recorder);
+
+    impl Stop for ExitOnTerm<'_> {
+        fn close_stdin(&mut self) {
+            self.0.close_stdin();
+        }
+        fn exited(&mut self) -> bool {
+            self.0.steps.contains(&"term")
+        }
+        fn term(&mut self) {
+            self.0.term();
+        }
+        fn kill(&mut self) {
+            self.0.kill();
+        }
+    }
+
+    #[test]
+    fn a_child_that_ignores_everything_is_closed_then_termed_then_killed() {
+        let mut r = recorder(None);
+        stop_in_order(
+            &mut r,
+            Duration::from_millis(100),
+            Duration::from_millis(100),
+        );
+        assert_eq!(r.steps, ["close", "term", "kill"]);
+    }
+
+    #[test]
+    fn the_default_drain_is_short() {
+        assert!(ProbeTimeouts::default().drain <= Duration::from_secs(1));
     }
 
     #[test]

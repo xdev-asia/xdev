@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import { Badge, Heatmap } from "@xdev-asia/ui";
 import { toApiError, type Account, type Agent, type Quota, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
-import { displayPath, formatCount, localDay, totalOf, type Tokens } from "@/kit/kitUi";
+import { dayRange, displayPath, formatCount, localDay, totalOf, type Tokens } from "@/kit/kitUi";
 import type { ShareCardData } from "@/kit/shareCard";
 import { TokenTable } from "@/kit/UsageTab";
 import { UsageChart } from "@/kit/UsageChart";
@@ -43,6 +43,8 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const [scope, setScope] = useState<UsageScope>("xdev");
   const [range, setRange] = useState<UsageRange>("30");
   const [report, setReport] = useState<UsageReport>();
+  // The last six weeks by day, for the heatmap and the share card, whatever the range.
+  const [recent, setRecent] = useState<[string, Tokens][]>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError["code"]>();
   const [reads, setReads] = useState(0);
@@ -99,6 +101,7 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   useEffect(() => {
     if (settings === null || !anyOn) {
       setReport(undefined);
+      setRecent(undefined);
       setBusy(false);
       return;
     }
@@ -106,13 +109,30 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
     setBusy(true);
     const wanted = refresh.current;
     refresh.current = false;
-    const { sinceDay, untilDay } = rangeDays(range, new Date());
-    api.kitUsageReport({ sinceDay, untilDay, agent: provider === "overview" ? null : provider, scope, refresh: wanted }).then(
+    const now = new Date();
+    const { sinceDay, untilDay } = rangeDays(range, now);
+    const agent = provider === "overview" ? null : provider;
+    api.kitUsageReport({ sinceDay, untilDay, agent, scope, refresh: wanted }).then(
       (next) => {
         if (stale) return;
         setReport(next);
         setError(undefined);
         setBusy(false);
+        // A range of six weeks or more already holds them; a shorter one reads them after it,
+        // so the index the range read refreshed is the one read.
+        if (range === "all" || Number(range) >= RECENT_DAYS) {
+          setRecent(next.summary.days);
+          return;
+        }
+        const [recentSince, recentUntil] = dayRange(RECENT_DAYS, now);
+        api.kitUsageReport({ sinceDay: recentSince, untilDay: recentUntil, agent, scope, refresh: false }).then(
+          (six) => {
+            if (!stale) setRecent(six.summary.days);
+          },
+          (e) => {
+            if (!stale) setError(toApiError(e).code);
+          },
+        );
       },
       (e) => {
         if (stale) return;
@@ -164,7 +184,8 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const costs = report === undefined ? undefined : Object.fromEntries(report.cost_by_agent.map(([a, c]) => [label(a), formatCost(c)]));
   const claudeTokens = report?.by_agent.find(([a]) => a === "claude")?.[1];
   const reuse = provider === "claude" && claudeTokens !== undefined ? cacheReuse(claudeTokens) : null;
-  const heat = provider === "overview" ? recentDays(days, RECENT_DAYS, new Date()) : [];
+  const recentList = recent ?? [];
+  const heat = provider === "overview" ? recentDays(recentList, RECENT_DAYS, new Date()) : [];
   const best = provider === "overview" ? bestDay(days) : null;
   // The card is for one agent: Overview mixes them and has none.
   const shareData: ShareCardData | null =
@@ -178,7 +199,7 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
           tokens,
           topModel: report.summary.by_model[0]?.[0] ?? null,
           sessions: report.sessions,
-          days,
+          days: recentList,
         };
 
   return (

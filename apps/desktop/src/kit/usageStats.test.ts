@@ -14,6 +14,11 @@ describe("cacheReuse", () => {
     expect(cacheReuse(tk(0, 5))).toBe(1);
     expect(cacheReuse(tk(4, 0))).toBe(0);
   });
+  it("counts cache writes as input-side tokens that were not reused", () => {
+    // read / (input + read + write) = 2 / (1 + 2 + 1)
+    expect(cacheReuse(tk(1, 2, 0, 1))).toBe(0.5);
+    expect(cacheReuse(tk(0, 0, 9, 3))).toBe(0);
+  });
 });
 
 describe("formatCost", () => {
