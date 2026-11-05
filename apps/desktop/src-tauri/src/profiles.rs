@@ -11,8 +11,8 @@ use tauri::State;
 use tauri_plugin_opener::OpenerExt;
 use xdev_agent::{
     Approvals, Cli, CustomShell, DefaultAgent, Permissions, Profile, ProfileError, Profiles,
-    PromptMode, ShellKind, default_shell_id, efforts, find_builtin, find_program,
-    has_permission_args, list_shells, modes, pick_agent, set_path_override, spec,
+    PromptMode, ShellKind, default_shell_id, efforts, find_builtin, find_program, flags,
+    has_permission_args, list_shells, modes, permission_env, pick_agent, set_path_override, spec,
 };
 
 use crate::accounts::data_dir;
@@ -49,11 +49,38 @@ pub struct ProfileView {
     pub custom_args: bool,
     /// The approval modes the agent offers; `ask` first.
     pub modes: Vec<Permissions>,
+    /// What each offered mode adds to the launch, in `modes` order.
+    pub mode_flags: Vec<ModeFlags>,
     /// A built-in with a docs or install link.
     pub docs: bool,
     /// The first prompt is typed after the agent starts, not passed as an
     /// argument.
     pub prompt_after: bool,
+}
+
+/// The flags (and `KEY=value` env) one approval mode adds to the launch;
+/// empty for `ask`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ModeFlags {
+    pub mode: Permissions,
+    pub flags: Vec<String>,
+}
+
+fn mode_flags(cli: Cli) -> Vec<ModeFlags> {
+    modes(cli)
+        .into_iter()
+        .map(|mode| {
+            let mut out = flags(cli, None, None, mode);
+            out.extend(
+                permission_env(cli, mode)
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}")),
+            );
+            ModeFlags { mode, flags: out }
+        })
+        .collect()
 }
 
 /// A shell the `+` menu offers. `id` has the `shell:` prefix `pty_spawn` takes.
@@ -132,6 +159,7 @@ fn build(profiles: &Profiles, find: Find<'_>, distros: &[String]) -> ProfilesVie
                     permissions: profiles.effective(p),
                     custom_args: p.cli.is_some_and(|cli| has_permission_args(cli, &p.args)),
                     modes: p.cli.map(modes).unwrap_or_default(),
+                    mode_flags: p.cli.map(mode_flags).unwrap_or_default(),
                     docs: p.cli.is_some(),
                     prompt_after: p
                         .cli
@@ -362,6 +390,25 @@ mod tests {
             ]
         );
         assert_eq!(by("opencode").modes, [Permissions::Ask]);
+        let flags_of = |id: &str, mode: Permissions| {
+            by(id)
+                .mode_flags
+                .iter()
+                .find(|m| m.mode == mode)
+                .map(|m| m.flags.clone())
+        };
+        assert_eq!(
+            flags_of("claude", Permissions::Auto).unwrap(),
+            ["--permission-mode", "auto"]
+        );
+        assert_eq!(
+            flags_of("claude", Permissions::Ask).unwrap(),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            flags_of("goose", Permissions::Skip).unwrap(),
+            ["GOOSE_MODE=auto"]
+        );
         assert!(by("aider").prompt_after && !by("claude").prompt_after);
         assert!(by("devin").docs);
         assert!(!by("claude").custom_args);

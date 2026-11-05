@@ -283,6 +283,7 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
       view={editingView}
       newId={freeId("", taken, "custom")}
       accounts={accounts}
+      approvals={current.approvals}
       busy={busy}
       error={error}
       onSave={(p) => {

@@ -49,6 +49,27 @@ const isCli = (id: string): id is Cli => id in SPECS;
 const ID = /^[a-z0-9-]{1,32}$/;
 const RESERVED_SHELLS = ["powershell", "cmd", "login"];
 
+// What each mode adds, as `ProfileView.modeFlags` reports it; a mode left out adds nothing.
+const FLAGS: Record<Cli, Partial<Record<Mode, string[]>>> = {
+  claude: { "accept-edits": ["--permission-mode", "acceptEdits"], auto: ["--permission-mode", "auto"], skip: ["--dangerously-skip-permissions"] },
+  codex: {
+    "accept-edits": ["--sandbox", "workspace-write", "--ask-for-approval", "on-request"],
+    auto: ["--approve-for-me"],
+    skip: ["--dangerously-bypass-approvals-and-sandbox"],
+  },
+  gemini: { "accept-edits": ["--approval-mode", "auto_edit"], skip: ["--approval-mode", "yolo"] },
+  cursor: { skip: ["--yolo"] },
+  copilot: { skip: ["--yolo"] },
+  opencode: {},
+  amp: { skip: ["--dangerously-allow-all"] },
+  droid: { skip: ["--auto", "high"] },
+  "qwen-code": { skip: ["--approval-mode", "yolo"] },
+  kimi: { skip: ["--yolo"] },
+  devin: { skip: ["--permission-mode", "bypass", "--respect-workspace-trust", "false"] },
+  aider: { skip: ["--yes-always"] },
+  goose: { skip: ["GOOSE_MODE=auto"] },
+};
+
 function builtin(id: Cli): Profile {
   return {
     id, name: SPECS[id].name, cli: id, program: null, args: [], env: [], model: null, effort: null,
@@ -123,6 +144,7 @@ export function createMockProfiles(): MockProfiles {
     efforts: profile.cli ? SPECS[profile.cli].efforts : [],
     customArgs: profile.cli !== null && profile.args.some((a) => SPECS[profile.cli!].heads.some((h) => a === h || a.startsWith(`${h}=`))),
     modes: profile.cli ? SPECS[profile.cli].modes : [],
+    modeFlags: profile.cli ? SPECS[profile.cli].modes.map((mode) => ({ mode, flags: FLAGS[profile.cli!][mode] ?? [] })) : [],
     docs: profile.cli !== null,
     promptAfter: profile.cli !== null && SPECS[profile.cli].after,
   });

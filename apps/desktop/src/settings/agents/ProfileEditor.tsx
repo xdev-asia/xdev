@@ -1,9 +1,9 @@
 import { Button, Tag } from "@xdev-asia/ui";
 import { useState } from "react";
 import type { JSX } from "react";
-import type { Account, ApiError, Profile, ProfileView } from "@/api";
+import type { Account, ApiError, Approvals, Profile, ProfileView } from "@/api";
 import { useI18n } from "@/i18n";
-import { accountsFor, draftOf, profileOf, type Draft } from "./agentForm";
+import { accountsFor, draftCustomArgs, draftFlags, draftOf, profileOf, type Draft } from "./agentForm";
 
 /**
  * The inline editor of one profile; `view` is null for a new custom profile.
@@ -14,6 +14,8 @@ export function ProfileEditor(props: {
   /** The id a new custom profile gets; ignored for an existing one. */
   newId: string;
   accounts: Account[];
+  /** The global Approvals switch a following draft takes. */
+  approvals: Approvals;
   busy: boolean;
   error?: ApiError["code"];
   onSave(p: Profile): void;
@@ -32,9 +34,9 @@ export function ProfileEditor(props: {
   // The modes the agent offers; a stored mode it no longer offers stays listed so the field still reads true.
   const modes: string[] = ["", ...(props.view?.modes ?? [])];
   if (draft.permissions !== "" && !modes.includes(draft.permissions)) modes.push(draft.permissions);
-  // What the agent runs as: the field, else what the global switch gives it.
-  const effective = draft.permissions !== "" ? draft.permissions : (props.view?.permissions ?? "ask");
-  const flagged = builtin && !(props.view?.customArgs ?? false) && effective !== "ask";
+  // Read from the draft, so the tag and hint follow the fields as they are typed.
+  const customArgs = builtin && draftCustomArgs(draft, props.view);
+  const flags = builtin ? draftFlags(draft, props.view, props.approvals).join(" ") : "";
 
   const set = (key: keyof Draft) => (e: { target: { value: string } }) => {
     const value = e.target.value;
@@ -93,14 +95,14 @@ export function ProfileEditor(props: {
             </select>
           </label>
         )}
-        {builtin && props.view?.customArgs && <small className="settings-hint">{t("settings.agents.perm.customHint")}</small>}
-        {flagged && (
+        {customArgs && <small className="settings-hint">{t("settings.agents.perm.customHint")}</small>}
+        {flags !== "" && (
           <div>
             <Tag
               onRemove={() => setDraft((d) => ({ ...d, permissions: "ask" }))}
-              removeLabel={t("settings.agents.perm.remove", { flag: t(`settings.agents.perm.${effective}`), agent: base?.name ?? "" })}
+              removeLabel={t("settings.agents.perm.remove", { flag: flags, agent: base?.name ?? "" })}
             >
-              {t(`settings.agents.perm.${effective}`)}
+              {flags}
             </Tag>
           </div>
         )}

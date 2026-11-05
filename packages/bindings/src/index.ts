@@ -121,6 +121,7 @@ export type { MergeBlock } from "./MergeBlock";
 export type { MergeMethod } from "./MergeMethod";
 export type { Message } from "./Message";
 export type { MessageType } from "./MessageType";
+export type { ModeFlags } from "./ModeFlags";
 export type { Models } from "./Models";
 export type { NamePreview } from "./NamePreview";
 export type { NavigationSettings } from "./NavigationSettings";

@@ -583,13 +583,39 @@ it("removing_the_flag_tag_sets_ask_and_saves", async () => {
   p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
   const ed = drawEditor(p.editor()!);
   const tag = ed.draw().find((n) => n.type === Tag)!;
-  expect(tag.props.removeLabel).toBe(en("settings.agents.perm.remove", { flag: en("settings.agents.perm.skip"), agent: "Claude Code" }));
+  expect(tag.props.children).toBe("--dangerously-skip-permissions");
+  expect(tag.props.removeLabel).toBe(en("settings.agents.perm.remove", { flag: "--dangerously-skip-permissions", agent: "Claude Code" }));
   tag.props.onRemove();
   expect(ed.field("permissions").props.value).toBe("ask");
   expect(ed.draw().some((n) => n.type === Tag)).toBe(false);
   ed.click(en("settings.agents.save"));
   await tick();
   expect(put).toHaveBeenCalledWith(expect.objectContaining({ id: "claude", permissions: "ask" }));
+});
+
+it("the_flag_tag_follows_the_draft_not_the_saved_profile", async () => {
+  const p = await page(async (api) => {
+    await api.profilesDefaults("skip", "auto", null);
+    const claude = (await api.profiles()).profiles.find((v) => v.profile.id === "claude")!.profile;
+    await api.profilePut({ ...claude, permissions: "accept-edits" });
+  });
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  const ed = drawEditor(p.editor()!);
+  const tag = () => ed.draw().find((n) => n.type === Tag)?.props.children;
+  expect(tag()).toBe("--permission-mode acceptEdits");
+  ed.type("permissions", "auto");
+  expect(tag()).toBe("--permission-mode auto");
+  // Back on Follow, the global Skip applies, not the saved mode.
+  ed.type("permissions", "");
+  expect(tag()).toBe("--dangerously-skip-permissions");
+  // Args of its own stop it following, so it asks.
+  ed.type("args", "--verbose");
+  expect(tag()).toBeUndefined();
+  // A permission flag in the args makes it custom while it is typed.
+  ed.type("permissions", "auto");
+  ed.type("args", ["--permission-mode", "plan"].join("\n"));
+  expect(tag()).toBeUndefined();
+  expect(ed.draw().some((n) => n.props.children === en("settings.agents.perm.customHint"))).toBe(true);
 });
 
 it("a_profile_with_its_own_launch_arguments_shows_the_custom_hint_and_no_flag_tag", async () => {
