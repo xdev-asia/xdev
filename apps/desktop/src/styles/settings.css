@@ -188,6 +188,22 @@
   border-top: 1px solid var(--line);
 }
 
+/* Settings → Stats & Usage → API keys: name and badge, then the field, then the buttons. At 360px
+   the field takes the full width and the buttons wrap under it. */
+.api-key-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.api-key-row .settings-item-text {
+  flex: 1 1 100%;
+}
+
+.api-key-row .ws-field {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
 /* Settings → Agents */
 .agent-seg {
   display: inline-flex;

@@ -1,5 +1,6 @@
 import type {
   Api,
+  AiKeyProvider,
   Account,
   ActiveAccount,
   Quota,
@@ -227,6 +228,9 @@ export const DEMO_COMMITS: SeedCommit[] = [
   },
 ];
 
+// api.ts imports this file, so its AI_KEY_PROVIDERS cannot be imported back without a cycle.
+const AI_KEY_PROVIDERS: readonly AiKeyProvider[] = ["anthropic", "openai", "gemini"];
+
 function reject(code: ApiError["code"], detail?: string): Promise<never> {
   const error: ApiError = detail === undefined ? { code } : { code, detail };
   return Promise.reject(error);
@@ -384,6 +388,8 @@ type MockOptions = {
   xdevId?: "signedOut" | "signedIn";
   // A version the update check finds; nothing newer when left out.
   update?: string | null;
+  // Providers that start with an API key saved.
+  aiKeys?: AiKeyProvider[];
 };
 
 export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
@@ -399,6 +405,8 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
   const accountsChanged = () => {
     for (const cb of [...accountListeners]) cb();
   };
+  // The mock keeps the keys here and never returns them, like the real command.
+  const aiKeys = new Map<AiKeyProvider, string>((options.aiKeys ?? []).map((p) => [p, "seeded"]));
   let routing: Routing = { rules: [{ role: "review", provider: "claude", maxPrompt: null, model: "haiku" }] };
   const reset = new Date(Date.now() + 130 * 60_000).toISOString();
   const asOf = new Date(Date.now() - 20 * 60_000).toISOString();
@@ -663,6 +671,20 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     async setRouting(next) {
       if (next.rules.some(r => !r.model.trim())) return reject("empty_text");
       routing = structuredClone(next);
+    },
+    async aiKeys() {
+      return AI_KEY_PROVIDERS.map((provider) => ({ provider, saved: aiKeys.has(provider) }));
+    },
+    async aiKeySet(provider, key) {
+      if (!AI_KEY_PROVIDERS.includes(provider)) return reject("unknown_provider");
+      const trimmed = key.trim();
+      if (!trimmed) return reject("empty_key");
+      if ([...trimmed].length > 4096) return reject("too_large");
+      aiKeys.set(provider, trimmed);
+    },
+    async aiKeyRemove(provider) {
+      if (!AI_KEY_PROVIDERS.includes(provider)) return reject("unknown_provider");
+      return aiKeys.delete(provider);
     },
     async models() {
       return { claude: ["fable", "opus", "sonnet"], codex: ["gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna"] };

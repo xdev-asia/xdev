@@ -38,3 +38,9 @@ it("a section title matches all of its entries", () => {
   const r = runSearch("Vaults", t, title);
   expect([...r.counts.keys()]).toEqual(["vaults"]);
 });
+
+it("api key and khóa api find the API keys row", () => {
+  for (const query of ["api key", "khóa api", "khoa api", "keychain"]) {
+    expect(runSearch(query, t, title).ids.has("usage.apiKeys"), query).toBe(true);
+  }
+});

@@ -9,6 +9,7 @@ use ts_rs::{Config, TS};
 
 use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
+use crate::ai_keys::AiKeyStatus;
 use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::file_watch::FsChanged;
@@ -77,6 +78,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_agent::Seat::export_all(cfg)?;
     xdev_agent::Routing::export_all(cfg)?;
     Models::export_all(cfg)?;
+    AiKeyStatus::export_all(cfg)?;
     UpdateInfo::export_all(cfg)?;
     ProfilesView::export_all(cfg)?;
     xdev_agent::CustomShell::export_all(cfg)?;
