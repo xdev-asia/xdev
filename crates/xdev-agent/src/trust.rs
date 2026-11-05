@@ -313,10 +313,12 @@ fn copilot(real: &Path, at: &TrustTarget) -> Result<(), TrustError> {
         Err(e) => return Err(e.into()),
     };
     let key = real.to_string_lossy().into_owned();
-    let mut folders = match config.remove("trustedFolders") {
-        None => Vec::new(),
-        Some(Value::Array(list)) => list,
-        Some(_) => return Err(TrustError::Bad("trustedFolders".to_owned())),
+    // In place, so the key keeps its spot in the file.
+    let folders = config
+        .entry("trustedFolders")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Value::Array(folders) = folders else {
+        return Err(TrustError::Bad("trustedFolders".to_owned()));
     };
     let known = folders
         .iter()
@@ -324,10 +326,6 @@ fn copilot(real: &Path, at: &TrustTarget) -> Result<(), TrustError> {
         .any(|f| same(&real_path(Path::new(f)), real));
     if !known {
         folders.push(Value::String(key));
-    }
-    let changed = !known;
-    config.insert("trustedFolders".to_owned(), Value::Array(folders));
-    if changed {
         fs::create_dir_all(&dir)?;
         let mut out = serde_json::to_string_pretty(&Value::Object(config)).unwrap_or_default();
         out.push('\n');
@@ -777,6 +775,37 @@ mod tests {
         assert_eq!(cursor_slug(r"C:\Users\me\wt"), "C-Users-me-wt");
         assert_eq!(cursor_slug(r"\\server\share\a"), "server-share-a");
         assert_eq!(cursor_slug("/"), "");
+    }
+
+    /// The top-level keys of a JSON object file, in file order.
+    fn key_order(path: &Path) -> Vec<String> {
+        let Value::Object(map) = json(path) else {
+            panic!("not an object");
+        };
+        map.keys().cloned().collect()
+    }
+
+    #[test]
+    fn trust_writes_keep_the_key_order() {
+        let f = fx();
+        let claude = f.home.join(".claude.json");
+        fs::write(&claude, r#"{"zeta":1,"projects":{},"alpha":2}"#).unwrap();
+        trust_folder(TrustKind::Claude, &f.folder, &target(&f)).unwrap();
+        assert_eq!(key_order(&claude), ["zeta", "projects", "alpha"]);
+
+        let dir = f.home.join(".copilot");
+        fs::create_dir_all(&dir).unwrap();
+        let copilot = dir.join("config.json");
+        fs::write(
+            &copilot,
+            r#"{"zeta":1,"trustedFolders":[],"alpha":2,"mid":3}"#,
+        )
+        .unwrap();
+        trust_folder(TrustKind::Copilot, &f.folder, &target(&f)).unwrap();
+        assert_eq!(
+            key_order(&copilot),
+            ["zeta", "trustedFolders", "alpha", "mid"]
+        );
     }
 
     #[test]
