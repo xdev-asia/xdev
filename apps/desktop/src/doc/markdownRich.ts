@@ -24,6 +24,15 @@ export interface RichOptions {
 }
 
 const md = createMarkdown();
+// A relative image keeps its path in `data-src` so the preview can read it through the backend;
+// a remote one keeps only the title and is never fetched.
+md.renderer.rules.image = (tokens, idx, options, env, self) => {
+  const src = tokens[idx].attrGet("src") ?? "";
+  const alt = self.renderInlineAsText(tokens[idx].children ?? [], options, env);
+  const esc = md.utils.escapeHtml;
+  const local = src !== "" && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(src) && !src.startsWith("//") && !src.startsWith("#");
+  return `<span class="md-image" title="${esc(src)}"${local ? ` data-src="${esc(src)}" data-alt="${esc(alt)}"` : ""}>${esc(alt)}</span>`;
+};
 md.use(slugPlugin).use(calloutsPlugin).use(tasksPlugin).use(mathPlugin).use(highlightPlugin).use(mermaidPlugin);
 
 /** HTML for a whole Markdown file (front matter included) and its headings. */

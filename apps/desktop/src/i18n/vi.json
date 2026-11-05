@@ -2515,5 +2515,14 @@
   "files.openDefault": "Mở bằng ứng dụng mặc định",
   "files.openDefault.failed": "Không mở được tệp bằng ứng dụng mặc định",
   "files.media.failed": "Không phát được tệp này ở đây.",
-  "files.media.tooLarge.body": "Âm thanh và video lớn hơn 64 MB không mở ở đây."
+  "files.media.tooLarge.body": "Âm thanh và video lớn hơn 64 MB không mở ở đây.",
+  "files.preview.mode": "Chế độ xem Markdown",
+  "files.preview.source": "Nguồn",
+  "files.preview.preview": "Xem trước",
+  "files.preview.frontmatter": "Front matter",
+  "files.preview.callout.note": "Ghi chú",
+  "files.preview.callout.tip": "Mẹo",
+  "files.preview.callout.important": "Quan trọng",
+  "files.preview.callout.warning": "Cảnh báo",
+  "files.preview.callout.caution": "Thận trọng"
 }

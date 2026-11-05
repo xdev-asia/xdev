@@ -4,6 +4,7 @@ import type { Api } from "@/api";
 import { useI18n } from "@/i18n";
 import { Button } from "@xdev-asia/ui";
 import { ImageView } from "./ImageView";
+import { MarkdownPane } from "./MarkdownPane";
 import { MediaView } from "./MediaView";
 import { LoadError } from "./LoadError";
 import { CodeEditor } from "./CodeEditor";
@@ -73,7 +74,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
       </div>
     );
   } else {
-    body = (
+    const editor = (
       <>
         {entry.conflict !== null && (
           <div className="file-conflict" role="alert">
@@ -95,6 +96,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
         {entry.saving && <span className="file-saving" role="status">{t("files.saving")}</span>}
       </>
     );
+    body = viewer === "markdown" ? <MarkdownPane api={api} worktree={worktree} rel={rel} text={entry.text} source={editor} /> : editor;
   }
   return (
     <div className="file-view" data-rel={rel} data-kind={entry?.kind}>
