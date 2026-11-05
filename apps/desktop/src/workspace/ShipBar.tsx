@@ -269,7 +269,8 @@ export function ShipBar(props: {
         </div>
       )}
       <div className="ws-ship-actions">
-        <Button type="button" disabled={busy || action === "none" || action === "diverged"} onClick={main}>
+        {/* The Changes surface already has its primary, the Commit button; this one is secondary so the surface keeps one. */}
+        <Button type="button" variant="secondary" disabled={busy || action === "none" || action === "diverged"} onClick={main}>
           {t(`ship.action.${action}`)}
         </Button>
         <button
