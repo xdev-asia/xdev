@@ -1,6 +1,9 @@
 //! The tick decision: pure, it says what to do and does nothing.
 
-use crate::model::{Automation, AutomationRun, FailureCode};
+use crate::model::{
+    AGENT_START_DEADLINE_MS, Automation, AutomationRun, FailureCode, OBSERVE_DEADLINE_MS, RunStatus,
+};
+use crate::occur;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TickStep {
@@ -26,13 +29,43 @@ pub enum TickStep {
     },
 }
 
+/// What to do about each enabled automation that is due at `now`: one step per automation, for the
+/// latest occurrence only (older missed ones are not replayed). The caller carries the steps out and
+/// then advances `next_run_at`.
 pub fn plan(
-    _automations: &[Automation],
-    _now: i64,
-    _tick_ms: i64,
-    _can_dispatch: bool,
+    automations: &[Automation],
+    now: i64,
+    tick_ms: i64,
+    can_dispatch: bool,
 ) -> Vec<TickStep> {
-    Vec::new()
+    automations
+        .iter()
+        .filter(|a| a.enabled && a.next_run_at <= now)
+        .map(|a| {
+            let id = a.id.clone();
+            match occur::latest_at_or_before(&a.rrule, &a.timezone, a.dtstart, now) {
+                Err(e) => TickStep::Unevaluable {
+                    id,
+                    detail: e.to_string(),
+                },
+                Ok(None) => TickStep::Advance { id },
+                Ok(Some(scheduled_for)) => {
+                    let allowed = i64::from(a.missed_run_grace_minutes) * 60_000 + 2 * tick_ms;
+                    if now - scheduled_for > allowed {
+                        TickStep::Missed { id, scheduled_for }
+                    } else if can_dispatch {
+                        TickStep::Dispatch { id, scheduled_for }
+                    } else {
+                        TickStep::Refuse {
+                            id,
+                            scheduled_for,
+                            code: FailureCode::NoDispatchHost,
+                        }
+                    }
+                }
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,7 +74,25 @@ pub enum Watch {
     Fail(FailureCode),
 }
 
-/// `dispatching` for more than 2 min, `dispatched` for more than 6 h.
-pub fn watchdog(_run: &AutomationRun, _now: i64) -> Watch {
+/// `dispatching` for more than 2 min (the UI never answered), `dispatched` for more than 6 h.
+pub fn watchdog(run: &AutomationRun, now: i64) -> Watch {
+    match run.status {
+        RunStatus::Dispatching => {
+            let since = run.started_at.unwrap_or(run.created_at);
+            if now - since > AGENT_START_DEADLINE_MS {
+                return Watch::Fail(FailureCode::AgentNeverStarted);
+            }
+        }
+        RunStatus::Dispatched => {
+            let since = run
+                .dispatched_at
+                .or(run.started_at)
+                .unwrap_or(run.created_at);
+            if now - since > OBSERVE_DEADLINE_MS {
+                return Watch::Fail(FailureCode::WatchTimedOut);
+            }
+        }
+        _ => {}
+    }
     Watch::Keep
 }
