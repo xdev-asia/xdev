@@ -20,6 +20,8 @@ export interface StripItem {
   tab: Tab | null;
   /** Set for a file tab: its path in the worktree and whether it has unsaved edits. */
   file?: { rel: string; dirty: boolean };
+  /** Set for a Markdown preview tab: the path of the file it shows. */
+  preview?: { rel: string };
 }
 
 export interface MenuGroup {
@@ -87,7 +89,14 @@ export function TabStrip(props: {
   // What the strip shows: the terminal's own title once it set one, else the profile.
   const shownName = (tab: Tab) => tab.title ?? name(tab);
   const statusLabel = (status: TabStatus) => t(`workspace.tabs.status.${status}`);
-  const labelOf = (item: StripItem) => (item.tab ? name(item.tab) : item.file ? fileName(item.file.rel) : t("review.tab"));
+  const labelOf = (item: StripItem) =>
+    item.tab
+      ? name(item.tab)
+      : item.file
+        ? fileName(item.file.rel)
+        : item.preview
+          ? t("files.preview.tab", { name: fileName(item.preview.rel) })
+          : t("review.tab");
 
   const menuItem = (key: string, label: string, run: () => void, extra?: { danger?: boolean; disabled?: boolean }) => (
     <button
@@ -200,7 +209,7 @@ export function TabStrip(props: {
                       ? t("workspace.tabs.unreadLabel", { name: shownName(tab), status: statusLabel(tab.status).toLocaleLowerCase() })
                       : undefined
                   }
-                  title={tab?.title ?? item.file?.rel}
+                  title={tab?.title ?? item.file?.rel ?? item.preview?.rel}
                   onClick={() => props.onSelect(item.id)}
                   onDoubleClick={() => tab && setRenaming(item.id)}
                 >
@@ -230,7 +239,7 @@ export function TabStrip(props: {
                       <span className="ws-tab-icon ws-mono" aria-hidden="true">
                         ±
                       </span>
-                      <span>{t("review.tab")}</span>
+                      <span>{labelOf(item)}</span>
                     </>
                   )}
                 </button>

@@ -4,6 +4,7 @@ import { EmptyState } from "@xdev-asia/ui";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, type PtyExit } from "@/api";
 import { fileTabs } from "@/files/fileTabs";
+import { MarkdownPreview } from "@/files/MarkdownPreview";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { translate } from "@/i18n";
 import { resetNavigationSettingsForTests, setNavigationSettings } from "@/settings/navigationSettings";
@@ -14,7 +15,7 @@ import { ContextMenu } from "@/ui/ContextMenu";
 import { AgentIcon } from "./AgentIcon";
 import { CloseTabsDialog } from "./CloseTabsDialog";
 import { Sessions } from "./sessions";
-import { addTab, leaves, paneOf, removeTab, resize, selectTab, splitPane, toggleExpand, type PaneLayout, type PaneNode } from "./paneTree";
+import { addTab, leaves, paneOf, removeTab, resize, selectTab, single, splitPane, toggleExpand, type PaneLayout, type PaneNode } from "./paneTree";
 import { PaneView } from "./PaneView";
 import { TabStrip } from "./TabStrip";
 import { TabTitleDialog } from "./TabTitleDialog";
@@ -1479,6 +1480,94 @@ describe("file tabs", () => {
     await tick();
     expect(write).toHaveBeenCalledWith(A, "a.ts", "changed", "lf", "h1");
     expect(fileTabs.get(A, "a.ts")).toMatchObject({ saved: "changed", hash: "h2" });
+  });
+});
+
+describe("markdown preview tabs", () => {
+  beforeEach(() => fileTabs.reset());
+  afterEach(() => fileTabs.reset());
+
+  // One render and its effects: the layout the render derived is what the store keeps.
+  const settle = (view: ReturnType<typeof harness>) => {
+    vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
+    hooks.effects = [];
+    view.draw();
+    hooks.effects.forEach((effect) => effect());
+    return view;
+  };
+  const tabsOf = (live: Sessions) => (leaves(live.layout(A)!) as Extract<PaneNode, { kind: "leaf" }>[]).map((n) => n.tabs);
+  const open = (live: Sessions, rel: string, text = "# one") => {
+    readyFile(A, rel, text);
+    return settle(harness(createMockApi({}), live));
+  };
+
+  it("the preview key opens preview:<rel> in the same pane and shows the unsaved text", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "docs/a.md");
+    fileTabs.edit(A, "docs/a.md", "# two");
+    expect(handlers(view)["file.markdownPreview"]!()).toBe(true);
+    settle(view);
+    expect(tabsOf(live)).toEqual([["file:docs/a.md", "preview:docs/a.md"]]);
+    expect(view.find((n) => n.type === MarkdownPreview)!.props).toMatchObject({ rel: "docs/a.md", text: "# two" });
+    const items = view.find((n) => n.type === TabStrip)!.props.items as { id: string; preview?: { rel: string } }[];
+    expect(items.map((i) => i.id)).toEqual(["file:docs/a.md", "preview:docs/a.md"]);
+    expect(items[1].preview).toEqual({ rel: "docs/a.md" });
+  });
+
+  it("the key declines for a file that is not Markdown and when no file is in front", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    expect(handlers(settle(harness(createMockApi({}), live)))["file.markdownPreview"]!()).toBe(false);
+    const view = open(live, "a.ts");
+    expect(handlers(view)["file.markdownPreview"]!()).toBe(false);
+    expect(tabsOf(live).flat()).toEqual(["file:a.ts"]);
+  });
+
+  it("Open preview to the side puts the preview in a new pane to the right", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "a.md");
+    const eye = view.find((n) => n.props.label === en("files.preview.side"))!;
+    expect(eye.props.icon).toBe("eye");
+    eye.props.onClick();
+    expect(tabsOf(live)).toEqual([["file:a.md"], ["preview:a.md"]]);
+    expect(live.layout(A)!.root).toMatchObject({ kind: "split", dir: "right" });
+  });
+
+  it("offers no side preview for a file that is not Markdown", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "a.ts");
+    expect(view.find((n) => n.props.label === en("files.preview.side"))).toBeUndefined();
+  });
+
+  it("closing the source closes the preview", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "a.md");
+    handlers(view)["file.markdownPreview"]!();
+    settle(view);
+    view.find((n) => n.type === TabStrip)!.props.onClose("file:a.md");
+    expect(fileTabs.get(A, "a.md")).toBeNull();
+    settle(view);
+    expect(live.layout(A)).toBeNull();
+    expect(view.find((n) => n.type === MarkdownPreview)).toBeUndefined();
+  });
+
+  it("closing the preview keeps the source", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const view = open(live, "a.md");
+    handlers(view)["file.markdownPreview"]!();
+    settle(view);
+    view.find((n) => n.type === TabStrip)!.props.onClose("preview:a.md");
+    settle(view);
+    expect(tabsOf(live)).toEqual([["file:a.md"]]);
+    expect(fileTabs.get(A, "a.md")).not.toBeNull();
+  });
+
+  it("drops a persisted preview id with no open file", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    readyFile(A, "kept.md");
+    live.setLayout(A, addTab(addTab(single("file:kept.md"), "preview:gone.md"), "preview:kept.md"));
+    const view = settle(harness(createMockApi({}), live));
+    settle(view);
+    expect(tabsOf(live).flat()).toEqual(["file:kept.md", "preview:kept.md"]);
   });
 });
 
