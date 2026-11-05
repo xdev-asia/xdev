@@ -16,7 +16,7 @@ import {
 } from "@/api";
 import { useProfiles } from "@/agents/profileStore";
 import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
-import { Banner, Button, Disclosure, Field, Switch, Tag } from "@xdev-asia/ui";
+import { Banner, Button, Disclosure, Field, IconButton, Switch, Tag } from "@xdev-asia/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import { pushToast } from "@/workspace/toastStore";
@@ -240,6 +240,11 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         <span className="agent-dot" data-installed={p.installed} aria-hidden="true" />
         <strong>{p.profile.name}</strong>
         {!p.builtin && <Tag>{t("settings.agents.custom")}</Tag>}
+        {p.builtin && p.customArgs && (
+          <span data-field="customArgs" title={t("settings.agents.perm.customHint")}>
+            <Tag>{t("settings.agents.perm.custom")}</Tag>
+          </span>
+        )}
         <span className="ws-mono settings-path">{p.path ?? t("settings.agents.notFound")}</span>
         {p.permissions === "skip" && <span className="agent-skip">{t("settings.agents.skip")}</span>}
         {p.permissions === "auto" && <span className="settings-path">{t("settings.agents.perm.auto")}</span>}
@@ -247,15 +252,12 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
       </div>
       <div className="settings-actions">
         {p.docs && (
-          <button
-            type="button"
-            className="btn-secondary"
+          <IconButton
+            icon="external"
             data-field="docs"
-            title={p.installed ? t("settings.agents.catalog.docs") : t("settings.agents.catalog.install")}
+            label={p.installed ? t("settings.agents.catalog.docs") : t("settings.agents.catalog.install")}
             onClick={() => void openDocs(p.profile.id)}
-          >
-            {p.installed ? t("settings.agents.catalog.docs") : t("settings.agents.catalog.install")}
-          </button>
+          />
         )}
         <button
           type="button"

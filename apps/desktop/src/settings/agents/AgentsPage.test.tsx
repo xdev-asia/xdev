@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Banner, RadioGroup, Switch, Tag } from "@xdev-asia/ui";
+import { Banner, IconButton, RadioGroup, Switch, Tag } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { AgentsPage } from "./AgentsPage";
 import { ProfileEditor } from "./ProfileEditor";
@@ -467,8 +467,10 @@ it("docs_button_says_docs_for_an_installed_agent_and_install_for_a_missing_one_a
   const p = await page();
   const open = vi.spyOn(p.api, "agentDocsOpen");
   const docs = (id: string) => nodes(p.row(id)).find((n) => n.props["data-field"] === "docs")!;
-  expect(docs("aider").props.title).toBe(en("settings.agents.catalog.docs"));
-  expect(docs("devin").props.title).toBe(en("settings.agents.catalog.install"));
+  expect(docs("aider").type).toBe(IconButton);
+  expect(docs("aider").props.icon).toBe("external");
+  expect(docs("aider").props.label).toBe(en("settings.agents.catalog.docs"));
+  expect(docs("devin").props.label).toBe(en("settings.agents.catalog.install"));
   docs("devin").props.onClick();
   await tick();
   expect(open).toHaveBeenCalledWith("devin");
@@ -480,6 +482,18 @@ it("a_custom_profile_has_the_custom_tag_and_no_docs_button", async () => {
   expect(nodes(row).some((n) => n.type === Tag && n.props.children === en("settings.agents.custom"))).toBe(true);
   expect(nodes(row).some((n) => n.props["data-field"] === "docs")).toBe(false);
   expect(nodes(p.row("claude")).some((n) => n.type === Tag)).toBe(false);
+});
+
+it("a_builtin_with_its_own_permission_args_shows_the_custom_tag_with_its_hint", async () => {
+  const p = await page(async (api) => {
+    const view = await api.profiles();
+    const claude = view.profiles.find((v) => v.profile.id === "claude")!.profile;
+    await api.profilePut({ ...claude, args: ["--permission-mode", "plan"] });
+  });
+  const tag = nodes(p.row("claude")).find((n) => n.type === Tag && n.props.children === en("settings.agents.perm.custom"));
+  expect(tag).toBeDefined();
+  expect(dataField(p, "customArgs")!.props.title).toBe(en("settings.agents.perm.customHint"));
+  expect(nodes(p.row("codex")).some((n) => n.type === Tag)).toBe(false);
 });
 
 it("nothing_installed_shows_the_empty_banner_with_the_blank_terminal_hint", async () => {
