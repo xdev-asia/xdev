@@ -7,10 +7,11 @@ import { AgentIcon } from "@/workspace/AgentIcon";
 import { ago } from "@/workspace/ago";
 import type { Sessions } from "@/workspace/sessions";
 import type { ActivityFeed, FeedEntry } from "./feed";
+import { AgentDashboard } from "./AgentDashboard";
 import { loadActivityOptions, saveActivityOptions, type ActivityOptions } from "./options";
 import { activityThreads, hasAgentThreads, type ThreadGroup, type WorktreeName } from "./threads";
 
-export type ActivityTab = "threads" | "feed";
+export type ActivityTab = "threads" | "feed" | "agents";
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
 export interface ActivityViewProps {
@@ -21,6 +22,8 @@ export interface ActivityViewProps {
   /** Whether any agent thread exists before the search and the options narrow the list. */
   anyThreads: boolean;
   feed: readonly FeedEntry[];
+  /** The agent dashboard, shown on the agents tab. */
+  agents?: JSX.Element;
   names: Readonly<Record<string, WorktreeName>>;
   now: number;
   /** Where the options menu is open (screen point), or null. */
@@ -108,10 +111,11 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
           options={[
             { value: "threads", label: t("activity.tab.threads") },
             { value: "feed", label: t("activity.tab.feed") },
+            { value: "agents", label: t("activity.tab.agents") },
           ]}
           onChange={(v) => props.onTab(v as ActivityTab)}
         />
-        {tab === "threads" ? (
+        {tab === "agents" ? null : tab === "threads" ? (
           <>
             <SearchInput
               size="sm"
@@ -140,7 +144,9 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
           </Button>
         )}
       </div>
-      {list.length === 0 ? (
+      {tab === "agents" ? (
+        props.agents
+      ) : list.length === 0 ? (
         <EmptyState title={t(emptyKey)} />
       ) : (
         <ul className="act-list">{list}</ul>
@@ -186,6 +192,7 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
     .map((tb) => ({ tab: tb, lastOutput: sessions.lastOutput(tb.id) }));
   const groups = activityThreads(sources, props.names, query, options);
   const anyThreads = hasAgentThreads(sources);
+  const now = Date.now();
 
   return (
     <ActivityView
@@ -196,7 +203,8 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
       anyThreads={anyThreads}
       feed={entries}
       names={props.names}
-      now={Date.now()}
+      agents={<AgentDashboard sources={sources} names={props.names} now={now} onJump={props.onJump} />}
+      now={now}
       menuAt={menuAt}
       onTab={setTab}
       onQuery={setQuery}

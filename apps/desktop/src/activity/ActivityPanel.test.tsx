@@ -37,10 +37,10 @@ function view(over: Partial<ActivityViewProps> = {}) {
 }
 const of = (tree: Node[], type: unknown) => tree.filter((n) => n.type === type);
 
-it("Segmented switches between Threads and Feed", () => {
+it("Segmented switches between Threads, Feed and Agents", () => {
   const { calls, tree } = view();
   const seg = of(tree, Segmented)[0]!;
-  expect(seg.props.options.map((o: { label: string }) => o.label)).toEqual([en("activity.tab.threads"), en("activity.tab.feed")]);
+  expect(seg.props.options.map((o: { label: string }) => o.label)).toEqual([en("activity.tab.threads"), en("activity.tab.feed"), en("activity.tab.agents")]);
   expect(seg.props.value).toBe("threads");
   seg.props.onChange("feed");
   expect(calls.tab).toEqual(["feed"]);
@@ -105,4 +105,15 @@ it("the feed lists changes and a row jumps; Clear empties it", () => {
   expect(clear.props.variant).toBe("secondary");
   clear.props.onClick();
   expect(calls.clear).toBe(1);
+});
+
+it("the agents tab shows the agents node in place of the list and hides search and options", () => {
+  const marker = <div id="agents" />;
+  const { tree } = view({ tab: "agents", agents: marker });
+  expect(tree.some((n) => n.props.id === "agents")).toBe(true);
+  expect(of(tree, ListRow)).toHaveLength(0);
+  expect(of(tree, SearchInput)).toHaveLength(0);
+  expect(of(tree, Button)).toHaveLength(0);
+  expect(of(tree, EmptyState)).toHaveLength(0);
+  expect(of(tree, Segmented)[0]!.props.value).toBe("agents");
 });
