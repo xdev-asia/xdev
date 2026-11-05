@@ -22,6 +22,7 @@ png = "0.18"
 # The updater's own HTTP client, for the releases list of the build picker.
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 semver = "1"
+keyring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 time = { version = "0.3", features = ["parsing", "formatting"] }

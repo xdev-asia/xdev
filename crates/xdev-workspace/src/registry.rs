@@ -56,7 +56,7 @@ pub struct RepoEntry {
     /// Environment rows for this repo's terminals. A secret row's value is
     /// in the keychain, not here.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub env: Vec<crate::EnvVar>,
+    pub env: Vec<crate::RepoEnvVar>,
 }
 
 /// A named list of folders a sparse worktree is limited to.

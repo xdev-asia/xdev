@@ -24,8 +24,8 @@ use xdev_git::GitError;
 
 pub use create::{CreateProject, Created, PROJECT_NAME_MAX, ProjectKind, create_project};
 pub use env::{
-    ENV_KEY_MAX, ENV_MAX, ENV_VALUE_MAX, EnvPreviewRow, EnvVar, MASK, RESERVED_PREFIX, SecretStore,
-    clean_env, is_reserved, merge_env, preview_env, valid_key,
+    ENV_KEY_MAX, ENV_MAX, ENV_VALUE_MAX, EnvPreviewRow, MASK, RESERVED_PREFIX, RepoEnvVar,
+    SecretStore, clean_env, is_reserved, merge_env, preview_env, valid_key,
 };
 pub use files::{
     Eol, FileKind, FileText, IMAGE_MAX, MEDIA_MAX, MediaKind, OsTrash, READ_MAX, Trash,

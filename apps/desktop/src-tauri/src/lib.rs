@@ -21,6 +21,7 @@ mod cli_terminal;
 mod cli_verbs;
 mod clipboard;
 mod commands;
+mod config_io;
 mod crash;
 mod diag_bundle;
 mod endpoint;
@@ -53,6 +54,7 @@ mod ptyd;
 mod quick_commands;
 mod recipes;
 mod redact;
+mod repo_env;
 mod reveal;
 mod review;
 mod review_notes;
@@ -683,6 +685,13 @@ pub fn run() {
             diag_bundle::diagnostics_export,
             diag_bundle::diagnostics_reveal_logs,
             diag_bundle::diagnostics_reveal_export,
+            config_io::config_export,
+            config_io::config_import_preview,
+            config_io::config_import_apply,
+            repo_env::repo_env_secrets,
+            repo_env::repo_env_secret_set,
+            repo_env::repo_env_secret_clear,
+            repo_env::repo_env_preview,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")

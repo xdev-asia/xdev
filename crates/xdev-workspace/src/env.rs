@@ -24,7 +24,7 @@ pub const MASK: &str = "••••••••";
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(default)]
-pub struct EnvVar {
+pub struct RepoEnvVar {
     pub key: String,
     /// Empty for a secret row: that value is in the keychain.
     pub value: String,
@@ -64,8 +64,8 @@ fn same_key(a: &str, b: &str) -> bool {
 /// value over `ENV_VALUE_MAX` or holding a NUL (`too_large` / `bad_env`). A
 /// later row replaces an earlier one with the same key. A secret row's value
 /// is dropped.
-pub fn clean_env(rows: &[EnvVar]) -> Result<Vec<EnvVar>, WorkspaceError> {
-    let mut out: Vec<EnvVar> = Vec::new();
+pub fn clean_env(rows: &[RepoEnvVar]) -> Result<Vec<RepoEnvVar>, WorkspaceError> {
+    let mut out: Vec<RepoEnvVar> = Vec::new();
     for row in rows {
         let key = row.key.trim();
         if !valid_key(key) || is_reserved(key) {
@@ -77,7 +77,7 @@ pub fn clean_env(rows: &[EnvVar]) -> Result<Vec<EnvVar>, WorkspaceError> {
         if row.value.len() > ENV_VALUE_MAX {
             return Err(WorkspaceError::TooLarge(format!("env {key}")));
         }
-        let clean = EnvVar {
+        let clean = RepoEnvVar {
             key: key.to_owned(),
             value: if row.secret {
                 String::new()
@@ -107,7 +107,7 @@ pub fn clean_env(rows: &[EnvVar]) -> Result<Vec<EnvVar>, WorkspaceError> {
 /// with an empty value is kept: it sets the variable to empty. A secret row
 /// takes its value from `secret` and is skipped when none is stored.
 pub fn merge_env(
-    project: &[EnvVar],
+    project: &[RepoEnvVar],
     secret: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
@@ -151,12 +151,12 @@ pub struct EnvPreviewRow {
 /// The effective project env with secrets masked. `is_set(key)` says the
 /// inherited env already has that name.
 pub fn preview_env(
-    project: &[EnvVar],
+    project: &[RepoEnvVar],
     has_secret: &dyn Fn(&str) -> bool,
     is_set: &dyn Fn(&str) -> bool,
 ) -> Vec<EnvPreviewRow> {
     let merged = merge_env(project, &|k| has_secret(k).then(|| "x".to_owned()));
-    let plain: BTreeMap<&str, &EnvVar> = project.iter().map(|r| (r.key.trim(), r)).collect();
+    let plain: BTreeMap<&str, &RepoEnvVar> = project.iter().map(|r| (r.key.trim(), r)).collect();
     merged
         .into_iter()
         .map(|(key, value)| {
@@ -182,8 +182,8 @@ pub trait SecretStore {
 mod tests {
     use super::*;
 
-    fn row(key: &str, value: &str, secret: bool) -> EnvVar {
-        EnvVar {
+    fn row(key: &str, value: &str, secret: bool) -> RepoEnvVar {
+        RepoEnvVar {
             key: key.into(),
             value: value.into(),
             secret,
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn clean_refuses_bad_and_reserved_keys() {
-        let code = |r: &[EnvVar]| clean_env(r).unwrap_err().code();
+        let code = |r: &[RepoEnvVar]| clean_env(r).unwrap_err().code();
         assert_eq!(code(&[row("1A", "x", false)]), "bad_env");
         assert_eq!(code(&[row("XDEV_ROOT_PATH", "x", false)]), "bad_env");
         assert_eq!(code(&[row("A", "a\0b", false)]), "bad_env");
@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn clean_caps_rows_and_value_size() {
-        let many: Vec<EnvVar> = (0..=ENV_MAX)
+        let many: Vec<RepoEnvVar> = (0..=ENV_MAX)
             .map(|i| row(&format!("K{i}"), "", false))
             .collect();
         assert_eq!(clean_env(&many).unwrap_err().code(), "too_large");

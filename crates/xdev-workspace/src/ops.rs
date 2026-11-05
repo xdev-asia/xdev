@@ -51,8 +51,8 @@ pub struct RepoView {
     pub sparse_presets: Vec<SparsePreset>,
     /// Environment rows; a secret row has no value here.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<crate::EnvVar>>"))]
-    pub env: Vec<crate::EnvVar>,
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<crate::RepoEnvVar>>"))]
+    pub env: Vec<crate::RepoEnvVar>,
     /// The folder is gone or no longer a repo; the entry stays so a
     /// reconnected drive finds it again.
     pub missing: bool,
@@ -235,7 +235,7 @@ pub struct RepoPatch {
     pub sparse_presets: Option<Vec<SparsePreset>>,
     /// The whole list; `Some(vec![])` clears it. Secret values are not part of it.
     #[serde(default)]
-    pub env: Option<Vec<crate::EnvVar>>,
+    pub env: Option<Vec<crate::RepoEnvVar>>,
 }
 
 /// 1 to 40 characters: `[a-z0-9]` first, then `[a-z0-9._-]`. No `:` or `/`,
