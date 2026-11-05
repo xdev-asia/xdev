@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { PrSummary, ReviewBranch, WorktreeView } from "@/api";
-import { baseRefOptions, localBranches, prWorkItem, prWorktreeName, sparseDirs } from "./createSource";
+import type { MrSummary, PrSummary, ReviewBranch, WorktreeView } from "@/api";
+import { baseRefOptions, localBranches, mrWorkItem, mrWorktreeName, prWorkItem, prWorktreeName, shownTab, sourceTabs, sparseDirs } from "./createSource";
 
 const pr = (patch: Partial<PrSummary> = {}): PrSummary => ({
   number: 12,
@@ -95,5 +95,39 @@ describe("baseRefOptions", () => {
     expect(baseRefOptions([b("main")], "main", " v1.2 ").typed).toBe("v1.2");
     expect(baseRefOptions([b("main")], "main", "main").typed).toBeNull();
     expect(baseRefOptions([b("main")], "main", "  ").typed).toBeNull();
+  });
+});
+
+const mr = (patch: Partial<MrSummary> = {}): MrSummary => ({
+  iid: 12,
+  url: "https://gitlab.com/acme/app/-/merge_requests/12",
+  state: "open",
+  draft: false,
+  title: "Fix the footer meter",
+  source: "fix-footer",
+  target: "main",
+  author: "tanuki",
+  updatedAt: "2026-11-03T10:00:00Z",
+  fork: false,
+  ...patch,
+});
+
+describe("sourceTabs", () => {
+  it("offers the merge request source only with the api and a GitLab remote", () => {
+    expect(sourceTabs({ api: true, gitlab: true, branches: true })).toEqual(["name", "github", "gitlab", "branch"]);
+    expect(sourceTabs({ api: true, gitlab: false, branches: true })).toEqual(["name", "github", "branch"]);
+    expect(sourceTabs({ api: false, gitlab: true, branches: false })).toEqual(["name"]);
+  });
+
+  it("falls back to the first tab when the wanted one is gone", () => {
+    expect(shownTab("gitlab", ["name", "github", "gitlab"])).toBe("gitlab");
+    expect(shownTab("gitlab", ["name", "github"])).toBe("name");
+  });
+});
+
+describe("merge request worktrees", () => {
+  it("names the folder mr-<iid>-<title> and links the request", () => {
+    expect(mrWorktreeName(mr())).toBe("mr-12-fix-the-footer-meter");
+    expect(mrWorkItem(mr())).toEqual({ kind: "pr", url: "https://gitlab.com/acme/app/-/merge_requests/12", title: "Fix the footer meter" });
   });
 });

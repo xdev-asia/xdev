@@ -1,8 +1,8 @@
-import type { Api, ApiError, Issue, IssueDetail, IssueEvent, IssueLabel, PrSummary, ProjectSummary } from "./api";
+import type { Api, ApiError, Issue, IssueDetail, IssueEvent, IssueLabel, MrSummary, PrSummary, ProjectSummary } from "./api";
 
 type IssuesApi = Pick<
   Api,
-  "issuesList" | "issueView" | "issueResolve" | "issueOpen" | "issueCreate" | "issueEdit" | "issueComment" | "issueLabels" | "issueAssignable" | "issueTimeline" | "prsList" | "prGet" | "prOpen" | "prBranch" | "prBranchDiscard" | "projectsList" | "projectOpen"
+  "issuesList" | "issueView" | "issueResolve" | "issueOpen" | "issueCreate" | "issueEdit" | "issueComment" | "issueLabels" | "issueAssignable" | "issueTimeline" | "prsList" | "prGet" | "prOpen" | "prBranch" | "prBranchDiscard" | "gitlabDetect" | "gitlabMrList" | "gitlabMrView" | "gitlabMrBranch" | "projectsList" | "projectOpen"
 >;
 
 /** The repo the mock's issue URLs belong to. */
@@ -69,6 +69,22 @@ const PRS: PrSummary[] = [
   pr(13, "Typo in the readme", "open", "patch-1", "stranger", 50, true),
 ];
 const NEEDS_REVIEW = new Set([11]);
+
+function mr(iid: number, title: string, state: MrSummary["state"], source: string, author: string, hoursAgo: number, draft = false, fork = false): MrSummary {
+  return {
+    iid, title, state, draft, fork, source, author,
+    url: `https://gitlab.com/${MOCK_ISSUE_REPO}/-/merge_requests/${iid}`,
+    target: "main",
+    updatedAt: new Date(NOW - hoursAgo * 3_600_000).toISOString(),
+  };
+}
+
+const MRS: MrSummary[] = [
+  mr(20, "Fix the footer meter", "open", "fix-footer", "me", 3),
+  mr(21, "Add a dark theme", "open", "dark-theme", "octocat", 20, true),
+  mr(22, "Bump the build tools", "merged", "bump-tools", "hubot", 300),
+  mr(23, "Typo in the readme", "open", "patch-1", "stranger", 50, false, true),
+];
 
 const PROJECTS: ProjectSummary[] = [
   { number: 1, title: "Roadmap", url: "https://github.com/example/projects/1", closed: false, items: 12 },
@@ -166,6 +182,23 @@ export function createMockIssues(): IssuesApi {
       return { branch: found.fork ? `pr-${number}` : found.head, fetched: found.fork };
     },
     async prBranchDiscard() {},
+    // The mock's repos are GitHub ones.
+    async gitlabDetect() {
+      return false;
+    },
+    async gitlabMrList(_repoId, state) {
+      const want = state ?? "open";
+      return structuredClone(MRS.filter((m) => want === "all" || m.state === want));
+    },
+    async gitlabMrView(_repoId, iid) {
+      const found = MRS.find((m) => m.iid === iid);
+      return found ? structuredClone(found) : reject("mr_not_found");
+    },
+    async gitlabMrBranch(_repoId, iid) {
+      const found = MRS.find((m) => m.iid === iid);
+      if (!found) return reject("mr_not_found");
+      return { branch: found.fork ? `mr-${iid}` : found.source, fetched: found.fork };
+    },
     async projectsList() {
       return structuredClone(PROJECTS);
     },

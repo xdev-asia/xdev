@@ -154,6 +154,8 @@ import type {
   IssueEventKind,
   IssuesPreset,
   PrSummary,
+  MrSummary,
+  MrState,
   PrBranch,
   PrFilter,
   PrQuery,
@@ -425,6 +427,8 @@ export type {
   IssueEventKind,
   IssuesPreset,
   PrSummary,
+  MrSummary,
+  MrState,
   PrBranch,
   PrFilter,
   PrQuery,
@@ -636,6 +640,11 @@ export type ErrorCode =
   | "issue_not_found"
   | "issue_other_repo"
   | "pr_not_found"
+  | "glab_missing"
+  | "glab_auth"
+  | "not_gitlab"
+  | "glab_failed"
+  | "mr_not_found"
   | "gh_scope"
   | "bad_draft"
   | "comment_too_large"
@@ -1155,6 +1164,15 @@ export interface Api {
   // Deletes a branch `prBranch` fetched when the worktree on it was never made; a branch it did not
   // fetch, or one a worktree has, is left alone.
   prBranchDiscard(repoId: string, branch: string): Promise<void>;
+  // Whether the repo's remote is a GitLab one, so merge requests apply instead of pull requests.
+  gitlabDetect(repoId: string): Promise<boolean>;
+  // Merge requests of a GitLab repo through `glab`; `state` null reads as open. `gitlabMrView`
+  // rejects `mr_not_found`; `glab_missing`, `glab_auth` and `not_gitlab` say what is not set up.
+  gitlabMrList(repoId: string, state: PrFilter | null): Promise<MrSummary[]>;
+  gitlabMrView(repoId: string, iid: number): Promise<MrSummary>;
+  // The local branch to start a merge request on, fetched when needed (a fork gives `mr-<iid>`);
+  // `prBranchDiscard` takes back one it fetched.
+  gitlabMrBranch(repoId: string, iid: number): Promise<PrBranch>;
   projectsList(repoId: string): Promise<ProjectSummary[]>;
   projectOpen(repoId: string, number: number): Promise<void>;
   // The log of the failed job behind a check's link (capped), for the Fix checks recipe; null when
@@ -1574,6 +1592,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "issue_not_found",
   "issue_other_repo",
   "pr_not_found",
+  "glab_missing",
+  "glab_auth",
+  "not_gitlab",
+  "glab_failed",
+  "mr_not_found",
   "gh_scope",
   "bad_draft",
   "comment_too_large",
@@ -1895,6 +1918,10 @@ const tauriApi: Api = {
   prOpen: (repoId, number) => call("pr_open", { repoId, number }),
   prBranch: (repoId, number) => call("pr_branch", { repoId, number }),
   prBranchDiscard: (repoId, branch) => call("pr_branch_discard", { repoId, branch }),
+  gitlabDetect: (repoId) => call("gitlab_detect", { repoId }),
+  gitlabMrList: (repoId, state) => call("gitlab_mr_list", { repoId, filter: state }),
+  gitlabMrView: (repoId, iid) => call("gitlab_mr_view", { repoId, iid }),
+  gitlabMrBranch: (repoId, iid) => call("gitlab_mr_branch", { repoId, iid }),
   projectsList: (repoId) => call("projects_list", { repoId }),
   projectOpen: (repoId, number) => call("project_open", { repoId, number }),
   worktreeCheckLog: (path, link) => call("worktree_check_log", { path, link }),

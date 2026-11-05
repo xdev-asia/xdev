@@ -6,6 +6,7 @@ import { translate } from "@/i18n";
 import { IssuesPanel, SEARCH_DEBOUNCE_MS } from "./IssuesPanel";
 import { IssueDetailView } from "./IssueDetailView";
 import { NewIssueForm } from "./NewIssueForm";
+import { MrsList } from "./MrsList";
 import { chipQuery, PrsList } from "./PrsList";
 import { ProjectsList } from "./ProjectsList";
 
@@ -175,4 +176,52 @@ it("after create the detail view shows the new issue number", async () => {
   form.props.onCreated(created);
   const detail = view.nodes().find((n) => n.type === IssueDetailView)!;
   expect(detail.props.number).toBe(created.number);
+});
+
+it("a GitLab repo shows the merge request list in place of the pull requests", async () => {
+  const api = { ...createMockApi({}), gitlabDetect: () => Promise.resolve(true) } as Api;
+  const view = mount(() => PrsList({ api, repoId: "r1", searchDebounceMs: SEARCH_DEBOUNCE_MS }));
+  view.commit();
+  await flush();
+  view.commit();
+  await flush();
+  expect(view.nodes().some((n) => n.type === MrsList)).toBe(true);
+});
+
+it("lists merge requests as !iid rows with a draft tag", async () => {
+  const view = mount(() => MrsList({ api: createMockApi({}), repoId: "r1" }));
+  view.commit();
+  await flush();
+  const html = view.html();
+  expect(html).toContain("!20");
+  expect(html).toContain(en("gitlab.mr.draft"));
+});
+
+it("a merge request click opens its web page, or hands it to onOpen", async () => {
+  const api = createMockApi({});
+  const open = vi.spyOn(api, "openUrl").mockResolvedValue(undefined as never);
+  const view = mount(() => MrsList({ api, repoId: "r1" }));
+  view.commit();
+  await flush();
+  view.nodes().find((n) => n.props.className === "ws-issue-open")!.props.onClick();
+  expect(open).toHaveBeenCalledWith(expect.stringContaining("merge_requests"));
+  const picked: number[] = [];
+  const picker = mount(() => MrsList({ api, repoId: "r1", onOpen: (mr) => picked.push(mr.iid) }));
+  picker.commit();
+  await flush();
+  picker.nodes().find((n) => n.props.className === "ws-issue-open")!.props.onClick();
+  expect(picked).toHaveLength(1);
+});
+
+it("shows the install hint when glab is missing, and an empty state", async () => {
+  const missing = { ...createMockApi({}), gitlabMrList: () => Promise.reject({ code: "glab_missing" }) } as unknown as Api;
+  const view = mount(() => MrsList({ api: missing, repoId: "r1" }));
+  view.commit();
+  await flush();
+  expect(view.html()).toContain(en("gitlab.reason.glab_missing"));
+  const none = { ...createMockApi({}), gitlabMrList: () => Promise.resolve([]) } as Api;
+  const empty = mount(() => MrsList({ api: none, repoId: "r1" }));
+  empty.commit();
+  await flush();
+  expect(empty.html()).toContain(en("gitlab.mr.empty"));
 });

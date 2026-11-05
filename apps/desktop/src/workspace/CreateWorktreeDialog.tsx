@@ -1,11 +1,12 @@
 import { Button, Disclosure, RadioGroup, Segmented, Switch } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type CreateRequest, type Issue, type NamePreview, type PrSummary, type ReviewBranch, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
+import { toApiError, type Api, type ApiError, type CreateRequest, type Issue, type MrSummary, type NamePreview, type PrSummary, type ReviewBranch, type RepoView, type WorkItem, type WorkItemKind } from "@/api";
 import { isIssueRef } from "@/issues/issueStart";
 import { useI18n } from "@/i18n";
 import { expandShortcodes, hasEmoji, slugFromTitle } from "./emoji";
-import { localBranches, sparseDirs } from "./createSource";
+import { MrsList, useGitlab } from "@/issues/MrsList";
+import { localBranches, shownTab, sourceTabs, sparseDirs, type SourceTab } from "./createSource";
 import { LinkedWorkSearch } from "./LinkedWorkSearch";
 import { schedulePreview } from "./namePreview";
 import { BaseRefField } from "./BaseRefField";
@@ -19,7 +20,7 @@ export const ISSUE_RESOLVE_DEBOUNCE_MS = 300;
 
 type Found = { repoId: string; text: string; issue: Issue | null; error?: ApiError["code"] };
 
-export type CreateTab = "name" | "github" | "branch";
+export type CreateTab = SourceTab;
 
 export type AgentChoice = { id: string; name: string };
 
@@ -89,6 +90,8 @@ export function CreateWorktreeDialog(props: {
   api?: Api;
   /** A pull request picked on the GitHub tab: the shell starts the worktree from it. */
   onStartPr?(repoId: string, pr: PrSummary): void;
+  /** A merge request picked on the Merge request tab, offered for GitLab repos only: the shell starts the worktree from it. */
+  onStartMr?(repoId: string, mr: MrSummary): void;
   /** The tab to open on, and told when it changes, so the next opening comes back to it. */
   initialTab?: CreateTab;
   onTabChange?(tab: CreateTab): void;
@@ -113,7 +116,7 @@ export function CreateWorktreeDialog(props: {
   const [note, setNote] = useState("");
   const [sparseText, setSparseText] = useState("");
   const [more, setMore] = useState(false);
-  const [tab, setTab] = useState<CreateTab>(props.initialTab ?? "name");
+  const [wantedTab, setTab] = useState<CreateTab>(props.initialTab ?? "name");
   const [branchMode, setBranchMode] = useState<"new" | "existing">("new");
   const [branchList, setBranchList] = useState<{ repoId: string; list: ReviewBranch[] } | null>(null);
   const [existing, setExisting] = useState("");
@@ -129,6 +132,10 @@ export function CreateWorktreeDialog(props: {
   // A repo whose folder is gone cannot take a new worktree.
   const choices = props.repos.filter((r) => !r.missing);
   const repo = choices.find((r) => r.id === repoId) ?? choices[0];
+  const gitlab = useGitlab(props.api, repo?.id ?? "");
+  const offered = sourceTabs({ api: !!(props.api && props.onStartIssue && props.onStartPr), gitlab: gitlab === true && !!props.onStartMr, branches: !!props.branches });
+  const tab = shownTab(wantedTab, offered);
+  const picking = tab === "github" || tab === "gitlab";
   // The name as Create would send it, so the preview matches what is made.
   const sent = hasEmoji(name.trim()) ? slugFromTitle(name.trim()) : name.trim();
   const { namePreview } = props;
@@ -143,7 +150,7 @@ export function CreateWorktreeDialog(props: {
   const { branches } = props;
   // The Branch tab always picks an existing branch; on the Name tab the choice is the radio.
   const mode = tab === "branch" ? "existing" : branchMode;
-  const listing = tab !== "github" && mode === "existing";
+  const listing = !picking && mode === "existing";
   // The base picker lists the branches too, so they load for it as well, once per repo.
   const baseShown = mode !== "existing";
   useEffect(() => {
@@ -196,7 +203,7 @@ export function CreateWorktreeDialog(props: {
       if (repo && issue) props.onStartIssue?.(repo.id, issue);
       return;
     }
-    if (tab === "github" || badItem || badSparse || needsBranch) return;
+    if (picking || badItem || badSparse || needsBranch) return;
     const built = repo && buildCreate({ text: name.trim() === "" && pickedBranch !== "" ? pickedBranch.replace(/[\/]+/g, "-") : name, agent, defaultAgent, setDefault, parent: parentPath, itemUrl, itemKind, note });
     if (!repo || !built) return;
     const dirs = Array.isArray(sparse) ? sparse : [];
@@ -252,11 +259,7 @@ export function CreateWorktreeDialog(props: {
               setTab(v as CreateTab);
               props.onTabChange?.(v as CreateTab);
             }}
-            options={[
-              { value: "name", label: t("workspace.create.tab.name") },
-              ...(props.api && props.onStartIssue && props.onStartPr ? [{ value: "github", label: t("workspace.create.tab.github") }] : []),
-              ...(branches ? [{ value: "branch", label: t("workspace.create.tab.branch") }] : []),
-            ]}
+            options={offered.map((value) => ({ value, label: t(`workspace.create.tab.${value}`) }))}
           />
           {tab === "github" && props.api && repo && (
             <div className="ws-field">
@@ -271,7 +274,13 @@ export function CreateWorktreeDialog(props: {
               <small>{t("workspace.create.searchHint")}</small>
             </div>
           )}
-          {tab !== "github" && branches && (
+          {tab === "gitlab" && props.api && repo && (
+            <div className="ws-field">
+              <MrsList api={props.api} repoId={repo.id} onOpen={(mr) => props.onStartMr?.(repo.id, mr)} />
+              <small>{t("workspace.create.mrHint")}</small>
+            </div>
+          )}
+          {!picking && branches && (
             <div className="ws-field">
               {tab === "name" && (
                 <RadioGroup
@@ -405,7 +414,7 @@ export function CreateWorktreeDialog(props: {
           <button type="button" className="btn-secondary" onClick={props.onCancel}>
             {t("dialog.cancel")}
           </button>
-          <Button type="submit" disabled={!repo || tab === "github" || badItem || badSparse || needsBranch || (ref && !issue)}>
+          <Button type="submit" disabled={!repo || picking || badItem || badSparse || needsBranch || (ref && !issue)}>
             {t("workspace.create.confirm")}
           </Button>
         </div>

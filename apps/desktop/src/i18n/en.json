@@ -3733,5 +3733,21 @@
   "settings.general.updates.build.confirmBody": "This build is older than the version you are running. Going back may not work with data that newer versions saved.",
   "settings.general.updates.build.confirm": "Install older build",
   "settings.general.updates.build.cancel": "Cancel",
-  "settings.general.updates.checkDelayHint": "Check for updates follows the update delay, so a release newer than that is not offered yet."
+  "settings.general.updates.checkDelayHint": "Check for updates follows the update delay, so a release newer than that is not offered yet.",
+  "gitlab.mr.filter": "Merge request filter",
+  "gitlab.mr.search": "Search merge requests",
+  "gitlab.mr.loading": "Loading merge requests…",
+  "gitlab.mr.empty": "No merge requests match.",
+  "gitlab.mr.detecting": "Checking the remote…",
+  "gitlab.mr.draft": "Draft",
+  "gitlab.reason.glab_missing": "The glab tool is not installed, so merge requests cannot be read. Install GitLab CLI, run glab auth login, then refresh.",
+  "gitlab.reason.glab_auth": "glab is not signed in. Run glab auth login, then refresh.",
+  "gitlab.reason.not_gitlab": "This repo has no GitLab remote.",
+  "error.glab_missing": "The glab tool is not installed. Install GitLab CLI, then run glab auth login.",
+  "error.glab_auth": "glab is not signed in. Run glab auth login.",
+  "error.not_gitlab": "This repo has no GitLab remote.",
+  "error.glab_failed": "glab failed. The details are shown with the error.",
+  "error.mr_not_found": "That merge request wasn't found in this repo.",
+  "workspace.create.tab.gitlab": "Merge request",
+  "workspace.create.mrHint": "Pick a merge request to start a worktree from it."
 }

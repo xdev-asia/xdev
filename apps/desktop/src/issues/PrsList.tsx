@@ -6,6 +6,7 @@ import { useI18n } from "@/i18n";
 import { ago } from "@/workspace/ago";
 import { ghReasonText } from "./ghReason";
 import { prQuery } from "./issueStart";
+import { MrsList, useGitlab } from "./MrsList";
 
 export type PrChip = "open" | "mine" | "review";
 
@@ -14,7 +15,12 @@ export function chipQuery(chip: PrChip, search: string | null): PrQuery {
   return prQuery({ state: "open", mine: chip === "mine", needsReview: chip === "review", search });
 }
 
-/** The pull requests of a repo: three filter chips, a search box and one row per pull request. */
+/**
+ * The pull requests of a repo: three filter chips, a search box and one row per pull request. When
+ * the remote turns out to be GitLab the merge requests are listed instead. The pull request list
+ * starts at once, so a GitHub repo does not wait on the remote check; its error is held back until
+ * the check is done, so a GitLab repo never shows a `gh` error.
+ */
 export function PrsList(props: { api: Api; repoId: string; searchDebounceMs: number; initialChip?: PrChip; onOpen?: (pr: PrSummary) => void }): JSX.Element {
   const { api, repoId, onOpen } = props;
   const { t } = useI18n();
@@ -24,6 +30,7 @@ export function PrsList(props: { api: Api; repoId: string; searchDebounceMs: num
   const [prs, setPrs] = useState<PrSummary[] | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [tick, setTick] = useState(0);
+  const gitlab = useGitlab(api, repoId);
 
   useEffect(() => {
     if (draft === search) return;
@@ -49,6 +56,7 @@ export function PrsList(props: { api: Api; repoId: string; searchDebounceMs: num
     api.prOpen(repoId, pr.number).catch((e: unknown) => setError(toApiError(e)));
   };
   const now = Date.now();
+  if (gitlab === true) return <MrsList api={api} repoId={repoId} />;
   return (
     <div className="ws-issues">
       <div className="ws-issues-bar" role="group" aria-label={t("issues.prs.filter")}>
@@ -69,12 +77,12 @@ export function PrsList(props: { api: Api; repoId: string; searchDebounceMs: num
         aria-label={t("issues.prs.search")}
         onChange={(e) => setDraft(e.target.value)}
       />
-      {error && (
+      {error && gitlab === false && (
         <p className="error-text" role="alert">
           {ghReasonText(error, t)}
         </p>
       )}
-      {!error && prs === null && <p className="ws-empty">{t("issues.prs.loading")}</p>}
+      {(!error || gitlab === null) && prs === null && <p className="ws-empty">{t("issues.prs.loading")}</p>}
       {prs && prs.length === 0 && <p className="ws-empty">{t("issues.prs.empty")}</p>}
       {prs && prs.length > 0 && (
         <ul className="ws-issues-list">

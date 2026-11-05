@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type IssuesPreset, type CreateRequest, type PrSummary, type MenuAction, type SetupDecision } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type IssuesPreset, type CreateRequest, type PrSummary, type MrSummary, type MenuAction, type SetupDecision } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -81,7 +81,7 @@ import type { CommentGroup } from "./prComments";
 import type { SendOutcome } from "./PrSendBar";
 import { sendToAgentTab, sendToOpenedTab, type SendChoice } from "./agentPrompt";
 import { issuePrompt, issueWorkItem, issueWorktreeName, uniqueWorktreeName } from "@/issues/issueStart";
-import { prWorkItem, prWorktreeName } from "./createSource";
+import { mrWorkItem, mrWorktreeName, prWorkItem, prWorktreeName } from "./createSource";
 import { effectiveIssueCommand, issueTemplateVars, renderIssueCommand } from "@/issues/issueTemplate";
 import { sendTarget } from "./sendTarget";
 import { SetupCard, type SetupCardState } from "./SetupCard";
@@ -1355,6 +1355,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
+  // A merge request starts a worktree the way a pull request does, on the branch `gitlab_mr_branch` puts in place.
+  async function startFromMr(repoId: string, mr: MrSummary): Promise<void> {
+    try {
+      const { branch, fetched } = await api.gitlabMrBranch(repoId, mr.iid);
+      const repo = repos?.find((r) => r.id === repoId);
+      const taken = new Set((repo?.worktrees ?? []).flatMap((w) => [w.name, w.branch ?? ""]));
+      const name = uniqueWorktreeName(mrWorktreeName(mr), taken);
+      const view = await api.profiles().catch(() => null);
+      create(repoId, name, null, { title: mr.title, agent: view?.defaultAgent ?? null, setDefault: false, parent: null, item: mrWorkItem(mr) }, { existing: branch, sparse: [] }, false, fetched ? branch : undefined);
+    } catch (e) {
+      setNotice(toApiError(e).code);
+    }
+  }
+
   async function created(wt: WorktreeView, args: CreateArgs): Promise<void> {
     const extra = args.extra;
     if (extra) await applyCreateExtra(wt.path, extra);
@@ -2322,6 +2336,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           onStartPr={(repoId, pr) => {
             setCreating(null);
             void startFromPr(repoId, pr);
+          }}
+          onStartMr={(repoId, mr) => {
+            setCreating(null);
+            void startFromMr(repoId, mr);
           }}
           onCreate={(repoId, name, from, extra, request, more) => create(repoId, name, from, extra, request, more)}
           resolveIssue={(repoId, text) => api.issueResolve(repoId, text)}

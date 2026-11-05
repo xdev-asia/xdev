@@ -3733,5 +3733,21 @@
   "settings.general.updates.build.confirmBody": "Bản này cũ hơn phiên bản bạn đang chạy. Quay về có thể không hoạt động với dữ liệu mà các bản mới hơn đã lưu.",
   "settings.general.updates.build.confirm": "Cài bản cũ hơn",
   "settings.general.updates.build.cancel": "Hủy",
-  "settings.general.updates.checkDelayHint": "Kiểm tra cập nhật cũng theo độ trễ, nên bản phát hành mới hơn mức đó chưa được đề xuất."
+  "settings.general.updates.checkDelayHint": "Kiểm tra cập nhật cũng theo độ trễ, nên bản phát hành mới hơn mức đó chưa được đề xuất.",
+  "gitlab.mr.filter": "Bộ lọc merge request",
+  "gitlab.mr.search": "Tìm merge request",
+  "gitlab.mr.loading": "Đang tải merge request…",
+  "gitlab.mr.empty": "Không có merge request nào khớp.",
+  "gitlab.mr.detecting": "Đang kiểm tra remote…",
+  "gitlab.mr.draft": "Bản nháp",
+  "gitlab.reason.glab_missing": "Chưa cài công cụ glab nên không đọc được merge request. Cài GitLab CLI, chạy glab auth login rồi làm mới.",
+  "gitlab.reason.glab_auth": "glab chưa đăng nhập. Chạy glab auth login rồi làm mới.",
+  "gitlab.reason.not_gitlab": "Repo này không có remote GitLab.",
+  "error.glab_missing": "Chưa cài công cụ glab. Cài GitLab CLI rồi chạy glab auth login.",
+  "error.glab_auth": "glab chưa đăng nhập. Chạy glab auth login.",
+  "error.not_gitlab": "Repo này không có remote GitLab.",
+  "error.glab_failed": "glab báo lỗi. Chi tiết hiển thị cùng lỗi.",
+  "error.mr_not_found": "Không tìm thấy merge request đó trong repo này.",
+  "workspace.create.tab.gitlab": "Merge request",
+  "workspace.create.mrHint": "Chọn một merge request để tạo worktree từ đó."
 }

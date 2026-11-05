@@ -1,4 +1,4 @@
-import type { PrSummary, ReviewBranch, WorkItem, WorktreeView } from "@/api";
+import type { MrSummary, PrSummary, ReviewBranch, WorkItem, WorktreeView } from "@/api";
 import { numberedName } from "@/issues/issueStart";
 
 /** The most cone folders a worktree may be limited to, as in `names::SPARSE_MAX`. */
@@ -37,6 +37,37 @@ export function prWorkItem(pr: PrSummary): WorkItem {
 /** `pr-12-fix-footer-meter`: the folder a pull request's worktree gets; `pr-12` when the title leaves nothing. */
 export function prWorktreeName(pr: PrSummary): string {
   return numberedName(pr.number, pr.title, "pr").replace(/^(\d+)/, "pr-$1");
+}
+
+/** A merge request is linked as a pull request is: a work item with its web URL. */
+export function mrWorkItem(mr: MrSummary): WorkItem {
+  return { kind: "pr", url: mr.url, title: mr.title };
+}
+
+/** `mr-12-fix-footer-meter`: the folder a merge request's worktree gets; `mr-12` when the title leaves nothing. */
+export function mrWorktreeName(mr: MrSummary): string {
+  return numberedName(mr.iid, mr.title, "mr").replace(/^(\d+)/, "mr-$1");
+}
+
+export type SourceTab = "name" | "github" | "gitlab" | "branch";
+
+/**
+ * The sources the create dialog offers, in order. The GitHub one needs the api; the merge request one
+ * needs it too and a GitLab remote (`gitlab` stays false until the repo is known to have one); the
+ * Branch one needs a way to list branches.
+ */
+export function sourceTabs(have: { api: boolean; gitlab: boolean; branches: boolean }): SourceTab[] {
+  return [
+    "name",
+    ...(have.api ? (["github"] as const) : []),
+    ...(have.api && have.gitlab ? (["gitlab"] as const) : []),
+    ...(have.branches ? (["branch"] as const) : []),
+  ];
+}
+
+/** The tab to show: `wanted` when it is offered, else the first one (a repo change can take the merge request tab away). */
+export function shownTab(wanted: SourceTab, offered: SourceTab[]): SourceTab {
+  return offered.includes(wanted) ? wanted : "name";
 }
 
 export interface BaseRefOption {
