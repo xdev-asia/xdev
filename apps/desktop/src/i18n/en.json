@@ -3581,5 +3581,14 @@
   "onboarding.guide.item.theme": "Choose a theme",
   "onboarding.guide.item.language": "Choose a language",
   "onboarding.guide.item.notifications": "Allow notifications",
-  "onboarding.guide.item.project": "Add your first project"
+  "onboarding.guide.item.project": "Add your first project",
+  "kanban.open": "Open board",
+  "kanban.title": "Board",
+  "kanban.close": "Close board",
+  "kanban.empty": "No worktrees. Drag one here.",
+  "kanban.none": "No worktrees yet",
+  "kanban.moveMenu": "Move to",
+  "kanban.moveLabel": "Move {name} to another status",
+  "kanban.moveError": "Could not move the worktree",
+  "kanban.columnLabel": "{status}, {count} worktrees"
 }

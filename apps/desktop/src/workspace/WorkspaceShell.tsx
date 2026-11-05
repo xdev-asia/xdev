@@ -125,6 +125,7 @@ import { bulkSleepable, clear as clearPicked, click as pickClick, runBulk, selec
 import { BulkBar } from "./BulkBar";
 import { BulkRemoveDialog } from "./BulkRemoveDialog";
 import { ReviewBranchesDialog } from "./ReviewBranchesDialog";
+import { KanbanBoard } from "./KanbanBoard";
 import { isDeleteKey, typingIn } from "./deleteKey";
 import type { CommitAsk } from "./CommitView";
 import { IS_MAC, PLATFORM } from "@/platform";
@@ -247,6 +248,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [quitting, setQuitting] = useState<{ ask: QuitAsk; answer(choice: QuitChoice): void } | null>(null);
   // The About dialog (its version, once known) and the "quit and end terminals" confirmation.
   const [about, setAbout] = useState<string | null>(null);
+  const [boardOpen, setBoardOpen] = useState(false);
   const [confirmEndAll, setConfirmEndAll] = useState(false);
   const [gate] = useState(() => new SetupGate());
   // Worktrees whose setup flow already ran (made here, or run for a worker); it runs once each.
@@ -1924,6 +1926,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               onForgetFolder={(f) => void sidebarCall(() => api.folderForget(f.id))}
               onRestore={(repoId, branch) => void sidebarCall(() => api.worktreeRestore(repoId, branch))}
               onArchive={(wt) => void archive(wt)}
+              onOpenBoard={() => setBoardOpen(true)}
               onEditDetails={(wt) => setEditing({ worktree: wt, busy: false })}
               onSetParent={(wt) => setParentFor({ worktree: wt, candidates: parentCandidates(wt, repos?.find((r) => r.worktrees.some((w) => w.path === wt.path))?.worktrees ?? []) })}
               onRemoveParent={(wt) => void setDetails(wt, { parent: null }, t("lineage.error"))}
@@ -2474,6 +2477,25 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           error={editing.error}
           onSave={(patch) => void saveDetails(patch)}
           onCancel={() => setEditing(null)}
+        />
+      )}
+      {boardOpen && (
+        <KanbanBoard
+          worktrees={repos?.find((r) => r.worktrees.some((w) => w.path === current?.path))?.worktrees ?? all}
+          selected={current?.path ?? null}
+          dots={dots}
+          profiles={profiles}
+          onSelect={(wt) => {
+            setBoardOpen(false);
+            select(wt);
+            show("workspace");
+          }}
+          onMove={async (wt, status) => {
+            await api.worktreeDetails(wt.path, { status });
+            await load();
+          }}
+          onMoveError={() => pushToast({ text: t("kanban.moveError") })}
+          onClose={() => setBoardOpen(false)}
         />
       )}
       {parentFor && (

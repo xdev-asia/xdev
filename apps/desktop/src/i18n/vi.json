@@ -3581,5 +3581,14 @@
   "onboarding.guide.item.theme": "Chọn giao diện sáng hoặc tối",
   "onboarding.guide.item.language": "Chọn ngôn ngữ",
   "onboarding.guide.item.notifications": "Cho phép thông báo",
-  "onboarding.guide.item.project": "Thêm dự án đầu tiên"
+  "onboarding.guide.item.project": "Thêm dự án đầu tiên",
+  "kanban.open": "Mở bảng",
+  "kanban.title": "Bảng",
+  "kanban.close": "Đóng bảng",
+  "kanban.empty": "Chưa có worktree. Kéo một worktree vào đây.",
+  "kanban.none": "Chưa có worktree",
+  "kanban.moveMenu": "Chuyển sang",
+  "kanban.moveLabel": "Chuyển {name} sang trạng thái khác",
+  "kanban.moveError": "Không chuyển được worktree",
+  "kanban.columnLabel": "{status}, {count} worktree"
 }
