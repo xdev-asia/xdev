@@ -60,3 +60,8 @@ it("the automations list fits 360px: Project and Last run go, and the list scrol
     expect(narrow).toMatch(new RegExp(`\\.au-list td:nth-child\\(${n}\\)[^{]*\\{[^}]*display:\\s*none`));
   }
 });
+
+it("the settings section list scrolls on its own instead of running under the footer", () => {
+  expect(settings).toMatch(/\.settings-nav\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/);
+  expect(media(settings, "max-width: 600px")).toMatch(/\.settings-nav\s*\{[^}]*max-height:\s*40%/);
+});

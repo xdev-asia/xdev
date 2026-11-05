@@ -22,6 +22,8 @@
   flex-direction: column;
   gap: 2px;
   width: 200px;
+  min-height: 0;
+  overflow-y: auto;
   padding: 16px 10px;
   border-right: 1px solid var(--line);
   background: var(--bg-1);
@@ -887,6 +889,7 @@
     flex-direction: row;
     flex-wrap: wrap;
     width: auto;
+    max-height: 40%;
     padding: 8px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
