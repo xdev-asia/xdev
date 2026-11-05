@@ -25,6 +25,7 @@ import { recentFiles } from "@/search/recentFiles";
 import { SearchPanel } from "@/search/SearchPanel";
 import { Toasts } from "./Toasts";
 import { pushToast } from "./toastStore";
+import { addFoldersNotice, addRepoFolders } from "./addFolders";
 import { livePortsByWorktree, stopFromCard } from "./livePorts";
 import type { LivePort } from "./livePorts";
 import { endpoint } from "./PortsChip";
@@ -1037,15 +1038,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   async function addRepoFolder(): Promise<void> {
     setAdding(false);
     setNotice(undefined);
-    const path = await api.pickFolder().catch(() => null);
-    if (!path) return;
-    try {
-      const repo = await api.repoAdd(path);
-      await load();
-      if (repo.worktrees[0]) select(repo.worktrees[0]);
-    } catch (e) {
-      setNotice(toApiError(e).code);
-    }
+    const paths = await api.pickFolders().catch(() => [] as string[]);
+    if (paths.length === 0) return;
+    const result = await addRepoFolders(api, paths);
+    await load();
+    const first = result.added[0]?.worktrees[0];
+    if (first) select(first);
+    const notice = addFoldersNotice(result, paths.length);
+    if (notice === null) return;
+    if ("code" in notice) setNotice(notice.code);
+    else pushToast({ text: t("addProject.openFolders.partial", notice.toast) });
   }
 
   async function sidebarCall(run: () => Promise<unknown>): Promise<boolean> {

@@ -1083,6 +1083,7 @@
   "openIn.limit": "Tối đa {count} ứng dụng.",
   "addProject.title": "Thêm dự án",
   "addProject.openFolder": "Mở thư mục…",
+  "addProject.openFolders.partial": "Đã thêm {added}/{total} thư mục. {failed} thư mục không thêm được.",
   "addProject.cloneFromUrl": "Clone từ URL",
   "addProject.url": "URL kho mã",
   "addProject.folder": "Thư mục",

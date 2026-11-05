@@ -1083,6 +1083,7 @@
   "openIn.limit": "At most {count} apps.",
   "addProject.title": "Add project",
   "addProject.openFolder": "Open folder…",
+  "addProject.openFolders.partial": "Added {added} of {total} folders. {failed} could not be added.",
   "addProject.cloneFromUrl": "Clone from URL",
   "addProject.url": "Repository URL",
   "addProject.folder": "Folder",
