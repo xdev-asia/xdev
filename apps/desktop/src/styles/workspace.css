@@ -3803,3 +3803,11 @@ button.ws-tree-row:focus-visible {
   padding: 0 8px;
   font-size: 11px;
 }
+
+/* The pane a jump (a notification click, the bell or activity row) lands on: a 1px accent outline that fades. */
+.ws-tab-pane[data-flash] { animation: ws-pane-flash 900ms ease-out; }
+@keyframes ws-pane-flash {
+  from { outline: 1px solid var(--x-color-accent); outline-offset: -1px; }
+  to { outline: 1px solid transparent; outline-offset: -1px; }
+}
+@media (prefers-reduced-motion: reduce) { .ws-tab-pane[data-flash] { animation: none; } }

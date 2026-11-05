@@ -818,6 +818,46 @@ describe("Sessions", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("notes a program status and its progress", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.noteProgramStatus(tab.id, "working", 40, "Reading");
+    expect(live.tabs(A)[0]).toMatchObject({ status: "working", progress: 40, programMessage: "Reading" });
+    live.noteProgress(tab.id, 60);
+    expect(live.tabs(A)[0].progress).toBe(60);
+    live.noteProgress(tab.id, "keep");
+    expect(live.tabs(A)[0].progress).toBe(60);
+    live.noteProgramStatus(tab.id, "needs-you");
+    expect(live.tabs(A)[0]).toMatchObject({ status: "needs-you", progress: 60 });
+    live.noteProgramStatus(tab.id, "done");
+    expect(live.tabs(A)[0]).toMatchObject({ status: "done", progress: null });
+    live.noteProgress(tab.id, null);
+    expect(live.tabs(A)[0].progress).toBeNull();
+  });
+
+  it("a program done, failed or needs-you on an unseen tab is unread", () => {
+    for (const status of ["needs-you", "done", "failed"] as const) {
+      const live = (sessions = new Sessions(createMockApi({})));
+      const tab = live.open(A, "claude");
+      vi.useFakeTimers();
+      live.noteProgramStatus(tab.id, status);
+      // A finished turn is news once it stays finished.
+      vi.advanceTimersByTime(DONE_QUIET_MS + 10);
+      expect(live.tabs(A)[0]).toMatchObject({ status, unread: true });
+      vi.useRealTimers();
+      live.dispose();
+    }
+  });
+
+  it("program progress clears when the status turns idle, and an unknown id is a no-op", () => {
+    const live = (sessions = new Sessions(createMockApi({})));
+    const tab = live.open(A, "claude");
+    live.noteProgramStatus(tab.id, "working", 10);
+    live.noteProgramStatus(tab.id, "idle");
+    expect(live.tabs(A)[0]).toMatchObject({ status: "idle", progress: null });
+    expect(() => { live.noteProgramStatus("nope", "working", 5); live.noteProgress("nope", 5); }).not.toThrow();
+  });
+
   describe("plan 4b", () => {
     const ESC = String.fromCharCode(27);
     const ctrlC = String.fromCharCode(3);

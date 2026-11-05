@@ -19,6 +19,7 @@ import { getCustomSchemes, subscribeCustomSchemes } from "./customSchemes";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
 import { decodeOsc52Write, xtermOptions } from "./terminalOptions";
 import { TerminalFind } from "./TerminalFind";
+import { installStatusOsc, type ProgramReport } from "./statusOsc";
 import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
 import { followAppTheme } from "./terminalColors";
@@ -71,6 +72,10 @@ export function Terminal(props: {
   onTitle?(title: string): void;
   /** The program rang the terminal bell (BEL outside an OSC string; xterm tells the two apart). */
   onBell?(): void;
+  /** The program reported its own status (OSC 7501). */
+  onProgramStatus?(report: ProgramReport): void;
+  /** The program reported progress (OSC 9;4): a percent, null to clear, "keep" to leave it. */
+  onProgress?(progress: number | null | "keep"): void;
   /** A new value asks the terminal to take keyboard focus; the first value alone asks nothing. */
   focusSeq?: number;
   /** Filled with this terminal's handle. */
@@ -293,6 +298,15 @@ export function Terminal(props: {
       shellCwd = cwdFromOsc7(data) ?? shellCwd;
       return true;
     });
+    // Restored output is replayed through the parser: its probes were answered the first time.
+    let replaying = false;
+    let replayPending = 0;
+    installStatusOsc(term.parser, {
+      reply: (text) => void client.input(text).catch(() => {}),
+      replaying: () => replaying || replayPending > 0,
+      onProgramStatus: (r) => handlers.current.onProgramStatus?.(r),
+      onProgress: (p) => handlers.current.onProgress?.(p),
+    });
     // A program may write the clipboard (OSC 52) when the setting allows it; a read request is always refused.
     term.parser.registerOscHandler(52, (data) => {
       if (!getTerminalSettings().osc52Clipboard) return true;
@@ -392,11 +406,19 @@ export function Terminal(props: {
     // is started once, by the mount that stays.
     void Promise.resolve().then(() => {
       if (!alive) return;
+      replaying = client.spawned;
       client.start(props.cwd, props.profile, term.cols, term.rows, (bytes, rendered) => {
         handlers.current.onOutput?.(bytes.length);
-        term.write(bytes, rendered);
+        if (replaying) {
+          replayPending++;
+          term.write(bytes, () => {
+            replayPending--;
+            rendered();
+          });
+        } else term.write(bytes, rendered);
       }, props.account ?? null, { truncated: t("ptyd.truncated") }).then(
         (info) => {
+          replaying = false;
           if (!alive) return;
           isAgent.current = info.agent;
           // Limit: quoting follows the program the pane started, not a shell run inside it (pwsh in a
@@ -405,7 +427,10 @@ export function Terminal(props: {
           handlers.current.onStarted(info);
           term.focus();
         },
-        (e: unknown) => alive && handlers.current.onError(toApiError(e)),
+        (e: unknown) => {
+          replaying = false;
+          return alive && handlers.current.onError(toApiError(e));
+        },
       );
     });
     const observer = new ResizeObserver(fitVisible);
