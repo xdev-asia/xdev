@@ -102,6 +102,7 @@ import { TrustDialog } from "./TrustDialog";
 import { AccountSwitchDialog, type SwitchScope, type SwitchTab } from "./AccountSwitchDialog";
 import { restartTabs } from "./accountSwitchFlow";
 import { watchQuotaAlerts } from "./quotaAlerts";
+import { watchFailovers } from "./failoverToasts";
 import { QuitDialog } from "./QuitDialog";
 import { AboutDialog } from "./AboutDialog";
 import { checkForUpdates, HelpButton, type HelpPick, runHelpPick } from "./HelpMenu";
@@ -412,6 +413,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   // An account crossing a quota threshold raises a toast that can move new tabs to another account.
   useEffect(() => watchQuotaAlerts({ api, t: (key, vars) => live.t(key, vars), toast: pushToast }), [api]);
+  useEffect(() => watchFailovers({ api, t: (key, vars) => live.t(key, vars), toast: pushToast }), [api]);
 
   // Layout restore: once per run, after the registry is known and before the saver starts (a saver that
   // ran first would replace the stored layout with an empty one). Nothing runs without a worktree.
