@@ -33,7 +33,14 @@ const LETTER: Record<ReviewFile["kind"], string> = { added: "A", modified: "M", 
  * It reads again when the window gets focus, after staging, and when an agent of the worktree
  * goes quiet.
  */
-export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessions | null; reveal?: { file: string; seq: number } }): JSX.Element {
+export function ReviewView(props: {
+  api: Api;
+  worktree: string;
+  sessions?: Sessions | null;
+  reveal?: { file: string; seq: number };
+  /** Posts a note to the PR as an inline comment. Left out, the view uses the worktree's own open PR. */
+  onPostToPr?: (note: ReviewNote) => Promise<void>;
+}): JSX.Element {
   const { api, worktree, sessions, reveal } = props;
   const { t } = useI18n();
   // Starts from the diff settings; what is changed here stays in this view until "Save as default".
@@ -58,6 +65,29 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   const cursor = useRef<ChangeAt | null>(null);
   const drag = useRef<{ x: number; width: number } | null>(null);
   const store = useReviewNotes(api, worktree);
+  const [openPr, setOpenPr] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.worktreePr(worktree).then(
+      (pr) => live && setOpenPr(pr && (pr.state === "open" || pr.state === "draft") ? pr.number : null),
+      () => live && setOpenPr(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, worktree]);
+  const postToPr =
+    props.onPostToPr ??
+    (openPr === null
+      ? undefined
+      : (note: ReviewNote) =>
+          api.worktreePrCommentPost(worktree, openPr, {
+            body: note.body,
+            replyTo: null,
+            path: note.file,
+            line: note.line,
+            startLine: note.startLine === note.line ? null : note.startLine,
+          }));
   const [listing, setListing] = useState(false);
   // Folder ids (`path/`) of the tree that are folded; local to this view.
   const [closed, setClosed] = useState<string[]>([]);
@@ -372,6 +402,7 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
                   add: (range, body) => void store.add(f.path, range.startLine, range.line, range.anchor, body),
                   edit: (id, body) => void store.edit(id, body),
                   remove: (id) => void store.remove(id),
+                  post: postToPr,
                 }}
                 onRead={(path, text) => void store.reanchorFile(path, text)}
                 onChunks={(path, count) => setCounts((c) => (c[path] === count ? c : { ...c, [path]: count }))}

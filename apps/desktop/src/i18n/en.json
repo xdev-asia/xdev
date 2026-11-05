@@ -2613,5 +2613,7 @@
   "prReview.block.merge-queue": "This repository merges through a queue.",
   "prReview.block.unknown": "GitHub has not finished checking whether this can merge. Try again soon.",
   "prReview.block.behind": "This branch is behind the base branch. Update it first.",
-  "prReview.block.blocked": "Branch rules block this merge."
+  "prReview.block.blocked": "Branch rules block this merge.",
+  "review.note.postToPr": "Post on PR",
+  "review.note.posted": "Posted on PR"
 }

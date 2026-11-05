@@ -2613,5 +2613,7 @@
   "prReview.block.merge-queue": "Kho này merge qua hàng đợi.",
   "prReview.block.unknown": "GitHub chưa kiểm tra xong việc merge. Thử lại sau ít phút.",
   "prReview.block.behind": "Nhánh này tụt sau nhánh gốc. Hãy cập nhật trước.",
-  "prReview.block.blocked": "Quy tắc nhánh đang chặn việc merge."
+  "prReview.block.blocked": "Quy tắc nhánh đang chặn việc merge.",
+  "review.note.postToPr": "Đăng lên PR",
+  "review.note.posted": "Đã đăng lên PR"
 }

@@ -14,6 +14,8 @@ export type NoteHandlers = {
   add(range: NoteRange, body: string): void;
   edit(id: string, body: string): void;
   remove(id: string): void;
+  /** Set while the worktree has an open PR; posts the note as an inline comment. */
+  post?(note: ReviewNote): Promise<void>;
 };
 
 /** The selection's lines as a range; a selection that ends at the start of a line stops on the line before. */
@@ -89,9 +91,10 @@ function build(state: EditorState, ctx: Ctx, notes: ReviewNote[], composer: Note
     if (note.file !== ctx.file || note.line > lines || note.startLine < 1) continue;
     for (let n = note.startLine; n <= note.line; n++) out.push(tint.range(state.doc.line(n).from));
     // The key covers everything the card shows, so an edited note draws again.
-    const key = `${note.id}|${note.body}|${note.sentAt}|${note.outdated}|${note.startLine}-${note.line}`;
+    const post = ctx.handlers().post;
+    const key = `${note.id}|${note.body}|${note.sentAt}|${note.outdated}|${note.startLine}-${note.line}|${post ? "pr" : ""}`;
     widgetAt(note.line, key, () =>
-      createElement(NoteCard, { note, onEdit: (body: string) => ctx.handlers().edit(note.id, body), onDelete: () => ctx.handlers().remove(note.id) }),
+      createElement(NoteCard, { note, onEdit: (body: string) => ctx.handlers().edit(note.id, body), onDelete: () => ctx.handlers().remove(note.id), onPostToPr: post ? (n: ReviewNote) => ctx.handlers().post!(n) : undefined }),
     );
   }
   if (composer && composer.line <= lines) {
