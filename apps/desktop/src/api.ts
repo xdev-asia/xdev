@@ -463,6 +463,7 @@ export type ErrorCode =
   | "repo_exists"
   | "repo_unknown"
   | "worktree_unknown"
+  | "watch_limit"
   | "worktree_exists"
   | "branch_exists"
   | "bad_branch_prefix"
@@ -1233,6 +1234,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "repo_exists",
   "repo_unknown",
   "worktree_unknown",
+  "watch_limit",
   "worktree_exists",
   "branch_exists",
   "bad_branch_prefix",

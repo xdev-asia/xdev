@@ -264,6 +264,7 @@ export type { VaultSetup } from "./VaultSetup";
 export type { VaultView } from "./VaultView";
 export type { VcsState } from "./VcsState";
 export type { Wait } from "./Wait";
+export type { WatchFailure } from "./WatchFailure";
 export type { WorkItem } from "./WorkItem";
 export type { WorkItemKind } from "./WorkItemKind";
 export type { WorkStatus } from "./WorkStatus";

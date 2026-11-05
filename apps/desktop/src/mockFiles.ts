@@ -86,7 +86,7 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
 
   // Delivers one batch to every watcher of `worktree`, as the Rust watcher would.
   function emit(worktree: string, events: FsEvent[]): void {
-    for (const w of [...watchers.values()]) if (w.worktree === worktree) w.onEvent({ worktree, events });
+    for (const w of [...watchers.values()]) if (w.worktree === worktree) w.onEvent({ worktree, events, failure: null });
   }
 
   function overlay(worktree: string): Overlay {

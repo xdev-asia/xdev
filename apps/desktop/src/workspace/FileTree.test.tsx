@@ -8,6 +8,7 @@ import { NameDialog } from "@/files/NameDialog";
 import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { ContextMenu } from "@/ui/ContextMenu";
 import { FileTree } from "./FileTree";
+import type { WatchHealth } from "./worktreeWatch";
 
 const toasts = vi.hoisted(() => ({ pushed: [] as { id: string; text: string }[] }));
 vi.mock("./toastStore", () => ({ pushToast: (toast: { id: string; text: string }) => void toasts.pushed.push(toast) }));
@@ -86,8 +87,8 @@ function mount(render: (changes: WorktreeChange[]) => unknown, first: WorktreeCh
 
 function tree(api: Api, changes: WorktreeChange[] = CHANGES) {
   const onOpen = vi.fn();
-  const feed: { events: FsEvent[] | null } = { events: null };
-  const view = mount((list) => FileTree({ api, worktree: OAK, changes: list, onOpen, events: feed.events }), changes);
+  const feed: { events: FsEvent[] | null; health?: WatchHealth } = { events: null };
+  const view = mount((list) => FileTree({ api, worktree: OAK, changes: list, onOpen, events: feed.events, watchHealth: feed.health }), changes);
   const rows = () => view.all().filter((n) => n.props.role === "treeitem");
   const label = (r: Node) => nodes(r).find((n) => n.props.className === "ws-tree-name")?.props.children;
   const row = (name: string) => rows().find((r) => label(r) === name)!;
@@ -373,4 +374,14 @@ it("disk events wait while the name dialog is open", async () => {
   view.again(CHANGES);
   await tick();
   expect(list.mock.calls.map(([, dir]) => dir)).toEqual([""]);
+});
+
+it("says when live updates stopped at the system watch limit", async () => {
+  const view = tree(createMockApi({}));
+  await tick();
+  expect(view.html()).not.toContain(en("files.watch.limit.title"));
+  view.feed.health = "limit";
+  const html = view.html();
+  expect(html).toContain(en("files.watch.limit.title"));
+  expect(html).toContain("fs.inotify.max_user_watches");
 });

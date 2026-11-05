@@ -1,38 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import type { Api, FsEvent } from "@/api";
 import type { FileIo } from "@/files/fileIO";
-import { reconcile, resetWatchState } from "@/files/fileWatch";
+import { WorktreeWatch, type WatchHealth } from "./worktreeWatch";
 
-let counter = 0;
+export interface WatchView {
+  /** The latest batch (a new array each time), for the file tree. */
+  events: FsEvent[] | null;
+  health: WatchHealth;
+}
 
-/**
- * Subscribes to the disk events of `worktree` while it is the shown one. Each batch goes to the open
- * buffers (`reconcile`), and the latest is returned (a new array each time) for the file tree. A subscription that cannot start leaves the app as it was: the
- * tree still refreshes on its own triggers.
- */
-export function useWorktreeWatch(api: Api, worktree: string | null, io: FileIo): FsEvent[] | null {
+/** Subscribes to the disk events of `worktree` while it is the shown one (see `WorktreeWatch`). */
+export function useWorktreeWatch(api: Api, worktree: string | null, io: FileIo): WatchView {
   const [events, setEvents] = useState<FsEvent[] | null>(null);
+  const [health, setHealth] = useState<WatchHealth>("live");
   // The translator changes with the language; the subscription must not.
   const ioNow = useRef(io);
   ioNow.current = io;
   useEffect(() => {
     setEvents(null);
+    setHealth("live");
     if (worktree === null) return;
-    const id = `watch-${++counter}`;
-    let live = true;
-    const started = api
-      .filesWatch(worktree, id, (batch) => {
-        if (!live || batch.worktree !== worktree) return;
-        reconcile(ioNow.current, worktree, batch.events);
-        setEvents(batch.events);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-      resetWatchState(worktree);
-      // After the start settles, so an unwatch never overtakes its own watch.
-      void started.then(() => api.filesUnwatch(id)).catch(() => undefined);
-    };
+    const watch = new WorktreeWatch({ api, worktree, io: () => ioNow.current, onBatch: setEvents, onHealth: setHealth });
+    watch.start();
+    return () => watch.stop();
   }, [api, worktree]);
-  return events;
+  return { events, health };
 }

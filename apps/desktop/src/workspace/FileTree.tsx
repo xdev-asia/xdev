@@ -1,4 +1,4 @@
-import { Icon } from "@xdev-asia/ui";
+import { Banner, Icon } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type DirListing, type FsEvent, type WorktreeChange } from "@/api";
@@ -11,6 +11,7 @@ import { copyAbsolute, copyRelative, createEntry, deleteEntry, parentOf, renameE
 import { useI18n } from "@/i18n";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { pushToast } from "./toastStore";
+import type { WatchHealth } from "./worktreeWatch";
 
 // Git's own letters, so they read the same in every language. A deleted file is not on disk, so
 // the tree never meets one.
@@ -92,6 +93,8 @@ export function FileTree(props: {
   onSearch?: () => void;
   /** The latest batch of disk events; each new array is read once. Held while a name dialog is open. */
   events?: FsEvent[] | null;
+  /** How watching the disk goes; `limit` shows why live updates stopped. */
+  watchHealth?: WatchHealth;
 }): JSX.Element {
   const { api, worktree, changes, onOpen, onSearch, events = null } = props;
   const { t } = useI18n();
@@ -238,6 +241,7 @@ export function FileTree(props: {
           {t("files.tree.searchInFiles")}
         </button>
       </div>
+      {props.watchHealth === "limit" && <Banner title={t("files.watch.limit.title")}>{t("files.watch.limit.body")}</Banner>}
     <div className="ws-tree ws-mono" role="tree" aria-label={t("workspace.files.tree")} onContextMenu={(e) => onMenu(e as unknown as MouseEvent, null)}>
       {rows.map((row) => {
         const indent = { paddingLeft: `calc(var(--tree-indent) * ${row.depth} + var(--tree-pad))` };

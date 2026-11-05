@@ -44,9 +44,23 @@ pub enum FsEventKind {
 /// One flushed batch for one worktree.
 #[derive(Clone, Debug, serde::Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct FsChanged {
     pub worktree: String,
     pub events: Vec<FsEvent>,
+    /// Set when the watcher stopped; `events` is then one `Overflow`.
+    pub failure: Option<WatchFailure>,
+}
+
+/// Why a watcher stopped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum WatchFailure {
+    /// The system limit on watches was reached (inotify `max_user_watches`).
+    WatchLimit,
+    /// Anything else: a lost event buffer, a backend error.
+    Failed,
 }
 
 pub const IGNORED_DIRS: [&str; 9] = [
@@ -170,7 +184,7 @@ impl Batch {
 }
 
 /// Where a root's batches go: one per subscriber id.
-type Sink = Box<dyn Fn(&[FsEvent]) + Send>;
+type Sink = Box<dyn Fn(&[FsEvent], Option<WatchFailure>) + Send>;
 type Sinks = Arc<Mutex<HashMap<String, Sink>>>;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -181,7 +195,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 enum Msg {
     Event(FsEvent),
     /// The watcher failed (a lost buffer, inotify limits): re-read everything.
-    Failed,
+    Failed(WatchFailure),
     Stop,
 }
 
@@ -280,6 +294,94 @@ fn map_event(root: &Path, event: &notify::Event, stat: Stat<'_>, older: Older<'_
     }
 }
 
+/// Linux watches folder by folder (inotify has no recursive watch), so
+/// ignored folders and symlinks cost no watch. Elsewhere one recursive
+/// watch is cheap.
+const PER_FOLDER: bool = cfg!(target_os = "linux");
+
+/// `dir` and every folder under it that needs a watch: ignored folders,
+/// symlinks and folders that cannot be read are left out (their content,
+/// for an unreadable one).
+fn watch_dirs(dir: &Path) -> Vec<PathBuf> {
+    let mut out = vec![dir.to_path_buf()];
+    let mut i = 0;
+    while i < out.len() {
+        let Ok(entries) = std::fs::read_dir(&out[i]) else {
+            i += 1;
+            continue;
+        };
+        for entry in entries.flatten() {
+            // `file_type` does not follow a symlink.
+            let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
+            let name = entry.file_name();
+            if is_dir && !IGNORED_DIRS.contains(&name.to_string_lossy().as_ref()) {
+                out.push(entry.path());
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// What a watcher error means for the subscribers.
+fn failure_of(e: &notify::Error) -> WatchFailure {
+    // ENOSPC from inotify_add_watch is the watch limit, not a full disk.
+    let enospc = cfg!(target_os = "linux")
+        && matches!(&e.kind, notify::ErrorKind::Io(io) if io.raw_os_error() == Some(28));
+    if matches!(e.kind, notify::ErrorKind::MaxFilesWatch) || enospc {
+        WatchFailure::WatchLimit
+    } else {
+        WatchFailure::Failed
+    }
+}
+
+/// A watcher that could not start: the limit has its own code.
+fn start_error(e: notify::Error) -> CmdError {
+    match failure_of(&e) {
+        WatchFailure::WatchLimit => CmdError {
+            code: "watch_limit",
+            detail: Some(e.to_string()),
+        },
+        WatchFailure::Failed => io_error(e),
+    }
+}
+
+/// Adds one watch per folder of `dirs`. A folder that is gone or refused is
+/// skipped; running out of watches stops it.
+fn add_watches(
+    watcher: &mut RecommendedWatcher,
+    watched: &mut HashSet<PathBuf>,
+    dirs: Vec<PathBuf>,
+) -> Result<(), notify::Error> {
+    for dir in dirs {
+        if watched.contains(&dir) {
+            continue;
+        }
+        match watcher.watch(&dir, RecursiveMode::NonRecursive) {
+            Ok(()) => {
+                watched.insert(dir);
+            }
+            Err(e) if failure_of(&e) == WatchFailure::WatchLimit => return Err(e),
+            Err(_) => {}
+        }
+    }
+    Ok(())
+}
+
+/// Drops the watches of `dir` and of every folder under it.
+fn drop_watches(watcher: &mut RecommendedWatcher, watched: &mut HashSet<PathBuf>, dir: &Path) {
+    let gone: Vec<PathBuf> = watched
+        .iter()
+        .filter(|w| w.starts_with(dir))
+        .cloned()
+        .collect();
+    for w in gone {
+        // The kernel may have dropped it already with the folder.
+        let _ = watcher.unwatch(&w);
+        watched.remove(&w);
+    }
+}
+
 fn disk_stat(path: &Path) -> Option<bool> {
     std::fs::symlink_metadata(path).ok().map(|m| m.is_dir())
 }
@@ -342,7 +444,7 @@ impl Root {
         let base = root.to_path_buf();
         let started = SystemTime::now();
         let older = move |p: &Path| born_before(p, started);
-        let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let handler = move |res: notify::Result<notify::Event>| {
             // The thread may be gone already; nobody needs the event then.
             match res {
                 Ok(event) => {
@@ -350,22 +452,41 @@ impl Root {
                         let _ = callback_tx.send(Msg::Event(e));
                     }
                 }
-                Err(_) => {
-                    let _ = callback_tx.send(Msg::Failed);
+                Err(e) => {
+                    let _ = callback_tx.send(Msg::Failed(failure_of(&e)));
                 }
             }
-        })
-        .map_err(io_error)?;
-        watcher
-            .watch(root, RecursiveMode::Recursive)
-            .map_err(io_error)?;
+        };
+        // A symlink is never followed: it may lead outside the root, or loop.
+        let config = notify::Config::default().with_follow_symlinks(false);
+        let mut watcher = RecommendedWatcher::new(handler, config).map_err(io_error)?;
+        let mut watched = HashSet::new();
+        if PER_FOLDER {
+            watcher
+                .watch(root, RecursiveMode::NonRecursive)
+                .map_err(start_error)?;
+            watched.insert(root.to_path_buf());
+            add_watches(&mut watcher, &mut watched, watch_dirs(root)).map_err(start_error)?;
+        } else {
+            watcher
+                .watch(root, RecursiveMode::Recursive)
+                .map_err(start_error)?;
+        }
+        let base = root.to_path_buf();
         let sinks: Sinks = Arc::default();
         let dead = Arc::new(AtomicBool::new(false));
         let thread = {
             let (sinks, dead) = (Arc::clone(&sinks), Arc::clone(&dead));
             std::thread::Builder::new()
                 .name("file-watch".into())
-                .spawn(move || run(&rx, watcher, &sinks, &dead))
+                .spawn(move || {
+                    let mut folders = Folders {
+                        root: base,
+                        watcher,
+                        watched,
+                    };
+                    run(&rx, &mut folders, &sinks, &dead);
+                })
                 .map_err(io_error)?
         };
         Ok(Root {
@@ -394,15 +515,43 @@ fn io_error(e: impl std::fmt::Display) -> CmdError {
     }
 }
 
-fn deliver(sinks: &Sinks, events: &[FsEvent]) {
+fn deliver(sinks: &Sinks, events: &[FsEvent], failure: Option<WatchFailure>) {
     for sink in lock(sinks).values() {
-        sink(events);
+        sink(events, failure);
+    }
+}
+
+/// The watcher of one root and, on Linux, the folders it watches.
+struct Folders {
+    root: PathBuf,
+    watcher: RecommendedWatcher,
+    watched: HashSet<PathBuf>,
+}
+
+impl Folders {
+    /// Follows a folder that came or went; a no-op with a recursive watch.
+    fn follow(&mut self, e: &FsEvent) -> Result<(), WatchFailure> {
+        if !PER_FOLDER {
+            return Ok(());
+        }
+        let path = self.root.join(&e.rel);
+        match e.kind {
+            FsEventKind::Create if e.dir == Some(true) => {
+                add_watches(&mut self.watcher, &mut self.watched, watch_dirs(&path))
+                    .map_err(|e| failure_of(&e))
+            }
+            FsEventKind::Delete => {
+                drop_watches(&mut self.watcher, &mut self.watched, &path);
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 }
 
 /// The flush thread of one root. It owns `watcher`, so ending the loop
 /// (a stop, a failure) also ends the watch.
-fn run(rx: &Receiver<Msg>, watcher: RecommendedWatcher, sinks: &Sinks, dead: &AtomicBool) {
+fn run(rx: &Receiver<Msg>, folders: &mut Folders, sinks: &Sinks, dead: &AtomicBool) {
     let mut batch = Batch::default();
     let mut known = Known::default();
     loop {
@@ -419,11 +568,18 @@ fn run(rx: &Receiver<Msg>, watcher: RecommendedWatcher, sinks: &Sinks, dead: &At
         };
         match msg {
             Some(Msg::Event(e)) => {
-                batch.push(known.correct(e), Instant::now());
+                let e = known.correct(e);
+                let followed = folders.follow(&e);
+                batch.push(e, Instant::now());
+                if let Err(failure) = followed {
+                    dead.store(true, Ordering::SeqCst);
+                    deliver(sinks, &[FsEvent::overflow()], Some(failure));
+                    break;
+                }
             }
-            Some(Msg::Failed) => {
+            Some(Msg::Failed(failure)) => {
                 dead.store(true, Ordering::SeqCst);
-                deliver(sinks, &[FsEvent::overflow()]);
+                deliver(sinks, &[FsEvent::overflow()], Some(failure));
                 break;
             }
             Some(Msg::Stop) => break,
@@ -433,11 +589,10 @@ fn run(rx: &Receiver<Msg>, watcher: RecommendedWatcher, sinks: &Sinks, dead: &At
         if batch.due().is_some_and(|at| at <= now) {
             let events = batch.flush(now);
             if !events.is_empty() {
-                deliver(sinks, &events);
+                deliver(sinks, &events, None);
             }
         }
     }
-    drop(watcher);
 }
 
 #[derive(Default)]
@@ -480,10 +635,11 @@ impl FileWatches {
         known_checkout(data, worktree)?;
         let root = dunce::canonicalize(worktree).map_err(io_error)?;
         let name = worktree.to_string_lossy().into_owned();
-        let sink: Sink = Box::new(move |events| {
+        let sink: Sink = Box::new(move |events, failure| {
             send(FsChanged {
                 worktree: name.clone(),
                 events: events.to_vec(),
+                failure,
             });
         });
         let mut stopped = Vec::new();
@@ -868,6 +1024,94 @@ mod tests {
         assert_eq!(watches.root_count(), 0);
         // Nothing to unwatch: no harm.
         watches.unwatch("w2");
+    }
+
+    /// Makes `dir` unreadable; false when that does not stop us (root).
+    #[cfg(unix)]
+    fn lock_dir(dir: &Path) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o000)).unwrap();
+        fs::read_dir(dir).is_err()
+    }
+
+    #[cfg(unix)]
+    fn unlock_dir(dir: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// A tree with an ignored folder, a symlink to outside the root and an
+    /// unreadable folder holding a subfolder.
+    #[cfg(unix)]
+    fn awkward_tree(fx: &Fixture) -> bool {
+        fs::create_dir_all(fx.repo.join("node_modules/pkg/lib")).unwrap();
+        fs::create_dir_all(fx.repo.join("src/deep")).unwrap();
+        fs::create_dir_all(fx.stranger.join("inner")).unwrap();
+        std::os::unix::fs::symlink(&fx.stranger, fx.repo.join("link")).unwrap();
+        fs::create_dir_all(fx.repo.join("locked/inner")).unwrap();
+        lock_dir(&fx.repo.join("locked"))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn watch_dirs_skips_ignored_folders_symlinks_and_unreadable_folders() {
+        let fx = fixture();
+        let locked = awkward_tree(&fx);
+        let root = dunce::canonicalize(&fx.repo).unwrap();
+        let mut dirs: Vec<String> = watch_dirs(&root)
+            .iter()
+            .map(|d| rel_of(&root, d).unwrap_or_default())
+            .collect();
+        unlock_dir(&fx.repo.join("locked"));
+        dirs.sort();
+        let mut want = vec!["", "locked", "src", "src/deep"];
+        if !locked {
+            // Running as root: the folder can be read after all.
+            want.push("locked/inner");
+        }
+        want.sort_unstable();
+        assert_eq!(dirs, want);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_tree_with_ignored_folders_symlinks_and_unreadable_folders_is_watched() {
+        let fx = fixture();
+        awkward_tree(&fx);
+        let watches = FileWatches::default();
+        let rx = subscribe(&watches, &fx, "w1");
+        // Outside the root through the symlink: never reported.
+        fs::write(fx.stranger.join("inner").join("x.txt"), "1").unwrap();
+        fs::write(fx.repo.join("src/deep/a.txt"), "1").unwrap();
+        let seen = collect_until(&rx, |s| s.iter().any(|e| e.rel == "src/deep/a.txt"));
+        assert!(
+            has(&seen, FsEventKind::Create, "src/deep/a.txt"),
+            "{seen:?}"
+        );
+        // A folder made after the start is watched too.
+        fs::create_dir(fx.repo.join("fresh")).unwrap();
+        let seen2 = collect_until(&rx, |s| has(s, FsEventKind::Create, "fresh"));
+        assert!(has(&seen2, FsEventKind::Create, "fresh"), "{seen2:?}");
+        // Give the thread a moment to add the watch, then write inside.
+        std::thread::sleep(Duration::from_millis(300));
+        fs::write(fx.repo.join("fresh/b.txt"), "1").unwrap();
+        let seen3 = collect_until(&rx, |s| s.iter().any(|e| e.rel == "fresh/b.txt"));
+        assert!(seen3.iter().any(|e| e.rel == "fresh/b.txt"), "{seen3:?}");
+        let all: Vec<_> = seen.iter().chain(&seen2).chain(&seen3).collect();
+        assert!(all.iter().all(|e| !e.rel.starts_with("link/")), "{all:?}");
+        assert!(all.iter().all(|e| !ignored(&e.rel)), "{all:?}");
+        unlock_dir(&fx.repo.join("locked"));
+        watches.unwatch("w1");
+    }
+
+    #[test]
+    fn running_out_of_watches_is_its_own_failure() {
+        let limit = notify::Error::new(notify::ErrorKind::MaxFilesWatch);
+        assert_eq!(failure_of(&limit), WatchFailure::WatchLimit);
+        assert_eq!(start_error(limit).code, "watch_limit");
+        let other = notify::Error::generic("boom");
+        assert_eq!(failure_of(&other), WatchFailure::Failed);
+        assert_eq!(start_error(other).code, "io");
     }
 
     #[test]
