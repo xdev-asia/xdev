@@ -84,6 +84,8 @@ export type Reveal = { file: string; seq: number };
 
 // Ctrl+Tab keeps walking the same list until the focus has rested this long (R4).
 export const MRU_SETTLE_MS = 600;
+/** How long the side preview waits after the last keystroke before it renders the live text. */
+export const PREVIEW_DEBOUNCE_MS = 200;
 
 /**
  * The terminal tabs of one worktree, laid out as a tree of panes. Every terminal stays mounted while
@@ -734,7 +736,7 @@ export function WorktreeTabs(props: {
               const at = placed(id);
               return [
                 <div key={id} className="ws-tab-pane" role="tabpanel" data-tab={id} hidden={at.hidden} style={at.style}>
-                  <MarkdownPreview api={api} worktree={worktree} rel={rel} text={entry.text} />
+                  <MarkdownPreview api={api} worktree={worktree} rel={rel} text={entry.text} debounceMs={PREVIEW_DEBOUNCE_MS} hidden={at.hidden} />
                 </div>,
               ];
             }),
