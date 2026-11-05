@@ -47,6 +47,7 @@ mod ports;
 mod power;
 mod pr_review;
 mod profiles;
+mod prompt_queue;
 mod prs;
 mod pty;
 mod ptyd;
@@ -151,6 +152,7 @@ pub fn run() {
             }
             if let tauri::WindowEvent::Destroyed = event {
                 automations::window_gone(window.app_handle());
+                prompt_queue::window_gone(window.app_handle());
             }
         })
         .manage(crumbs)
@@ -209,6 +211,7 @@ pub fn run() {
             }
             if let Some(data) = xdev_core::data_dir() {
                 app.manage(automations::AutomationService::open(&data));
+                app.manage(prompt_queue::PromptQueueService::open(&data));
                 automations::start(app.handle());
             }
             // Off the main thread: starting the service may take a moment.
@@ -678,6 +681,14 @@ pub fn run() {
             automations::automation_ui_ready,
             automations::automation_dispatch_result,
             automations::automation_run_finish,
+            prompt_queue::prompt_queue_list,
+            prompt_queue::prompt_queue_add,
+            prompt_queue::prompt_queue_update,
+            prompt_queue::prompt_queue_delete,
+            prompt_queue::prompt_queue_reorder,
+            prompt_queue::prompt_queue_send_now,
+            prompt_queue::prompt_queue_report,
+            prompt_queue::prompt_queue_facts,
             crash::crash_record_render,
             crash::crash_breadcrumb,
             crash::crash_take_pending,
