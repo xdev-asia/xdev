@@ -17,4 +17,9 @@ menuBarIcon: boolean,
  * Set once the "still running in the tray" notice was shown. Only the
  * shell sets it; a `put` keeps the stored value.
  */
-trayNoticeShown: boolean, updateChannel: UpdateChannel, };
+trayNoticeShown: boolean, updateChannel: UpdateChannel, 
+/**
+ * A newer release is offered once it is this many days old; one of
+ * [`UPDATE_DELAY_DAYS`], 0 offers it at once.
+ */
+updateDelayDays: number, };

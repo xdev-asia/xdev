@@ -167,6 +167,33 @@ pub struct ShellSettings {
     /// shell sets it; a `put` keeps the stored value.
     pub tray_notice_shown: bool,
     pub update_channel: UpdateChannel,
+    /// A newer release is offered once it is this many days old; one of
+    /// [`UPDATE_DELAY_DAYS`], 0 offers it at once.
+    #[serde(deserialize_with = "lenient_delay")]
+    pub update_delay_days: u8,
+}
+
+/// The delays the Updates setting offers, in days.
+pub const UPDATE_DELAY_DAYS: [u8; 4] = [0, 1, 3, 7];
+
+/// The allowed delay nearest to `days`; halfway between two is the shorter one.
+pub fn nearest_update_delay(days: i64) -> u8 {
+    UPDATE_DELAY_DAYS
+        .into_iter()
+        .min_by_key(|d| (i64::from(*d) - days).abs())
+        .unwrap_or(0)
+}
+
+/// A stored delay that is not a number reads as 0; any number is clamped.
+fn lenient_delay<'de, D: serde::Deserializer<'de>>(de: D) -> Result<u8, D::Error> {
+    let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+    Ok(match value.as_i64() {
+        Some(days) => nearest_update_delay(days),
+        // Above `i64::MAX`, or a fraction.
+        None => value
+            .as_f64()
+            .map_or(0, |f| nearest_update_delay(f.round() as i64)),
+    })
 }
 
 impl Default for ShellSettings {
@@ -176,6 +203,7 @@ impl Default for ShellSettings {
             menu_bar_icon: true,
             tray_notice_shown: false,
             update_channel: UpdateChannel::Stable,
+            update_delay_days: 0,
         }
     }
 }
@@ -194,6 +222,7 @@ impl ShellSettings {
     pub fn for_put(self, stored: &ShellSettings) -> Self {
         Self {
             tray_notice_shown: stored.tray_notice_shown,
+            update_delay_days: nearest_update_delay(i64::from(self.update_delay_days)),
             ..self
         }
     }
@@ -3605,14 +3634,71 @@ then sum up"
             menu_bar_icon: false,
             tray_notice_shown: true,
             update_channel: UpdateChannel::Rc,
+            update_delay_days: 3,
         };
         let json = serde_json::to_value(&shell).unwrap();
+        assert_eq!(json["updateDelayDays"], 3);
         assert_eq!(json["minimizeToTray"], true);
         assert_eq!(json["menuBarIcon"], false);
         assert_eq!(json["trayNoticeShown"], true);
         assert_eq!(json["updateChannel"], "rc");
         fs::write(&path, format!(r#"{{ "shell": {json} }}"#)).unwrap();
         assert_eq!(load(&path).shell, shell);
+    }
+
+    #[test]
+    fn an_old_shell_section_loads_with_no_update_delay() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            r#"{ "shell": { "minimizeToTray": true, "menuBarIcon": false, "trayNoticeShown": true, "updateChannel": "rc" } }"#,
+        )
+        .unwrap();
+        let shell = load(&path).shell;
+        assert_eq!(shell.update_delay_days, 0);
+        assert!(shell.minimize_to_tray);
+        assert_eq!(shell.update_channel, UpdateChannel::Rc);
+    }
+
+    #[test]
+    fn the_update_delay_is_clamped_to_the_nearest_allowed_value() {
+        for (days, want) in [
+            (-5, 0),
+            (0, 0),
+            (1, 1),
+            (2, 1),
+            (3, 3),
+            (4, 3),
+            (5, 3),
+            (6, 7),
+            (7, 7),
+            (30, 7),
+            (i64::MAX, 7),
+        ] {
+            assert_eq!(nearest_update_delay(days), want, "{days}");
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        for (text, want) in [
+            (r#"{ "shell": { "updateDelayDays": 7 } }"#, 7),
+            (r#"{ "shell": { "updateDelayDays": 4 } }"#, 3),
+            (r#"{ "shell": { "updateDelayDays": 900 } }"#, 7),
+            (r#"{ "shell": { "updateDelayDays": -2 } }"#, 0),
+            (r#"{ "shell": { "updateDelayDays": 2.4 } }"#, 1),
+            (r#"{ "shell": { "updateDelayDays": "3" } }"#, 0),
+            (r#"{ "shell": { "updateDelayDays": null } }"#, 0),
+            (r#"{ "shell": { "updateDelayDays": 1e30 } }"#, 7),
+        ] {
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).shell.update_delay_days, want, "{text}");
+        }
+        let put = ShellSettings {
+            update_delay_days: 200,
+            ..ShellSettings::default()
+        }
+        .for_put(&ShellSettings::default());
+        assert_eq!(put.update_delay_days, 7);
     }
 
     #[test]

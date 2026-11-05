@@ -5,7 +5,7 @@ import { createMockShell, SHELL_DEFAULTS } from "./mockShell";
 it("starts from the defaults Rust stores and keeps the notice flag on a put", async () => {
   const emit = vi.fn();
   const shell = createMockShell(emit);
-  expect(await shell.shellSettings()).toEqual({ minimizeToTray: false, menuBarIcon: true, trayNoticeShown: false, updateChannel: "stable" });
+  expect(await shell.shellSettings()).toEqual({ minimizeToTray: false, menuBarIcon: true, trayNoticeShown: false, updateChannel: "stable", updateDelayDays: 0 });
   const stored = await shell.shellSettingsPut({ ...SHELL_DEFAULTS, minimizeToTray: true, trayNoticeShown: true });
   expect(stored).toMatchObject({ minimizeToTray: true, trayNoticeShown: false });
   expect(emit).toHaveBeenCalledWith(["shell"]);
@@ -55,4 +55,15 @@ it("records quits, cancels, attention, links and menu actions for the tests", as
   expect(await shell.shellCloseRequested("t", "b")).toEqual({ intent: "close", mode: null });
   shell.__closeIntent("hide");
   expect(await shell.shellCloseRequested("t", "b")).toEqual({ intent: "hide", mode: null });
+});
+
+it("lists builds for the channel and installs a tag through the phases", async () => {
+  const shell = createMockShell();
+  const stable = await shell.updateReleases();
+  expect(stable.kind === "loaded" && stable.builds.some((b) => b.prerelease)).toBe(false);
+  await shell.updateCheck(true);
+  const rc = await shell.updateReleases();
+  expect(rc.kind === "loaded" && rc.builds.some((b) => b.prerelease)).toBe(true);
+  expect(await shell.updateDeferred()).toBeNull();
+  expect(await shell.updateInstallTag("v0.2.0")).toEqual({ kind: "ready", version: "0.2.0", notes: null });
 });

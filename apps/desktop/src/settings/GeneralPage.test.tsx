@@ -146,7 +146,7 @@ it("holds the restore setting and a link to Open In apps", async () => {
 it("every General catalog entry has a row on the page", async () => {
   const p = await page(vi.fn());
   // The Updates rows are drawn by the child component, so they are read from its view.
-  const updates = nodes(UpdatesView({ version: null, state: INITIAL_CHECK, channel: null, busy: false, onCheck() {}, onRestart() {}, onChannel() {}, t: (k) => k })).filter((n) => n.type === SettingRow);
+  const updates = nodes(UpdatesView({ version: null, state: INITIAL_CHECK, channel: null, delay: null, deferral: null, builds: { kind: "closed" }, buildFailed: null, confirm: null, busy: false, onCheck() {}, onRestart() {}, onChannel() {}, onDelay() {}, onBuilds() {}, onPick() {}, onConfirm() {}, onCancelConfirm() {}, date: (d) => d, t: (k) => k })).filter((n) => n.type === SettingRow);
   const shown = new Set([
     ...updates.map((n) => n.props.id),
     ...p.all().filter((n) => n.type === SettingRow).map((n) => n.props.id),

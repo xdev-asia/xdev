@@ -630,16 +630,18 @@ it("routes shell and update calls through Tauri with the argument names Rust exp
   try {
     const { api } = await import("./api");
     const { invoke } = await import("@tauri-apps/api/core");
-    const settings = { minimizeToTray: true, menuBarIcon: true, trayNoticeShown: false, updateChannel: "rc" as const };
+    const settings = { minimizeToTray: true, menuBarIcon: true, trayNoticeShown: false, updateChannel: "rc" as const, updateDelayDays: 3 };
     await api.shellSettings(); await api.shellSettingsPut(settings);
     await api.shellCloseRequested("xDev", "Still running"); await api.shellQuit("end-all"); await api.shellQuitCancelled();
     await api.helpOpen("docs"); await api.trayAttention(); await api.windowReload(); await api.windowDevtoolsToggle();
     await api.updateCheck(true); await api.updatePhase();
+    await api.updateDeferred(); await api.updateReleases(); await api.updateInstallTag("v0.3.1");
     expect(vi.mocked(invoke).mock.calls).toEqual([
       ["shell_settings_get", undefined], ["shell_settings_put", { settings }],
       ["shell_close_requested", { noticeTitle: "xDev", noticeBody: "Still running" }], ["shell_quit", { mode: "end-all" }], ["shell_quit_cancelled", undefined],
       ["help_open", { link: "docs" }], ["tray_attention", undefined], ["window_reload", undefined], ["window_devtools_toggle", undefined],
       ["update_check", { rc: true }], ["update_phase", undefined],
+      ["update_deferred", undefined], ["update_releases", undefined], ["update_install_tag", { tag: "v0.3.1" }],
     ]);
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });
