@@ -154,8 +154,18 @@ pub enum ConflictResolution {
 
 impl ConflictEntry {
     /// The resolutions offered for this entry, in the order they are shown.
+    /// A file that is not on disk can only be deleted; a file one side
+    /// deleted is kept or deleted; any other is marked resolved once its
+    /// markers are settled.
     pub fn resolutions(&self) -> &'static [ConflictResolution] {
-        &[]
+        use ConflictResolution::*;
+        if !self.present {
+            return &[KeepDeletion];
+        }
+        match self.kind {
+            ConflictKind::DeletedByUs | ConflictKind::DeletedByThem => &[KeepFile, KeepDeletion],
+            _ => &[MarkResolved],
+        }
     }
 }
 
@@ -266,10 +276,32 @@ impl Repo {
     pub fn conflict_resolve(
         &self,
         path: &str,
-        _expected: ConflictKind,
-        _how: ConflictResolution,
+        expected: ConflictKind,
+        how: ConflictResolution,
     ) -> Result<(), GitError> {
-        Err(GitError::ConflictGone(path.to_owned()))
+        // An empty pathspec would match the whole repo.
+        if path.is_empty() {
+            return Err(GitError::ConflictGone(String::new()));
+        }
+        let entry = self
+            .unmerged_entries(Some(path))?
+            .into_iter()
+            .find(|e| e.path == path)
+            .ok_or_else(|| GitError::ConflictGone(path.to_owned()))?;
+        if entry.kind != expected {
+            return Err(GitError::ConflictChanged(path.to_owned()));
+        }
+        if !entry.resolutions().contains(&how) {
+            return Err(GitError::NotAConflict(path.to_owned()));
+        }
+        let args: &[&str] = match how {
+            ConflictResolution::MarkResolved | ConflictResolution::KeepFile => &["add", "--"],
+            ConflictResolution::KeepDeletion => &["rm", "--force", "--quiet", "--"],
+        };
+        let mut args = args.to_vec();
+        args.push(path);
+        run::run(&self.root(), &args, None)?;
+        Ok(())
     }
 
     /// A branch that points at `id` (local first), else the short id.
@@ -432,6 +464,43 @@ mod tests {
                     present: true,
                 },
             ]
+        );
+    }
+
+    fn entry(kind: ConflictKind, present: bool) -> ConflictEntry {
+        ConflictEntry {
+            path: "f".into(),
+            kind,
+            present,
+        }
+    }
+
+    #[test]
+    fn resolutions_follow_the_kind_and_the_file() {
+        use ConflictResolution::*;
+        for kind in [
+            ConflictKind::BothModified,
+            ConflictKind::BothAdded,
+            ConflictKind::AddedByUs,
+            ConflictKind::AddedByThem,
+        ] {
+            assert_eq!(entry(kind, true).resolutions(), [MarkResolved], "{kind:?}");
+        }
+        for kind in [ConflictKind::DeletedByUs, ConflictKind::DeletedByThem] {
+            assert_eq!(
+                entry(kind, true).resolutions(),
+                [KeepFile, KeepDeletion],
+                "{kind:?}"
+            );
+        }
+        // No file on disk: deleting it is the only thing left to settle.
+        assert_eq!(
+            entry(ConflictKind::BothDeleted, false).resolutions(),
+            [KeepDeletion]
+        );
+        assert_eq!(
+            entry(ConflictKind::DeletedByThem, false).resolutions(),
+            [KeepDeletion]
         );
     }
 
