@@ -2125,7 +2125,7 @@ b",
     #[test]
     fn extra_args_refuse_a_shell_a_custom_program_and_a_bad_list() {
         let data = tempfile::tempdir().unwrap();
-        let mut shell = launch_for(data.path(), "shell", None, None, None).unwrap();
+        let mut shell = launch_for(data.path(), "shell", None, None, None, false).unwrap();
         let err = add_extra_args(&mut shell, &["--model".into(), "x".into()]).unwrap_err();
         assert_eq!(err.code, "bad_arg");
         let mut custom = Launch {

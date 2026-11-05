@@ -3001,7 +3001,7 @@
   "settings.automations.confirmDelete.hint": "Hỏi trước khi xóa một tự động hóa và lịch sử chạy của nó.",
   "automations.title": "Tự động hóa",
   "automations.page.label": "Tự động hóa",
-  "automations.search.placeholder": "Tìm kiếm...",
+  "automations.search.placeholder": "Tìm kiếm…",
   "automations.search.label": "Tìm tự động hóa",
   "automations.search.clear": "Xóa tìm kiếm",
   "automations.search.tooLong": "Từ khóa tìm quá dài nên bị bỏ qua.",

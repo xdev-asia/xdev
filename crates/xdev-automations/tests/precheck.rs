@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
+#[cfg(unix)]
 use std::ffi::OsString;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(unix)]
+use std::time::Instant;
 
 use xdev_automations::precheck::{ShellLine, failure, normalize, passed, run};
 use xdev_automations::{FailureCode, Precheck};

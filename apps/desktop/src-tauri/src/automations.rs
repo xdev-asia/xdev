@@ -1033,6 +1033,7 @@ mod tests {
     use std::sync::atomic::AtomicI64;
 
     use xdev_agent::Cli;
+    #[cfg(unix)]
     use xdev_automations::{Precheck, PrecheckResult};
 
     use super::*;

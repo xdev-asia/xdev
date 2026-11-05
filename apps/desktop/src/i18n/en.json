@@ -3001,7 +3001,7 @@
   "settings.automations.confirmDelete.hint": "Asks before an automation and its run history are deleted.",
   "automations.title": "Automations",
   "automations.page.label": "Automations",
-  "automations.search.placeholder": "Search...",
+  "automations.search.placeholder": "Search…",
   "automations.search.label": "Search automations",
   "automations.search.clear": "Clear search",
   "automations.search.tooLong": "The search is too long, so it is ignored.",

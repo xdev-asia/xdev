@@ -29,7 +29,7 @@ it("a settings change that names automations reloads, another section does not",
   await api.automationsSettingsPut({ showButton: false, skipDeleteConfirm: false });
   await vi.waitFor(() => expect(getAutomationsSettings().showButton).toBe(false), { timeout: 5_000 });
   expect(read).toHaveBeenCalledTimes(1);
-  await api.navigationSettingsPut({ tabOrder: "sequential", confirmClosePinned: true, confirmCloseRunning: true, askBeforeDeleteWorktree: true });
+  await api.navigationSettingsPut({ tabOrder: "sequential", confirmClosePinned: true, confirmCloseRunning: true, askBeforeDeleteWorktree: true, alwaysForceDeleteWorktrees: false, alwaysDeleteKeptBranches: false });
   await Promise.resolve();
   expect(read).toHaveBeenCalledTimes(1);
   stop();

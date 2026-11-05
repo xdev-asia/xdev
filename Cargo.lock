@@ -6686,15 +6686,8 @@ name = "xdev-api"
 version = "0.7.0"
 
 [[package]]
-name = "xdev-awake"
-version = "0.7.0"
-dependencies = [
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "xdev-automations"
-version = "0.5.0"
+version = "0.7.0"
 dependencies = [
  "jiff",
  "serde",
@@ -6705,6 +6698,13 @@ dependencies = [
  "xdev-agent",
  "xdev-ai",
  "xdev-core",
+]
+
+[[package]]
+name = "xdev-awake"
+version = "0.7.0"
+dependencies = [
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6770,8 +6770,8 @@ dependencies = [
  "uuid",
  "xdev-agent",
  "xdev-ai",
- "xdev-awake",
  "xdev-automations",
+ "xdev-awake",
  "xdev-core",
  "xdev-git",
  "xdev-id",

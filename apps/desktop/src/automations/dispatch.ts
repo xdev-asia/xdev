@@ -117,7 +117,7 @@ export function startAutomationDispatch(api: Api, host: DispatchHost): () => voi
           return;
         }
       }
-      const opened = sessions.open(e.worktree, e.profile, null, undefined, e.extraArgs.length > 0 ? e.extraArgs : undefined);
+      const opened = sessions.open(e.worktree, e.profile, null, undefined, { extraArgs: e.extraArgs.length > 0 ? e.extraArgs : undefined });
       const refused = refusal(opened);
       // A refusal ends the launch: a tab approved later must not get the prompt of a skipped run.
       let gaveUp = false;

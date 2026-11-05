@@ -33,11 +33,11 @@ use crate::quick_commands::{FileCommands, QuickCommand};
 use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
-    AgentsSettings, AutomationsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings, KeySettings,
-    MacOptionAsAlt, NavigationSettings, OpenInSettings, OrchestrationSettings, RestoreMode,
-    SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems, StatusSettings,
-    TerminalLinkClick, TerminalSettings, Theme, UiSettings, UpdateChannel, UsageSettings,
-    XdevIdSettings,
+    AgentsSettings, AutomationsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings,
+    KeySettings, MacOptionAsAlt, NavigationSettings, OpenInSettings, OrchestrationSettings,
+    RestoreMode, SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems,
+    StatusSettings, TerminalLinkClick, TerminalSettings, Theme, UiSettings, UpdateChannel,
+    UsageSettings, XdevIdSettings,
 };
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
