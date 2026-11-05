@@ -421,6 +421,13 @@ export type ErrorCode =
   | "pty_spawn"
   | "pty_resize"
   | "pty_gone"
+  | "scan_failed"
+  | "port_gone"
+  | "port_not_owned"
+  | "port_no_pid"
+  | "port_own_process"
+  | "stop_failed"
+  | "open_failed"
   | "ptyd_unreachable"
   | "ptyd_auth"
   | "ptyd_version"
@@ -1147,6 +1154,13 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "pty_spawn",
   "pty_resize",
   "pty_gone",
+  "scan_failed",
+  "port_gone",
+  "port_not_owned",
+  "port_no_pid",
+  "port_own_process",
+  "stop_failed",
+  "open_failed",
   "ptyd_unreachable",
   "ptyd_auth",
   "ptyd_version",
