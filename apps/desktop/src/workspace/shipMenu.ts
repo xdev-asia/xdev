@@ -1,4 +1,4 @@
-import type { ShipView } from "@/api";
+import type { ForkSync, ShipView } from "@/api";
 import type { ShipAction } from "./ship";
 
 export type MenuId =
@@ -10,6 +10,7 @@ export type MenuId =
   | "rebase"
   | "fetch"
   | "force"
+  | "sync_fork"
   | "push_then_pr";
 
 export type Text = { key: string; params?: Record<string, string | number> };
@@ -87,10 +88,29 @@ export function shipMenu(i: MenuInput): MenuEntry[] {
   });
   entries.push({ id: "fetch", label: text("ship.more.fetch"), disabled: i.busy || !attached });
   entries.push({ id: "force", label: text("ship.more.force"), disabled: i.busy || up === null || up.id === null });
+  // Moves origin's default branch, not this one, so it does not need the branch attached.
+  if (ship?.hasForkUpstream) entries.push({ id: "sync_fork", label: text("ship.menu.syncFork"), disabled: i.busy });
 
   if ((i.action === "push" || i.action === "publish") && !i.hasPr) {
     entries.push({ separator: true });
     entries.push({ id: "push_then_pr", label: text("ship.combo.pushThenPr"), disabled: i.busy || !attached });
   }
   return entries;
+}
+
+/** What a Sync fork did, in words. Pure. */
+export function forkSyncText(result: ForkSync): Text {
+  if (result.status === "up_to_date") return text("ship.syncFork.upToDate");
+  if (result.status === "synced") return text("ship.syncFork.synced", { count: result.behind });
+  const branch = result.branch ?? "";
+  switch (result.reason) {
+    case "diverged":
+      return text("ship.syncFork.diverged", { branch });
+    case "missing_origin_branch":
+      return text("ship.syncFork.noOriginBranch", { branch });
+    case "missing_upstream_default_branch":
+      return text("ship.syncFork.noDefault");
+    default:
+      return text("ship.syncFork.noRemotes");
+  }
 }

@@ -11,9 +11,9 @@ use tauri::{AppHandle, State};
 use xdev_agent::{AgentError, Cancel, Cli, Profiles, RunRequest, Runner};
 use xdev_ai::Provider;
 use xdev_git::{
-    BaseRange, Check, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, GitError, PrDraft, PrView,
-    PullPolicy, Repo, SystemGh, TokenGh, Upstream, pr_checks, pr_create, pr_open_web, pr_view,
-    run_failed_log,
+    BaseRange, Check, ForkSync, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, GitError, PrDraft,
+    PrView, PullPolicy, Repo, SystemGh, TokenGh, Upstream, pr_checks, pr_create, pr_open_web,
+    pr_view, run_failed_log,
 };
 use xdev_policy::{Action, Gate, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
@@ -186,6 +186,14 @@ fn push_with(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipVie
     locate(data, path)?;
     Repo::discover(path)?.push()?;
     view(data, path, against_upstream)
+}
+
+/// Fast-forwards `origin`'s copy of `upstream`'s default branch. A plain
+/// push like `push_with`, so no policy gate, as Push has none; it never
+/// forces, and the worktree's branch, index and files are not touched.
+fn sync_fork_with(data: &Path, path: &Path) -> Result<ForkSync, CmdError> {
+    locate(data, path)?;
+    Ok(Repo::discover(path)?.sync_fork()?)
 }
 
 fn pull_with(
@@ -796,6 +804,13 @@ pub fn worktree_push(
     push_with(data_dir(&state)?, &path, against_upstream(&app))
 }
 
+/// Sync fork: brings `origin`'s default branch up to `upstream`'s. A refusal
+/// is a `blocked` result, not an error.
+#[tauri::command(async)]
+pub fn worktree_sync_fork(state: State<'_, AppState>, path: PathBuf) -> Result<ForkSync, CmdError> {
+    sync_fork_with(data_dir(&state)?, &path)
+}
+
 #[tauri::command(async)]
 pub fn worktree_pull(
     app: AppHandle,
@@ -958,6 +973,63 @@ mod tests {
 
     fn branch(fx: &Fixture) -> String {
         git(&fx.wt, &["rev-parse", "--abbrev-ref", "HEAD"])
+    }
+
+    #[test]
+    fn view_reports_fork_upstream() {
+        let fx = fixture();
+        assert!(!view(&fx.data, &fx.wt, false).unwrap().has_fork_upstream);
+        let up = fx.tmp.path().join("upstream.git");
+        git(
+            &fx.main,
+            &["remote", "add", "upstream", up.to_str().unwrap()],
+        );
+        assert!(view(&fx.data, &fx.wt, false).unwrap().has_fork_upstream);
+    }
+
+    #[test]
+    fn sync_fork_fast_forwards_origin_from_upstream() {
+        let fx = fixture();
+        let base = git(&fx.main, &["rev-parse", "--abbrev-ref", "HEAD"]);
+        git(&fx.main, &["push", "-q", "origin", &base]);
+        let up = fx.tmp.path().join("upstream.git");
+        git(
+            fx.tmp.path(),
+            &[
+                "clone",
+                "-q",
+                "--bare",
+                fx.main.to_str().unwrap(),
+                "upstream.git",
+            ],
+        );
+        git(
+            &fx.main,
+            &["remote", "add", "upstream", up.to_str().unwrap()],
+        );
+        commit_file(&fx.main, "c.txt", "three");
+        git(&fx.main, &["push", "-q", "upstream", &base]);
+        let tip = git(&fx.main, &["rev-parse", "HEAD"]);
+        let wt_head = git(&fx.wt, &["rev-parse", "HEAD"]);
+
+        let done = sync_fork_with(&fx.data, &fx.wt).unwrap();
+        assert_eq!(done.status, xdev_git::ForkSyncStatus::Synced);
+        assert_eq!(done.branch.as_deref(), Some(base.as_str()));
+        assert_eq!(done.behind, 1);
+        let heads = format!("refs/heads/{base}");
+        assert_eq!(git(&fx.origin, &["rev-parse", &heads]), tip);
+        assert_eq!(git(&fx.wt, &["rev-parse", "HEAD"]), wt_head);
+
+        let again = sync_fork_with(&fx.data, &fx.wt).unwrap();
+        assert_eq!(again.status, xdev_git::ForkSyncStatus::UpToDate);
+    }
+
+    #[test]
+    fn sync_fork_refuses_an_unknown_worktree() {
+        let fx = fixture();
+        let other = fx.tmp.path().join("other");
+        fs::create_dir(&other).unwrap();
+        assert_eq!(code(sync_fork_with(&fx.data, &other)), "worktree_unknown");
     }
 
     #[test]

@@ -568,3 +568,27 @@ it("wraps the counts in a Code breakdown popover with Source, Tests and the aria
   pop().props.onClose();
   expect(pop().props.open).toBe(false);
 });
+
+it("Sync fork is in the menu only with an upstream remote, and says what it did", async () => {
+  const plain = bar(seeded());
+  await tick();
+  plain.openMenu();
+  expect(plain.all().some((n) => n.props.role === "menuitem" && n.props.children === en("ship.menu.syncFork"))).toBe(false);
+
+  const api = createMockApi({}, { workspace: { ...DEMO_WORKSPACE, forkUpstream: [OAK] } });
+  const sync = vi.spyOn(api, "worktreeSyncFork");
+  hooks.values = []; hooks.effects = [];
+  const view = bar(api);
+  await tick();
+  view.openMenu();
+  view.item(en("ship.menu.syncFork")).props.onClick();
+  await tick();
+  expect(sync).toHaveBeenCalledWith(OAK);
+  expect(view.html()).toContain(en("ship.syncFork.synced", { count: 3 }));
+  expect(view.onChanged).toHaveBeenCalled();
+  view.openMenu();
+  view.item(en("ship.menu.syncFork")).props.onClick();
+  await tick();
+  expect(view.html()).toContain(en("ship.syncFork.upToDate"));
+  expect(view.html()).not.toContain(en("ship.syncFork.synced", { count: 3 }));
+});

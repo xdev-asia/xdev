@@ -10,7 +10,7 @@ import type { PrStore } from "./prs";
 import { PULL_POLICY_CODES, PullPolicyNotice } from "./PullPolicyNotice";
 import { shipAction } from "./ship";
 import { breakdownRows, countsAria } from "./shipBreakdown";
-import { shipMenu, type MenuId, type Text } from "./shipMenu";
+import { forkSyncText, shipMenu, type MenuId, type Text } from "./shipMenu";
 
 const SHORT = 7;
 
@@ -83,6 +83,8 @@ export function ShipBar(props: {
   const [listed, setListed] = useState(false);
   // The Code breakdown popover on the line counts.
   const [breakdown, setBreakdown] = useState(false);
+  // What the last Sync fork did; cleared when another action starts.
+  const [forkNote, setForkNote] = useState<Text | null>(null);
   const [force, setForce] = useState<Force | null>(null);
   const [creating, setCreating] = useState(false);
   // The error on show came from a push, the one action a recipe can fix.
@@ -139,6 +141,7 @@ export function ShipBar(props: {
     setBusy(true);
     setMenu(false);
     setError(null);
+    setForkNote(null);
     setPushFailed(false);
     setOp(update);
     try {
@@ -189,7 +192,17 @@ export function ShipBar(props: {
     else if (id === "rebase") void run(() => api.worktreeRebaseFromBase(worktree), false, "rebase");
     else if (id === "commit_push") void commitThen(() => (ship?.upstream?.rewritten ? askForce() : run(() => api.worktreePush(worktree), true)));
     else if (id === "commit_sync") void commitThen(() => run(() => api.worktreeSync(worktree)));
+    else if (id === "sync_fork") void syncFork();
     else if (id === "push_then_pr") void run(() => api.worktreePush(worktree), true).then((ok) => ok && setCreating(true));
+  }
+
+  // Moves origin's default branch only; the bar reads again for the remote-tracking refs.
+  async function syncFork(): Promise<void> {
+    let note: Text | null = null;
+    const ok = await run(async () => {
+      note = forkSyncText(await api.worktreeSyncFork(worktree));
+    });
+    if (ok) setForkNote(note);
   }
 
   function askForce(): void {
@@ -337,6 +350,11 @@ export function ShipBar(props: {
               </button>
             </>
           )}
+        </p>
+      )}
+      {forkNote && (
+        <p className="ws-ship-note" role="status" data-fork-sync="">
+          {say(forkNote)}
         </p>
       )}
       {error && PULL_POLICY_CODES.has(error.code) && <PullPolicyNotice onOpenGitSettings={props.onOpenGitSettings} />}

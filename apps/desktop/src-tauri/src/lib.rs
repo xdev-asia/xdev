@@ -414,6 +414,7 @@ pub fn run() {
             ship::worktree_sync,
             ship::worktree_fetch,
             ship::worktree_force_push,
+            ship::worktree_sync_fork,
             review::worktree_discard,
             review::worktree_stage_state,
             review::worktree_conflicts,
