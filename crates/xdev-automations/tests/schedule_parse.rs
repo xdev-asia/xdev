@@ -136,6 +136,8 @@ fn a_bad_rrule_is_refused() {
     for bad in [
         "FREQ=WEEKLY;BYDAY=XX",
         "FREQ=MONTHLY",
+        // Weekly with no day would run every day.
+        "FREQ=WEEKLY;BYHOUR=9;BYMINUTE=0",
         "FREQ=DAILY;BYHOUR=24",
         "FREQ=DAILY;BYMINUTE=60",
         "BYHOUR=9",

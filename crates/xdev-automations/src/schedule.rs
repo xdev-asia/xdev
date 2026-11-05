@@ -298,6 +298,9 @@ fn parse_rrule(expr: &str) -> Result<ParsedRrule, ScheduleError> {
         }
     }
     let freq = freq.ok_or_else(|| bad("FREQ is missing".into()))?;
+    if freq == Freq::Weekly && by_day == 0 {
+        return Err(bad("FREQ=WEEKLY needs BYDAY".into()));
+    }
     Ok(ParsedRrule {
         freq,
         by_day,
