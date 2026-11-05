@@ -158,7 +158,7 @@
 
 .rv-filter {
   flex-shrink: 0;
-  margin: var(--space-2);
+  margin: 6px;
 }
 
 .rv-list-path {
