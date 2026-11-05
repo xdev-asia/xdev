@@ -51,6 +51,13 @@ const SNIPPET_AFTER = 80;
 const MAX_FRESHNESS_COMMITS = 20;
 const DAY = 24 * 60 * 60;
 
+type MockClipboardImage = string | Error | { code: string } | null;
+let mockClipboardImage: MockClipboardImage = null;
+/** Sets what the mock clipboard holds for `clipboardImageSave`: a saved path, an error (or `{ code }`) to reject with, or null (no image). */
+export function setMockClipboardImage(value: MockClipboardImage): void {
+  mockClipboardImage = value;
+}
+
 export const DEMO_ROOT = "/demo/xdev-handbook";
 const COMMIT_ID = /^[0-9a-f]{4,64}$/;
 
@@ -597,6 +604,11 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       },
       settingsHub.emit,
     ),
+    async clipboardImageSave() {
+      if (mockClipboardImage === null || typeof mockClipboardImage === "string") return mockClipboardImage;
+      throw mockClipboardImage;
+    },
+    async keyboardInputSource() { return "com.apple.keylayout.US"; },
     async accounts() { return structuredClone({ reservePercent: 30, accounts, active }); },
     async quota() { return structuredClone(quotas); },
     async updateStatus() { return null; },

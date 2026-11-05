@@ -14,6 +14,7 @@ import { NavButtons } from "@/nav/NavButtons";
 import { useNavHistory } from "@/nav/useNavHistory";
 import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
+import { startOptionAsAltProbe } from "@/terminal/optionAsAlt";
 import { startAutosave } from "@/files/autosave";
 import { fileTabId, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
@@ -103,7 +104,9 @@ import { BulkBar } from "./BulkBar";
 import { BulkRemoveDialog } from "./BulkRemoveDialog";
 import { ReviewBranchesDialog } from "./ReviewBranchesDialog";
 import { isDeleteKey, typingIn } from "./deleteKey";
-import { IS_MAC } from "@/platform";
+import { IS_MAC, PLATFORM } from "@/platform";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { startFileDrop, type DropEvent } from "@/terminal/fileDrop";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
 import { runWithToast } from "@/quickCommands/runUi";
 import { startQuickCommands } from "@/quickCommands/store";
@@ -806,6 +809,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       setTerminalKeyHost(null);
     };
   }, [live]);
+  // macOS: which keyboard layout is active decides what "Option as Alt: auto" does.
+  useEffect(() => (IS_MAC ? startOptionAsAltProbe(() => api.keyboardInputSource()) : undefined), []);
+  // Files dropped from the OS go to the terminal pane under the pointer, as paths quoted for the pane's shell.
+  useEffect(
+    () =>
+      startFileDrop({
+        listen: async (cb) => getCurrentWebview().onDragDropEvent((e) => cb(e.payload as DropEvent)),
+        scale: () => window.devicePixelRatio || 1,
+        hit: (x, y) => document.elementFromPoint(x, y),
+        onError: () => pushToast({ text: live.t("terminal.input.dropFailed") }),
+        onRejected: () => pushToast({ text: live.t("terminal.input.dropRejected") }),
+      }),
+    [live],
+  );
   // The stored zoom is applied once, as the shell mounts.
   useEffect(() => {
     void loadZoom(api);

@@ -1008,6 +1008,9 @@ pub struct TerminalSettings {
     pub minimum_contrast: f32,
     #[serde(deserialize_with = "lenient_bool_false")]
     pub focus_follows_mouse: bool,
+    /// macOS only: whether the Option key sends Alt/Esc sequences or composes characters.
+    #[serde(deserialize_with = "lenient")]
+    pub mac_option_as_alt: MacOptionAsAlt,
 }
 
 /// The default double-click word separators, the reference app's.
@@ -1041,6 +1044,7 @@ impl Default for TerminalSettings {
             fast_scroll_sensitivity: 5.0,
             minimum_contrast: 1.0,
             focus_follows_mouse: false,
+            mac_option_as_alt: MacOptionAsAlt::Auto,
         }
     }
 }
@@ -1176,6 +1180,19 @@ pub enum TerminalBell {
     None,
     Visual,
     Sound,
+}
+
+/// Settings → Terminal → "Option as Alt" (macOS): which Option keys send Alt/Esc sequences.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum MacOptionAsAlt {
+    #[default]
+    Auto,
+    Both,
+    Left,
+    Right,
+    Off,
 }
 
 /// One part of the settings file, as a `settings://changed` event names it.
@@ -1961,6 +1978,40 @@ mod tests {
     }
 
     #[test]
+    fn mac_option_as_alt_defaults_and_survives_bad_values() {
+        let old: TerminalSettings = serde_json::from_str(r#"{ "fontSize": 15 }"#).unwrap();
+        assert_eq!(old.mac_option_as_alt, MacOptionAsAlt::Auto);
+        for bad in [r#""meta""#, "3", "null"] {
+            let t: TerminalSettings = serde_json::from_str(&format!(
+                r#"{{ "fontSize": 15, "macOptionAsAlt": {bad}, "scrollback": 4000 }}"#
+            ))
+            .unwrap();
+            assert_eq!(t.mac_option_as_alt, MacOptionAsAlt::Auto, "{bad}");
+            assert_eq!(t.font_size, 15);
+            assert_eq!(t.scrollback, 4000);
+        }
+        for (value, text) in [
+            (MacOptionAsAlt::Auto, "auto"),
+            (MacOptionAsAlt::Both, "both"),
+            (MacOptionAsAlt::Left, "left"),
+            (MacOptionAsAlt::Right, "right"),
+            (MacOptionAsAlt::Off, "off"),
+        ] {
+            let t = TerminalSettings {
+                mac_option_as_alt: value,
+                ..TerminalSettings::default()
+            };
+            let json = serde_json::to_string(&t).unwrap();
+            assert!(
+                json.contains(&format!(r#""macOptionAsAlt":"{text}""#)),
+                "{json}"
+            );
+            let back: TerminalSettings = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.mac_option_as_alt, value);
+        }
+    }
+
+    #[test]
     fn an_old_terminal_file_loads_every_new_field_at_its_default() {
         let t: TerminalSettings = serde_json::from_str(r#"{ "fontSize": 15 }"#).unwrap();
         let want = TerminalSettings {
@@ -2026,6 +2077,7 @@ mod tests {
             fast_scroll_sensitivity: 8.0,
             minimum_contrast: 4.5,
             focus_follows_mouse: true,
+            mac_option_as_alt: MacOptionAsAlt::Left,
         };
         let settings = Settings {
             terminal: terminal.clone(),

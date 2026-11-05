@@ -27,9 +27,9 @@ use crate::review::{ReviewBranch, ReviewData, StageState};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
     AgentsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings, KeySettings,
-    NavigationSettings, OpenInSettings, OrchestrationSettings, RestoreMode, SettingsChanged,
-    ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems, StatusSettings, TerminalSettings,
-    Theme, UiSettings, UpdateChannel, UsageSettings, XdevIdSettings,
+    MacOptionAsAlt, NavigationSettings, OpenInSettings, OrchestrationSettings, RestoreMode,
+    SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems, StatusSettings,
+    TerminalSettings, Theme, UiSettings, UpdateChannel, UsageSettings, XdevIdSettings,
 };
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
@@ -84,6 +84,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_pty::proto::SessionInfo::export_all(cfg)?;
     StatusSettings::export_all(cfg)?;
     TerminalSettings::export_all(cfg)?;
+    MacOptionAsAlt::export_all(cfg)?;
     SettingsChanged::export_all(cfg)?;
     ShellSettings::export_all(cfg)?;
     UpdateChannel::export_all(cfg)?;

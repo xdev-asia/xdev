@@ -6,12 +6,14 @@ mod atomic;
 mod bindings;
 mod cli_path;
 mod cli_verbs;
+mod clipboard;
 mod commands;
 mod endpoint;
 mod files;
 mod hooks;
 mod issues;
 mod keybindings;
+mod keyboard;
 mod kit;
 mod layout;
 mod links;
@@ -191,6 +193,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
+            clipboard::clipboard_image_save,
+            keyboard::keyboard_input_source,
             updater::update_status,
             updater::update_notify,
             shell::shell_close_requested,
