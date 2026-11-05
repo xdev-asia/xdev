@@ -3,6 +3,7 @@ mod agent_path;
 mod agent_sessions;
 mod ai_keys;
 mod app_menu;
+mod app_stats;
 mod atomic;
 mod automations;
 #[cfg(test)]
@@ -106,6 +107,7 @@ pub fn run() {
         .manage(file_watch::FileWatches::default())
         .manage(status::Shown::default())
         .manage(power::Awake::default())
+        .manage(app_stats::AppStatsHub::default())
         .manage(ports::Ports::default())
         .manage(cli_verbs::CliHub::default())
         .manage(orchestration::OrchHub::default())
@@ -331,6 +333,8 @@ pub fn run() {
             power::keep_awake_get,
             power::keep_awake_set,
             power::keep_awake_agents,
+            app_stats::app_stats_get,
+            app_stats::app_stats_busy,
             ports::ports_scan,
             ports::ports_stop,
             ports::ports_open,

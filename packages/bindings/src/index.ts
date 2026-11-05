@@ -8,6 +8,7 @@ export type { Agent } from "./Agent";
 export type { AgentSession } from "./AgentSession";
 export type { AgentsSettings } from "./AgentsSettings";
 export type { AiKeyStatus } from "./AiKeyStatus";
+export type { AppStatsView } from "./AppStatsView";
 export type { Approval } from "./Approval";
 export type { Approvals } from "./Approvals";
 export type { Automation } from "./Automation";

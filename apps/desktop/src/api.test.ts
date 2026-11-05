@@ -863,6 +863,22 @@ it("sends the fork flag and the keep awake calls to Tauri, null when absent", as
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
 });
 
+it("routes app stats calls with the names Rust expects", async () => {
+  vi.resetModules();
+  vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  try {
+    const { api } = await import("./api");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await api.appStats();
+    await api.appStatsBusy("t1", true);
+    expect(vi.mocked(invoke).mock.calls).toEqual([
+      ["app_stats_get", undefined],
+      ["app_stats_busy", { tabId: "t1", working: true }],
+    ]);
+  } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }
+});
+
 it("routes pull request review calls with the names Rust expects", async () => {
   vi.resetModules();
   vi.doMock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
