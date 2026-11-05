@@ -17,9 +17,9 @@ use crate::automations::{
 };
 use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
-use crate::file_watch::FsChanged;
 use crate::crash::{CrashReport, RenderCrash};
 use crate::diag_bundle::DiagnosticsExport;
+use crate::file_watch::FsChanged;
 use crate::hooks::PtyHook;
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
