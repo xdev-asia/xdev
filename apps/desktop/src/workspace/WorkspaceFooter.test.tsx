@@ -205,3 +205,48 @@ it("shows the keep-awake item before the version", () => {
   expect(html.indexOf('id="awake"')).toBeLessThan(html.indexOf("v0.3.0"));
   expect(render(null)).not.toContain('id="awake"');
 });
+
+// Walks a React element tree (the footer called as a function) for the first element with `data-action`.
+type El = { props?: { children?: unknown; [k: string]: unknown } };
+function findAction(node: unknown, action: string): El | null {
+  if (!node || typeof node !== "object") return null;
+  if (Array.isArray(node)) {
+    for (const n of node) { const f = findAction(n, action); if (f) return f; }
+    return null;
+  }
+  const el = node as El;
+  if (el.props?.["data-action"] === action) return el;
+  return findAction(el.props?.children, action);
+}
+const tree = (quota: Quota[] | null, extra: Partial<Parameters<typeof WorkspaceFooter>[0]> = {}) =>
+  WorkspaceFooter({ branch: "main", running: 0, waiting: 0, quota, version: "0.3.0", ...extra });
+
+it("right-click on the meters button opens the menu at the pointer", () => {
+  const onMetersMenu = vi.fn();
+  const preventDefault = vi.fn();
+  const button = findAction(tree([account("a", [["five_hour", 1]])], { onToggleUsage() {}, onMetersMenu }), "usage");
+  (button!.props!.onContextMenu as (e: unknown) => void)({ preventDefault, clientX: 5, clientY: 6 });
+  expect(preventDefault).toHaveBeenCalled();
+  expect(onMetersMenu).toHaveBeenCalledWith({ x: 5, y: 6 });
+});
+
+it("right-click on the plain meter group does the same", () => {
+  const onMetersMenu = vi.fn();
+  const preventDefault = vi.fn();
+  const root = tree([account("a", [["five_hour", 1]])], { onMetersMenu }) as unknown as El;
+  const kids = (root.props!.children as unknown[]).flat() as (El | false | null)[];
+  const group = kids.find((k) => k && (k.props as { role?: string } | undefined)?.role === "group") as El;
+  (group.props!.onContextMenu as (e: unknown) => void)({ preventDefault, clientX: 1, clientY: 2 });
+  expect(onMetersMenu).toHaveBeenCalledWith({ x: 1, y: 2 });
+  expect(preventDefault).toHaveBeenCalled();
+});
+
+it("without a menu handler the meters take no context handler", () => {
+  const button = findAction(tree([account("a", [["five_hour", 1]])], { onToggleUsage() {} }), "usage");
+  expect(button!.props!.onContextMenu).toBeUndefined();
+});
+
+it("an open menu renders after the popover", () => {
+  const html = render([account("a", [["five_hour", 1]])], { onToggleUsage() {}, usageOpen: true, usagePopover: "POPOVER", menu: "MENU" });
+  expect(html.indexOf("MENU")).toBeGreaterThan(html.indexOf("POPOVER"));
+});

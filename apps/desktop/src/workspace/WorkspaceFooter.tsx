@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, ReactNode, Ref } from "react";
-import type { Accounts, Api, Provider, Quota, StatusBarItems, UsageDisplay } from "@/api";
+import type { Accounts, Api, Provider, Quota, StatusBarItems, UsageDisplay, UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
-import { useUsageSettings } from "@/settings/usageSettings";
+import { setUsageSettings, useUsageSettings } from "@/settings/usageSettings";
+import { ContextMenu } from "@/ui/ContextMenu";
 import { ALL_ITEMS, useStatusBarItems } from "@/ui/statusBarItems";
 import { useQuota } from "@/shell/useQuota";
 import { useUpdate, type Update } from "@/shell/useUpdate";
 import { KeepAwakeItem } from "./KeepAwakeItem";
 import { UsagePopover } from "./UsagePopover";
+import { pushToast } from "./toastStore";
 import { footerQuota, shownPercent } from "./usageModel";
+import { usageMenuItems } from "./usageMenu";
 
 /** A meter above this share of its window shows in the warn colour. */
 export const WARN_PERCENT = 80;
@@ -97,6 +100,10 @@ export function WorkspaceFooter(props: {
   usageOpen?: boolean;
   usagePopover?: ReactNode;
   usageButtonRef?: Ref<HTMLButtonElement>;
+  /** Right-click on the meters; `at` is where the menu opens. */
+  onMetersMenu?: (at: { x: number; y: number }) => void;
+  /** The context menu, drawn after the popover. */
+  menu?: ReactNode;
   /** Which of xDev's own items show (Settings > Appearance); all by default. The update notice and the meters are not items. */
   items?: StatusBarItems;
   /** The ports item (Ports in Settings → Appearance), shown before the keep-awake item. */
@@ -109,6 +116,12 @@ export function WorkspaceFooter(props: {
   const items = props.items ?? ALL_ITEMS;
   const display = props.display ?? "used";
   const meters = (props.quota ?? []).map(meterOf);
+  const onMetersContext = props.onMetersMenu
+    ? (e: { preventDefault(): void; clientX: number; clientY: number }) => {
+        e.preventDefault();
+        props.onMetersMenu?.({ x: e.clientX, y: e.clientY });
+      }
+    : undefined;
   return (
     <footer className="ws-footer" hidden={props.hidden}>
       {items.branch && props.branch && <span className="ws-mono ws-footer-branch">{`⎇ ${props.branch}`}</span>}
@@ -123,6 +136,7 @@ export function WorkspaceFooter(props: {
             aria-haspopup="dialog"
             aria-expanded={props.usageOpen === true}
             onClick={props.onToggleUsage}
+            onContextMenu={onMetersContext}
           >
             {meters.map((m) => (
               <MeterItem key={m.label} meter={m} display={display} />
@@ -130,13 +144,14 @@ export function WorkspaceFooter(props: {
           </button>
         ) : (
           // One tab stop, so the footer is in the focus order and the meters are read out.
-          <span className="ws-meters" role="group" aria-label={t("workspace.footer.usage")} tabIndex={0}>
+          <span className="ws-meters" role="group" aria-label={t("workspace.footer.usage")} tabIndex={0} onContextMenu={onMetersContext}>
             {meters.map((m) => (
               <MeterItem key={m.label} meter={m} display={display} />
             ))}
           </span>
         ))}
       {props.usageOpen && props.usagePopover}
+      {props.menu}
       {items.tokenUsage && props.onOpenUsage && (
         <button type="button" className="ws-footer-link" data-action="token-usage" onClick={props.onOpenUsage}>
           {t("kit.usage.link")}
@@ -175,15 +190,19 @@ export function LiveWorkspaceFooter(props: {
   onManageAccounts?: () => void;
   /** Makes an account the active one of its provider; the "Use" action shows only when this is given. */
   onUseAccount?: (provider: Provider, name: string) => void;
+  /** Opens Settings on the usage section; the menu row shows only when this is given. */
+  onUsageSettings?: () => void;
   /** The ports item; shown when Settings → Appearance has it on. */
   ports?: ReactNode;
   hidden?: boolean;
 }): JSX.Element {
-  const { api, hidden, onManageAccounts, onUseAccount, ...rest } = props;
+  const { api, hidden, onManageAccounts, onUseAccount, onUsageSettings, ...rest } = props;
+  const { t } = useI18n();
   const { quota, loading, refresh } = useQuota(api, hidden === true);
   const update = useUpdate(api);
   const [open, setOpen] = useState(false);
   const [accounts, setAccounts] = useState<Accounts | null>(null);
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(false);
 
@@ -217,6 +236,8 @@ export function LiveWorkspaceFooter(props: {
   }, [hidden]);
 
   const close = () => setOpen(false);
+  const put = (next: UsageSettings) =>
+    void api.usageSettingsPut(next).then(setUsageSettings, () => pushToast({ text: t("usage.menu.failed") }));
   const popover = (
     <UsagePopover
       quota={quota}
@@ -249,6 +270,24 @@ export function LiveWorkspaceFooter(props: {
       usageOpen={open}
       usagePopover={popover}
       usageButtonRef={button}
+      onMetersMenu={setMenuAt}
+      menu={
+        menuAt && (
+          <ContextMenu
+            at={menuAt}
+            items={usageMenuItems(
+              usage,
+              put,
+              onUsageSettings &&
+                (() => {
+                  setMenuAt(null);
+                  onUsageSettings();
+                }),
+            )}
+            onClose={() => setMenuAt(null)}
+          />
+        )
+      }
       ports={rest.ports}
       keepAwake={<KeepAwakeItem api={api} />}
     />

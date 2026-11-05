@@ -2246,6 +2246,8 @@
   "usage.popover.use": "Dùng",
   "usage.popover.manage": "Quản lý tài khoản…",
   "usage.popover.open": "Xem mức dùng từng tài khoản",
+  "usage.menu.settings": "Cài đặt mức dùng…",
+  "usage.menu.failed": "Không lưu được đồng hồ ở chân trang.",
   "workspace.children": "{count}",
   "workspace.children.label": "Hiện hoặc ẩn {count} worktree lồng của {name}",
   "workspace.work.todo": "Cần làm",

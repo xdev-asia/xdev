@@ -2246,6 +2246,8 @@
   "usage.popover.use": "Use",
   "usage.popover.manage": "Manage accounts…",
   "usage.popover.open": "Show usage per account",
+  "usage.menu.settings": "Usage settings…",
+  "usage.menu.failed": "Could not save the footer meters.",
   "workspace.children": "{count}",
   "workspace.children.label": "Show or hide the {count} nested worktrees of {name}",
   "workspace.work.todo": "To do",
