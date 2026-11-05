@@ -115,4 +115,25 @@ describe("mock profiles", () => {
     await expect(spawn("codex")).rejects.toMatchObject({ code: "profile_off" });
     await expect(spawn("nope")).rejects.toMatchObject({ code: "unknown_profile" });
   });
+
+  it("a_fresh_default_is_auto_and_resolves_to_the_first_installed_agent", async () => {
+    const view = await createMockApi({}).profiles();
+    expect(view.defaultAgent).toBe("auto");
+    expect(view.resolvedDefault).toBe("claude");
+  });
+
+  it("refresh_reads_the_installed_list_and_auto_follows_it", async () => {
+    const api = createMockApi({});
+    api.__installed = ["codex", "devin"];
+    const view = await api.agentsRefresh();
+    expect(view.profiles.filter((p) => p.installed && p.builtin).map((p) => p.profile.id)).toEqual(["codex", "devin"]);
+    expect(view.resolvedDefault).toBe("codex");
+    api.__installed = [];
+    expect((await api.agentsRefresh()).resolvedDefault).toBeNull();
+  });
+
+  it("a_blank_default_resolves_to_no_agent", async () => {
+    const api = createMockApi({});
+    expect((await api.profilesDefaults("ask", "blank", null)).resolvedDefault).toBeNull();
+  });
 });

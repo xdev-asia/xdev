@@ -92,7 +92,7 @@ export interface MockProfiles extends ProfilesApi {
 export function createMockProfiles(): MockProfiles {
   let approvals: ProfilesView["approvals"] = "ask";
   // Stays a plain id until the UI reads `auto` (agent picker task); the wire default is "auto".
-  let defaultAgent = "claude";
+  let defaultAgent = "auto";
   // Stored without the prefix; unknown means the first shell on offer.
   let defaultShell: string | null = null;
   let profiles: Profile[] = CLIS.map(builtin);

@@ -16,7 +16,7 @@ import {
 } from "@/api";
 import { useProfiles } from "@/agents/profileStore";
 import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
-import { Button, Disclosure, Field, Switch } from "@xdev-asia/ui";
+import { Banner, Button, Disclosure, Field, Switch, Tag } from "@xdev-asia/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import { pushToast } from "@/workspace/toastStore";
@@ -48,6 +48,7 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
   const [editing, setEditing] = useState<string | null>(null);
   const [confirmSkip, setConfirmSkip] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<ApiError["code"]>();
   // The status channel settings; this page owns only `hooks`.
   const [status, setStatus] = useState<StatusSettings | null>(null);
@@ -199,7 +200,26 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
   function pickApprovals(next: Approvals): void {
     if (next === current.approvals) return;
     if (next === "skip") setConfirmSkip(true);
-    else void defaults("ask", current.defaultAgent, current.defaultShell);
+    else void defaults(next, current.defaultAgent, current.defaultShell);
+  }
+
+  async function refresh(): Promise<void> {
+    if (busy || refreshing) return;
+    setRefreshing(true);
+    try {
+      await act(() => api.agentsRefresh());
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function openDocs(id: string): Promise<void> {
+    setError(undefined);
+    try {
+      await api.agentDocsOpen(id);
+    } catch (e) {
+      setError(toApiError(e).code);
+    }
   }
 
   const toggle = (p: ProfileView) => act(() => api.profilePut({ ...p.profile, enabled: !p.profile.enabled }));
@@ -207,6 +227,51 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
   const editingView = editing === "new" ? null : (current.profiles.find((p) => p.profile.id === editing) ?? null);
   const taken = current.profiles.map((p) => p.profile.id);
   const agents = current.profiles.filter((p) => p.profile.enabled || p.profile.id === current.defaultAgent);
+  // A built-in that is not found can only be installed; a custom profile stays with the installed ones.
+  const available = current.profiles.filter((p) => p.builtin && !p.installed);
+  const installed = current.profiles.filter((p) => !(p.builtin && !p.installed));
+  const detected = installed.filter((p) => p.builtin).length;
+  const chosen = current.profiles.find((p) => p.profile.id === current.defaultAgent);
+  const defaultMissing = current.defaultAgent !== "auto" && current.defaultAgent !== "blank" && !chosen?.installed;
+
+  const profileRow = (p: ProfileView) => (
+    <li key={p.profile.id} className="settings-item" data-profile={p.profile.id}>
+      <div className="settings-item-text">
+        <span className="agent-dot" data-installed={p.installed} aria-hidden="true" />
+        <strong>{p.profile.name}</strong>
+        {!p.builtin && <Tag>{t("settings.agents.custom")}</Tag>}
+        <span className="ws-mono settings-path">{p.path ?? t("settings.agents.notFound")}</span>
+        {p.permissions === "skip" && <span className="agent-skip">{t("settings.agents.skip")}</span>}
+        {p.permissions === "auto" && <span className="settings-path">{t("settings.agents.perm.auto")}</span>}
+        {p.followsApprovals && <span className="settings-path">{t("settings.agents.follows")}</span>}
+      </div>
+      <div className="settings-actions">
+        {p.docs && (
+          <button
+            type="button"
+            className="btn-secondary"
+            data-field="docs"
+            title={p.installed ? t("settings.agents.catalog.docs") : t("settings.agents.catalog.install")}
+            onClick={() => void openDocs(p.profile.id)}
+          >
+            {p.installed ? t("settings.agents.catalog.docs") : t("settings.agents.catalog.install")}
+          </button>
+        )}
+        <button
+          type="button"
+          role="switch"
+          className="agent-switch"
+          aria-checked={p.profile.enabled}
+          aria-label={t("settings.agents.enabled", { name: p.profile.name })}
+          disabled={busy}
+          onClick={() => void toggle(p)}
+        />
+        <button type="button" className="btn-secondary" disabled={busy} onClick={() => setEditing(p.profile.id)}>
+          {t("settings.agents.edit")}
+        </button>
+      </div>
+    </li>
+  );
 
   const editor = (
     <ProfileEditor
@@ -244,6 +309,9 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         <button type="button" aria-pressed={current.approvals === "ask"} disabled={busy} onClick={() => pickApprovals("ask")}>
           {t("settings.agents.approvals.ask")}
         </button>
+        <button type="button" aria-pressed={current.approvals === "auto"} disabled={busy} onClick={() => pickApprovals("auto")}>
+          {t("settings.agents.approvals.auto")}
+        </button>
         <button
           type="button"
           className="agent-seg-skip"
@@ -269,12 +337,19 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
             data-field="defaultAgent"
             onChange={(e) => void defaults(current.approvals, e.target.value, current.defaultShell)}
           >
+            <option value="auto">{t("settings.agents.default.auto")}</option>
+            <option value="blank">{t("settings.agents.default.blank")}</option>
             {agents.map((p) => (
               <option key={p.profile.id} value={p.profile.id}>
                 {p.profile.name}
               </option>
             ))}
           </select>
+          {defaultMissing && (
+            <small className="settings-hint" data-field="defaultAgentMissing" title={t("settings.agents.default.missing")}>
+              <span className="agent-dot" data-installed={false} aria-hidden="true" /> {t("settings.agents.default.missing")}
+            </small>
+          )}
         </label>
         </SettingRow>
         <SettingRow id="agents.defaultShell" filter={filter}>
@@ -299,33 +374,33 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
 
       <SettingRow id="agents.profiles" filter={filter}>
       <h4 className="settings-group">{t("settings.agents.profiles")}</h4>
-      <ul className="settings-list">
-        {current.profiles.map((p) => (
-          <li key={p.profile.id} className="settings-item" data-profile={p.profile.id}>
-            <div className="settings-item-text">
-              <span className="agent-dot" data-installed={p.installed} aria-hidden="true" />
-              <strong>{p.profile.name}</strong>
-              <span className="ws-mono settings-path">{p.path ?? t("settings.agents.notFound")}</span>
-              {p.permissions === "skip" && <span className="agent-skip">{t("settings.agents.skip")}</span>}
-              {p.followsApprovals && <span className="settings-path">{t("settings.agents.follows")}</span>}
-            </div>
-            <div className="settings-actions">
-              <button
-                type="button"
-                role="switch"
-                className="agent-switch"
-                aria-checked={p.profile.enabled}
-                aria-label={t("settings.agents.enabled", { name: p.profile.name })}
-                disabled={busy}
-                onClick={() => void toggle(p)}
-              />
-              <button type="button" className="btn-secondary" disabled={busy} onClick={() => setEditing(p.profile.id)}>
-                {t("settings.agents.edit")}
-              </button>
-            </div>
-          </li>
-        ))}
+      <div className="settings-actions settings-actions-start agent-refresh">
+        <button
+          type="button"
+          className="btn-secondary"
+          data-field="refresh"
+          title={t("settings.agents.catalog.refreshHint")}
+          disabled={busy || refreshing}
+          onClick={() => void refresh()}
+        >
+          {refreshing ? t("settings.agents.catalog.refreshing") : t("settings.agents.catalog.refresh")}
+        </button>
+      </div>
+      {detected === 0 && <Banner title={t("settings.agents.catalog.none")} />}
+      <h5 className="settings-subgroup">{t("settings.agents.catalog.installed")}</h5>
+      <p className="settings-empty">{t("settings.agents.catalog.detected", { count: detected })}</p>
+      <ul className="settings-list" data-section="installed">
+        {installed.map(profileRow)}
       </ul>
+      {available.length > 0 && (
+        <>
+          <h5 className="settings-subgroup">{t("settings.agents.catalog.available")}</h5>
+          <p className="settings-empty">{t("settings.agents.catalog.count", { count: available.length })}</p>
+          <ul className="settings-list" data-section="available">
+            {available.map(profileRow)}
+          </ul>
+        </>
+      )}
       {editing !== null ? (
         editor
       ) : (
@@ -458,6 +533,24 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
             onChange={(e) => setSleepDraft(e.target.value)}
             onBlur={commitSleepMinutes}
             onKeyDown={(e) => e.key === "Enter" && commitSleepMinutes()}
+          />
+        </li>
+      </ul>
+      </SettingRow>
+
+      <SettingRow id="agents.workspaceTrust" filter={filter}>
+      <h4 className="settings-group">{t("settings.agents.trust.title")}</h4>
+      <ul className="settings-list" data-section="workspace-trust">
+        <li className="settings-item">
+          <div className="settings-item-text">
+            <span className="settings-path">{t("settings.agents.trust.what")}</span>
+          </div>
+          <Switch
+            checked={switchPolicy?.workspaceTrust ?? true}
+            aria-label={t("settings.agents.trust.title")}
+            disabled={!switchPolicy}
+            data-field="workspaceTrust"
+            onChange={(e) => void putAgents({ workspaceTrust: e.target.checked })}
           />
         </li>
       </ul>

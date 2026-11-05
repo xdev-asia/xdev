@@ -853,5 +853,10 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       notify([path]);
     },
   };
+  // The spread above copied the values; these two stay live views of the profile store.
+  Object.defineProperties(api, {
+    __installed: { get: () => profiles.__installed, set: (ids: string[]) => void (profiles.__installed = ids), enumerable: true, configurable: true },
+    __docsOpened: { get: () => profiles.__docsOpened, enumerable: true, configurable: true },
+  });
   return api;
 }

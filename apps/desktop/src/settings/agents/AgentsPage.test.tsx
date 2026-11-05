@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { RadioGroup, Switch } from "@xdev-asia/ui";
+import { Banner, RadioGroup, Switch, Tag } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { AgentsPage } from "./AgentsPage";
 import { ProfileEditor } from "./ProfileEditor";
@@ -41,8 +41,9 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; store.update.mockReset(); });
 
-async function page() {
+async function page(setup?: (api: ReturnType<typeof createMockApi>) => Promise<unknown> | void) {
   const api = createMockApi({});
+  await setup?.(api);
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
@@ -433,4 +434,150 @@ it("auto_sleep_switch_puts_the_flag_and_the_minutes_field_commits_a_clamped_valu
   await tick();
   expect(put).toHaveBeenCalledTimes(2);
   expect(field(p, "sleepAfterMin").props.value).toBe("1440");
+});
+
+const rowsIn = (p: Awaited<ReturnType<typeof page>>, section: string) => {
+  const list = p.all().find((n) => n.type === "ul" && n.props["data-section"] === section)!;
+  return nodes(list.props.children).filter((n) => n.type === "li" && n.props["data-profile"]).map((n) => n.props["data-profile"] as string);
+};
+const dataField = (p: Awaited<ReturnType<typeof page>>, name: string) => p.all().find((n) => n.props["data-field"] === name);
+
+it("catalog_splits_installed_from_available_with_counts", async () => {
+  const p = await page();
+  expect(rowsIn(p, "installed")).toEqual(["claude", "codex", "aider"]);
+  expect(rowsIn(p, "available")).toHaveLength(10);
+  expect(rowsIn(p, "available")).toContain("devin");
+  const texts = p.all().map((n) => n.props.children).filter((c) => typeof c === "string");
+  expect(texts).toContain(en("settings.agents.catalog.detected", { count: 3 }));
+  expect(texts).toContain(en("settings.agents.catalog.count", { count: 10 }));
+});
+
+it("refresh_calls_agents_refresh_and_follows_the_new_detection", async () => {
+  const p = await page();
+  const refresh = vi.spyOn(p.api, "agentsRefresh");
+  p.api.__installed = ["claude", "devin"];
+  dataField(p, "refresh")!.props.onClick();
+  await tick();
+  expect(refresh).toHaveBeenCalledTimes(1);
+  expect(rowsIn(p, "installed")).toEqual(["claude", "devin"]);
+  expect(store.update).toHaveBeenCalled();
+});
+
+it("docs_button_says_docs_for_an_installed_agent_and_install_for_a_missing_one_and_opens_the_docs", async () => {
+  const p = await page();
+  const open = vi.spyOn(p.api, "agentDocsOpen");
+  const docs = (id: string) => nodes(p.row(id)).find((n) => n.props["data-field"] === "docs")!;
+  expect(docs("aider").props.title).toBe(en("settings.agents.catalog.docs"));
+  expect(docs("devin").props.title).toBe(en("settings.agents.catalog.install"));
+  docs("devin").props.onClick();
+  await tick();
+  expect(open).toHaveBeenCalledWith("devin");
+});
+
+it("a_custom_profile_has_the_custom_tag_and_no_docs_button", async () => {
+  const p = await page((api) => api.profilePut({ id: "mine", name: "Mine", cli: null, program: "mine", args: [], env: [], model: null, effort: null, permissions: null, account: null, startup: [], enabled: true }));
+  const row = p.row("mine");
+  expect(nodes(row).some((n) => n.type === Tag && n.props.children === en("settings.agents.custom"))).toBe(true);
+  expect(nodes(row).some((n) => n.props["data-field"] === "docs")).toBe(false);
+  expect(nodes(p.row("claude")).some((n) => n.type === Tag)).toBe(false);
+});
+
+it("nothing_installed_shows_the_empty_banner_with_the_blank_terminal_hint", async () => {
+  const p = await page((api) => { api.__installed = []; });
+  const banner = p.all().find((n) => n.type === Banner)!;
+  expect(banner.props.title).toBe(en("settings.agents.catalog.none"));
+  expect(rowsIn(p, "installed")).toEqual([]);
+});
+
+it("an_installed_agent_hides_the_empty_banner", async () => {
+  const p = await page();
+  expect(p.all().some((n) => n.type === Banner)).toBe(false);
+});
+
+it("default_agent_lists_auto_and_blank_then_the_agents_and_warns_when_the_saved_one_is_missing", async () => {
+  const p = await page(async (api) => { await api.profilesDefaults("ask", "devin", null); });
+  const select = dataField(p, "defaultAgent")!;
+  const options = nodes(select.props.children).filter((n) => n.type === "option").map((n) => n.props.value);
+  expect(options.slice(0, 2)).toEqual(["auto", "blank"]);
+  expect(options).toContain("devin");
+  expect(select.props.value).toBe("devin");
+  expect(dataField(p, "defaultAgentMissing")!.props.title).toBe(en("settings.agents.default.missing"));
+  select.props.onChange({ target: { value: "blank" } });
+  await tick();
+  expect(dataField(p, "defaultAgent")!.props.value).toBe("blank");
+  expect(dataField(p, "defaultAgentMissing")).toBeUndefined();
+});
+
+it("a_fresh_default_is_auto", async () => {
+  const p = await page();
+  expect(dataField(p, "defaultAgent")!.props.value).toBe("auto");
+});
+
+it("approvals_has_three_options_and_auto_saves_without_a_confirm", async () => {
+  const p = await page();
+  const defaults = vi.spyOn(p.api, "profilesDefaults");
+  const seg = () => p.all().find((n) => n.props.className === "agent-seg")!;
+  const labels = nodes(seg().props.children).filter((n) => n.type === "button").map((n) => n.props.children);
+  expect(labels).toEqual([en("settings.agents.approvals.ask"), en("settings.agents.approvals.auto"), en("settings.agents.approvals.skip")]);
+  p.button(seg(), en("settings.agents.approvals.auto")).props.onClick();
+  await tick();
+  expect(defaults).toHaveBeenCalledWith("auto", "auto", expect.any(String));
+  expect(p.all().find((n) => n.type === ConfirmDialog)!.props.open).toBe(false);
+  expect(p.all().some((n) => n.props.children === en("settings.agents.approvals.autoHint"))).toBe(true);
+  p.button(seg(), en("settings.agents.approvals.ask")).props.onClick();
+  await tick();
+  expect(defaults).toHaveBeenLastCalledWith("ask", "auto", expect.any(String));
+});
+
+it("trust_switch_follows_the_stored_flag_and_saves_a_toggle", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "agentsSettingsPut");
+  expect(dataField(p, "workspaceTrust")!.props.checked).toBe(true);
+  dataField(p, "workspaceTrust")!.props.onChange({ target: { checked: false } });
+  await tick();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ workspaceTrust: false, keepAwake: "off" }));
+  expect(dataField(p, "workspaceTrust")!.props.checked).toBe(false);
+});
+
+it("catalogue_strings_exist_in_both_languages", () => {
+  for (const key of ["catalog.installed", "catalog.detected", "catalog.available", "catalog.count", "catalog.refresh", "catalog.refreshing", "catalog.refreshHint", "catalog.none", "catalog.docs", "catalog.install", "default.auto", "default.blank", "default.missing", "perm.auto", "perm.autoHint", "perm.custom", "perm.customHint", "perm.remove", "approvals.auto", "approvals.autoHint", "trust.title", "trust.what", "custom"]) {
+    for (const locale of ["en", "vi"] as const) expect(translate(locale, `settings.agents.${key}`, { count: 1, flag: "f", agent: "a" }), `${locale} ${key}`).not.toBe(`settings.agents.${key}`);
+  }
+});
+
+it("editor_lists_auto_only_for_an_agent_that_has_it", async () => {
+  const p = await page();
+  const values = (id: string) => {
+    p.button(p.row(id), en("settings.agents.edit")).props.onClick();
+    return nodes(drawEditor(p.editor()!).field("permissions").props.children).filter((n) => n.type === "option").map((n) => n.props.value);
+  };
+  expect(values("claude")).toContain("auto");
+  expect(values("aider")).not.toContain("auto");
+  expect(values("aider")).toEqual(["", "ask", "skip"]);
+});
+
+it("removing_the_flag_tag_sets_ask_and_saves", async () => {
+  const p = await page(async (api) => { await api.profilesDefaults("skip", "auto", null); });
+  const put = vi.spyOn(p.api, "profilePut");
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  const ed = drawEditor(p.editor()!);
+  const tag = ed.draw().find((n) => n.type === Tag)!;
+  expect(tag.props.removeLabel).toBe(en("settings.agents.perm.remove", { flag: en("settings.agents.perm.skip"), agent: "Claude Code" }));
+  tag.props.onRemove();
+  expect(ed.field("permissions").props.value).toBe("ask");
+  expect(ed.draw().some((n) => n.type === Tag)).toBe(false);
+  ed.click(en("settings.agents.save"));
+  await tick();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ id: "claude", permissions: "ask" }));
+});
+
+it("a_profile_with_its_own_launch_arguments_shows_the_custom_hint_and_no_flag_tag", async () => {
+  const p = await page(async (api) => {
+    const claude = (await api.profiles()).profiles.find((v) => v.profile.id === "claude")!.profile;
+    await api.profilePut({ ...claude, args: ["--permission-mode", "plan"] });
+  });
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  const ed = drawEditor(p.editor()!);
+  expect(ed.draw().some((n) => n.props.children === en("settings.agents.perm.customHint"))).toBe(true);
+  expect(ed.draw().some((n) => n.type === Tag)).toBe(false);
 });
