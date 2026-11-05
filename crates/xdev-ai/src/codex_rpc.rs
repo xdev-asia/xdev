@@ -107,6 +107,16 @@ fn send(stdin: &mut ChildStdin, msg: &Value) {
     let _ = writeln!(stdin, "{msg}").and_then(|()| stdin.flush());
 }
 
+/// After stdout ends, how long stderr may take to reach its own end.
+const STDERR_TAIL: Duration = Duration::from_secs(2);
+
+fn keep_stderr(stderr: &mut String, l: &str) {
+    if stderr.len() < 16 << 10 {
+        stderr.push_str(l);
+        stderr.push('\n');
+    }
+}
+
 /// Waits for the response to request `id`. Lines that are not JSON, and
 /// other messages, are skipped.
 fn await_response(
@@ -117,6 +127,7 @@ fn await_response(
 ) -> Result<Value, ProbeError> {
     let deadline = Instant::now() + timeout;
     let mut stderr = String::new();
+    let mut stderr_done = false;
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         match rx.recv_timeout(left) {
@@ -126,20 +137,19 @@ fn await_response(
                 if is_auth_error(&l) {
                     return Err(ProbeError::Auth(l));
                 }
-                if stderr.len() < 16 << 10 {
-                    stderr.push_str(&l);
-                    stderr.push('\n');
-                }
+                keep_stderr(&mut stderr, &l);
             }
-            Ok(Ev::ErrEof) => {}
+            Ok(Ev::ErrEof) => stderr_done = true,
             Ok(Ev::OutEof) => {
-                // The error text may still be in flight on the other pipe.
-                let grace = Instant::now() + Duration::from_millis(500);
-                while let Ok(ev) = rx.recv_timeout(grace.saturating_duration_since(Instant::now()))
-                {
-                    if let Ev::Err(l) = ev {
-                        stderr.push_str(&l);
-                        stderr.push('\n');
+                // The error text may still be in flight on the other pipe:
+                // read it to its end, or for at most STDERR_TAIL.
+                let until = Instant::now() + STDERR_TAIL;
+                while !stderr_done {
+                    match rx.recv_timeout(until.saturating_duration_since(Instant::now())) {
+                        Ok(Ev::Err(l)) => keep_stderr(&mut stderr, &l),
+                        Ok(Ev::ErrEof) => stderr_done = true,
+                        Ok(_) => {}
+                        Err(_) => break,
                     }
                 }
                 return Err(exited(child, &stderr));
@@ -661,6 +671,27 @@ pub(crate) mod tests {
     fn auth_text_on_stderr_before_an_exit_is_auth() {
         let e = read_rate_limits(fake("stderr-auth-exit"), quick(), 0).unwrap_err();
         assert!(matches!(e, ProbeError::Auth(_)), "{e:?}");
+    }
+
+    #[test]
+    fn stderr_that_ends_after_stdout_is_still_read_to_its_end() {
+        // stdout closes first; the sign-in text comes 700 ms later, then
+        // stderr closes. Nothing is decided before stderr's end or 2 s.
+        let (tx, rx) = mpsc::channel();
+        tx.send(Ev::OutEof).unwrap();
+        let late = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(700));
+            tx.send(Ev::Err("Error: Not logged in".into())).unwrap();
+            tx.send(Ev::ErrEof).unwrap();
+            // Keep the channel open, so only the stderr end can stop the wait.
+            thread::sleep(Duration::from_secs(3));
+        });
+        let mut child = fake("exit3").spawn().unwrap();
+        let e = await_response(&rx, &mut child, 1, Duration::from_secs(10)).unwrap_err();
+        assert!(matches!(e, ProbeError::Auth(_)), "{e:?}");
+        let _ = child.wait();
+        drop(rx);
+        late.join().unwrap();
     }
 
     #[test]
