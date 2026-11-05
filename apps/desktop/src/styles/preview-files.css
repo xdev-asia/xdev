@@ -85,6 +85,11 @@
 .preview-body .md-frontmatter { margin-bottom: var(--x-space-3); color: var(--x-color-muted); }
 .preview-body .md-frontmatter pre { overflow: auto; }
 .preview-body .md-mermaid { overflow: auto; margin: var(--x-space-3) 0; }
+.md-mermaid svg { max-width: 100%; height: auto; }
+.md-mermaid-expand { margin-top: var(--x-space-2); }
+.md-mermaid-invalid { margin: 0; padding: var(--x-space-3); border: 1px solid var(--x-color-danger); background: var(--x-color-danger-soft); border-radius: var(--x-radius-sm); }
+.md-mermaid-full svg { max-width: none; }
+.dialog[data-size="wide"] .md-mermaid-stage { height: 60vh; }
 .preview-body .tok-keyword,
 .preview-body .tok-operator { color: var(--x-color-signal); }
 .preview-body .tok-string,
