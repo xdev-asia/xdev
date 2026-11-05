@@ -852,10 +852,12 @@ it("sends the fork flag and the keep awake calls to Tauri, null when absent", as
     const { invoke } = await import("@tauri-apps/api/core");
     await api.ptyApprove("claude", null);
     await api.ptyApprove("claude", null, "s1", true);
+    await api.ptyApprove("claude", null, undefined, undefined, ["--model", "opus"]);
     await api.keepAwake(); await api.keepAwakeSet("agent"); await api.keepAwakeAgents(true);
     expect(vi.mocked(invoke).mock.calls).toEqual([
-      ["pty_approve", { profileId: "claude", account: null, resume: null, fork: null }],
-      ["pty_approve", { profileId: "claude", account: null, resume: "s1", fork: true }],
+      ["pty_approve", { profileId: "claude", account: null, resume: null, fork: null, extraArgs: null }],
+      ["pty_approve", { profileId: "claude", account: null, resume: "s1", fork: true, extraArgs: null }],
+      ["pty_approve", { profileId: "claude", account: null, resume: null, fork: null, extraArgs: ["--model", "opus"] }],
       ["keep_awake_get", undefined], ["keep_awake_set", { mode: "agent" }], ["keep_awake_agents", { working: true }],
     ]);
   } finally { vi.unstubAllGlobals(); vi.doUnmock("@tauri-apps/api/core"); vi.resetModules(); }

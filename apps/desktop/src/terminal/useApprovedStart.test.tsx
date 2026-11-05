@@ -90,6 +90,17 @@ it("approves a fork launch with the same resume id and fork", async () => {
   expect(approve).toHaveBeenCalledWith("claude", null, "abc-1", true);
 });
 
+it("approves a launch with the same extra arguments", async () => {
+  const s = setup();
+  const approve = vi.spyOn(s.api, "ptyApprove");
+  const retry = vi.fn();
+  s.draw().ask("claude", { code: "needs_approval", detail: "start claude" }, false, retry, () => {}, null, undefined, false, ["--model", "opus"]);
+  s.dialog().onConfirm();
+  await tick();
+  expect(approve).toHaveBeenCalledWith("claude", null, undefined, undefined, ["--model", "opus"]);
+  expect(retry).toHaveBeenCalledTimes(1);
+});
+
 it("approves a resume launch with the same resume id", async () => {
   const s = setup();
   const approve = vi.spyOn(s.api, "ptyApprove");

@@ -831,7 +831,7 @@ export interface Api {
   // `resume` is an agent session id (A-Z, a-z, 0-9, `_`, `-`): the CLI continues that session.
   ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string, fork?: boolean, prompt?: string, extraArgs?: string[]): Promise<PtyInfo>;
   // Approves the launch `ptySpawn` was refused for; pass the same `resume` and `fork`, as they are part of the launch line.
-  ptyApprove(profileId: PtyProfile, account: string | null, resume?: string, fork?: boolean): Promise<void>;
+  ptyApprove(profileId: PtyProfile, account: string | null, resume?: string, fork?: boolean, extraArgs?: string[]): Promise<void>;
   // Agent profiles and the shells of the `+` menu; each write returns the whole view.
   profiles(): Promise<ProfilesView>;
   profilePut(p: Profile): Promise<ProfilesView>;
@@ -1619,7 +1619,7 @@ const tauriApi: Api = {
     out.onmessage = (msg) => onData(toBytes(msg));
     return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null, fork: fork ?? null, prompt: prompt ?? null, extraArgs: extraArgs ?? null });
   },
-  ptyApprove: (profileId, account, resume, fork) => call("pty_approve", { profileId, account, resume: resume ?? null, fork: fork ?? null }),
+  ptyApprove: (profileId, account, resume, fork, extraArgs) => call("pty_approve", { profileId, account, resume: resume ?? null, fork: fork ?? null, extraArgs: extraArgs ?? null }),
   profiles: () => call("profiles_list"),
   profilePut: (profile) => call("profile_put", { profile }),
   profileRemove: (id) => call("profile_remove", { id }),

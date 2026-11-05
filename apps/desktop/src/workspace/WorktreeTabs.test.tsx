@@ -114,6 +114,20 @@ let sessions: Sessions | null = null;
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; store.view = null; resetNavigationSettingsForTests(); });
 afterEach(() => { sessions?.dispose(); sessions = null; vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
+it("approves a tab's launch with its extra arguments", async () => {
+  const api = createMockApi({});
+  const approve = vi.spyOn(api, "ptyApprove");
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const tab = live.open(A, "claude", null, undefined, { extraArgs: ["--model", "opus"] });
+  view.draw();
+  await run(view.terminals().find((t) => t.props.id === tab.id)!);
+  expect(view.dialog().props.open).toBe(true);
+  view.dialog().props.onConfirm();
+  await tick();
+  expect(approve).toHaveBeenCalledWith("claude", null, undefined, undefined, ["--model", "opus"]);
+});
+
 it("plus menu starts claude in the worktree after approval", async () => {
   const api = createMockApi({});
   const approve = vi.spyOn(api, "ptyApprove");

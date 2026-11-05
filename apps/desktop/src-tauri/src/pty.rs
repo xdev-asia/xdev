@@ -1108,6 +1108,8 @@ pub fn pty_approve(
     account: Option<String>,
     resume: Option<String>,
     fork: Option<bool>,
+    // The extra agent arguments the refused spawn carried: the gate keys on the full argv.
+    extra_args: Option<Vec<String>>,
 ) -> Result<(), CmdError> {
     let data = data_dir(&state)?;
     let hooks = hooks_now(&app);
@@ -1119,7 +1121,24 @@ pub fn pty_approve(
         resume.as_deref(),
         fork.unwrap_or(false),
     )?;
-    approve_launch(&ptys, data, &launch)
+    approve_extra(
+        &ptys,
+        data,
+        launch,
+        extra_args.as_deref().unwrap_or_default(),
+    )
+}
+
+/// Approves `launch` with `extra_args` appended as `pty_spawn` appends them,
+/// so the approval matches the launch the gate refused.
+pub(crate) fn approve_extra(
+    ptys: &Ptys,
+    data_dir: &Path,
+    mut launch: Launch,
+    extra_args: &[String],
+) -> Result<(), CmdError> {
+    add_extra_args(&mut launch, extra_args)?;
+    approve_launch(ptys, data_dir, &launch)
 }
 
 #[tauri::command]
@@ -2145,6 +2164,25 @@ b",
             panic!("an agent launch");
         };
         assert_eq!(args[args.len() - 2..], ["--model", "opus"]);
+    }
+
+    #[test]
+    fn an_approval_with_extra_args_lets_the_same_launch_start() {
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        let extras: Vec<String> = vec!["--model".into(), "opus".into()];
+        let mut with_extras = agent();
+        add_extra_args(&mut with_extras, &extras).unwrap();
+        // Approving the bare launch does not cover the one with extras.
+        approve_extra(&ptys, data.path(), agent(), &[]).unwrap();
+        let (first, _) = start(&ptys, data.path(), "a", with_extras.clone());
+        assert_eq!(first.unwrap_err().code, "needs_approval");
+        approve_extra(&ptys, data.path(), agent(), &extras).unwrap();
+        start(&ptys, data.path(), "a", with_extras).0.unwrap();
+        ptys.kill_all();
+        // Extras are checked on approval too.
+        let err = approve_extra(&ptys, data.path(), agent(), &["--".into()]).unwrap_err();
+        assert_eq!(err.code, "extra_args");
     }
 
     #[test]

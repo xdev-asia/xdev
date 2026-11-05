@@ -6,7 +6,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import type { PtyClient } from "./ptyClient";
 
-type Asking = { profile: PtyProfile; account: string | null; resume?: string; fork?: boolean; reason: string; retry: () => void; cancel: () => void };
+type Asking = { profile: PtyProfile; account: string | null; resume?: string; fork?: boolean; extraArgs?: string[]; reason: string; retry: () => void; cancel: () => void };
 
 /**
  * The approval flow of an agent start: a refused start asks once, approves in the policy,
@@ -32,7 +32,7 @@ export function useApprovedStart(api: Api): {
    * opens the dialog and, once approved, calls `retry`; anything else becomes `error`.
    * `cancel` runs when the start is given up: declined, refused again, or failed otherwise.
    */
-  ask(profile: PtyProfile, error: ApiError, alreadyApproved: boolean, retry: () => void, cancel?: () => void, account?: string | null, resume?: string, fork?: boolean): void;
+  ask(profile: PtyProfile, error: ApiError, alreadyApproved: boolean, retry: () => void, cancel?: () => void, account?: string | null, resume?: string, fork?: boolean, extraArgs?: string[]): void;
   error: ApiError | null;
   setError(error: ApiError | null): void;
   dialog: JSX.Element;
@@ -51,10 +51,12 @@ export function useApprovedStart(api: Api): {
     account: string | null = null,
     resume?: string,
     fork?: boolean,
+    /** An automation's extra agent arguments: the gate keys on the full launch line. */
+    extraArgs?: string[],
   ) => {
     // Approval is asked once per start; a second refusal is shown as is.
     if (e.code === "needs_approval" && !alreadyApproved) {
-      setAsking({ profile, account, ...(resume === undefined ? {} : { resume }), ...(fork ? { fork } : {}), reason: e.detail ?? "", retry, cancel });
+      setAsking({ profile, account, ...(resume === undefined ? {} : { resume }), ...(fork ? { fork } : {}), ...(extraArgs?.length ? { extraArgs } : {}), reason: e.detail ?? "", retry, cancel });
       return;
     }
     setError(e);
@@ -63,10 +65,11 @@ export function useApprovedStart(api: Api): {
 
   const approve = async () => {
     if (!asking) return;
-    const { profile, account, resume, fork, retry, cancel } = asking;
+    const { profile, account, resume, fork, extraArgs, retry, cancel } = asking;
     setAsking(null);
     try {
-      if (resume === undefined) await api.ptyApprove(profile, account);
+      if (extraArgs) await api.ptyApprove(profile, account, resume, fork || undefined, extraArgs);
+      else if (resume === undefined) await api.ptyApprove(profile, account);
       else if (fork) await api.ptyApprove(profile, account, resume, true);
       else await api.ptyApprove(profile, account, resume);
       retry();

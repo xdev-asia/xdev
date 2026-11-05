@@ -497,6 +497,7 @@ export function WorktreeTabs(props: {
       ownAccount(tab),
       tab.forkOf ?? tab.resumeOf ?? undefined,
       tab.forkOf !== null,
+      tab.extraArgs ?? undefined,
     );
   }
 
