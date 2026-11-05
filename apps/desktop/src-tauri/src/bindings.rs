@@ -34,6 +34,7 @@ use crate::orchestration::{
 use crate::ports::PortsAdvertised;
 use crate::power::AwakeView;
 use crate::profiles::ProfilesView;
+use crate::prompt_queue::{PromptQueueChanged, PromptQueueDue};
 use crate::pty::{PtyAttached, PtyExit, PtyInfo, PtydStatus};
 use crate::quick_commands::{FileCommands, QuickCommand};
 use crate::review::{ReviewBranch, ReviewData, StageState};
@@ -251,6 +252,12 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::GhLogin::export_all(cfg)?;
     xdev_git::PrSummary::export_all(cfg)?;
     crate::prs::PrBranch::export_all(cfg)?;
+    PromptQueueDue::export_all(cfg)?;
+    PromptQueueChanged::export_all(cfg)?;
+    xdev_automations::prompt_queue::NewItem::export_all(cfg)?;
+    xdev_automations::prompt_queue::WhenInput::export_all(cfg)?;
+    xdev_automations::prompt_queue::SendReport::export_all(cfg)?;
+    xdev_automations::prompt_queue::Facts::export_all(cfg)?;
     xdev_git::PrFilter::export_all(cfg)?;
     xdev_git::MrSummary::export_all(cfg)?;
     xdev_git::MrState::export_all(cfg)?;

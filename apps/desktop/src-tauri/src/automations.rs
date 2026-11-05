@@ -839,7 +839,7 @@ fn control(app: &AppHandle) -> Option<tauri::State<'_, TickControl>> {
 }
 
 /// Asks the tick thread for a pass now (after a save, or when the UI is ready).
-fn kick(app: &AppHandle) {
+pub(crate) fn kick(app: &AppHandle) {
     if let Some(c) = control(app) {
         c.kick.store(true, Ordering::Release);
     }
@@ -874,6 +874,11 @@ pub fn start(app: &AppHandle) {
                     if std::panic::catch_unwind(pass).is_err() {
                         eprintln!("automations: a tick panicked");
                     }
+                }
+                // The prompt queue rides the same tick.
+                let queue = std::panic::AssertUnwindSafe(|| crate::prompt_queue::tick(&app));
+                if std::panic::catch_unwind(queue).is_err() {
+                    eprintln!("prompt queue: a tick panicked");
                 }
             }
             std::thread::sleep(Duration::from_secs(1));
