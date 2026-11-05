@@ -218,8 +218,17 @@ fn the_watchdog_gives_a_start_two_minutes_and_a_run_six_hours() {
         watchdog(&running, 5_000 + six + 1),
         Watch::Fail(FailureCode::WatchTimedOut)
     );
+    // A queued run no window took up: unavailable after the same two minutes.
+    let queued = AutomationRun {
+        created_at: 1_000,
+        ..run(RunStatus::Pending, None, None)
+    };
+    assert_eq!(watchdog(&queued, 1_000 + two), Watch::Keep);
+    assert_eq!(
+        watchdog(&queued, 1_000 + two + 1),
+        Watch::Fail(FailureCode::NoDispatchHost)
+    );
     for done in [
-        RunStatus::Pending,
         RunStatus::Completed,
         RunStatus::SkippedMissed,
         RunStatus::DispatchFailed,

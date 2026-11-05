@@ -82,9 +82,15 @@ pub enum Watch {
     Fail(FailureCode),
 }
 
-/// `dispatching` for more than 2 min (the UI never answered), `dispatched` for more than 6 h.
+/// `pending` for more than 2 min (no window took it up: `noDispatchHost`), `dispatching` for more than
+/// 2 min (the UI never answered), `dispatched` for more than 6 h.
 pub fn watchdog(run: &AutomationRun, now: i64) -> Watch {
     match run.status {
+        RunStatus::Pending => {
+            if now - run.created_at > AGENT_START_DEADLINE_MS {
+                return Watch::Fail(FailureCode::NoDispatchHost);
+            }
+        }
         RunStatus::Dispatching => {
             let since = run.started_at.unwrap_or(run.created_at);
             if now - since > AGENT_START_DEADLINE_MS {

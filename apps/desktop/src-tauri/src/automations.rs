@@ -378,10 +378,13 @@ impl AutomationService {
                 .collect();
             for run in &open {
                 if let Watch::Fail(code) = xdev_automations::tick::watchdog(run, now) {
-                    let _ = store.update_run(
-                        &run.id,
-                        failed(RunStatus::DispatchFailed, code, Params::new(), now),
-                    );
+                    // A run no window took up was never launched: unavailable, not failed.
+                    let status = if code == FailureCode::NoDispatchHost {
+                        RunStatus::SkippedUnavailable
+                    } else {
+                        RunStatus::DispatchFailed
+                    };
+                    let _ = store.update_run(&run.id, failed(status, code, Params::new(), now));
                     touched = true;
                 }
             }
@@ -1482,6 +1485,21 @@ mod tests {
         // Still pending: a second manual run would start beside it.
         assert_eq!(r.service.run_now(&a.id).unwrap_err().code, "bad_arg");
         assert_eq!(r.runs(&a.id).len(), 1);
+    }
+
+    #[test]
+    fn a_queued_run_no_window_takes_up_is_unavailable_after_two_minutes() {
+        let r = rig();
+        let env = Fake::new(&r.clock);
+        let a = r.service.create(input()).unwrap();
+        r.service.run_now(&a.id).unwrap();
+        r.at(T0 - 30 * MIN + xdev_automations::AGENT_START_DEADLINE_MS + 1);
+        r.service.tick(&env);
+        let run = &r.runs(&a.id)[0];
+        assert_eq!(run.status, RunStatus::SkippedUnavailable);
+        assert_eq!(run.error_code, Some(FailureCode::NoDispatchHost));
+        // It no longer holds the automation's next run back.
+        r.service.run_now(&a.id).unwrap();
     }
 
     #[test]
