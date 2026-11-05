@@ -479,6 +479,25 @@ pub(crate) fn launch_for(
     launch_with_prompt(data_dir, id, account, hooks, resume, fork, None)
 }
 
+/// The provider whose accounts `cli` runs on, if it has any.
+fn provider_of(cli: Cli) -> Option<xdev_ai::Provider> {
+    match cli {
+        Cli::Claude => Some(xdev_ai::Provider::Claude),
+        Cli::Codex => Some(xdev_ai::Provider::Codex),
+        _ => None,
+    }
+}
+
+/// The provider and account to remember as the last one routing started,
+/// for a launch that took the default or a routed account.
+fn routed_start(launch: &Launch) -> Option<(xdev_ai::Provider, String)> {
+    let source = launch.account_source?;
+    if !matches!(source, AccountSource::Active | AccountSource::Routed) {
+        return None;
+    }
+    Some((launch.cli.and_then(provider_of)?, launch.account.clone()?))
+}
+
 /// `launch_for` with a first prompt for the agent (`Launch::prompt_argv` or
 /// `prompt_after`).
 pub(crate) fn launch_with_prompt(
@@ -524,6 +543,21 @@ pub(crate) fn launch_with_prompt(
         prompt,
     };
     let mut launch = resolve(id, &ctx)?;
+    // A new agent with no account from its tab or profile starts where its
+    // provider's routing says. A resume stays on the home its log is in.
+    if resume.is_none()
+        && matches!(launch.account_source, None | Some(AccountSource::Active))
+        && let Some(provider) = launch.cli.and_then(provider_of)
+        && let Some(routed) = crate::accounts::routed(&accounts, provider)
+        && launch.account.as_deref() != Some(routed.as_str())
+    {
+        let ctx = Context {
+            account: Some(&routed),
+            ..ctx
+        };
+        launch = resolve(id, &ctx)?;
+        launch.account_source = Some(AccountSource::Routed);
+    }
     match (resume, fork) {
         (Some(session), true) => add_fork(&mut launch, session)?,
         (Some(session), false) => add_resume(&mut launch, session)?,
@@ -1114,6 +1148,7 @@ pub fn pty_spawn(
     add_extra_args(&mut launch, extra_args.as_deref().unwrap_or_default())?;
     add_network_env(&mut launch.env, &settings_store::read(&app).network);
     let starts_agent = crate::app_stats::counts_as_start(launch.agent, resume.as_deref(), fork);
+    let routed = routed_start(&launch);
     let exit_id = id.clone();
     let feed_id = id.clone();
     let feed_cwd = cwd.clone();
@@ -1153,6 +1188,9 @@ pub fn pty_spawn(
         stats_app
             .state::<crate::app_stats::AppStatsHub>()
             .record_spawn(data);
+    }
+    if let Some((provider, name)) = routed {
+        crate::accounts::started(provider, &name);
     }
     Ok(info)
 }
@@ -2077,6 +2115,34 @@ mod tests {
         assert_eq!(info.account_source, Some(AccountSource::Active));
         let json = serde_json::to_value(&info).unwrap();
         assert_eq!(json["accountSource"], "active");
+    }
+
+    #[test]
+    fn only_a_default_or_routed_start_counts_for_round_robin() {
+        let with = |source, cli| Launch {
+            account: Some("work".into()),
+            account_source: source,
+            cli,
+            ..agent()
+        };
+        let claude = Some(Cli::Claude);
+        assert_eq!(
+            routed_start(&with(Some(AccountSource::Routed), claude)),
+            Some((xdev_ai::Provider::Claude, "work".into()))
+        );
+        assert!(routed_start(&with(Some(AccountSource::Active), Some(Cli::Codex))).is_some());
+        assert_eq!(routed_start(&with(Some(AccountSource::Tab), claude)), None);
+        assert_eq!(
+            routed_start(&with(Some(AccountSource::Profile), claude)),
+            None
+        );
+        assert_eq!(
+            routed_start(&with(Some(AccountSource::Active), Some(Cli::Gemini))),
+            None
+        );
+        assert_eq!(routed_start(&with(None, claude)), None);
+        let json = serde_json::to_value(AccountSource::Routed).unwrap();
+        assert_eq!(json, "routed");
     }
 
     #[test]

@@ -87,7 +87,7 @@ pub struct ActiveAccount {
 /// How one provider's new agents pick their account, and when its quota
 /// alerts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "AccountRouting"))]
 #[serde(rename_all = "camelCase")]
 pub struct Routing {
     pub provider: Provider,

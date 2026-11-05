@@ -6,7 +6,7 @@ pub type AccountId = String;
 
 /// How a provider's new agents pick their account.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "RoutePolicy"))]
 #[serde(rename_all = "snake_case")]
 pub enum Policy {
     /// The default account.

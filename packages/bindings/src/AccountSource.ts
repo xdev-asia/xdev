@@ -2,6 +2,8 @@
 
 /**
  * Where a launch's account came from: the tab's own pick, the profile's
- * account or the provider's active account.
+ * account, the provider's active (default) account, or the provider's
+ * routing, which the caller applies by passing the routed account and
+ * marking it so.
  */
-export type AccountSource = "tab" | "profile" | "active";
+export type AccountSource = "tab" | "profile" | "active" | "routed";

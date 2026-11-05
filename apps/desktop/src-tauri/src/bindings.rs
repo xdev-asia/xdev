@@ -306,6 +306,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_ssh::SshPromptKind::export_all(cfg)?;
     crate::ssh_connect::SshConnectionView::export_all(cfg)?;
     crate::ssh_connect::SshAuthPrompt::export_all(cfg)?;
+    xdev_ai::Routing::export_all(cfg)?;
+    xdev_ai::QuotaAlert::export_all(cfg)?;
     Ok(())
 }
 
