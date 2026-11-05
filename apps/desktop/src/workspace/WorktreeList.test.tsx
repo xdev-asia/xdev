@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { RepoView, SidebarItem, SidebarPrefs, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
+import { Badge } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { ago } from "./ago";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
@@ -678,4 +679,91 @@ it("sort recent does not move rows when new output arrives", () => {
   activity["/code/notes"] = NOW + 1;
   expect(order()).toEqual(before);
   expect(before.at(-1)).toBe("/code/notes");
+});
+
+it("a sleeping worktree shows a badge and its menu offers Wake; an awake one offers Sleep", () => {
+  const slept: string[] = [];
+  const woke: string[] = [];
+  const view = harness(DOTS, repos, {
+    asleep: { "/demo/wt/xdev-oak": true },
+    onSleep: (w) => void slept.push(w.path),
+    onWake: (w) => void woke.push(w.path),
+  });
+  const badge = view.inRow("/demo/wt/xdev-oak").find((n) => n.type === Badge);
+  expect(badge).toBeDefined();
+  expect(view.inRow("/demo/wt/xdev-elm").find((n) => n.type === Badge)).toBeUndefined();
+
+  view.main("/demo/wt/xdev-oak").props.onContextMenu(event);
+  expect(view.item("sleep")).toBeUndefined();
+  view.item("wake")!.run!();
+  view.main("/demo/xdev").props.onContextMenu(event);
+  view.item("sleep")!.run!();
+  expect(woke).toEqual(["/demo/wt/xdev-oak"]);
+  expect(slept).toEqual(["/demo/xdev"]);
+});
+
+it("the menu of a child row has the lineage items; the parent's has Delete with nested worktrees", () => {
+  const [xdev] = repos();
+  const [a, b] = xdev.worktrees.filter(w => !w.primary);
+  const nested = { ...xdev, worktrees: xdev.worktrees.map(w => (w.path === b.path ? { ...w, parent: a.path, pinned: false } : w)) };
+  const dots = { [a.path]: "idle", [b.path]: "idle" } as typeof DOTS;
+  const done = { parent: [] as string[], removed: [] as string[], nested: [] as string[], status: [] as unknown[] };
+  const view = harness(dots, repos, {
+    items: [asItem(nested)],
+    onSetParent: (w) => void done.parent.push(w.path),
+    onRemoveParent: (w) => void done.removed.push(w.path),
+    onDeleteNested: (w) => void done.nested.push(w.path),
+    onMoveStatus: (w, s) => void done.status.push([w.path, s]),
+  });
+  view.main(b.path).props.onContextMenu(event);
+  expect(view.item("setParent")!.labelKey).toBe("lineage.change");
+  view.item("setParent")!.run!();
+  view.item("removeParent")!.run!();
+  view.item("openParent")!.run!();
+  view.item("status:todo")!.run!();
+  expect(view.item("status:none")!.checked).toBe(true);
+  expect(view.item("deleteNested")).toBeUndefined();
+  expect(done.parent).toEqual([b.path]);
+  expect(done.removed).toEqual([b.path]);
+  expect(view.calls.select.map(w => w.path)).toEqual([a.path]);
+  expect(done.status).toEqual([[b.path, "todo"]]);
+
+  view.main(a.path).props.onContextMenu(event);
+  expect(view.item("setParent")!.labelKey).toBe("lineage.set");
+  expect(view.item("setParent")!.disabled).toBe(true);
+  expect(view.item("openParent")).toBeUndefined();
+  view.item("deleteNested")!.run!();
+  expect(done.nested).toEqual([a.path]);
+});
+
+it("project order recent puts the repo with the newest output first, in headings and project sections, and turns dragging off", () => {
+  const activity = { "/code/notes": NOW - 100, "/demo/wt/xdev-elm": NOW - 1000 };
+  const view = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "project", projectOrder: "recent" }), activity, onReorder: () => {} });
+  expect(view.all().filter(n => n.props.className === "ws-group").map(n => n.props["data-group"])).toEqual(["project:repo-2-notes", "project:demo-xdev"]);
+  const heads = view.all().filter(n => n.props.className === "ws-repo").map(n => n.props["data-repo"]);
+  expect(heads).toEqual(["repo-2-notes", "demo-xdev"]);
+  expect(view.all().filter(n => n.props.className === "ws-repo").every(n => n.props.draggable === false)).toBe(true);
+  // Manual keeps the repo order and dragging.
+  const manual = harness(DOTS, repos, { prefs: prefsWith({ groupBy: "project" }), activity, onReorder: () => {} });
+  expect(manual.all().filter(n => n.props.className === "ws-repo").map(n => n.props["data-repo"])).toEqual(["demo-xdev", "repo-2-notes"]);
+  expect(manual.all().filter(n => n.props.className === "ws-repo").every(n => n.props.draggable === true)).toBe(true);
+});
+
+it("pinned in groups draws a pinned row in both places, and onOrder lists it once", () => {
+  const seen: string[][] = [];
+  const draw = (pinnedInGroups: boolean) => {
+    const view = harness(DOTS, repos, { prefs: prefsWith({ pinnedInGroups }), onOrder: (p) => seen.push(p) });
+    const rows = view.all().filter(n => /^ws-wt( |$)/.test(n.props.className ?? "") && n.props["data-path"] !== undefined).map(n => n.props["data-path"] as string);
+    hooks.effects = [];
+    view.html();
+    hooks.effects.at(-1)!();
+    return { rows, order: seen.at(-1)! };
+  };
+  const pinPath = repos()[0].worktrees[2].path;
+  const off = draw(false);
+  expect(off.rows.filter(p => p === pinPath)).toHaveLength(1);
+  const on = draw(true);
+  expect(on.rows.filter(p => p === pinPath)).toHaveLength(2);
+  expect(on.order.filter(p => p === pinPath)).toHaveLength(1);
+  expect(new Set(on.order).size).toBe(on.order.length);
 });

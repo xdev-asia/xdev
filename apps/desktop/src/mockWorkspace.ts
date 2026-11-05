@@ -306,6 +306,22 @@ function isAbsolute(path: string): boolean {
   return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
 }
 
+// As `names::sparse_dirs`: blanks skipped, duplicates counted once, at most 50 folders; none may be
+// absolute, start with `-`, hold a control char, have an empty, `.` or `..` part, or a `:` second char.
+function sparseOk(dirs: string[]): boolean {
+  const seen = new Set<string>();
+  for (const raw of dirs) {
+    let d = raw.trim().replace(/\\/g, "/");
+    while (d.startsWith("./")) d = d.slice(2);
+    d = d.replace(/\/+$/, "");
+    if (d === "") continue;
+    const bad = d.startsWith("-") || d.startsWith("/") || [...d][1] === ":" || /\p{Cc}/u.test(d) || d.split("/").some((p) => p === "" || p === "." || p === "..");
+    if (bad) return false;
+    seen.add(d);
+  }
+  return seen.size <= 50;
+}
+
 // Whether `path` is `base` or lies under it.
 function within(path: string, base: string): boolean {
   return path === base || path.startsWith(`${base}/`);
@@ -788,9 +804,28 @@ export function createMockWorkspace(
     async gitUserName() {
       return userName;
     },
-    async worktreeCreate(repoId, name, from) {
+    async worktreeCreate(repoId, name, from, request) {
       const repo = repos.find((r) => r.id === repoId);
       if (!repo) return reject("repo_unknown", repoId);
+      const sparse = request?.sparse ?? [];
+      if (!sparseOk(sparse)) return reject("bad_sparse", sparse.join(", "));
+      const existing = request?.existing?.trim() ?? "";
+      if (existing !== "") {
+        // A local branch only: the base branches and the ones kept after an archive.
+        const local = [...REVIEW_BRANCHES.filter((b) => !b.remote).map((b) => b.name), ...kept.filter((k) => k.repoId === repo.id).map((k) => k.branch)];
+        if (!local.includes(existing)) return reject("bad_ref", existing);
+        if (repo.worktrees.some((x) => x.branch === existing)) return reject("branch_in_use", existing);
+        const typedName = name.trim();
+        const folder = slug(typedName === "" ? (existing.split("/").pop() ?? existing) : typedName);
+        if (folder === "") return reject("bad_name", typedName);
+        const parentDir = repo.path.replace(/[\/][^\/]*$/, "");
+        // `madeBy: "cli"` keeps the branch on remove, as `made_here: false` does in the desktop.
+        const wt = { ...worktree(`${parentDir}/wt/${repo.shortName}-${folder}`, folder, existing, false), madeBy: "cli" as const };
+        wt.autoName = false;
+        if (typedName !== "") wt.title = typedName;
+        repo.worktrees.push(wt);
+        return { worktree: structuredClone(wt), shared: [] };
+      }
       // As `create_worktree_with`: the prefix names the branch, the folder keeps only the leaf.
       const preview = previewPrefix(git, userName);
       if (preview.kind === "invalid") return reject("bad_branch_prefix", normalizePrefix(git.branchPrefixCustom));
@@ -864,7 +899,8 @@ export function createMockWorkspace(
       const wasDetached = findWorktree(path)?.wt.detached ?? true;
       const { repo, wt } = await leave(path, force, confirmed);
       if (wasDetached || wt.branch === null) return { deletedBranch: null, kept: null };
-      if (force || wt.madeBy === "app") return { deletedBranch: wt.branch, kept: null };
+      // As in Rust, only a branch made here goes; the mock counts it as merged, so `deleteUnmerged` changes nothing for it.
+      if (wt.madeBy === "app") return { deletedBranch: wt.branch, kept: null };
       return { deletedBranch: null, kept: keep(repo, wt, "deleted") };
     },
     async worktreeArchive(path, force, confirmed) {

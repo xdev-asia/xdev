@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
+import { EmptyState } from "@xdev-asia/ui";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, type PtyExit } from "@/api";
 import { fileTabs } from "@/files/fileTabs";
@@ -1501,4 +1502,27 @@ it("ctrl_w_on_the_commit_tab_closes_it", () => {
   const view = harness(api, live, A, true, { commit: { id: "aaaaaaa1111", file: null, seq: 1 } });
   press(view, CTRL_W);
   expect(view.find((n) => n.props["data-tab"] === "commit:")).toBeUndefined();
+});
+
+it("a sleeping tab shows a Wake overlay in place of its terminal, and Wake starts it again", async () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const tab = live.open(A, "shell");
+  const slept = (await live.hibernate(tab.id))!;
+  expect(view.terminals()).toHaveLength(0);
+  const html = view.html();
+  expect(html).toContain(en("sleep.tab.title"));
+  expect(html).toContain(en("sleep.wake"));
+  // The overlay is an EmptyState; its action is the Wake button.
+  const empty = view.find((n) => n.type === EmptyState)!;
+  expect(empty.props.actions.props["data-field"]).toBe("wake");
+  expect(empty.props.hint).toBe(en("sleep.tab.hint.shell"));
+  empty.props.actions.props.onClick();
+  expect(live.tabs(A)[0].asleep).toBeUndefined();
+  // A wake takes a fresh pty id in the same slot.
+  const [woken] = live.tabs(A);
+  expect(woken.id).not.toBe(slept.id);
+  expect(view.terminals().map((n) => n.props.id)).toEqual([woken.id]);
+  expect(view.html()).not.toContain(en("sleep.tab.title"));
 });

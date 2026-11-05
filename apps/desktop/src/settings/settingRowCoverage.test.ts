@@ -7,11 +7,14 @@ import { SETTING_ENTRIES } from "./catalog";
 // Each page and the section it holds. A control without an entry, or an entry without a control,
 // fails here. The source is scanned, not rendered: pages load their data async and need a store.
 const PAGES: Record<string, string[]> = {
-  general: ["GeneralPage.tsx"],
+  general: ["GeneralPage.tsx", "UpdatesSetting.tsx"],
+  appearance: ["AppearancePage.tsx"],
+  account: ["account/AccountPage.tsx", "account/ServerRow.tsx"],
   agents: ["agents/AgentsPage.tsx"],
+  orchestration: ["orchestration/OrchestrationPage.tsx"],
   usage: ["UsagePage.tsx"],
   notifications: ["notifications/NotificationsPage.tsx"],
-  terminal: ["TerminalPage.tsx", "terminal/TerminalLookSection.tsx", "terminal/TerminalBehaviourSection.tsx"],
+  terminal: ["TerminalPage.tsx", "terminal/TerminalLookSection.tsx", "terminal/TerminalBehaviourSection.tsx", "terminal/TerminalKeyboardSection.tsx"],
   editor: ["EditorPage.tsx"],
   repos: ["ReposSettings.tsx"],
   openIn: ["OpenInPage.tsx"],

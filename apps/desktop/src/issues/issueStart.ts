@@ -1,4 +1,4 @@
-import type { Issue, IssueDetail, IssueQuery, WorkItem } from "@/api";
+import type { Issue, IssueDetail, IssueQuery, PrQuery, WorkItem } from "@/api";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -8,7 +8,12 @@ export const ISSUE_PROMPT_BODY_MAX = 16 * 1024;
 
 /** `123-fix-footer-meter`: the number, then the title in `[a-z0-9-]`; `issue-123` when the title leaves nothing. */
 export function issueWorktreeName(issue: Issue): string {
-  const slug = issue.title
+  return numberedName(issue.number, issue.title, "issue");
+}
+
+/** `<number>-<title as [a-z0-9-]>` cut to `ISSUE_NAME_MAX`, or `<fallback>-<number>` when the title leaves nothing. */
+export function numberedName(number: number, title: string, fallback: string): string {
+  const slug = title
     .normalize("NFD")
     .replace(/\p{M}+/gu, "")
     .replace(/đ/g, "d")
@@ -16,8 +21,8 @@ export function issueWorktreeName(issue: Issue): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  if (slug === "") return `issue-${issue.number}`;
-  return `${issue.number}-${slug}`.slice(0, ISSUE_NAME_MAX).replace(/-+$/, "");
+  if (slug === "") return `${fallback}-${number}`;
+  return `${number}-${slug}`.slice(0, ISSUE_NAME_MAX).replace(/-+$/, "");
 }
 
 /** Title, URL and body; comments are left out. */
@@ -39,6 +44,11 @@ export function issueWorkItem(issue: Issue): WorkItem {
 /** An `IssueQuery` with every field set; the bindings have no optional fields. */
 export function issueQuery(patch: Partial<IssueQuery> = {}): IssueQuery {
   return { state: null, assigneeMe: false, search: null, limit: null, ...patch };
+}
+
+/** A `PrQuery` with every field set; the bindings have no optional fields. */
+export function prQuery(patch: Partial<PrQuery> = {}): PrQuery {
+  return { state: null, mine: false, needsReview: false, search: null, limit: null, ...patch };
 }
 
 /** `name`, or `name-2`, `name-3` ... the first one not in `taken`. */

@@ -1,9 +1,12 @@
 mod accounts;
 mod agent_sessions;
+mod app_menu;
 mod atomic;
 #[cfg(test)]
 mod bindings;
+mod cli_path;
 mod cli_verbs;
+mod clipboard;
 mod commands;
 mod endpoint;
 mod files;
@@ -11,11 +14,19 @@ mod history;
 mod hooks;
 mod issues;
 mod keybindings;
+mod keyboard;
 mod kit;
 mod layout;
 mod links;
 mod open_in;
+mod orch_pump;
+mod orch_skill;
+mod orch_sweep;
+mod orchestration;
+mod ports;
+mod power;
 mod profiles;
+mod prs;
 mod pty;
 mod ptyd;
 mod quick_commands;
@@ -26,12 +37,16 @@ mod review_notes;
 mod session;
 mod settings;
 mod settings_store;
+mod shell;
 mod ship;
 mod squads;
 mod status;
 mod tasks;
+mod terminal_themes;
+mod tray;
 mod updater;
 mod workspace;
+mod xdev_id;
 
 use commands::AppState;
 use tauri::Manager;
@@ -46,21 +61,34 @@ pub fn run() {
     // `XDEV_LOCAL_DIR` exactly like the CLI and both share one index.
     let data_dir = xdev_core::data_dir();
     let local_dir = xdev_core::local_dir();
-    if let (Some(data), Some(local)) = (&data_dir, &local_dir) {
-        xdev_core::move_indexes(data, local);
-    }
+    // Moved in `setup`: a second instance exits during plugin init and must not run it.
+    let index_dirs = data_dir.clone().zip(local_dir.clone());
+    let dev_flag = std::env::var("XDEV_DEV_DEEP_LINK").ok();
     let sync_local = local_dir.clone();
     let ptyd_local = local_dir.clone();
     let endpoint_local = local_dir.clone();
     let hooks_dir = local_dir
         .as_ref()
         .map(|local| local.join(xdev_agent::HOOKS_DIR));
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // Must be the first plugin: a second instance exits during its init, before anything
+    // else runs. With the deep-link feature the link already went to `on_open_url`.
+    if xdev_id::single_instance_on(cfg!(debug_assertions), dev_flag.as_deref()) {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            xdev_id::focus_main(app);
+        }));
+    }
+    builder
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(updater::Pending::default())
+        .manage(xdev_id::XdevIdHub::production())
+        .manage(updater::Phase::default())
+        .manage(shell::ShellState::default())
         // Terminals wait until the start below has picked where they run.
         .manage(pty::Ptys::pending())
         .manage(workspace::WorkspaceLock::default())
@@ -69,16 +97,42 @@ pub fn run() {
         .manage(profiles::ProfilesLock::default())
         .manage(files::Searches::default())
         .manage(status::Shown::default())
+        .manage(power::Awake::default())
         .manage(cli_verbs::CliHub::default())
+        .manage(orchestration::OrchHub::default())
         .manage(keybindings::LastSent::default())
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && let tauri::WindowEvent::Focused(true) = event
+            {
+                shell::window_focused(window.app_handle());
+            }
+        })
         .setup(move |app| {
+            if let Some((data, local)) = &index_dirs {
+                xdev_core::move_indexes(data, local);
+            }
             updater::start(app.handle().clone());
             workspace::start_sweep(app.handle());
             // Every settings read and write goes through this store.
             if let Some(file) = commands::settings_path(app.handle()) {
                 app.manage(settings_store::SettingsStore::new(file));
             }
+            // After the settings store: the server setting is read first.
+            xdev_id::start(app.handle());
+            // The OS request follows the stored mode from the start. Off the main thread: a
+            // helper is watched for an early exit, which takes a moment.
+            {
+                let app = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let mode = settings_store::read(&app).agents.keep_awake;
+                    power::apply_mode(&app, mode);
+                });
+            }
             workspace::start_migrations(app.handle());
+            tray::sync(app.handle());
+            app_menu::listen(app.handle());
+            app_menu::install(app.handle());
             // Off the main thread: starting the service may take a moment.
             {
                 let app = app.handle().clone();
@@ -93,6 +147,9 @@ pub fn run() {
                 eprintln!("hooks marker: {e}");
             }
             status::listen_clicks(app.handle());
+            orchestration::start_pump(app.handle().clone());
+            orch_sweep::start(app.handle().clone());
+            orch_skill::auto_update(app.handle().clone());
             // The `xdev` CLI's way in; without it the app runs as before.
             if let Some(local) = &endpoint_local {
                 let handler = std::sync::Arc::new(cli_verbs::AppVerbs {
@@ -138,9 +195,20 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
+            clipboard::clipboard_image_save,
+            keyboard::keyboard_input_source,
             updater::update_status,
-            updater::update_restart,
             updater::update_notify,
+            shell::shell_close_requested,
+            shell::shell_quit,
+            shell::shell_quit_cancelled,
+            shell::shell_labels_set,
+            shell::tray_attention,
+            shell::help_open,
+            shell::window_reload,
+            shell::window_devtools_toggle,
+            updater::update_check,
+            updater::update_phase,
             commands::open_vault,
             commands::last_vault,
             commands::git_settings,
@@ -168,6 +236,16 @@ pub fn run() {
             commands::agents_settings_put,
             commands::usage_settings_get,
             commands::usage_settings_put,
+            orchestration::orchestration_settings_get,
+            orchestration::orchestration_settings_put,
+            orchestration::orchestration_skill_status,
+            orchestration::orchestration_skill_install,
+            orchestration::orchestration_worker_lifetime,
+            orchestration::orchestration_worker_keep_open,
+            orchestration::orchestration_worker_opened,
+            orchestration::orchestration_read_answer,
+            commands::shell_settings_get,
+            commands::shell_settings_put,
             keybindings::keybindings_read,
             keybindings::keybindings_write,
             keybindings::keybindings_reveal,
@@ -196,6 +274,10 @@ pub fn run() {
             commands::export_plan,
             commands::export_write,
             accounts::accounts_list,
+            terminal_themes::terminal_themes_list,
+            terminal_themes::terminal_theme_preview,
+            terminal_themes::terminal_theme_import,
+            terminal_themes::terminal_theme_remove,
             accounts::accounts_quota,
             accounts::account_add,
             accounts::account_login,
@@ -225,6 +307,11 @@ pub fn run() {
             squads::squad_resume,
             squads::squad_stop,
             squads::squad_events,
+            power::keep_awake_get,
+            power::keep_awake_set,
+            power::keep_awake_agents,
+            ports::ports_scan,
+            ports::port_stop,
             pty::pty_spawn,
             pty::pty_approve,
             pty::pty_write,
@@ -333,6 +420,14 @@ pub fn run() {
             issues::issue_view,
             issues::issue_resolve,
             issues::issue_open,
+            issues::issue_create,
+            prs::prs_list,
+            prs::pr_get,
+            prs::pr_open,
+            prs::pr_branch,
+            prs::pr_branch_discard,
+            prs::projects_list,
+            prs::project_open,
             ship::worktree_draft_commit,
             ship::worktree_draft_pr,
             ship::worktree_check_log,
@@ -351,6 +446,8 @@ pub fn run() {
             kit::kit_paths_exist,
             kit::kit_prompt_history,
             agent_sessions::agent_sessions,
+            agent_sessions::session_search_status,
+            agent_sessions::session_search_clear,
             quick_commands::quick_commands_list,
             quick_commands::quick_command_upsert,
             quick_commands::quick_command_delete,
@@ -361,19 +458,39 @@ pub fn run() {
             quick_commands::repo_file_commands_trust,
             cli_verbs::cli_tabs_report,
             cli_verbs::cli_approve,
+            xdev_id::xdev_id_state,
+            xdev_id::xdev_id_sign_in,
+            xdev_id::xdev_id_paste,
+            xdev_id::xdev_id_cancel,
+            xdev_id::xdev_id_sign_out,
+            xdev_id::xdev_id_refresh,
+            xdev_id::xdev_id_reopen,
+            xdev_id::xdev_id_manage,
+            xdev_id::xdev_id_server,
+            xdev_id::xdev_id_server_set,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
         .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
+                shell::exit_requested(app, *code, api);
+            }
             if let tauri::RunEvent::Exit = event {
-                let on_quit = settings_store::read(app).terminal.on_quit;
+                tray::remove(app);
+                let mode = shell::quit_mode(app);
+                let on_quit = shell::on_quit_for(mode, settings_store::read(app).terminal.on_quit);
                 app.state::<pty::Ptys>().quit(on_quit);
+                app.state::<power::Awake>().release();
                 if let Some(running) = app.try_state::<endpoint::Running>() {
                     running.stop();
                 }
                 // Every `terminal wait` ends with `app_stopped`.
                 app.state::<cli_verbs::CliHub>().board.stop();
                 updater::install_pending(app);
+                if mode == Some(shell::QuitMode::Restart) {
+                    // Never returns: the process starts again from the installed build.
+                    tauri::process::restart(&app.env());
+                }
             }
         });
 }
@@ -403,5 +520,42 @@ mod tests {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         assert_eq!(conf["identifier"], xdev_core::APP_ID);
+    }
+
+    #[test]
+    fn deep_link_scheme_is_xdev() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(
+            conf["plugins"]["deep-link"]["desktop"]["schemes"],
+            serde_json::json!(["xdev"])
+        );
+    }
+
+    #[test]
+    fn csp_allows_data_images_only() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let csp = conf["app"]["security"]["csp"].as_str().unwrap();
+        let img = csp
+            .split(';')
+            .map(str::trim)
+            .find(|d| d.starts_with("img-src"))
+            .unwrap();
+        assert_eq!(img, "img-src 'self' data:");
+        assert!(!img.contains("https:") && !img.contains('*'));
+    }
+
+    #[test]
+    fn deb_template_passes_the_url() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(
+            conf["bundle"]["linux"]["deb"]["desktopTemplate"],
+            "linux/xdev.desktop.hbs"
+        );
+        let template = include_str!("../linux/xdev.desktop.hbs");
+        assert!(template.lines().any(|l| l == "Exec={{exec}} %u"));
+        assert!(template.lines().any(|l| l == "MimeType={{mime_type}}"));
     }
 }

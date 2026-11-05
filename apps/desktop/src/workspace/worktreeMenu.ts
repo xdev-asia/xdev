@@ -1,4 +1,4 @@
-import type { OpenInApp, OpenTarget, WorktreeView } from "@/api";
+import type { OpenInApp, OpenTarget, WorkStatus, WorktreeView } from "@/api";
 import type { MenuItem } from "@/ui/ContextMenu";
 
 /** What the worktree row menu acts on. */
@@ -21,6 +21,30 @@ export interface WorktreeMenuContext {
   onRenameBranch?(): void;
   /** Archives the worktree (folder goes, branch stays); without it the item is left out. */
   onArchive?(): void;
+  /** The worktree's tabs are all asleep: the menu offers Wake in place of Sleep. */
+  asleep?: boolean;
+  /** False when the worktree has no awake tab, so Sleep would do nothing; the default is true. */
+  sleepable?: boolean;
+  /** Puts every tab of the worktree to sleep; without it the item is left out. */
+  onSleep?(): void;
+  /** Wakes the worktree's tabs; without it the item is left out. */
+  onWake?(): void;
+  /** The parent the row hangs under (the Set item then reads Change). */
+  parentPath?: string | null;
+  /** False when no worktree can be its parent: the Set item is disabled. */
+  canSetParent?: boolean;
+  /** Opens the parent picker; without it the item is left out. */
+  onSetParent?(): void;
+  /** Selects the parent row; passed only while the parent is shown. */
+  onOpenParent?(): void;
+  /** Clears the parent; shown only while `parentPath` is set. */
+  onRemoveParent?(): void;
+  /** How many worktrees name this one as parent. */
+  children?: number;
+  /** Opens the delete dialog with the nested worktrees ticked; shown only with children. */
+  onDeleteNested?(): void;
+  /** Sets the status (null clears it); without it the submenu is left out. */
+  onMoveStatus?(status: WorkStatus | null): void;
 }
 
 /** What the project (repo heading) menu acts on. */
@@ -58,6 +82,8 @@ export interface GroupMenuContext {
   remove(): void;
 }
 
+const STATUS_CHOICES: WorkStatus[] = ["todo", "in-progress", "in-review", "completed"];
+
 const SEP = (id: string): MenuItem => ({ id, labelKey: "", kind: "separator" });
 
 /** The Open in submenu: each app, a separator, File Manager and, when given, a terminal tab here. */
@@ -80,6 +106,32 @@ export function worktreeMenuItems(ctx: WorktreeMenuContext): MenuItem[] {
       : ctx.onMarkUnread
         ? [{ id: "markUnread", labelKey: "workspace.markUnread", run: ctx.onMarkUnread }]
         : [];
+  const sleep: MenuItem[] =
+    ctx.asleep && ctx.onWake
+      ? [{ id: "wake", labelKey: "sleep.wake", run: ctx.onWake }]
+      : !ctx.asleep && ctx.sleepable !== false && ctx.onSleep
+        ? [{ id: "sleep", labelKey: "sleep.menu", run: ctx.onSleep }]
+        : [];
+  const linked = !wt.primary;
+  const lineage: MenuItem[] = [
+    ...(linked && ctx.onSetParent ? [{ id: "setParent", labelKey: ctx.parentPath ? "lineage.change" : "lineage.set", disabled: ctx.canSetParent === false, run: ctx.onSetParent }] : []),
+    ...(linked && ctx.parentPath && ctx.onOpenParent ? [{ id: "openParent", labelKey: "lineage.open", run: ctx.onOpenParent }] : []),
+    ...(linked && ctx.parentPath && ctx.onRemoveParent ? [{ id: "removeParent", labelKey: "lineage.remove", run: ctx.onRemoveParent }] : []),
+  ];
+  const { onMoveStatus } = ctx;
+  const status: MenuItem[] =
+    linked && onMoveStatus
+      ? [
+          {
+            id: "moveStatus",
+            labelKey: "workspace.status.move",
+            children: [
+              ...STATUS_CHOICES.map((s): MenuItem => ({ id: `status:${s}`, labelKey: `workspace.work.${s}`, checked: wt.status === s, run: () => onMoveStatus(s) })),
+              { id: "status:none", labelKey: "workspace.status.none", checked: wt.status === null, run: () => onMoveStatus(null) },
+            ],
+          },
+        ]
+      : [];
   return [
     openInItem(ctx.apps, ctx.openIn, ctx.newTerminal),
     { id: "copyPath", labelKey: "worktreeMenu.copyPath", run: () => ctx.copy(wt.path) },
@@ -89,7 +141,10 @@ export function worktreeMenuItems(ctx: WorktreeMenuContext): MenuItem[] {
     { id: "pin", labelKey: wt.pinned ? "workspace.unpin" : "workspace.pin", run: ctx.onPin },
     ...(ctx.onRenameBranch && !wt.primary ? [{ id: "renameBranch", labelKey: "branchRename.menu", disabled: wt.branch === null, run: ctx.onRenameBranch }] : []),
     ...(ctx.onEditDetails && !wt.primary ? [{ id: "details", labelKey: "workspace.details.menu", run: ctx.onEditDetails }] : []),
+    ...status,
+    ...lineage,
     ...read,
+    ...sleep,
     // The primary checkout is the repo itself: it can be pinned but never removed.
     ...(wt.primary
       ? []
@@ -97,6 +152,7 @@ export function worktreeMenuItems(ctx: WorktreeMenuContext): MenuItem[] {
           SEP("sep2"),
           ...(ctx.onArchive ? [{ id: "archive", labelKey: "workspace.archive.menu", run: ctx.onArchive }] : []),
           { id: "delete", labelKey: "workspace.delete", danger: true, run: ctx.onRemove },
+          ...((ctx.children ?? 0) > 0 && ctx.onDeleteNested ? [{ id: "deleteNested", labelKey: "lineage.deleteNested", danger: true, run: ctx.onDeleteNested }] : []),
         ]),
   ];
 }

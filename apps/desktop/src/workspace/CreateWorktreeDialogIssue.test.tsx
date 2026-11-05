@@ -1,9 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import type { Issue } from "@/api";
+import { createMockApi, type Issue, type PrSummary } from "@/api";
 import { translate } from "@/i18n";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { CreateWorktreeDialog, ISSUE_RESOLVE_DEBOUNCE_MS } from "./CreateWorktreeDialog";
+import { LinkedWorkSearch } from "./LinkedWorkSearch";
 import { isIssueRef } from "@/issues/issueStart";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -38,10 +39,11 @@ afterEach(() => vi.useRealTimers());
 
 const ISSUE: Issue = { number: 7, title: "Footer meter overflows", url: "https://github.com/o/r/issues/7", state: "open", labels: [], assignees: [], author: null, updatedAt: "2026-11-03T00:00:00Z" };
 
-function mount(over: { resolve?: (repo: string, text: string) => Promise<Issue | null> } = {}) {
+function mount(over: { resolve?: (repo: string, text: string) => Promise<Issue | null>; github?: boolean } = {}) {
   const repos = DEMO_WORKSPACE.repos;
   const onCreate = vi.fn();
   const onStartIssue = vi.fn();
+  const onStartPr = vi.fn();
   const resolveIssue = vi.fn(over.resolve ?? (async () => ISSUE));
   const values: unknown[] = [];
   const cleanups: (void | (() => void))[] = [];
@@ -50,7 +52,7 @@ function mount(over: { resolve?: (repo: string, text: string) => Promise<Issue |
     hooks.cursor = 0;
     hooks.active = true;
     try {
-      return CreateWorktreeDialog({ repos, repoId: repos[0].id, onCreate, onStartIssue, resolveIssue, onCancel: vi.fn() });
+      return CreateWorktreeDialog({ repos, repoId: repos[0].id, onCreate, onStartIssue, onStartPr, resolveIssue, ...(over.github ? { api: createMockApi({}) } : {}), onCancel: vi.fn() });
     } finally { hooks.active = false; }
   };
   const commit = () => {
@@ -68,7 +70,8 @@ function mount(over: { resolve?: (repo: string, text: string) => Promise<Issue |
   };
   const submit = () => nodes(tree).find((n) => n.type === "form")!.props.onSubmit({ preventDefault() {} });
   const create = () => nodes(tree).find((n) => n.props.type === "submit")!;
-  return { type, submit, create, text: () => JSON.stringify(nodes(tree).map((n) => n.props.children)), onCreate, onStartIssue, resolveIssue, repoId: repos[0].id, redraw: () => (tree = commit()) };
+  const github = () => { nodes(tree).find((n) => n.props.label === en("workspace.create.tab.label"))!.props.onChange("github"); tree = commit(); return nodes(tree).find((n) => n.type === LinkedWorkSearch)!; };
+  return { github, onStartPr, type, submit, create, text: () => JSON.stringify(nodes(tree).map((n) => n.props.children)), onCreate, onStartIssue, resolveIssue, repoId: repos[0].id, redraw: () => (tree = commit()) };
 }
 
 it("knows an issue number and an issue URL, and nothing else", () => {
@@ -116,4 +119,24 @@ it("an ordinary name never asks and goes through onCreate", async () => {
   expect(m.resolveIssue).not.toHaveBeenCalled();
   m.submit();
   expect(m.onCreate).toHaveBeenCalledTimes(1);
+});
+
+const PR = { number: 12, title: "Fix the footer", url: "https://github.com/o/r/pull/12", state: "open", head: "fix-footer", base: "main", author: null, fork: false, updatedAt: "2026-11-03T00:00:00Z" } as unknown as PrSummary;
+
+it("an issue picked on the GitHub tab starts from the issue", () => {
+  const m = mount({ github: true });
+  const search = m.github();
+  search.props.onPick({ kind: "issue", url: ISSUE.url, title: ISSUE.title }, { kind: "issue", issue: ISSUE });
+  expect(m.onStartIssue).toHaveBeenCalledWith(m.repoId, ISSUE);
+  expect(m.onStartPr).not.toHaveBeenCalled();
+  expect(m.onCreate).not.toHaveBeenCalled();
+});
+
+it("a pull request picked on the GitHub tab starts from the pull request", () => {
+  const m = mount({ github: true });
+  const search = m.github();
+  search.props.onPick({ kind: "pr", url: PR.url, title: PR.title }, { kind: "pr", pr: PR });
+  expect(m.onStartPr).toHaveBeenCalledWith(m.repoId, PR);
+  expect(m.onStartIssue).not.toHaveBeenCalled();
+  expect(m.create().props.disabled).toBe(true);
 });

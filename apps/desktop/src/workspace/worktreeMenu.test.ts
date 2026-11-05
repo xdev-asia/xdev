@@ -115,3 +115,90 @@ it("offers Rename branch… after Details, for a worktree on a branch only", () 
   expect(ids(ctx({ onRenameBranch: rename, worktree: wt({ primary: true }) }).items)).not.toContain("renameBranch");
   expect(ids(ctx().items)).not.toContain("renameBranch");
 });
+
+it("offers Sleep on an awake worktree and Wake on a sleeping one, also on the primary checkout", () => {
+  const sleep = vi.fn();
+  const wake = vi.fn();
+  const awake = ctx({ onSleep: sleep, onWake: wake });
+  expect(ids(awake.items)).toContain("sleep");
+  expect(ids(awake.items)).not.toContain("wake");
+  find(awake.items, "sleep").run?.();
+  expect(sleep).toHaveBeenCalledTimes(1);
+
+  const asleep = ctx({ asleep: true, onSleep: sleep, onWake: wake });
+  expect(ids(asleep.items)).toContain("wake");
+  expect(ids(asleep.items)).not.toContain("sleep");
+  find(asleep.items, "wake").run?.();
+  expect(wake).toHaveBeenCalledTimes(1);
+
+  const primary = ctx({ worktree: wt({ primary: true }), onSleep: sleep });
+  expect(ids(primary.items)).toContain("sleep");
+});
+
+it("leaves Sleep out for a worktree with no awake tab", () => {
+  const none = ctx({ onSleep: vi.fn(), sleepable: false });
+  expect(ids(none.items)).not.toContain("sleep");
+  expect(ids(ctx({ onSleep: vi.fn(), sleepable: true }).items)).toContain("sleep");
+});
+
+it("leaves the sleep items out without handlers", () => {
+  const { items } = ctx();
+  expect(ids(items)).not.toContain("sleep");
+  expect(ids(items)).not.toContain("wake");
+});
+
+it("offers Set parent worktree… without a parent and Change parent worktree… with one, disabled at 0 candidates", () => {
+  const set = vi.fn();
+  const none = ctx({ onSetParent: set, canSetParent: true });
+  expect(find(none.items, "setParent").labelKey).toBe("lineage.set");
+  find(none.items, "setParent").run?.();
+  expect(set).toHaveBeenCalledOnce();
+  const has = ctx({ onSetParent: set, canSetParent: true, parentPath: "/code/xdev-main-feature" });
+  expect(find(has.items, "setParent").labelKey).toBe("lineage.change");
+  expect(find(ctx({ onSetParent: set, canSetParent: false }).items, "setParent").disabled).toBe(true);
+  expect(ids(ctx().items)).not.toContain("setParent");
+  expect(ids(ctx({ worktree: wt({ primary: true }), onSetParent: set, canSetParent: true }).items)).not.toContain("setParent");
+});
+
+it("offers Open parent worktree only with a shown parent and Remove from parent only with a parent", () => {
+  const open = vi.fn();
+  const remove = vi.fn();
+  const full = ctx({ parentPath: "/p", onOpenParent: open, onRemoveParent: remove });
+  find(full.items, "openParent").run?.();
+  find(full.items, "removeParent").run?.();
+  expect(open).toHaveBeenCalledOnce();
+  expect(remove).toHaveBeenCalledOnce();
+  expect(find(full.items, "openParent").labelKey).toBe("lineage.open");
+  expect(find(full.items, "removeParent").labelKey).toBe("lineage.remove");
+  // The parent is hidden by a filter: no Open handler.
+  expect(ids(ctx({ parentPath: "/p", onRemoveParent: remove }).items)).not.toContain("openParent");
+  const orphan = ids(ctx({ onOpenParent: open, onRemoveParent: remove }).items);
+  expect(orphan).not.toContain("openParent");
+  expect(orphan).not.toContain("removeParent");
+});
+
+it("offers Delete with nested worktrees… only when the row has children", () => {
+  const nested = vi.fn();
+  expect(ids(ctx({ children: 0, onDeleteNested: nested }).items)).not.toContain("deleteNested");
+  const some = ctx({ children: 2, onDeleteNested: nested });
+  find(some.items, "deleteNested").run?.();
+  expect(nested).toHaveBeenCalledOnce();
+  expect(find(some.items, "deleteNested").danger).toBe(true);
+  expect(find(some.items, "deleteNested").labelKey).toBe("lineage.deleteNested");
+});
+
+it("Move to status has five radio items with the current one checked, and is absent on the primary checkout", () => {
+  const move = vi.fn();
+  const { items } = ctx({ worktree: wt({ status: "in-review" }), onMoveStatus: move });
+  const sub = find(items, "moveStatus").children!;
+  expect(find(items, "moveStatus").labelKey).toBe("workspace.status.move");
+  expect(ids(sub)).toEqual(["status:todo", "status:in-progress", "status:in-review", "status:completed", "status:none"]);
+  expect(sub.map((i) => i.checked)).toEqual([false, false, true, false, false]);
+  expect(sub.map((i) => i.labelKey)).toEqual(["workspace.work.todo", "workspace.work.in-progress", "workspace.work.in-review", "workspace.work.completed", "workspace.status.none"]);
+  sub[0].run?.();
+  sub[4].run?.();
+  expect(move.mock.calls).toEqual([["todo"], [null]]);
+  expect(find(ctx({ worktree: wt({ status: null }), onMoveStatus: move }).items, "moveStatus").children!.map((i) => i.checked)).toEqual([false, false, false, false, true]);
+  expect(ids(ctx({ worktree: wt({ primary: true }), onMoveStatus: move }).items)).not.toContain("moveStatus");
+  expect(ids(ctx().items)).not.toContain("moveStatus");
+});

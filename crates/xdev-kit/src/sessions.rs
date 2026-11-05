@@ -237,7 +237,7 @@ fn new_session(home: &Home, path: &Path) -> AgentSession {
 }
 
 /// The UUID a Codex rollout file name ends with.
-fn uuid_tail(stem: &str) -> Option<&str> {
+pub(crate) fn uuid_tail(stem: &str) -> Option<&str> {
     let tail = stem.get(stem.len().checked_sub(36)?..)?;
     let ok = tail.char_indices().all(|(i, c)| match i {
         8 | 13 | 18 | 23 => c == '-',
@@ -257,17 +257,17 @@ fn note_time(session: &mut AgentSession, v: &Value) {
     }
 }
 
-fn str_at<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
+pub(crate) fn str_at<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(Value::as_str).filter(|s| !s.is_empty())
 }
 
-fn type_of(v: &Value) -> Option<&str> {
+pub(crate) fn type_of(v: &Value) -> Option<&str> {
     v.get("type").and_then(Value::as_str)
 }
 
 /// Text the CLI puts around or in place of a prompt: `<tag>…`, an interrupt
 /// note.
-fn is_wrapper(text: &str) -> bool {
+pub(crate) fn is_wrapper(text: &str) -> bool {
     let t = text.trim_start();
     let mut chars = t.chars();
     (chars.next() == Some('<') && chars.next().is_some_and(|c| c.is_ascii_alphabetic()))
@@ -289,7 +289,7 @@ fn title_of(text: &str) -> Option<String> {
 }
 
 /// A typed prompt's text; `Some("")` when it holds only images.
-fn claude_prompt(content: &Value) -> Option<&str> {
+pub(crate) fn claude_prompt(content: &Value) -> Option<&str> {
     match content {
         Value::String(s) => (!is_wrapper(s)).then_some(s.as_str()),
         Value::Array(items) => {
@@ -319,7 +319,7 @@ fn add_prompt(session: &mut AgentSession, text: &str) {
     }
 }
 
-fn flag(v: &Value, key: &str) -> bool {
+pub(crate) fn flag(v: &Value, key: &str) -> bool {
     v.get(key).and_then(Value::as_bool) == Some(true)
 }
 
@@ -373,7 +373,7 @@ fn read_claude(
 }
 
 /// The text of a Codex message, wrappers left out.
-fn codex_text(payload: &Value) -> Option<&str> {
+pub(crate) fn codex_text(payload: &Value) -> Option<&str> {
     payload
         .get("content")
         .and_then(Value::as_array)?
