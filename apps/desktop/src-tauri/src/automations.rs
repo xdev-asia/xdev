@@ -148,20 +148,40 @@ fn clip_lines(text: &str) -> (String, bool) {
     (lines[lines.len() - SNAPSHOT_MAX_LINES..].join("\n"), true)
 }
 
-/// The key of the copy the editor shows for a schedule that cannot be saved; `None` when it can.
-pub(crate) fn schedule_error_key(expr: &str, tz: &str, now: i64) -> Option<&'static str> {
+/// Why a schedule cannot be saved: the editor's copy key (`automations.cron.error.<key>`), and for a
+/// step the field and its largest step, so the copy reads "Cron minute step must be between 1 and 60."
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleProblem {
+    pub key: String,
+    pub field: Option<String>,
+    pub max: Option<u32>,
+}
+
+/// The problem the editor shows for a schedule that cannot be saved; `None` when it can.
+pub(crate) fn schedule_problem(expr: &str, tz: &str, now: i64) -> Option<ScheduleProblem> {
     use xdev_automations::ScheduleError as E;
+    let key = |key: &str| ScheduleProblem {
+        key: key.into(),
+        field: None,
+        max: None,
+    };
     match schedule::parse(
         expr,
         xdev_automations::ParseOptions {
             reject_oversized_step: true,
         },
     ) {
-        Err(E::TooLong) => Some("tooLong"),
-        Err(E::Step { .. }) => Some("step"),
-        Err(_) => Some("invalid"),
+        Err(E::TooLong) => Some(key("tooLong")),
+        Err(E::Step { field, max }) => Some(ScheduleProblem {
+            key: "step".into(),
+            field: Some(field.into()),
+            max: Some(max),
+        }),
+        Err(_) => Some(key("invalid")),
         Ok(_) if schedule::is_valid_new(expr, tz, now) => None,
-        Ok(_) => Some("noDate"),
+        Ok(_) => Some(key("noDate")),
     }
 }
 
@@ -952,10 +972,10 @@ pub fn automation_describe(expr: String, timezone: String) -> Describe {
     xdev_automations::schedule::describe(&expr, &timezone, crate::workspace::clock().0)
 }
 
-/// The error copy key of a schedule that cannot be saved, or `None` when it can.
+/// Why a schedule cannot be saved, or `None` when it can.
 #[tauri::command(async)]
-pub fn automation_validate_schedule(expr: String, timezone: String) -> Option<String> {
-    schedule_error_key(&expr, &timezone, crate::workspace::clock().0).map(str::to_owned)
+pub fn automation_validate_schedule(expr: String, timezone: String) -> Option<ScheduleProblem> {
+    schedule_problem(&expr, &timezone, crate::workspace::clock().0)
 }
 
 /// The next `count` (at most 5) occurrences from `dtstart`, for the editor preview.
@@ -1787,14 +1807,27 @@ mod tests {
 
     #[test]
     fn a_schedule_is_checked_with_the_editors_copy_keys() {
-        assert_eq!(schedule_error_key("0 9 * * 1-5", "UTC", T0), None);
-        assert_eq!(schedule_error_key("FREQ=DAILY;BYHOUR=9", "UTC", T0), None);
-        assert_eq!(schedule_error_key("0 9 * *", "UTC", T0), Some("invalid"));
-        assert_eq!(schedule_error_key("*/61 * * * *", "UTC", T0), Some("step"));
-        assert_eq!(schedule_error_key("0 0 31 2 *", "UTC", T0), Some("noDate"));
+        let key = |expr: &str| schedule_problem(expr, "UTC", T0).map(|p| p.key);
+        assert_eq!(key("0 9 * * 1-5"), None);
+        assert_eq!(key("FREQ=DAILY;BYHOUR=9"), None);
+        assert_eq!(key("0 9 * *").as_deref(), Some("invalid"));
+        assert_eq!(key("0 0 31 2 *").as_deref(), Some("noDate"));
         assert_eq!(
-            schedule_error_key(&format!("0 9 * * {}", "1,".repeat(1100)), "UTC", T0),
+            key(&format!("0 9 * * {}", "1,".repeat(1100))).as_deref(),
             Some("tooLong")
+        );
+        // A step names its field and range, as "Cron minute step must be between 1 and 60."
+        assert_eq!(
+            schedule_problem("*/61 * * * *", "UTC", T0),
+            Some(ScheduleProblem {
+                key: "step".into(),
+                field: Some("minute".into()),
+                max: Some(60),
+            })
+        );
+        assert_eq!(
+            schedule_problem("0 */25 * * *", "UTC", T0).and_then(|p| p.field),
+            Some("hour".into())
         );
     }
 

@@ -13,6 +13,7 @@ use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
 use crate::ai_keys::AiKeyStatus;
 use crate::automations::{
     AutomationDispatch, AutomationsChanged, AutomationsView, DispatchResult, RunFinish,
+    ScheduleProblem,
 };
 use crate::cli_verbs::{CliAsk, CliOpenTab, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
@@ -153,6 +154,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     AutomationDispatch::export_all(cfg)?;
     DispatchResult::export_all(cfg)?;
     RunFinish::export_all(cfg)?;
+    ScheduleProblem::export_all(cfg)?;
     AutomationsChanged::export_all(cfg)?;
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;

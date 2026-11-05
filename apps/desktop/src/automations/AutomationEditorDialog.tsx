@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Button, FieldMessage, Segmented, Select, Textarea } from "@xdev-asia/ui";
-import { type Api, type Automation, type ExtraArgsError, type RepoView, toApiError } from "@/api";
+import { type Api, type Automation, type ExtraArgsError, type RepoView, type ScheduleProblem, toApiError } from "@/api";
 import { useI18n } from "@/i18n";
 import { pushToast } from "@/workspace/toastStore";
 import { ExtraArgsField } from "./ExtraArgsField";
@@ -39,7 +39,7 @@ export function AutomationEditorDialog(props: {
     const blank = blankDraft({ repoId: props.defaultRepo, agent: props.defaultAgent });
     return props.template ? applyTemplate(blank, props.template, t) : blank;
   });
-  const [cronError, setCronError] = useState<string | null>(null);
+  const [cronError, setCronError] = useState<ScheduleProblem | null>(null);
   const [extraError, setExtraError] = useState<ExtraArgsError | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,7 +59,7 @@ export function AutomationEditorDialog(props: {
       void api
         .automationValidateSchedule(cron, timezone)
         .then((key) => !stale && setCronError(key))
-        .catch(() => !stale && setCronError("invalid"));
+        .catch(() => !stale && setCronError({ key: "invalid", field: null, max: null }));
     }, CRON_DEBOUNCE_MS);
     return () => {
       stale = true;

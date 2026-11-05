@@ -173,6 +173,7 @@ import type {
   Describe,
   DispatchResult,
   RunFinish,
+  ScheduleProblem,
 } from "@xdev/bindings";
 export type {
   Automation,
@@ -192,6 +193,7 @@ export type {
   RunFinish,
   RunStatus,
   RunTrigger,
+  ScheduleProblem,
   SetupDecision,
   WorkspaceMode,
 } from "@xdev/bindings";
@@ -1292,7 +1294,7 @@ export interface Api {
   automationRunNow(id: string): Promise<AutomationRun>;
   automationDescribe(expr: string, timezone: string): Promise<Describe>;
   // The error copy key of a schedule that cannot be saved, or null when it can.
-  automationValidateSchedule(expr: string, timezone: string): Promise<string | null>;
+  automationValidateSchedule(expr: string, timezone: string): Promise<ScheduleProblem | null>;
   // The next `count` (at most 5) occurrences from `dtstart`, epoch ms, for the editor preview.
   automationNextRuns(expr: string, timezone: string, dtstart: number, count: number): Promise<number[]>;
   // The UI can open tabs: tells the backend a dispatch may be sent. One tick follows.

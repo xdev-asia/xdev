@@ -1,4 +1,4 @@
-import type { ApiError, Automation, AutomationInput, ExtraArgsError, RepoView, SetupDecision, WorkspaceMode } from "@/api";
+import type { ApiError, Automation, AutomationInput, ExtraArgsError, RepoView, ScheduleProblem, SetupDecision, WorkspaceMode } from "@/api";
 import type { I18n } from "@/i18n";
 import { DEFAULT_GRACE_MINUTES, DEFAULT_TIMEOUT_SECONDS, DEFAULT_DRAFT, presetOf, toRrule, type ScheduleDraft } from "./schedule";
 import type { AutomationTemplate } from "./templates";
@@ -88,7 +88,7 @@ export interface Context {
   repos: readonly RepoView[];
   agents: readonly Agent[];
   /** The error key `automationValidateSchedule` gave for the custom cron, or null when it is valid. */
-  cronError: string | null;
+  cronError: ScheduleProblem | null;
   /** The extra arguments were refused by the backend. */
   extraArgsError: ExtraArgsError | null;
 }
@@ -164,9 +164,14 @@ export function problemMessage(p: Problem, t: T): string {
 }
 
 /** The live message under the custom cron: `Enter a five-field cron.`, the error, or `Valid custom cron`. */
-export function cronMessage(cron: string, error: string | null, t: T): { tone: "info" | "error"; text: string } {
+export function cronMessage(cron: string, error: ScheduleProblem | null, t: T): { tone: "info" | "error"; text: string } {
   if (cron.trim() === "") return { tone: "info", text: t("automations.cron.empty") };
-  if (error !== null) return { tone: "error", text: t(`automations.cron.error.${error}`) };
+  if (error?.key === "step" && error.field && error.max !== null) {
+    // The field's caption (Minute, Hour…) in the sentence's case.
+    const field = t(`automations.cron.${error.field}`).toLocaleLowerCase();
+    return { tone: "error", text: t("automations.cron.error.step", { field, max: error.max }) };
+  }
+  if (error !== null) return { tone: "error", text: t(`automations.cron.error.${error.key}`) };
   return { tone: "info", text: t("automations.cron.valid") };
 }
 

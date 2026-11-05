@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { Segmented } from "@xdev-asia/ui";
-import { createMockApi, type Automation } from "@/api";
+import { createMockApi, type Automation, type ScheduleProblem } from "@/api";
 import { mount, textOf, type Node } from "@/kit/testHooks";
 import { translate } from "@/i18n";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
@@ -140,13 +140,13 @@ it("says what is missing before it saves", async () => {
 
 it("asks the backend about a custom cron once typing rests and tells the picker", async () => {
   const { api, m } = setup();
-  const validate = vi.spyOn(api, "automationValidateSchedule").mockResolvedValue("invalid");
+  const validate = vi.spyOn(api, "automationValidateSchedule").mockResolvedValue({ key: "invalid", field: null, max: null });
   await m.settle();
   find(m.all(), SchedulePicker).props.onChange({ preset: "custom", hour: 9, minute: 0, dayOfWeek: 1, cron: "0 9" });
   await m.settle();
   await vi.waitFor(() => expect(validate).toHaveBeenCalledWith("0 9", expect.any(String)), { timeout: 5_000 });
   await m.settle();
-  expect(find(m.all(), SchedulePicker).props.cronError).toBe("invalid");
+  expect(find(m.all(), SchedulePicker).props.cronError).toEqual({ key: "invalid", field: null, max: null });
 });
 
 it("offers fresh sessions when extra arguments meet a reused session, and does not save until it is fixed", async () => {
@@ -221,10 +221,11 @@ it("cancels from the button and from Escape", async () => {
 });
 
 it("the custom cron panel says what to type, what is wrong, and when it is fine", () => {
-  const text = (cron: string, error: string | null) =>
+  const text = (cron: string, error: ScheduleProblem | null) =>
     mount(CustomCronPanel, () => ({ cron, error, onChange: vi.fn() })).all().filter((n) => n.type !== "li" && typeof n.props.children === "string").map((n) => n.props.children);
   expect(text("", null)).toContain("Enter a five-field cron.");
-  expect(text("0 9", "invalid")).toContain("Enter a valid five-field cron before saving.");
+  expect(text("0 9", { key: "invalid", field: null, max: null })).toContain("Enter a valid five-field cron before saving.");
+  expect(text("0 */25 * * *", { key: "step", field: "hour", max: 24 })).toContain("Cron hour step must be between 1 and 24.");
   expect(text("0 9 * * 1-5", null)).toContain("Valid custom cron");
   const all = mount(CustomCronPanel, () => ({ cron: "0 9 * * 1-5", error: null, onChange: vi.fn() })).all();
   expect(all.filter((n) => n.type === "span").map(textOf)).toEqual(["Minute", "Hour", "Day", "Month", "Weekday"]);

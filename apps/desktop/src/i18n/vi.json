@@ -3101,7 +3101,7 @@
   "automations.cron.error.invalid": "Nhập cron năm trường hợp lệ trước khi lưu.",
   "automations.cron.error.tooLong": "Biểu thức cron dài tối đa 2 KiB.",
   "automations.cron.error.noDate": "Lịch này không có ngày chạy nào trong chín năm tới.",
-  "automations.cron.error.step": "Một bước nhảy lớn hơn mức trường cho phép.",
+  "automations.cron.error.step": "Bước nhảy của trường {field} trong cron phải từ 1 đến {max}.",
   "automations.grace.label": "Thời gian châm chước lượt bỏ lỡ",
   "automations.grace.help": "Một lượt chạy được phép bắt đầu trễ bao lâu sau giờ hẹn. Bắt đầu muộn hơn sẽ bị bỏ qua.",
   "automations.grace.0": "Không châm chước",

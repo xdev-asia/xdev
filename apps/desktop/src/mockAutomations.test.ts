@@ -103,7 +103,7 @@ describe("mock automations", () => {
     expect(mockDescribe("0 9 1 * 1")).toEqual({ kind: "custom", expression: "0 9 1 * 1" });
     expect(mockDescribe("nonsense")).toEqual({ kind: "invalid" });
     expect(await api.automationValidateSchedule("0 9 * * *", "UTC")).toBeNull();
-    expect(await api.automationValidateSchedule("0 9", "UTC")).toBe("invalid");
+    expect(await api.automationValidateSchedule("0 9", "UTC")).toEqual({ key: "invalid", field: null, max: null });
     expect(await api.automationNextRuns("0 9 * * *", "UTC", NOW, 9)).toHaveLength(5);
   });
 

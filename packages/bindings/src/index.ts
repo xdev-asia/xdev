@@ -220,6 +220,7 @@ export type { SchemeMode } from "./SchemeMode";
 export type { SchemePreview } from "./SchemePreview";
 export type { RunStatus } from "./RunStatus";
 export type { RunTrigger } from "./RunTrigger";
+export type { ScheduleProblem } from "./ScheduleProblem";
 export type { ScriptSource } from "./ScriptSource";
 export type { SearchEvent } from "./SearchEvent";
 export type { SearchHit } from "./SearchHit";

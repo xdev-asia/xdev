@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { Field, FieldMessage } from "@xdev-asia/ui";
+import type { ScheduleProblem } from "@/api";
 import { useI18n } from "@/i18n";
 import { cronFields, cronMessage } from "./editorModel";
 
@@ -9,7 +10,7 @@ const CAPTIONS = ["minute", "hour", "day", "month", "weekday"] as const;
 export function CustomCronPanel(props: {
   cron: string;
   /** The error key `automationValidateSchedule` gave, or null when the cron is valid. */
-  error: string | null;
+  error: ScheduleProblem | null;
   onChange(cron: string): void;
 }): JSX.Element {
   const { t } = useI18n();

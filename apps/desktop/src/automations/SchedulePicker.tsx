@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { Select } from "@xdev-asia/ui";
+import type { ScheduleProblem } from "@/api";
 import { useI18n } from "@/i18n";
 import { CustomCronPanel } from "./CustomCronPanel";
 import { PRESETS, dayName, type Preset, type ScheduleDraft } from "./schedule";
@@ -19,7 +20,7 @@ export function parseTime(value: string): { hour: number; minute: number } | nul
 export function SchedulePicker(props: {
   draft: ScheduleDraft;
   onChange(draft: ScheduleDraft): void;
-  cronError: string | null;
+  cronError: ScheduleProblem | null;
   timezone: string;
 }): JSX.Element {
   const { t, locale } = useI18n();

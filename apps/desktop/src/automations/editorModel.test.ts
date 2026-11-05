@@ -43,7 +43,7 @@ describe("problemOf", () => {
   it("needs a valid custom cron", () => {
     const custom = { ...ready(), schedule: { ...ready().schedule, preset: "custom" as const, cron: "0 9 * * *" } };
     expect(problemOf(custom, ctx())).toBeNull();
-    expect(problemOf(custom, ctx({ cronError: "invalid" }))).toBe("schedule");
+    expect(problemOf(custom, ctx({ cronError: { key: "invalid", field: null, max: null } }))).toBe("schedule");
     expect(problemOf({ ...custom, schedule: { ...custom.schedule, cron: " " } }, ctx())).toBe("schedule");
     expect(problemMessage("schedule", t)).toBe("Enter a valid advanced schedule before saving.");
   });
@@ -116,7 +116,8 @@ describe("messages", () => {
   it("reads the live cron message", () => {
     expect(cronMessage("", null, t)).toEqual({ tone: "info", text: "Enter a five-field cron." });
     expect(cronMessage("0 9 * * 1-5", null, t)).toEqual({ tone: "info", text: "Valid custom cron" });
-    expect(cronMessage("0 9", "invalid", t)).toEqual({ tone: "error", text: "Enter a valid five-field cron before saving." });
+    expect(cronMessage("0 9", { key: "invalid", field: null, max: null }, t)).toEqual({ tone: "error", text: "Enter a valid five-field cron before saving." });
+    expect(cronMessage("*/61 * * * *", { key: "step", field: "minute", max: 60 }, t)).toEqual({ tone: "error", text: "Cron minute step must be between 1 and 60." });
   });
 
   it("splits a cron into five captions", () => {

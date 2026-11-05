@@ -3101,7 +3101,7 @@
   "automations.cron.error.invalid": "Enter a valid five-field cron before saving.",
   "automations.cron.error.tooLong": "A cron expression can be at most 2 KiB.",
   "automations.cron.error.noDate": "This schedule has no run date in the next nine years.",
-  "automations.cron.error.step": "A step is larger than its field allows.",
+  "automations.cron.error.step": "Cron {field} step must be between 1 and {max}.",
   "automations.grace.label": "Missed run grace",
   "automations.grace.help": "How late a run may start after it was due. A later start is skipped.",
   "automations.grace.0": "No grace",

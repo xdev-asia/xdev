@@ -220,9 +220,10 @@ export function createMockAutomations(options: { now?: () => number } = {}): Moc
       return mockDescribe(expr);
     },
     async automationValidateSchedule(expr) {
-      if (expr.includes("=")) return mockDescribe(expr).kind === "invalid" ? "invalid" : null;
+      const invalid = { key: "invalid", field: null, max: null };
+      if (expr.includes("=")) return mockDescribe(expr).kind === "invalid" ? invalid : null;
       const fields = expr.trim().split(/\s+/);
-      return fields.length === 5 && fields.every(Boolean) ? null : "invalid";
+      return fields.length === 5 && fields.every(Boolean) ? null : invalid;
     },
     async automationNextRuns(_expr, _tz, dtstart, count) {
       return mockNext(Math.max(dtstart, now()), count);
