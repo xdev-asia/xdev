@@ -1,12 +1,13 @@
 //! One scan at a time, with a time limit and a back-off after a timeout.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::attribute::attribute;
 use crate::urls::AdvertisedUrls;
-use crate::{PortKind, PortScan, Probe, PtyRoot, ScanError, WorkspacePort};
+use crate::{Listener, PortKind, PortScan, Probe, Proc, PtyRoot, ScanError, WorkspacePort};
 
 /// How long one command may run.
 pub const SCAN_TIMEOUT: Duration = Duration::from_secs(4);
@@ -26,6 +27,12 @@ pub enum StopError {
     NoPid,
     #[error("the port belongs to this app")]
     OwnProcess,
+    /// No fresh list: the last one may name a pid the OS has since reused.
+    #[error("the port list is not fresh")]
+    Unavailable,
+    /// The process on the port is not the one the list showed.
+    #[error("the process on the port changed")]
+    Changed,
     #[error("{0}")]
     Failed(String),
 }
@@ -38,7 +45,25 @@ impl StopError {
             Self::NotOwned => "port_not_owned",
             Self::NoPid => "port_no_pid",
             Self::OwnProcess => "port_own_process",
+            Self::Unavailable => "port_scan_unavailable",
+            Self::Changed => "port_changed",
             Self::Failed(_) => "stop_failed",
+        }
+    }
+}
+
+/// What tells one process apart from a later one with the same pid.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Identity {
+    name: String,
+    start: Option<u64>,
+}
+
+impl Identity {
+    fn of(proc: &Proc) -> Self {
+        Self {
+            name: proc.name.clone(),
+            start: proc.start,
         }
     }
 }
@@ -50,6 +75,8 @@ struct State {
     last: Option<PortScan>,
     /// The last scan that listed ports.
     good: Option<Vec<WorkspacePort>>,
+    /// Name and start of each listed pid in the last good scan.
+    seen: HashMap<u32, Identity>,
     failures: u32,
     pause_until: Option<Instant>,
     pause: Duration,
@@ -164,6 +191,11 @@ impl<P: Probe> Scanner<P> {
                 state.pause_until = None;
                 state.pause = Duration::ZERO;
                 state.good = Some(ports.clone());
+                state.seen = procs
+                    .iter()
+                    .filter(|p| ports.iter().any(|port| port.pid == Some(p.pid)))
+                    .map(|p| (p.pid, Identity::of(p)))
+                    .collect();
                 PortScan {
                     platform: platform().into(),
                     scanned_at: now_ms(),
@@ -217,9 +249,11 @@ impl<P: Probe> Scanner<P> {
         }
     }
 
-    /// Ends the process behind port `id`. Scans first and checks owner and
-    /// pid on that fresh list, so a reused pid is never hit. `protected` pids
-    /// are refused. Returns the list after the stop.
+    /// Ends the process behind port `id`. Refuses unless a fresh scan lists
+    /// it, then reads the live tables once more right before the signal: the
+    /// pid must still exist, still listen on that port, and keep the name and
+    /// start time the scan saw, so a reused pid is never hit. `protected`
+    /// pids are refused. Returns the list after the stop.
     pub fn stop(
         &self,
         id: &str,
@@ -229,6 +263,9 @@ impl<P: Probe> Scanner<P> {
         protected: &[u32],
     ) -> Result<PortScan, StopError> {
         let scan = self.scan(roots, worktrees, urls, true);
+        if scan.unavailable.is_some() {
+            return Err(StopError::Unavailable);
+        }
         let port = scan
             .ports
             .iter()
@@ -241,10 +278,38 @@ impl<P: Probe> Scanner<P> {
         if protected.contains(&pid) {
             return Err(StopError::OwnProcess);
         }
+        let seen = self
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .seen
+            .get(&pid)
+            .cloned()
+            .ok_or(StopError::Changed)?;
+        self.still_the_same(pid, port.port, &seen)?;
         self.probe
             .terminate(pid)
             .map_err(|e| StopError::Failed(e.to_string()))?;
         Ok(self.scan(roots, worktrees, urls, true))
+    }
+
+    /// Reads the live tables: `pid` still runs as `seen` and listens on `port`.
+    fn still_the_same(&self, pid: u32, port: u16, seen: &Identity) -> Result<(), StopError> {
+        let listeners: Vec<Listener> = self
+            .probe
+            .listeners(SCAN_TIMEOUT)
+            .map_err(|_| StopError::Unavailable)?;
+        if !listeners
+            .iter()
+            .any(|l| l.port == port && l.pid == Some(pid))
+        {
+            return Err(StopError::Changed);
+        }
+        let procs = self.probe.processes().map_err(|_| StopError::Unavailable)?;
+        match procs.iter().find(|p| p.pid == pid) {
+            Some(now) if Identity::of(now) == *seen => Ok(()),
+            _ => Err(StopError::Changed),
+        }
     }
 }
 
@@ -282,6 +347,9 @@ mod tests {
         calls: Arc<AtomicUsize>,
         killed: Arc<Mutex<Vec<u32>>>,
         procs: Arc<Mutex<Vec<Proc>>>,
+        /// From the second process read on, when set: the table changed.
+        later: Arc<Mutex<Option<Vec<Proc>>>>,
+        proc_calls: Arc<AtomicUsize>,
     }
 
     impl Fake {
@@ -301,6 +369,12 @@ mod tests {
             }
         }
         fn processes(&self) -> Result<Vec<Proc>, ScanError> {
+            let n = self.proc_calls.fetch_add(1, Ordering::SeqCst);
+            if n >= 1
+                && let Some(later) = self.later.lock().unwrap().clone()
+            {
+                return Ok(later);
+            }
             Ok(self.procs.lock().unwrap().clone())
         }
         fn terminate(&self, pid: u32) -> Result<(), ScanError> {
@@ -324,6 +398,7 @@ mod tests {
             name: "node".into(),
             cmd: "node".into(),
             cwd: Some(PathBuf::from(cwd)),
+            start: Some(1_000),
         }
     }
 
@@ -502,6 +577,72 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, StopError::OwnProcess);
         assert_eq!(err.code(), "port_own_process");
+        assert!(f.killed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn stop_during_a_back_off_pause_is_refused_without_a_signal() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        assert_eq!(s.scan(&[], &wts, &urls, false).ports.len(), 1);
+        // A timeout starts the pause; the scan then returns the last good list.
+        f.queue(Err(ScanError::Timeout));
+        let _ = f.listeners.lock().unwrap().remove(0);
+        let paused = s.scan(&[], &wts, &urls, false);
+        assert_eq!(paused.unavailable.as_deref(), Some("scan_timeout"));
+        assert_eq!(paused.ports.len(), 1, "the stale list is still shown");
+        advance(10);
+        let calls = f.calls.load(Ordering::SeqCst);
+        let err = s
+            .stop("127.0.0.1:5173:7", &[], &wts, &urls, &[])
+            .unwrap_err();
+        assert_eq!(err, StopError::Unavailable);
+        assert_eq!(err.code(), "port_scan_unavailable");
+        assert!(f.killed.lock().unwrap().is_empty());
+        assert_eq!(
+            f.calls.load(Ordering::SeqCst),
+            calls,
+            "no OS read in the pause"
+        );
+    }
+
+    #[test]
+    fn stop_refuses_a_pid_that_now_names_another_process() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        // Between the scan and the signal the pid ends and is reused.
+        let mut reused = proc(7, "/w/a");
+        reused.name = "postgres".into();
+        reused.start = Some(2_000);
+        *f.later.lock().unwrap() = Some(vec![reused]);
+        let err = s
+            .stop("127.0.0.1:5173:7", &[], &wts, &urls, &[])
+            .unwrap_err();
+        assert_eq!(err, StopError::Changed);
+        assert_eq!(err.code(), "port_changed");
+        assert!(f.killed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn stop_refuses_a_pid_with_the_same_name_but_a_new_start() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        let mut again = proc(7, "/w/a");
+        again.start = Some(1_001);
+        *f.later.lock().unwrap() = Some(vec![again]);
+        let err = s
+            .stop("127.0.0.1:5173:7", &[], &wts, &urls, &[])
+            .unwrap_err();
+        assert_eq!(err, StopError::Changed);
+        assert!(f.killed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn stop_refuses_a_pid_that_no_longer_listens_on_the_port() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        // The scan sees 5173 on pid 7; the check right after sees it on pid 9.
+        f.queue(Ok(vec![listen(5173, 9)]));
+        let err = s
+            .stop("127.0.0.1:5173:7", &[], &wts, &urls, &[])
+            .unwrap_err();
+        assert_eq!(err, StopError::Changed);
         assert!(f.killed.lock().unwrap().is_empty());
     }
 

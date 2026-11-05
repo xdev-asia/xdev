@@ -81,6 +81,7 @@ pub(crate) fn processes() -> Result<Vec<Proc>, ScanError> {
                 .collect::<Vec<_>>()
                 .join(" "),
             cwd: p.cwd().map(std::path::Path::to_path_buf),
+            start: Some(p.start_time()),
         })
         .collect())
 }

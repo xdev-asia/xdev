@@ -523,6 +523,8 @@
   "error.port_not_owned": "Cổng này không thuộc worktree nào.",
   "error.port_no_pid": "Không rõ tiến trình đứng sau cổng này.",
   "error.port_own_process": "Cổng này thuộc về chính xDev.",
+  "error.port_scan_unavailable": "Danh sách cổng chưa được làm mới nên chưa dừng gì. Hãy thử lại sau lần quét tới.",
+  "error.port_changed": "Tiến trình trên cổng này đã thay đổi từ lần quét trước nên chưa dừng gì.",
   "error.stop_failed": "Không thể dừng tiến trình.",
   "error.open_failed": "Không thể mở địa chỉ.",
   "ptyd.truncated": "— output đã bị cắt bớt —",

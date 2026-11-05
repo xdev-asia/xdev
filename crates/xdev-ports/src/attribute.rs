@@ -307,6 +307,7 @@ mod tests {
             name: name.into(),
             cmd: cmd.into(),
             cwd: cwd.map(PathBuf::from),
+            start: None,
         }
     }
 

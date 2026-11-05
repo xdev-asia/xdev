@@ -20,6 +20,8 @@ pub struct Proc {
     pub name: String,
     pub cmd: String,
     pub cwd: Option<PathBuf>,
+    /// When it started, in seconds since the epoch; tells a reused pid apart.
+    pub start: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
