@@ -353,7 +353,7 @@ impl Repo {
         self.push_with(&["push", "--porcelain", &lease, &remote, &refspec])
     }
 
-    fn push_with(&self, args: &[&str]) -> Result<(), GitError> {
+    pub(crate) fn push_with(&self, args: &[&str]) -> Result<(), GitError> {
         let out = run::run_long(&self.workdir, args)?;
         if out.status == Some(0) {
             return Ok(());
@@ -433,7 +433,7 @@ pub(crate) fn failed(args: &str, out: &Output) -> GitError {
 }
 
 /// `rev-list --left-right --count` output: `<left><TAB><right>`.
-fn parse_counts(out: &[u8]) -> Result<(u32, u32), GitError> {
+pub(crate) fn parse_counts(out: &[u8]) -> Result<(u32, u32), GitError> {
     let out = text(out);
     let mut parts = out.split_whitespace().map(str::parse::<u32>);
     match (parts.next(), parts.next()) {
