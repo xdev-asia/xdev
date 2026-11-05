@@ -2496,5 +2496,22 @@
   "shell.help.close": "Close",
   "shell.quitEndAll.title": "Quit and end all terminals?",
   "shell.quitEndAll.body": "Every terminal session ends, including running agents. Quit keeps them running so xDev reattaches next time.",
-  "shell.quitEndAll.confirm": "Quit and end"
+  "shell.quitEndAll.confirm": "Quit and end",
+  "files.image.loading": "Loading preview…",
+  "files.image.label": "Image preview",
+  "files.image.dims": "{w} × {h}",
+  "files.image.expand": "Expand",
+  "files.image.copy": "Copy as PNG",
+  "files.image.copied": "Copied as PNG",
+  "files.image.copyFailed": "Could not copy image",
+  "files.image.close": "Close",
+  "files.image.tooLarge.body": "Images over 20 MB do not open here.",
+  "files.zoom.group": "Zoom",
+  "files.zoom.out": "Zoom out",
+  "files.zoom.in": "Zoom in",
+  "files.zoom.fit": "Fit to view",
+  "files.zoom.fitScreen": "Fit to screen",
+  "files.zoom.actual": "Actual size",
+  "files.openDefault": "Open in default app",
+  "files.openDefault.failed": "Could not open the file in the default app"
 }

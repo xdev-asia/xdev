@@ -1,0 +1,44 @@
+/* Image, audio and video viewers in a file tab. */
+.media-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.media-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+  padding: var(--x-space-2) var(--x-space-3);
+  border-bottom: 1px solid var(--x-color-line);
+}
+.media-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--x-color-ink);
+}
+.media-meta {
+  color: var(--x-color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.image-stage {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.image-stage > .x-panzoom {
+  flex: 1;
+}
+.image-stage img {
+  display: block;
+  max-width: none;
+  user-select: none;
+}
+.dialog[data-size="wide"] .image-stage {
+  height: 60vh;
+}
