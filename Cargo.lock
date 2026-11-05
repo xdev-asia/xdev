@@ -6732,6 +6732,7 @@ dependencies = [
  "tempfile",
  "trash",
  "ts-rs",
+ "url",
  "uuid",
  "xdev-agent",
  "xdev-ai",
