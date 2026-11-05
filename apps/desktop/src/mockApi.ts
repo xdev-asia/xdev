@@ -44,6 +44,7 @@ import { createMockSettings, createSettingsHub } from "./mockSettings";
 import { createMockShell, type MockShell } from "./mockShell";
 import { createMockStatus, type MockStatus } from "./mockStatus";
 import { createMockSquads } from "./mockSquads";
+import { createMockMission } from "./mockMission";
 import { createMockTasks } from "./mockTasks";
 import { createMockWorkspace, type MockWorkspaceSeed } from "./mockWorkspace";
 import { mockHash, type MockFiles } from "./mockFiles";
@@ -618,6 +619,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockLayout(),
     ...createMockCrash(),
     ...createMockCli(),
+    ...createMockMission(),
     ...createMockAutomations({ demo: options.automationsDemo }),
     ...createMockQuickCommands(
       {
