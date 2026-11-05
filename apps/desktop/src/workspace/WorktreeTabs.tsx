@@ -2,6 +2,7 @@ import { Button, EmptyState, FileIcon, Icon, IconButton } from "@xdev-asia/ui";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
+import { sshProfiles, useSshAliases } from "./sshHosts";
 import { type Api, type ApiError, type PtyProfile } from "@/api";
 import { FileView } from "@/files/FileView";
 import { fileName, fileTabId, fileTabRel, fileTabs, isDirty, isFileTab, useOpenFiles } from "@/files/fileTabs";
@@ -269,10 +270,13 @@ export function WorktreeTabs(props: {
   // The `+` menu: agents that are on and installed, then every shell on offer.
   const agents = view ? view.profiles.filter((p) => p.profile.enabled && p.installed).map((p) => p.profile.id) : FALLBACK_AGENTS;
   const shells = view ? view.shells.map((s) => s.id) : [FALLBACK_SHELL];
+  // Saved SSH hosts, read again whenever a `+` menu opens; the group is left out with none.
+  const sshHosts = sshProfiles(useSshAliases(api, menuPane));
   const groups: MenuGroup[] = [
     // The menu keeps the first few; the picker reaches the rest.
     { label: t("workspace.tabs.agents"), ids: agents.slice(0, MENU_AGENTS), picker: view !== null },
     { label: t("workspace.tabs.shells"), ids: shells },
+    { label: t("ssh.menu"), ids: sshHosts },
   ].filter((g) => g.ids.length > 0 || g.picker === true);
   // The default shell: the profile view's, else its first; null when none is on.
   const defaultShell: PtyProfile | null = view

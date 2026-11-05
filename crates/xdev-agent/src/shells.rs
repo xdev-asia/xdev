@@ -2,7 +2,7 @@
 //! the owner's custom ones.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +18,8 @@ pub enum ShellKind {
     Wsl,
     Login,
     Custom,
+    /// The system `ssh` to one saved host; the alias is in `args`.
+    Ssh,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,6 +76,68 @@ fn list_shells_for(windows: bool, custom: &[CustomShell], distros: &[String]) ->
         args: shell.args.clone(),
     }));
     shells
+}
+
+/// The shell that runs the system `ssh` to `alias`; `None` for an alias
+/// `ssh` would take for an option or that has whitespace. Its id is
+/// `ssh:<alias>`, so a tab opens it with the profile id `shell:ssh:<alias>`.
+pub fn ssh_shell(alias: &str) -> Option<ShellEntry> {
+    ssh_shell_with(cfg!(windows), alias, &|p| find_program(p), &|p| p.is_file())
+}
+
+fn ssh_shell_with(
+    windows: bool,
+    alias: &str,
+    find: &dyn Fn(&str) -> Option<PathBuf>,
+    exists: &dyn Fn(&Path) -> bool,
+) -> Option<ShellEntry> {
+    let args = ssh_args(alias)?;
+    Some(ShellEntry {
+        id: format!("ssh:{alias}"),
+        name: alias.to_owned(),
+        kind: ShellKind::Ssh,
+        program: ssh_program(
+            windows,
+            find,
+            env::var_os("SystemRoot").map(PathBuf::from),
+            exists,
+        ),
+        args,
+    })
+}
+
+/// The args after `ssh`: just the alias, checked.
+pub fn ssh_args(alias: &str) -> Option<Vec<String>> {
+    let plain = !alias.is_empty()
+        && !alias.starts_with('-')
+        && !alias.chars().any(|c| c.is_whitespace() || c.is_control());
+    plain.then(|| vec![alias.to_owned()])
+}
+
+/// Where `ssh` is: on `PATH`, else on Windows the OpenSSH client that ships
+/// with the system. When neither exists the bare name comes back, so the
+/// spawn fails the way a missing program does.
+fn ssh_program(
+    windows: bool,
+    find: &dyn Fn(&str) -> Option<PathBuf>,
+    system_root: Option<PathBuf>,
+    exists: &dyn Fn(&Path) -> bool,
+) -> PathBuf {
+    let name = if windows { "ssh.exe" } else { "ssh" };
+    if let Some(found) = find(name) {
+        return found;
+    }
+    if windows {
+        let bundled = system_root
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+            .join("System32")
+            .join("OpenSSH")
+            .join("ssh.exe");
+        if exists(&bundled) {
+            return bundled;
+        }
+    }
+    PathBuf::from(name)
 }
 
 /// `pwsh.exe` when installed, else Windows PowerShell.
@@ -322,6 +386,67 @@ mod tests {
     fn shell_kind_is_lowercase_on_the_wire() {
         let json = serde_json::to_string(&ShellKind::Powershell).unwrap();
         assert_eq!(json, "\"powershell\"");
+    }
+
+    #[test]
+    fn ssh_args_are_the_alias_only() {
+        assert_eq!(ssh_args("web").unwrap(), ["web"]);
+        assert_eq!(ssh_args("user@host").unwrap(), ["user@host"]);
+        for bad in ["", "a b", "-oProxyCommand=x", "a\nb"] {
+            assert!(ssh_args(bad).is_none(), "{bad:?}");
+        }
+        assert!(ssh_shell("-v").is_none());
+    }
+
+    #[test]
+    fn ssh_program_unix_uses_path_or_bare_name() {
+        let found = |_: &str| Some(PathBuf::from("/usr/bin/ssh"));
+        let none = |_: &str| None;
+        let no = |_: &Path| false;
+        assert_eq!(
+            ssh_program(false, &found, None, &no),
+            PathBuf::from("/usr/bin/ssh")
+        );
+        assert_eq!(ssh_program(false, &none, None, &no), PathBuf::from("ssh"));
+    }
+
+    #[test]
+    fn ssh_program_windows_falls_back_to_system_openssh() {
+        let none = |_: &str| None;
+        let root = Some(PathBuf::from(r"D:\Win"));
+        let bundled = PathBuf::from(r"D:\Win")
+            .join("System32")
+            .join("OpenSSH")
+            .join("ssh.exe");
+        let there = |p: &Path| p == bundled;
+        assert_eq!(ssh_program(true, &none, root.clone(), &there), bundled);
+        // PATH wins over the bundled client.
+        let found = |n: &str| {
+            assert_eq!(n, "ssh.exe");
+            Some(PathBuf::from(r"C:\Git\ssh.exe"))
+        };
+        assert_eq!(
+            ssh_program(true, &found, root.clone(), &there),
+            PathBuf::from(r"C:\Git\ssh.exe")
+        );
+        // Missing everywhere: the bare name, so the spawn fails visibly.
+        assert_eq!(
+            ssh_program(true, &none, root, &|_| false),
+            PathBuf::from("ssh.exe")
+        );
+    }
+
+    #[test]
+    fn ssh_shell_entry_has_id_name_and_kind() {
+        let e = ssh_shell_with(false, "web", &|_| None, &|_| false).unwrap();
+        assert_eq!(e.id, "ssh:web");
+        assert_eq!(e.name, "web");
+        assert_eq!(e.kind, ShellKind::Ssh);
+        assert_eq!(e.program, PathBuf::from("ssh"));
+        assert_eq!(e.args, ["web"]);
+        let w = ssh_shell_with(true, "web", &|_| None, &|_| false).unwrap();
+        assert_eq!(w.program, PathBuf::from("ssh.exe"));
+        assert_eq!(serde_json::to_string(&ShellKind::Ssh).unwrap(), "\"ssh\"");
     }
 
     #[test]

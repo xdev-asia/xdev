@@ -19,6 +19,9 @@ import type {
   AwakeView,
   AppStatsView,
   PortScan,
+  HostSource,
+  SshHost,
+  SshSyncReport,
   KeepAwake,
   SwitchRunning,
   Approvals,
@@ -282,6 +285,7 @@ export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearch
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
 export type { AccountSource, ActiveAccount, AgentsSettings, AppStatsView, AwakeView, KeepAwake, SwitchRunning };
 export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } from "@xdev/bindings";
+export type { HostSource, SshHost, SshSyncReport };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind } from "@xdev/bindings";
@@ -1365,6 +1369,15 @@ export interface Api {
   portsStop(worktrees: string[], id: string, consent: PortStopConsent): Promise<PortScan>;
   portsOpen(id: string): Promise<void>;
   onPortsAdvertised(cb: (worktree: string) => void): Promise<() => void>;
+  // Saved SSH hosts. A save with an empty id adds one; the alias is trimmed and unique; a saved host is a
+  // manual one. Rejects with `bad_arg` (detail: alias, host_name, port, duplicate_alias) or `not_found`.
+  sshHostsList(): Promise<SshHost[]>;
+  sshHostSave(host: SshHost): Promise<SshHost>;
+  sshHostRemove(id: string): Promise<void>;
+  // Returns how many were removed.
+  sshHostsRemoveMany(ids: string[]): Promise<number>;
+  // Re-reads ~/.ssh/config: adds new aliases and updates the synced ones; manual hosts are never touched.
+  sshConfigSync(): Promise<SshSyncReport>;
   usageSettings(): Promise<UsageSettings>;
   usageSettingsPut(v: UsageSettings): Promise<UsageSettings>;
   // Settings → Automations; the put returns what was stored.
@@ -2021,6 +2034,11 @@ const tauriApi: Api = {
   portsScan: (worktrees, force) => call("ports_scan", { worktrees, force }),
   portsStop: (worktrees, id, consent) => call("ports_stop", { worktrees, id, confirmed: consent.confirmed, outsideTerminal: consent.outsideTerminal }),
   portsOpen: (id) => call("ports_open", { id }),
+  sshHostsList: () => call("ssh_hosts_list"),
+  sshHostSave: (host) => call("ssh_host_save", { host }),
+  sshHostRemove: (id) => call("ssh_host_remove", { id }),
+  sshHostsRemoveMany: (ids) => call("ssh_hosts_remove_many", { ids }),
+  sshConfigSync: () => call("ssh_config_sync"),
   onPortsAdvertised: (cb) => listen<{ worktree: string }>("ports://advertised", (e) => cb(e.payload.worktree)),
   automationsSettings: () => call("automations_settings_get"),
   automationsSettingsPut: (settings) => call("automations_settings_put", { settings }),

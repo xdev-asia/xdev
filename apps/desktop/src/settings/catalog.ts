@@ -192,6 +192,8 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   // Shortcuts and quick commands: the page keeps its own list search, so one entry each.
   e("keys.page", "keys.title", ["shortcut", "keybinding", "hotkey", "chord", "phím tắt", "phim tat"]),
   e("qcmd.page", "qcmd.title", ["quick", "command", "script", "alias", "lệnh nhanh", "lenh nhanh"]),
+  // SSH: the page keeps its own host filter, so one entry.
+  e("ssh.hosts", "ssh.title", ["ssh", "host", "hosts", "server", "remote", "terminal", "config", "máy chủ", "may chu", "từ xa", "tu xa"], "ssh.intro"),
   // Diagnostics
   e("diagnostics.export", "diagnostics.export.title", ["diagnostics", "export", "bundle", "chẩn đoán", "chan doan", "xuất", "xuat"]),
   e("diagnostics.logs", "diagnostics.logs.title", ["diagnostics", "log", "logs", "nhật ký", "nhat ky"]),

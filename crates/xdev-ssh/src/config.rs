@@ -8,6 +8,10 @@ pub struct ParsedConfig {
     pub hosts: Vec<SshHost>,
     /// What was left out and why, for a line under the sync button.
     pub notes: Vec<String>,
+    /// An `Include` line was seen and not followed.
+    pub include_seen: bool,
+    /// How many `Host` patterns were wildcards, negated or not a usable alias.
+    pub skipped_patterns: usize,
 }
 
 #[derive(Default)]
@@ -135,6 +139,8 @@ pub fn parse_config(text: &str) -> ParsedConfig {
             });
         }
     }
+    out.include_seen = include;
+    out.skipped_patterns = skipped_patterns;
     if skipped_patterns > 0 {
         out.notes.push(format!(
             "skipped {skipped_patterns} wildcard or negated pattern(s)"

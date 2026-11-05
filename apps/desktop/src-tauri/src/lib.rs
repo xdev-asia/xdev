@@ -54,6 +54,7 @@ mod settings_store;
 mod shell;
 mod ship;
 mod squads;
+mod ssh;
 mod startup;
 mod status;
 mod tasks;
@@ -557,6 +558,11 @@ pub fn run() {
             prs::pr_open,
             prs::pr_branch,
             prs::pr_branch_discard,
+            ssh::ssh_hosts_list,
+            ssh::ssh_host_save,
+            ssh::ssh_host_remove,
+            ssh::ssh_hosts_remove_many,
+            ssh::ssh_config_sync,
             gitlab::gitlab_detect,
             gitlab::gitlab_mr_list,
             gitlab::gitlab_mr_view,

@@ -45,6 +45,7 @@ use crate::settings::{
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
 use crate::squads::{SquadItem, SquadView};
+use crate::ssh::SshSyncReport;
 use crate::startup::StartupReport;
 use crate::tasks::{FileDiff, TasksContext};
 use crate::terminal_themes::{CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview};
@@ -280,6 +281,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     CliAsk::export_all(cfg)?;
     PortsAdvertised::export_all(cfg)?;
     xdev_ports::PortScan::export_all(cfg)?;
+    xdev_ssh::SshHost::export_all(cfg)?;
+    SshSyncReport::export_all(cfg)?;
     Ok(())
 }
 

@@ -1,0 +1,46 @@
+/* Settings → SSH: the tools row, the bulk row and a host row. At 360px the tools wrap and the row
+   buttons drop under the host. */
+.ssh-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ssh-tools .search {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.ssh-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+}
+
+.ssh-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.ssh-row .settings-item-text {
+  flex: 1 1 140px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ssh-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.ssh-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

@@ -34,12 +34,17 @@ export function useProfiles(): Store {
 
 const BUILTIN_LETTER: Record<string, string> = { claude: "C", codex: "X", gemini: "G" };
 
+/** The profile id of a saved SSH host's terminal: this prefix and the alias. */
+export const SSH_SHELL_PREFIX = "shell:ssh:";
+
 /** The name of a profile or shell; the built-in label when the view is missing or lacks the id. */
 export function profileName(
   view: ProfilesView | null,
   id: string,
   t: (key: string, vars?: Record<string, string | number>) => string,
 ): string {
+  // A saved SSH host opens as `shell:ssh:<alias>`; its tab is named by the alias.
+  if (id.startsWith(SSH_SHELL_PREFIX)) return id.slice(SSH_SHELL_PREFIX.length);
   const found = view?.profiles.find((p) => p.profile.id === id)?.profile.name ?? view?.shells.find((s) => s.id === id)?.name;
   if (found !== undefined) return found;
   // A profile removed since its tab opened has no label of its own: show the id.

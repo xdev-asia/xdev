@@ -59,7 +59,8 @@ export function useApprovedStart(api: Api): {
       setAsking({ profile, account, ...(resume === undefined ? {} : { resume }), ...(fork ? { fork } : {}), ...(extraArgs?.length ? { extraArgs } : {}), reason: e.detail ?? "", retry, cancel });
       return;
     }
-    setError(e);
+    // A plain ssh tab that does not start usually has no OpenSSH client behind it.
+    setError(profile.startsWith("shell:ssh:") ? { ...e, detail: [t("terminal.sshMissing"), e.detail].filter(Boolean).join("\n") } : e);
     cancel();
   };
 
