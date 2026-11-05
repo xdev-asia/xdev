@@ -4,16 +4,16 @@ import { CARD_PARTS, cardParts } from "./cardModel";
 
 const prefs = SIDEBAR_PREFS_DEFAULTS;
 
-it("a detailed card with every property on shows all nine parts", () => {
+it("a detailed card with every property on shows all ten parts", () => {
   expect([...cardParts(prefs)].sort()).toEqual([...CARD_PARTS].sort());
-  expect(CARD_PARTS).toHaveLength(9);
+  expect(CARD_PARTS).toHaveLength(10);
 });
 
 it("each property that is off drops its part", () => {
   for (const part of CARD_PARTS) {
     const parts = cardParts({ ...prefs, card: { ...prefs.card, [part]: false } });
     expect(parts.has(part), part).toBe(false);
-    expect(parts.size, part).toBe(8);
+    expect(parts.size, part).toBe(9);
   }
 });
 

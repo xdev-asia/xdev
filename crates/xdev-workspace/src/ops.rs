@@ -1527,19 +1527,21 @@ pub struct Removed {
 }
 
 /// Removes a linked worktree. Without `force` it must have no changes,
-/// untracked files included. Its branch goes too when this app made it and,
-/// unless `force`, all its commits are in `base_ref`. A branch it leaves
+/// untracked files included; `force` only skips that check. Its branch goes
+/// too when this app made it and, unless `delete_unmerged`, all its commits
+/// are in `base_ref`. A branch it leaves
 /// (unmerged, or of an imported worktree) is listed in `kept` as `Deleted`.
 pub fn remove_worktree(
     reg: &mut Registry,
     path: &Path,
     force: bool,
+    delete_unmerged: bool,
     now_ms: i64,
 ) -> Result<Removed, WorkspaceError> {
     let l = leaving(reg, path, force)?;
-    // Without `force`, commits found nowhere else keep their branch.
+    // Without `delete_unmerged`, commits found nowhere else keep their branch.
     let delete = match &l.branch {
-        Some(b) if l.meta.made_here => force || is_merged(&l.repo, b, &l.entry.base_ref)?,
+        Some(b) if l.meta.made_here => delete_unmerged || is_merged(&l.repo, b, &l.entry.base_ref)?,
         _ => false,
     };
     drop_folder(reg, &l)?;

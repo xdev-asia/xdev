@@ -16,6 +16,7 @@ export const DEFAULT_GIT_SETTINGS: GitSettings = {
   autoRenameBranch: true,
   sourceControlGroupOrder: "changes-first",
   prBotAuthorOverrides: [],
+  pullPolicy: "ff-only",
   recipes: {
     commitMessage: { ...DEFAULT_RECIPE, args: [] },
     pullRequest: { ...DEFAULT_RECIPE, args: [] },

@@ -5,6 +5,7 @@ import type { Api, ApiError, DetailsPatch, WorkItemKind, WorkStatus, WorktreeVie
 import { useI18n } from "@/i18n";
 import { expandShortcodes } from "./emoji";
 import { LinkedWorkSearch } from "./LinkedWorkSearch";
+import { parentCandidates } from "./lineage";
 import { parseItem } from "./workItemInput";
 
 const STATUSES: WorkStatus[] = ["todo", "in-progress", "in-review", "completed"];
@@ -59,7 +60,7 @@ export function DetailsDialog(props: {
   }, []);
 
   // A parent is another worktree that is not the main checkout and not itself a child.
-  const parents = props.siblings.filter((s) => s.path !== wt.path && !s.primary && (s.parent === null || s.path === wt.parent));
+  const parents = [...props.siblings.filter((s) => s.path === wt.parent), ...parentCandidates(wt, props.siblings)];
   const badItem = parseItem(itemUrl, itemKind) === "bad";
   const error = props.error === undefined ? undefined : t(`error.${props.error}`);
 

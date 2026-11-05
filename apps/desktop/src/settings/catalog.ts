@@ -32,6 +32,8 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("general.nav.confirmClosePinned", "settings.general.confirmClosePinned", ["close", "pinned", "confirm", "đóng", "dong", "ghim", "xác nhận", "xac nhan"]),
   e("general.nav.confirmCloseRunning", "settings.general.confirmCloseRunning", ["close", "running", "agent", "process", "confirm", "đóng", "dong", "đang chạy", "dang chay", "xác nhận", "xac nhan"], "settings.general.confirmCloseRunningHint"),
   e("general.nav.askBeforeDeleteWorktree", "settings.general.askBeforeDeleteWorktree", ["delete", "remove", "worktree", "ask", "confirm", "xoá", "xoa", "xóa", "hỏi", "hoi"]),
+  e("general.nav.alwaysForceDeleteWorktrees", "settings.general.alwaysForceDeleteWorktrees", ["force", "delete", "remove", "worktree", "dirty", "uncommitted", "xoá", "xoa", "xóa", "ép", "ep"]),
+  e("general.nav.alwaysDeleteKeptBranches", "settings.general.alwaysDeleteKeptBranches", ["branch", "delete", "keep", "kept", "unmerged", "nhánh", "nhanh", "xoá", "xoa", "xóa"]),
   e("general.language", "language.label", ["language", "locale", "english", "vietnamese", "ngôn ngữ", "ngon ngu", "tiếng việt", "tieng viet"]),
   e("general.zoom", "settings.general.zoom", ["zoom", "scale", "size", "thu phóng", "thu phong", "phóng to", "phong to"]),
   e("general.restore", "layout.setting", ["restore", "layout", "session", "reopen", "khôi phục", "khoi phuc", "bố cục", "bo cuc"], "layout.setting.hint"),
@@ -144,6 +146,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   // Git
   e("git.prefix", "settings.git.prefix", ["branch", "name", "username", "nhánh", "nhanh", "tiền tố", "tien to"]),
   e("git.compare", "settings.git.compare", ["diff", "upstream", "base", "so sánh", "so sanh"], "settings.git.compareHint"),
+  e("git.pullPolicy", "settings.git.pullPolicy", ["pull", "merge", "rebase", "fast-forward", "ff"], "settings.git.pullPolicyHint"),
   e("git.groupOrder", "settings.git.groupOrder", ["staged", "changes", "order", "thứ tự", "thu tu"], "settings.git.groupOrderHint"),
   e("git.refresh", "settings.git.refresh", ["fetch", "pull", "base", "create", "làm mới", "lam moi"], "settings.git.refreshHint"),
   e("git.autoRename", "settings.git.autoRename.title", ["rename", "branch", "name", "prompt", "đổi tên", "doi ten", "nhánh", "nhanh"], "settings.git.autoRename.hint"),

@@ -18,6 +18,7 @@ use crate::open_in::OpenTarget;
 use crate::orchestration::{
     ReadTab, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome,
 };
+use crate::ports::{LivePort, PortQuery, WorktreePorts};
 use crate::power::AwakeView;
 use crate::profiles::ProfilesView;
 use crate::pty::{PtyAttached, PtyExit, PtyInfo, PtydStatus};
@@ -115,6 +116,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     DiffSettings::export_all(cfg)?;
     AgentsSettings::export_all(cfg)?;
     AwakeView::export_all(cfg)?;
+    LivePort::export_all(cfg)?;
+    PortQuery::export_all(cfg)?;
+    WorktreePorts::export_all(cfg)?;
     UsageSettings::export_all(cfg)?;
     XdevIdSettings::export_all(cfg)?;
     OrchestrationSettings::export_all(cfg)?;
@@ -166,6 +170,15 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_workspace::SearchEvent::export_all(cfg)?;
     ShipView::export_all(cfg)?;
     xdev_git::Upstream::export_all(cfg)?;
+    xdev_git::RepoLog::export_all(cfg)?;
+    xdev_git::LogCommit::export_all(cfg)?;
+    xdev_git::CommitRef::export_all(cfg)?;
+    xdev_git::RefKind::export_all(cfg)?;
+    xdev_git::LogRef::export_all(cfg)?;
+    xdev_git::CommitFiles::export_all(cfg)?;
+    xdev_git::CommitFile::export_all(cfg)?;
+    xdev_git::CommitFileStatus::export_all(cfg)?;
+    xdev_git::PullPolicy::export_all(cfg)?;
     xdev_git::BaseRange::export_all(cfg)?;
     xdev_git::PrView::export_all(cfg)?;
     xdev_git::PrState::export_all(cfg)?;
@@ -204,6 +217,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_kit::MemorySet::export_all(cfg)?;
     xdev_kit::UsageSummary::export_all(cfg)?;
     xdev_kit::UsageReport::export_all(cfg)?;
+    xdev_kit::Cost::export_all(cfg)?;
     crate::kit::UsageReportArgs::export_all(cfg)?;
     SessionQuery::export_all(cfg)?;
     SessionRow::export_all(cfg)?;

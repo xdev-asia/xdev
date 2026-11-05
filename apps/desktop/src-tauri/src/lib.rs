@@ -10,6 +10,7 @@ mod clipboard;
 mod commands;
 mod endpoint;
 mod files;
+mod history;
 mod hooks;
 mod issues;
 mod keybindings;
@@ -22,6 +23,7 @@ mod orch_pump;
 mod orch_skill;
 mod orch_sweep;
 mod orchestration;
+mod ports;
 mod power;
 mod pr_review;
 mod profiles;
@@ -44,6 +46,7 @@ mod tasks;
 mod terminal_themes;
 mod tray;
 mod updater;
+mod usage_share;
 mod workspace;
 mod xdev_id;
 
@@ -83,6 +86,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(updater::Pending::default())
         .manage(xdev_id::XdevIdHub::production())
         .manage(updater::Phase::default())
@@ -308,6 +312,8 @@ pub fn run() {
             power::keep_awake_get,
             power::keep_awake_set,
             power::keep_awake_agents,
+            ports::ports_scan,
+            ports::port_stop,
             pty::pty_spawn,
             pty::pty_approve,
             pty::pty_write,
@@ -390,6 +396,13 @@ pub fn run() {
             ship::worktree_ship,
             ship::worktree_push,
             ship::worktree_pull,
+            ship::worktree_fast_forward,
+            ship::worktree_rebase_from_base,
+            history::worktree_log,
+            history::worktree_commit_files,
+            history::worktree_commit_file,
+            history::worktree_open_commit,
+            history::worktree_open_file_on_host,
             ship::worktree_sync,
             ship::worktree_fetch,
             ship::worktree_force_push,
@@ -439,6 +452,8 @@ pub fn run() {
             kit::kit_skill_restore,
             kit::kit_usage,
             kit::kit_usage_report,
+            usage_share::usage_share_copy_image,
+            usage_share::usage_share_post,
             kit::kit_paths_exist,
             kit::kit_prompt_history,
             agent_sessions::agent_sessions,
@@ -509,6 +524,23 @@ mod tests {
     #[test]
     fn app_version_matches_core() {
         assert_eq!(super::app_version(), xdev_core::version());
+    }
+
+    #[test]
+    fn each_plugin_is_registered_once() {
+        // The builder chain is read as text: registering it needs a running app.
+        let src = include_str!("lib.rs");
+        let chain = &src[src.find("    builder\n        .plugin(").unwrap()..];
+        let chain = &chain[..chain.find(".manage(").unwrap()];
+        let mut plugins: Vec<&str> = chain
+            .split(".plugin(")
+            .skip(1)
+            .map(|p| p.split("::").next().unwrap())
+            .collect();
+        let all = plugins.len();
+        plugins.sort_unstable();
+        plugins.dedup();
+        assert_eq!(plugins.len(), all, "{chain}");
     }
 
     #[test]

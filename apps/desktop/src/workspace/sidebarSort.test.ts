@@ -64,3 +64,44 @@ describe("recentSnapshot", () => {
     expect(snap.activity.a).toBe(1);
   });
 });
+
+describe("name, smart and project", () => {
+  type R = { path: string; wt?: { name: string; title?: string | null }; repo?: { shortName: string } };
+  const r = (path: string, name: string, title: string | null = null, repo = "xdev"): R => ({ path, wt: { name, title }, repo: { shortName: repo } });
+
+  it("name uses the title else the name, ignoring case and accents, digits as numbers", () => {
+    const list = [r("/3", "wt-10"), r("/2", "wt-2"), r("/1", "zeta", "Émile"), r("/4", "Apple")];
+    expect(names(sortEntries(list, "name", undefined))).toEqual(["/4", "/1", "/2", "/3"]);
+  });
+
+  it("name breaks ties by path and is stable", () => {
+    expect(names(sortEntries([r("/b", "same"), r("/a", "same")], "name", undefined))).toEqual(["/a", "/b"]);
+    expect(names(sortEntries([r("/x", "same"), r("/x", "SAME")], "name", undefined))).toEqual(["/x", "/x"]);
+  });
+
+  it("smart orders by class, then newest activity, then name", () => {
+    const list = [r("/idle", "idle"), r("/work", "work"), r("/done", "done"), r("/need", "need"), r("/fail", "fail"), r("/old", "old"), r("/none", "none")];
+    const status: Record<string, string> = { "/idle": "idle", "/work": "working", "/done": "done", "/need": "needs-you", "/fail": "failed", "/old": "exited" };
+    const activity = { "/need": 1, "/fail": 5, "/idle": 3, "/old": 9 };
+    expect(names(sortEntries(list, "smart", activity, (p) => status[p]))).toEqual(["/fail", "/need", "/done", "/work", "/old", "/idle", "/none"]);
+  });
+
+  it("smart falls back to name when activity ties", () => {
+    expect(names(sortEntries([r("/b", "b"), r("/a", "a")], "smart", {}, () => null))).toEqual(["/a", "/b"]);
+  });
+
+  it("project sorts by repo short name, then name", () => {
+    const list = [r("/1", "b", null, "zed"), r("/2", "b", null, "Alpha"), r("/3", "a", null, "zed")];
+    expect(names(sortEntries(list, "project", undefined))).toEqual(["/2", "/3", "/1"]);
+  });
+
+  it("rows without a worktree sort by path", () => {
+    expect(names(sortEntries([e("/b"), e("/a")], "name", undefined))).toEqual(["/a", "/b"]);
+  });
+
+  it("the snapshot covers smart but not name", () => {
+    const base = { paths: ["a"], activity: { a: 1 }, focus: 0 };
+    expect(recentSnapshot(null, { ...base, sort: "smart" }).activity).toEqual({ a: 1 });
+    expect(recentSnapshot(null, { ...base, sort: "name" }).activity).toEqual({});
+  });
+});
