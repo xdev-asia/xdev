@@ -54,6 +54,9 @@ import type {
   KeybindingsText,
   UiSettings,
   CustomScheme,
+  ConfigKind,
+  TermConfigDetected,
+  TermConfigPreview,
   OnNameTaken,
   SchemePreview,
   OpenInSettings,
@@ -291,6 +294,7 @@ export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCra
 export type { RestoreMode } from "@xdev/bindings";
 export type { Theme, EditorTheme, SidebarLook, StatusBarItems } from "@xdev/bindings";
 export type { CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview } from "@xdev/bindings";
+export type { ConfigKind, TermConfigDetected, TermConfigPreview } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
@@ -809,6 +813,12 @@ export interface Api {
   terminalThemeImport(path: string, onTaken: OnNameTaken): Promise<CustomScheme>;
   // Moves an imported scheme to the trash.
   terminalThemeRemove(id: string): Promise<void>;
+  // Which Ghostty / Kitty configs exist on this machine (the path of each, or null).
+  termConfigDetect(): Promise<TermConfigDetected>;
+  // The terminal settings a config sets; `path` null reads the detected file. Rejects `not_found`.
+  termConfigRead(kind: ConfigKind, path: string | null): Promise<TermConfigPreview>;
+  // Saves the config's colours as a custom scheme (replacing an earlier import of the same kind).
+  termConfigSaveScheme(kind: ConfigKind, path: string | null): Promise<CustomScheme>;
   openVault(path: string): Promise<DocEntry[]>;
   lastVault(): Promise<string | null>;
   // `prompt` is true until the first-run offer has been answered or any folder opened.
@@ -1693,6 +1703,9 @@ const tauriApi: Api = {
   terminalThemePreview: (path) => call("terminal_theme_preview", { path }),
   terminalThemeImport: (path, onTaken) => call("terminal_theme_import", { path, onTaken }),
   terminalThemeRemove: (id) => call("terminal_theme_remove", { id }),
+  termConfigDetect: () => call("term_config_detect"),
+  termConfigRead: (kind, path) => call("term_config_read", { kind, path }),
+  termConfigSaveScheme: (kind, path) => call("term_config_save_scheme", { kind, path }),
   openVault: (path) => call("open_vault", { path }),
   lastVault: () => call("last_vault"),
   vaultSetup: () => call("vault_setup"),

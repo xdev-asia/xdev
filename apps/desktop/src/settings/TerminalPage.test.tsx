@@ -425,7 +425,7 @@ it("Import theme picks a file, previews it, and the dialog imports on the answer
   expect(p.all().find((n) => n.type === ImportSchemeDialog)!.props.open).toBe(false);
   p.field("import").props.onClick();
   await tick();
-  expect(pick).toHaveBeenCalledWith(["json"]);
+  expect(pick).toHaveBeenCalledWith(["json", "yaml", "yml", "itermcolors"]);
   const dlg = () => p.all().find((n) => n.type === ImportSchemeDialog)!;
   expect(dlg().props.open).toBe(true);
   expect(dlg().props.preview.scheme.name).toBeTruthy();
