@@ -43,13 +43,15 @@ pub use names::{PrefixIssue, SUFFIX_MAX, from_work, normalize_prefix, prefix_iss
 pub use ops::{
     BranchPrefix, COMMENT_MAX, CreateOptions, DetailsPatch, DirEntry, DirListing, ITEM_URL_MAX,
     NamePreview, Removed, RepoPatch, RepoView, TITLE_MAX, WorktreeStat, WorktreeView, add_repo,
-    adopt_worktree, create_worktree, create_worktree_linked, create_worktree_with, forget_repo,
-    list, list_dir, name_preview, path_key, refresh_base, remove_worktree, rename_branch,
-    set_details, set_pinned, stat, update_repo, valid_short_name,
+    adopt_worktree, base_drift, clean_sparse_presets, create_worktree, create_worktree_linked,
+    create_worktree_with, forget_repo, list, list_dir, name_preview, path_key, refresh_base,
+    remote_branch_named, remove_worktree, rename_branch, set_details, set_pinned, stat,
+    update_repo, valid_short_name, worktree_root_for,
 };
 pub use registry::{
-    ISSUE_COMMAND_MAX, MadeBy, REPO_COLORS, Registry, RepoEntry, RepoIcon, ScriptSource,
-    SetupPolicy, VaultEntry, WorkItem, WorkItemKind, WorkStatus, WorktreeMeta, repo_id,
+    ISSUE_COMMAND_MAX, MadeBy, REPO_COLORS, Registry, RepoEntry, RepoIcon, SPARSE_PRESET_NAME_MAX,
+    SPARSE_PRESETS_MAX, ScriptSource, SetupPolicy, SparsePreset, VaultEntry, WorkItem,
+    WorkItemKind, WorkStatus, WorktreeMeta, repo_id,
 };
 pub use repo_commands::{
     COMMAND_LABEL_MAX, COMMAND_PROMPT_MAX, COMMAND_TEXT_MAX, RepoAction, RepoCommand, RepoCommands,

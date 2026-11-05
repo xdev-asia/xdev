@@ -51,7 +51,7 @@ pub use gh_review::{
 pub use history::Commit;
 pub use host_url::{HostKind, HostRepo, commit_url, file_url, parse_host_remote};
 pub use log::{CommitRef, LOG_LIMIT, LOG_LIMIT_MAX, LogCommit, LogRef, RefKind, RepoLog};
-pub use remote::{BaseRange, BaseRefresh, Upstream};
+pub use remote::{BaseDrift, BaseRange, BaseRefresh, Upstream};
 pub use review::{Branch, StageState};
 pub use update::PullPolicy;
 pub use worktree::{NumStat, WorktreeEntry, global_user_name, valid_branch_name};

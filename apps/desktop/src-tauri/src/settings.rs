@@ -1758,6 +1758,15 @@ pub struct GitSettings {
     /// falls back to the defaults on its own.
     #[serde(deserialize_with = "lenient")]
     pub recipes: GitRecipes,
+    /// Where new worktrees go for a repo whose own folder is the default; an
+    /// absolute path, or empty for `<repo parent>/wt`.
+    pub worktree_dir: String,
+    /// The worktree folders last used, newest first, at most
+    /// `WORKTREE_DIR_HISTORY_MAX`.
+    #[serde(deserialize_with = "lenient")]
+    pub worktree_dir_history: Vec<String>,
+    /// The tip that the local base is behind its upstream was turned off.
+    pub local_base_refresh_tip_dismissed: bool,
 }
 
 impl Default for GitSettings {
@@ -1780,6 +1789,9 @@ impl Default for GitSettings {
             issues_default_view: IssuesPreset::default(),
             show_issues_tab: true,
             recipes: GitRecipes::default(),
+            worktree_dir: String::new(),
+            worktree_dir_history: Vec::new(),
+            local_base_refresh_tip_dismissed: false,
         }
     }
 }
@@ -1790,7 +1802,21 @@ impl GitSettings {
         self.branch_prefix_custom = xdev_workspace::normalize_prefix(&self.branch_prefix_custom);
         self.recipes = self.recipes.normalized();
         self.pr_bot_author_overrides = normalize_bot_overrides(self.pr_bot_author_overrides);
+        self.worktree_dir = absolute_dir(&self.worktree_dir).unwrap_or_default();
+        let history = std::mem::take(&mut self.worktree_dir_history);
+        self.worktree_dir_history = history
+            .iter()
+            .rev()
+            .chain(std::iter::once(&self.worktree_dir))
+            .fold(Vec::new(), |h, dir| push_dir_history(h, dir));
         self
+    }
+
+    /// Whether the tip that the local base is `behind` commits behind its
+    /// upstream is shown: only when refreshing before create is off and the
+    /// tip was not turned off.
+    pub fn shows_base_tip(&self, behind: u32) -> bool {
+        behind > 0 && !self.refresh_local_base_on_create && !self.local_base_refresh_tip_dismissed
     }
 
     /// How a new worktree is named under these settings.
@@ -1806,9 +1832,33 @@ impl GitSettings {
             made_by: xdev_workspace::MadeBy::App,
             // A taken name is made as `name-2`; the desktop never refuses it.
             suffix: true,
+            worktree_dir: absolute_dir(&self.worktree_dir).map(std::path::PathBuf::from),
             ..xdev_workspace::CreateOptions::default()
         }
     }
+}
+
+/// Most folders `GitSettings::worktree_dir_history` keeps.
+pub const WORKTREE_DIR_HISTORY_MAX: usize = 5;
+
+/// `dir` trimmed, when it is an absolute path.
+fn absolute_dir(dir: &str) -> Option<String> {
+    let dir = dir.trim();
+    std::path::Path::new(dir)
+        .is_absolute()
+        .then(|| dir.to_owned())
+}
+
+/// `history` with `dir` first: trimmed, once, at most
+/// `WORKTREE_DIR_HISTORY_MAX` folders. A blank or relative `dir` leaves it
+/// as it is.
+pub fn push_dir_history(mut history: Vec<String>, dir: &str) -> Vec<String> {
+    if let Some(dir) = absolute_dir(dir) {
+        history.retain(|d| d.trim() != dir);
+        history.insert(0, dir);
+    }
+    history.truncate(WORKTREE_DIR_HISTORY_MAX);
+    history
 }
 
 /// One settings section: a value that does not parse becomes its defaults.
@@ -2036,6 +2086,9 @@ mod tests {
                 issues_default_view: IssuesPreset::MyPrs,
                 show_issues_tab: false,
                 recipes: GitRecipes::default(),
+                worktree_dir: "/trees".into(),
+                worktree_dir_history: vec!["/trees".into(), "/old".into()],
+                local_base_refresh_tip_dismissed: true,
             },
             status: StatusSettings {
                 hooks: false,
@@ -2230,6 +2283,77 @@ mod tests {
         );
         git.branch_prefix = BranchPrefixMode::None;
         assert_eq!(git.create_options().prefix, BranchPrefix::None);
+    }
+
+    #[test]
+    fn an_old_git_section_has_no_worktree_dir_and_shows_the_base_tip() {
+        let old: GitSettings = serde_json::from_str(r#"{ "branchPrefix": "none" }"#).unwrap();
+        assert_eq!(old.worktree_dir, "");
+        assert!(old.worktree_dir_history.is_empty());
+        assert!(!old.local_base_refresh_tip_dismissed);
+        assert_eq!(old.create_options().worktree_dir, None);
+        // A wrong history type costs only the history.
+        let bad: GitSettings =
+            serde_json::from_str(r#"{ "worktreeDir": "/w", "worktreeDirHistory": 3 }"#).unwrap();
+        assert_eq!(bad.worktree_dir, "/w");
+        assert!(bad.worktree_dir_history.is_empty());
+    }
+
+    #[test]
+    fn worktree_dir_history_is_newest_first_deduped_and_capped() {
+        let h = push_dir_history(vec!["/a".into(), "/b".into()], " /b ");
+        assert_eq!(h, ["/b", "/a"]);
+        assert_eq!(push_dir_history(h.clone(), "rel/dir"), h);
+        assert_eq!(push_dir_history(h.clone(), "  "), h);
+        let full = (0..WORKTREE_DIR_HISTORY_MAX + 3)
+            .fold(Vec::new(), |h, n| push_dir_history(h, &format!("/d{n}")));
+        assert_eq!(full.len(), WORKTREE_DIR_HISTORY_MAX);
+        assert_eq!(full[0], format!("/d{}", WORKTREE_DIR_HISTORY_MAX + 2));
+    }
+
+    #[test]
+    fn normalized_keeps_an_absolute_worktree_dir_and_records_it() {
+        let git = GitSettings {
+            worktree_dir: " /trees ".into(),
+            worktree_dir_history: vec!["/old".into(), "rel".into(), "/trees".into()],
+            ..GitSettings::default()
+        }
+        .normalized();
+        assert_eq!(git.worktree_dir, "/trees");
+        assert_eq!(git.worktree_dir_history, ["/trees", "/old"]);
+        assert_eq!(
+            git.create_options().worktree_dir,
+            Some(std::path::PathBuf::from("/trees"))
+        );
+        let relative = GitSettings {
+            worktree_dir: "trees".into(),
+            worktree_dir_history: (0..9).map(|n| format!("/h{n}")).collect(),
+            ..GitSettings::default()
+        }
+        .normalized();
+        assert_eq!(relative.worktree_dir, "");
+        assert_eq!(
+            relative.worktree_dir_history,
+            ["/h0", "/h1", "/h2", "/h3", "/h4"]
+        );
+        assert_eq!(relative.create_options().worktree_dir, None);
+    }
+
+    #[test]
+    fn base_tip_shows_only_when_behind_and_not_turned_off() {
+        let git = GitSettings::default();
+        assert!(git.shows_base_tip(3));
+        assert!(!git.shows_base_tip(0));
+        let refreshing = GitSettings {
+            refresh_local_base_on_create: true,
+            ..GitSettings::default()
+        };
+        assert!(!refreshing.shows_base_tip(3));
+        let dismissed = GitSettings {
+            local_base_refresh_tip_dismissed: true,
+            ..GitSettings::default()
+        };
+        assert!(!dismissed.shows_base_tip(3));
     }
 
     #[test]

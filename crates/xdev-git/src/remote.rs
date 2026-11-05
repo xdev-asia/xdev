@@ -40,6 +40,20 @@ pub struct BaseRange {
     pub truncated: bool,
 }
 
+/// How far a local base branch has drifted from its upstream, as last
+/// fetched.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct BaseDrift {
+    /// The local branch, `main`.
+    pub local: String,
+    /// Its remote-tracking branch, `origin/main`.
+    pub upstream: String,
+    pub ahead: u32,
+    pub behind: u32,
+}
+
 /// What `refresh_local_base` did with the local copy of a base.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BaseRefresh {
@@ -118,6 +132,37 @@ impl Repo {
             None,
         )?;
         Ok(BaseRefresh::Updated)
+    }
+
+    /// How far the local copy of base `base` (`main` or `origin/main`) is
+    /// from its remote-tracking ref. Nothing is fetched. `None` when there is
+    /// no remote behind the base, no local branch, or the ref was never
+    /// fetched.
+    pub fn local_base_drift(&self, base: &str) -> Result<Option<BaseDrift>, GitError> {
+        let Some((remote, branch, local)) = self.base_source(base)? else {
+            return Ok(None);
+        };
+        if !self.branch_exists(&local)? {
+            return Ok(None);
+        }
+        let upstream = format!("{remote}/{branch}");
+        let tracking = format!("refs/remotes/{upstream}");
+        if self.resolve_ref(&tracking)?.is_none() {
+            return Ok(None);
+        }
+        let range = format!("refs/heads/{local}...{tracking}");
+        let out = run::run(
+            &self.workdir,
+            &["rev-list", "--left-right", "--count", &range],
+            None,
+        )?;
+        let (ahead, behind) = parse_counts(&out)?;
+        Ok(Some(BaseDrift {
+            local,
+            upstream,
+            ahead,
+            behind,
+        }))
     }
 
     /// Fetches pull request `number`'s head into local branch `branch`

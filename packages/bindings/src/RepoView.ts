@@ -3,6 +3,7 @@ import type { GhAccount } from "./GhAccount";
 import type { RepoIcon } from "./RepoIcon";
 import type { ScriptSource } from "./ScriptSource";
 import type { SetupPolicy } from "./SetupPolicy";
+import type { SparsePreset } from "./SparsePreset";
 import type { WorktreeView } from "./WorktreeView";
 
 /**
@@ -26,6 +27,10 @@ localIssueCommand: string,
  * default.
  */
 docsDir: string, 
+/**
+ * Named folder lists for a sparse worktree; absent when there are none.
+ */
+sparsePresets?: Array<SparsePreset>, 
 /**
  * The folder is gone or no longer a repo; the entry stays so a
  * reconnected drive finds it again.
