@@ -8,6 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+pub mod links;
+pub use links::{Grants, LinkBook, ReadKind, check_read};
+
 /// An action xDev is about to take. Agents act inside their own worktree;
 /// these are the steps around that run which touch the user's repo or
 /// spend their quota.

@@ -16,7 +16,7 @@ use crate::ids::new_id;
 use crate::model::{Dispatch, Gate, Message, Run, Task, Worker};
 
 /// The schema version this build writes.
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE runs (
@@ -108,6 +108,26 @@ CREATE TABLE meta (
     key TEXT PRIMARY KEY,
     value INTEGER NOT NULL
 );
+";
+
+/// Version 2: directional links between tabs with their read grants (both
+/// off by default), and the text settings of Mission Control.
+const SCHEMA_V2: &str = "
+CREATE TABLE tab_links (
+    from_tab TEXT NOT NULL,
+    to_tab TEXT NOT NULL,
+    transcript INTEGER NOT NULL DEFAULT 0,
+    screen INTEGER NOT NULL DEFAULT 0,
+    created_ms INTEGER NOT NULL,
+    updated_ms INTEGER NOT NULL,
+    PRIMARY KEY (from_tab, to_tab)
+);
+CREATE INDEX tab_links_to ON tab_links (to_tab);
+CREATE TABLE meta_text (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE INDEX messages_from ON messages (from_addr, seq);
 ";
 
 pub struct Store {
@@ -308,6 +328,12 @@ impl Store {
             tx.pragma_update(None, "user_version", 1)?;
             tx.commit()?;
         }
+        if version < 2 {
+            let tx = self.conn.unchecked_transaction()?;
+            tx.execute_batch(SCHEMA_V2)?;
+            tx.pragma_update(None, "user_version", 2)?;
+            tx.commit()?;
+        }
         Ok(())
     }
 
@@ -393,8 +419,10 @@ mod tests {
                 "gates",
                 "messages",
                 "meta",
+                "meta_text",
                 "receipts",
                 "runs",
+                "tab_links",
                 "tab_runs",
                 "tasks",
                 "workers"
@@ -434,6 +462,26 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM runs", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn a_version_1_database_is_moved_to_version_2_and_keeps_its_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("v1.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(SCHEMA_V1).unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+            conn.execute(
+                "INSERT INTO runs (id, objective, created_ms) VALUES ('run_a', 'x', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert_eq!(s.version().unwrap(), 2);
+        assert_eq!(s.run_list().unwrap().len(), 1);
+        assert!(s.link_list().unwrap().is_empty());
     }
 
     #[test]
