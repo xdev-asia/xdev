@@ -53,6 +53,16 @@ function relOf(root: string, text: string): string | null {
   return out.join("/");
 }
 
+/** `cwd` as a folder inside `root`, relative to it ("" for the root); null when it is outside. */
+function dirOf(root: string, cwd: string): string | null {
+  const base = stripEnd(root.replace(/\\/g, "/"));
+  const dir = stripEnd(cwd.replace(/\\/g, "/"));
+  if (dir === base) return "";
+  return dir.startsWith(`${base}/`) ? dir.slice(base.length + 1) : null;
+}
+
+const isRelativePrint = (text: string) => !/^([/\\~]|[A-Za-z]:|file:\/\/)/i.test(text.trim()) && text.trim() !== "";
+
 /**
  * Terminal links in memory: a candidate resolves when it names a file in the worktree's listing,
  * a default-app open and a URL open are recorded, and the hosted URL is a GitHub one.
@@ -61,10 +71,15 @@ export function createMockTermLinks(filesList: Api["filesList"]): MockTermLinks 
   const urls: string[] = [];
   const opens: { worktree: string; rel: string }[] = [];
   return {
-    async fileLinksResolve(worktree, paths) {
+    async fileLinksResolve(worktree, paths, cwd) {
       if (paths.length > LINK_LIMITS.paths || paths.some((p) => p.length > LINK_LIMITS.path)) return reject("bad_arg", "paths");
       const files = new Set((await filesList(worktree)).files);
+      const dir = cwd === undefined ? null : dirOf(worktree, cwd);
       return paths.map((p) => {
+        if (dir !== null && isRelativePrint(p)) {
+          const near = relOf(worktree, `${dir}/${p}`);
+          if (near !== null && files.has(near)) return near;
+        }
         const rel = relOf(worktree, p);
         return rel !== null && files.has(rel) ? rel : null;
       });

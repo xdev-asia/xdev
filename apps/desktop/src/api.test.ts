@@ -869,12 +869,14 @@ it("routes terminal link calls through Tauri with the argument names Rust expect
     const { api } = await import("./api");
     const { invoke } = await import("@tauri-apps/api/core");
     await api.fileLinksResolve("/wt", ["a.ts"]);
+    await api.fileLinksResolve("/wt", ["a.ts"], "/wt/pkg");
     await api.fileOpenDefault("/wt", "a.ts");
     await api.openUrl("https://x.dev");
     await api.fileRemoteUrl("/wt", "a.ts", 3, null);
     await api.fileRemoteUrl("/wt", "a.ts", 3, 5);
     expect(vi.mocked(invoke).mock.calls).toEqual([
       ["file_links_resolve", { worktree: "/wt", paths: ["a.ts"] }],
+      ["file_links_resolve", { worktree: "/wt", paths: ["a.ts"], cwd: "/wt/pkg" }],
       ["file_open_default", { worktree: "/wt", rel: "a.ts" }],
       ["open_url", { url: "https://x.dev" }],
       ["file_remote_url", { worktree: "/wt", rel: "a.ts", line: 3, endLine: null }],

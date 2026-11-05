@@ -5,6 +5,7 @@ import {
   createFileLinkProvider,
   createLinkResolver,
   createOscLinkHandler,
+  cwdFromOsc7,
   logicalLine,
   parseOscTarget,
   urlLinkOptions,
@@ -132,6 +133,22 @@ describe("file link provider", () => {
     expect(out).toBeUndefined();
   });
 
+  it("asks the backend with the shell's folder when it is known", async () => {
+    const seen: (string | undefined)[] = [];
+    let cwd: string | undefined;
+    const s = setup([{ text: "src/a.ts" }], ["src/a.ts"], {
+      cwd: () => cwd,
+      resolve: async (_w, paths, dir) => {
+        seen.push(dir);
+        return paths;
+      },
+    });
+    await s.links(1);
+    cwd = "/wt/pkg";
+    await s.links(1);
+    expect(seen).toEqual([undefined, "/wt/pkg"]);
+  });
+
   it("answers nothing when the backend fails", async () => {
     const s = setup([{ text: "src/a.ts" }], [], { resolve: () => Promise.reject({ code: "io" }) });
     expect(await s.links(1)).toBeUndefined();
@@ -206,6 +223,19 @@ describe("resolver cache", () => {
     vi.advanceTimersByTime(5001);
     await resolve("/wt", ["a.ts"]);
     expect(calls.at(-1)).toEqual(["a.ts"]);
+  });
+
+  it("passes the folder on and keeps an answer per folder", async () => {
+    const calls: (string | undefined)[] = [];
+    const resolve = createLinkResolver(async (_w, paths, cwd) => {
+      calls.push(cwd);
+      return paths.map((p) => `${cwd ?? ""}/${p}`);
+    });
+    expect(await resolve("/wt", ["a.ts"], "/wt/x")).toEqual(["/wt/x/a.ts"]);
+    expect(await resolve("/wt", ["a.ts"], "/wt/y")).toEqual(["/wt/y/a.ts"]);
+    expect(await resolve("/wt", ["a.ts"])).toEqual(["/a.ts"]);
+    expect(await resolve("/wt", ["a.ts"], "/wt/x")).toEqual(["/wt/x/a.ts"]);
+    expect(calls).toEqual(["/wt/x", "/wt/y", undefined]);
   });
 
   it("keeps a null answer, shares a pending call, and forgets a failure", async () => {
@@ -310,5 +340,20 @@ describe("OSC 8", () => {
     h.hover!(click(), "mailto:a@b.c", range);
     h.leave!(click(), "https://x.dev", range);
     expect(s.tips).toEqual(["https://x.dev (Click for actions, Ctrl+click to open)", null]);
+  });
+});
+
+describe("cwdFromOsc7", () => {
+  it("reads the folder a shell reports", () => {
+    expect(cwdFromOsc7("file://host/home/me/wt/pkg")).toBe("/home/me/wt/pkg");
+    expect(cwdFromOsc7("file:///home/me/my%20wt")).toBe("/home/me/my wt");
+    expect(cwdFromOsc7("FILE://localhost/tmp/x")).toBe("/tmp/x");
+    expect(cwdFromOsc7("file:///C:/Users/me/wt")).toBe("C:/Users/me/wt");
+  });
+
+  it("refuses anything else", () => {
+    for (const bad of ["", "/home/me", "http://h/x", "file://host", "file:///a/%ZZ", "file:///a%00b", `file:///${"a".repeat(4097)}`]) {
+      expect(cwdFromOsc7(bad), bad.slice(0, 20)).toBeUndefined();
+    }
   });
 });

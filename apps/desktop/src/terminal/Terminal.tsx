@@ -22,7 +22,7 @@ import { TerminalFind } from "./TerminalFind";
 import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
 import { followAppTheme } from "./terminalColors";
-import { createFileLinkProvider, createLinkResolver, createOscLinkHandler, urlLinkOptions, type TermLinksEnv } from "./termLinks";
+import { createFileLinkProvider, createLinkResolver, createOscLinkHandler, cwdFromOsc7, urlLinkOptions, type TermLinksEnv } from "./termLinks";
 import { pasteClipboard, type PasteResult } from "./clipboardPaste";
 import { registerDropTarget } from "./fileDrop";
 import { trackInputModes } from "./inputModes";
@@ -151,10 +151,13 @@ export function Terminal(props: {
     const mono = color("--x-font-mono");
     const initial = xtermOptions(getTerminalSettings(), mono, color, getCustomSchemes());
     // File paths, URLs and OSC 8 links; the hover tip is a state of the pane.
+    // The shell's folder, from its OSC 7 reports; relative paths in output are read against it.
+    let shellCwd: string | undefined;
     const links: TermLinksEnv = {
       worktree: () => handlers.current.worktree,
       buffer: () => xterm.current!.buffer.active,
-      resolve: createLinkResolver((worktree, paths) => handlers.current.api.fileLinksResolve(worktree, paths)),
+      cwd: () => shellCwd,
+      resolve: createLinkResolver((worktree, paths, cwd) => handlers.current.api.fileLinksResolve(worktree, paths, cwd)),
       settings: () => {
         const { linkClick, urlMiddleClick } = getTerminalSettings();
         return { linkClick, urlMiddleClick };
@@ -285,6 +288,10 @@ export function Terminal(props: {
     term.onSelectionChange(() => {
       const text = term.getSelection();
       if (text && getTerminalSettings().copyOnSelect) void navigator.clipboard?.writeText(text).catch(() => {});
+    });
+    term.parser.registerOscHandler(7, (data) => {
+      shellCwd = cwdFromOsc7(data) ?? shellCwd;
+      return true;
     });
     // A program may write the clipboard (OSC 52) when the setting allows it; a read request is always refused.
     term.parser.registerOscHandler(52, (data) => {

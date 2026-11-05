@@ -22,6 +22,21 @@ describe("mock terminal links", () => {
     ).toEqual(["src/App.tsx", "src/App.tsx", "src/App.tsx", "src/App.tsx", "README.md", null, null, null, null, null]);
   });
 
+  it("reads a relative path against the shell's folder first, then the root", async () => {
+    const api = createMockApi({});
+    const cwd = `${WT}/src/lib`;
+    expect(await api.fileLinksResolve(WT, ["format.ts", "App.tsx", "src/App.tsx", "../App.tsx", "README.md"], cwd)).toEqual([
+      "src/lib/format.ts",
+      null,
+      "src/App.tsx",
+      "src/App.tsx",
+      "README.md",
+    ]);
+    // A folder outside the worktree is ignored.
+    expect(await api.fileLinksResolve(WT, ["App.tsx", "src/App.tsx"], "/elsewhere/src")).toEqual([null, "src/App.tsx"]);
+    expect(await api.fileLinksResolve(WT, ["src/App.tsx"], WT)).toEqual(["src/App.tsx"]);
+  });
+
   it("refuses more than 64 candidates and an unknown worktree lists nothing", async () => {
     const api = createMockApi({});
     await expect(api.fileLinksResolve(WT, Array.from({ length: 65 }, () => "a"))).rejects.toMatchObject({ code: "bad_arg" });

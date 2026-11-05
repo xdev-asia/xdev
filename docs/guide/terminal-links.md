@@ -4,7 +4,7 @@ A file path or a URL in terminal output is a link. Hover it to see what a click 
 
 ## File paths
 
-A path such as `src/a.ts:12:5` becomes a link when it names an existing file inside the worktree of that terminal tab. Relative paths resolve against the worktree root. Files outside the worktree stay plain text.
+A path such as `src/a.ts:12:5` becomes a link when it names an existing file inside the worktree of that terminal tab. A relative path is read against the shell's current folder when the shell reports it (OSC 7), then against the worktree root. Without that report, only the root is used. Files outside the worktree stay plain text.
 
 | Gesture | Result |
 |---|---|

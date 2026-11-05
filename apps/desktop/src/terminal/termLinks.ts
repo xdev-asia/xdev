@@ -13,7 +13,7 @@ export const RESOLVE_BATCH = 64;
 // A logical line longer than this (in cells) is not scanned.
 const MAX_LOGICAL = 4096;
 
-export type Resolve = (worktree: string, paths: string[]) => Promise<(string | null)[]>;
+export type Resolve = (worktree: string, paths: string[], cwd?: string) => Promise<(string | null)[]>;
 
 /**
  * Asks the backend which printed paths are files of the worktree, caching each answer for 5 s,
@@ -22,17 +22,18 @@ export type Resolve = (worktree: string, paths: string[]) => Promise<(string | n
  */
 export function createLinkResolver(resolve: Resolve, now: () => number = Date.now): Resolve {
   const cache = new Map<string, { at: number; value: Promise<string | null> }>();
-  return async (worktree, paths) => {
+  return async (worktree, paths, cwd) => {
+    const scope = `${worktree}\0${cwd ?? ""}`;
     const unique = [...new Set(paths)];
     const missing = unique.filter((p) => {
-      const hit = cache.get(`${worktree}\0${p}`);
+      const hit = cache.get(`${scope}\0${p}`);
       return !hit || now() - hit.at >= RESOLVE_TTL_MS;
     });
     for (let from = 0; from < missing.length; from += RESOLVE_BATCH) {
       const batch = missing.slice(from, from + RESOLVE_BATCH);
-      const answer = resolve(worktree, batch);
+      const answer = resolve(worktree, batch, cwd);
       batch.forEach((path, i) => {
-        const key = `${worktree}\0${path}`;
+        const key = `${scope}\0${path}`;
         const value = answer.then((rels) => rels[i] ?? null);
         cache.set(key, { at: now(), value });
         value.catch(() => {
@@ -41,9 +42,26 @@ export function createLinkResolver(resolve: Resolve, now: () => number = Date.no
       });
     }
     return Promise.all(
-      paths.map((p) => cache.get(`${worktree}\0${p}`)?.value.catch(() => null) ?? Promise.resolve(null)),
+      paths.map((p) => cache.get(`${scope}\0${p}`)?.value.catch(() => null) ?? Promise.resolve(null)),
     );
   };
+}
+
+/**
+ * The folder an OSC 7 report (`file://host/path`, percent-encoded) names; undefined for anything
+ * else. A Windows drive path `/C:/x` is read as `C:/x`.
+ */
+export function cwdFromOsc7(data: string): string | undefined {
+  const m = /^file:\/\/[^/]*(\/.*)$/i.exec(data.trim());
+  if (!m || m[1]!.length > 4096) return undefined;
+  let path: string;
+  try {
+    path = decodeURIComponent(m[1]!);
+  } catch {
+    return undefined;
+  }
+  if (path.includes("\0")) return undefined;
+  return /^\/[A-Za-z]:(\/|$)/.test(path) ? path.slice(1) : path;
 }
 
 /** The bits of an xterm buffer the provider reads. */
@@ -100,6 +118,8 @@ function rangeOf(spots: Spot[], start: number, end: number): IBufferRange {
 export interface TermLinksEnv {
   /** The tab's worktree; without one no file link is made. */
   worktree(): string | undefined;
+  /** The shell's folder as the program last reported it (OSC 7), when known. */
+  cwd?(): string | undefined;
   buffer(): BufferLike;
   resolve: Resolve;
   settings(): LinkSettings;
@@ -147,7 +167,7 @@ export function createFileLinkProvider(env: TermLinksEnv): ILinkProvider {
       const found = findFileLinks(before.text).filter((c) => before.spots[c.start]!.row <= y - 1 && before.spots[c.end - 1]!.row >= y - 1);
       if (found.length === 0) return callback(undefined);
       const paths = [...new Set(found.map((c) => c.path))].slice(0, RESOLVE_BATCH);
-      void env.resolve(worktree, paths).then(
+      void env.resolve(worktree, paths, env.cwd?.()).then(
         (rels) => {
           // The row changed while the backend was thinking: its answer is for other text.
           if (logicalLine(env.buffer(), y - 1)?.text !== before.text) return callback(undefined);
@@ -220,7 +240,7 @@ export function createOscLinkHandler(env: TermLinksEnv): ILinkHandler {
       const action = linkAction("file", e, env.settings(), env.mac);
       const worktree = env.worktree();
       if (action === "none" || !worktree) return;
-      void env.resolve(worktree, [target.path]).then(
+      void env.resolve(worktree, [target.path], env.cwd?.()).then(
         ([rel]) => {
           if (!rel) return;
           const file: FileTarget = { worktree, rel, ...(target.line !== undefined ? { line: target.line } : {}), ...(target.column !== undefined ? { column: target.column } : {}) };

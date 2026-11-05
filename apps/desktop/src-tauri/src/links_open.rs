@@ -48,11 +48,37 @@ fn home() -> Option<PathBuf> {
         .filter(|p| p.is_absolute())
 }
 
+/// True for a printed path that is read against a folder: not absolute, not `~/`, not a URI.
+fn is_relative_print(text: &str) -> bool {
+    let text = text.trim();
+    let drive =
+        text.len() >= 2 && text.as_bytes()[1] == b':' && text.as_bytes()[0].is_ascii_alphabetic();
+    !(text.is_empty()
+        || text.starts_with(['/', '\\', '~'])
+        || drive
+        || text
+            .get(..7)
+            .is_some_and(|h| h.eq_ignore_ascii_case("file://")))
+}
+
+/// `printed` as the worktree-relative file it names: a relative path is tried against the shell's
+/// `cwd` first (when it is known, absolute and inside the worktree), then against the root.
+fn link_of(root: &str, cwd: Option<&Path>, printed: &str, home: Option<&Path>) -> Option<String> {
+    if let Some(cwd) = cwd.filter(|c| c.is_absolute())
+        && is_relative_print(printed)
+        && let Some(found) = link_rel(root, &format!("{}/{printed}", cwd.to_string_lossy()), home)
+    {
+        return Some(found);
+    }
+    link_rel(root, printed, home)
+}
+
 fn resolve_in(
     data: &Path,
     worktree: &Path,
     paths: &[String],
     home: Option<&Path>,
+    cwd: Option<&Path>,
 ) -> Result<Vec<Option<String>>, CmdError> {
     if paths.len() > MAX_PATHS {
         return Err(bad_arg("paths"));
@@ -60,9 +86,12 @@ fn resolve_in(
     if paths.iter().any(|p| p.len() > MAX_PATH_BYTES) {
         return Err(bad_arg("path"));
     }
+    if cwd.is_some_and(|c| c.as_os_str().len() > MAX_PATH_BYTES) {
+        return Err(bad_arg("cwd"));
+    }
     known_checkout(data, worktree)?;
     let root = worktree.to_string_lossy();
-    Ok(paths.iter().map(|p| link_rel(&root, p, home)).collect())
+    Ok(paths.iter().map(|p| link_of(&root, cwd, p, home)).collect())
 }
 
 /// Document extensions a terminal link may open with the default app, besides what
@@ -205,14 +234,22 @@ fn remote_url_in(
 /// For each candidate as printed (`src/a.ts`, `./a.ts`, `/abs/a.ts`, `E:\wt\a.ts`, `~/wt/a.ts`,
 /// `file:///abs/a.ts`; no `:line:col`), the worktree-relative path with `/` when it names an
 /// existing regular file (not a link, not under `.git`) inside `worktree`; else `None`.
-/// At most 64 candidates (`bad_arg` above), each at most 4 096 bytes.
+/// At most 64 candidates (`bad_arg` above), each at most 4 096 bytes. A relative candidate is read
+/// against `cwd`, the shell's folder when the terminal knows it, and then against `worktree`.
 #[tauri::command(async)]
 pub fn file_links_resolve(
     state: State<'_, AppState>,
     worktree: PathBuf,
     paths: Vec<String>,
+    cwd: Option<PathBuf>,
 ) -> Result<Vec<Option<String>>, CmdError> {
-    resolve_in(data_dir(&state)?, &worktree, &paths, home().as_deref())
+    resolve_in(
+        data_dir(&state)?,
+        &worktree,
+        &paths,
+        home().as_deref(),
+        cwd.as_deref(),
+    )
 }
 
 /// Opens `rel` with the OS default app. Only images, audio, video and a small set of documents
@@ -325,7 +362,7 @@ mod tests {
         .map(str::to_owned)
         .to_vec();
         assert_eq!(
-            resolve_in(&fx.data, &fx.repo, &paths, None).unwrap(),
+            resolve_in(&fx.data, &fx.repo, &paths, None, None).unwrap(),
             vec![
                 Some("notes.txt".to_owned()),
                 None,
@@ -335,7 +372,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            resolve_in(&fx.data, &fx.repo, &[], None).unwrap(),
+            resolve_in(&fx.data, &fx.repo, &[], None, None).unwrap(),
             Vec::<Option<String>>::new()
         );
     }
@@ -345,20 +382,20 @@ mod tests {
         let fx = fixture();
         let many = |n: usize| vec!["notes.txt".to_owned(); n];
         assert_eq!(
-            resolve_in(&fx.data, &fx.repo, &many(64), None)
+            resolve_in(&fx.data, &fx.repo, &many(64), None, None)
                 .unwrap()
                 .len(),
             64
         );
         assert_eq!(
-            code(resolve_in(&fx.data, &fx.repo, &many(65), None)),
+            code(resolve_in(&fx.data, &fx.repo, &many(65), None, None)),
             "bad_arg"
         );
         let long = vec!["a".repeat(4096)];
-        assert!(resolve_in(&fx.data, &fx.repo, &long, None).is_ok());
+        assert!(resolve_in(&fx.data, &fx.repo, &long, None, None).is_ok());
         let longer = vec!["a".repeat(4097)];
         assert_eq!(
-            code(resolve_in(&fx.data, &fx.repo, &longer, None)),
+            code(resolve_in(&fx.data, &fx.repo, &longer, None, None)),
             "bad_arg"
         );
     }
@@ -368,12 +405,12 @@ mod tests {
         let fx = fixture();
         let one = vec!["a.txt".to_owned()];
         assert_eq!(
-            code(resolve_in(&fx.data, &fx.stranger, &one, None)),
+            code(resolve_in(&fx.data, &fx.stranger, &one, None, None)),
             "worktree_unknown"
         );
         // Checked before the limits' answer could leak whether a path exists.
         assert_eq!(
-            code(resolve_in(&fx.data, &fx.stranger, &[], None)),
+            code(resolve_in(&fx.data, &fx.stranger, &[], None, None)),
             "worktree_unknown"
         );
     }
@@ -384,9 +421,120 @@ mod tests {
         let home = fx.repo.parent().unwrap();
         let one = vec!["~/repo/src/a.ts".to_owned()];
         assert_eq!(
-            resolve_in(&fx.data, &fx.repo, &one, Some(home)).unwrap(),
+            resolve_in(&fx.data, &fx.repo, &one, Some(home), None).unwrap(),
             vec![Some("src/a.ts".to_owned())]
         );
+    }
+
+    #[test]
+    fn resolve_reads_a_relative_path_against_the_shell_folder_first() {
+        let fx = fixture();
+        fs::create_dir_all(fx.repo.join("pkg").join("src")).unwrap();
+        fs::write(fx.repo.join("pkg").join("src").join("a.ts"), "y\n").unwrap();
+        fs::write(fx.repo.join("pkg").join("only.txt"), "y\n").unwrap();
+        let cwd = fx.repo.join("pkg");
+        let paths: Vec<String> = [
+            "src/a.ts",
+            "only.txt",
+            "notes.txt",
+            "./src/a.ts",
+            "../notes.txt",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        // Without a folder, the worktree root: only the root's own `src/a.ts` and `notes.txt` exist.
+        assert_eq!(
+            resolve_in(&fx.data, &fx.repo, &paths, None, None).unwrap(),
+            vec![
+                Some("src/a.ts".to_owned()),
+                None,
+                Some("notes.txt".to_owned()),
+                Some("src/a.ts".to_owned()),
+                None
+            ]
+        );
+        // In `pkg`, the same text names `pkg`'s files; a miss there falls back to the root.
+        assert_eq!(
+            resolve_in(&fx.data, &fx.repo, &paths, None, Some(&cwd)).unwrap(),
+            vec![
+                Some("pkg/src/a.ts".to_owned()),
+                Some("pkg/only.txt".to_owned()),
+                Some("notes.txt".to_owned()),
+                Some("pkg/src/a.ts".to_owned()),
+                Some("notes.txt".to_owned())
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_ignores_a_shell_folder_outside_the_worktree_or_not_absolute() {
+        let fx = fixture();
+        fs::write(fx.stranger.join("notes.txt"), "theirs").unwrap();
+        let one = vec!["notes.txt".to_owned()];
+        for cwd in [
+            fx.stranger.clone(),
+            PathBuf::from("pkg"),
+            fx.repo.join("gone"),
+        ] {
+            assert_eq!(
+                resolve_in(&fx.data, &fx.repo, &one, None, Some(&cwd)).unwrap(),
+                vec![Some("notes.txt".to_owned())],
+                "{cwd:?}"
+            );
+        }
+        // `../` out of the worktree through the folder never names a stranger's file.
+        let escape = vec!["../stranger/a.txt".to_owned()];
+        assert_eq!(
+            resolve_in(
+                &fx.data,
+                &fx.repo,
+                &escape,
+                None,
+                Some(&fx.repo.join("src"))
+            )
+            .unwrap(),
+            vec![None]
+        );
+    }
+
+    #[test]
+    fn resolve_leaves_absolute_and_home_paths_alone_when_a_folder_is_known() {
+        let fx = fixture();
+        let abs = vec![
+            fx.repo.join("notes.txt").to_string_lossy().into_owned(),
+            "~/repo/src/a.ts".to_owned(),
+        ];
+        let home = fx.repo.parent().unwrap();
+        assert_eq!(
+            resolve_in(
+                &fx.data,
+                &fx.repo,
+                &abs,
+                Some(home),
+                Some(&fx.repo.join("src"))
+            )
+            .unwrap(),
+            vec![Some("notes.txt".to_owned()), Some("src/a.ts".to_owned())]
+        );
+    }
+
+    #[test]
+    fn relative_prints_are_told_from_absolute_ones() {
+        for t in ["a.ts", "./a.ts", "../a.ts", "src/a.ts"] {
+            assert!(is_relative_print(t), "{t}");
+        }
+        for t in [
+            "/a.ts",
+            "\\a",
+            "~/a",
+            "C:/a",
+            "c:\\a",
+            "file:///a",
+            "FILE:///a",
+            "",
+        ] {
+            assert!(!is_relative_print(t), "{t}");
+        }
     }
 
     // ---- open_url -----------------------------------------------------------------------------

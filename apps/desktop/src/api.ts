@@ -1076,8 +1076,9 @@ export interface Api {
   // Opens the OS file manager with the item selected where the OS allows it.
   fileReveal(worktree: string, rel: string): Promise<void>;
   // Terminal links. Each candidate's worktree-relative path when it is an existing file inside
-  // `worktree`; null otherwise. At most 64 per call (`bad_arg`).
-  fileLinksResolve(worktree: string, paths: string[]): Promise<(string | null)[]>;
+  // `worktree`; null otherwise. At most 64 per call (`bad_arg`). A relative path is read against
+  // `cwd` (the shell's folder, when known and inside the worktree) first, then the worktree root.
+  fileLinksResolve(worktree: string, paths: string[], cwd?: string): Promise<(string | null)[]>;
   // The raw bytes of an image, audio or video file within its size cap; rejects with `too_large`, `bad_name`, `not_found`.
   fileBytes(worktree: string, rel: string): Promise<Uint8Array>;
   // Opens the file with the OS default app; `denied` for a type outside the allowlist (media and txt md pdf png jpg jpeg gif webp svg html htm csv json log).
@@ -1609,7 +1610,7 @@ const tauriApi: Api = {
   fileRename: (worktree, from, to) => call("file_rename", { worktree, from, to }),
   fileTrash: (worktree, rel) => call("file_trash", { worktree, rel }),
   fileReveal: (worktree, rel) => call("file_reveal", { worktree, rel }),
-  fileLinksResolve: (worktree, paths) => call("file_links_resolve", { worktree, paths }),
+  fileLinksResolve: (worktree, paths, cwd) => call("file_links_resolve", { worktree, paths, ...(cwd !== undefined ? { cwd } : {}) }),
   openUrl: (url) => call("open_url", { url }),
   fileRemoteUrl: (worktree, rel, line, endLine) => call("file_remote_url", { worktree, rel, line, endLine }),
   fileBytes: async (worktree, rel) => new Uint8Array(await call<ArrayBuffer | number[]>("file_bytes", { worktree, rel })),
