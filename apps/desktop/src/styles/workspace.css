@@ -4164,3 +4164,20 @@ button.ws-tree-row[data-active="true"] {
   padding: 0;
   list-style: none;
 }
+
+/* Sidebar visibility: the project picker in the filters, the dialog and the review line. */
+.ws-filters-projects { display: grid; gap: var(--x-space-1); max-height: 10rem; overflow: auto; }
+
+.ws-visibility-list { margin: 8px 0; padding: 0; list-style: none; max-height: 18rem; overflow: auto; }
+.ws-visibility-row { display: flex; align-items: center; gap: var(--x-space-2); min-height: 36px; padding: 2px 0; }
+
+.ws-review-line { display: flex; align-items: center; gap: var(--x-space-2); flex-wrap: wrap; margin: 0; padding: 4px 8px; font-size: 12px; color: var(--text-2); }
+.ws-review-line .btn-secondary { min-height: 24px; padding: 0 8px; font-size: 12px; }
+
+/* Scan for repositories: the root, progress and the checklist of what was found. */
+.ws-nested { display: grid; gap: var(--x-space-2); min-width: 0; }
+.ws-nested-root { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12px; }
+.ws-nested-progress { display: flex; align-items: center; gap: var(--x-space-2); }
+.ws-nested-list { margin: 0; padding: 0; list-style: none; max-height: 16rem; overflow: auto; }
+.ws-nested-row { display: flex; align-items: center; justify-content: space-between; gap: var(--x-space-2); min-width: 0; padding: 2px 0; }
+.ws-nested-row .ws-tick { min-width: 0; overflow-wrap: anywhere; }

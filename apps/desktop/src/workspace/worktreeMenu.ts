@@ -14,6 +14,8 @@ export interface WorktreeMenuContext {
   onPin(): void;
   onMarkUnread?(): void;
   onMarkRead?(): void;
+  /** Hides this worktree from the sidebar; without it the item is left out. */
+  onHide?(): void;
   onRemove(): void;
   /** Opens the details dialog; without it the item is left out. */
   onEditDetails?(): void;
@@ -157,6 +159,7 @@ export function worktreeMenuItems(ctx: WorktreeMenuContext): MenuItem[] {
       ? []
       : [
           SEP("sep2"),
+          ...(ctx.onHide ? [{ id: "hide", labelKey: "visibility.hide", run: ctx.onHide }] : []),
           ...(ctx.onArchive ? [{ id: "archive", labelKey: "workspace.archive.menu", run: ctx.onArchive }] : []),
           { id: "delete", labelKey: "workspace.delete", danger: true, run: ctx.onRemove },
           ...((ctx.children ?? 0) > 0 && ctx.onDeleteNested ? [{ id: "deleteNested", labelKey: "lineage.deleteNested", danger: true, run: ctx.onDeleteNested }] : []),

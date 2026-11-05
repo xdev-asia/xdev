@@ -20,7 +20,7 @@ const ALL: Record<ActionId, true> = {
   "worktree.select.5": true, "worktree.select.6": true, "worktree.select.7": true, "worktree.select.8": true,
   "worktree.select.9": true,
   "agent.new": true, "palette.jump": true, "search.open": true, "sessions.open": true,
-  "sidebar.left.toggle": true, "sidebar.right.toggle": true, "sidebar.sleepingOnly.toggle": true,
+  "sidebar.left.toggle": true, "sidebar.right.toggle": true, "sidebar.sleepingOnly.toggle": true, "sidebar.visibility.open": true,
   "panel.explorer": true, "panel.search": true, "panel.sourceControl": true, "panel.issues": true, "panel.ports": true,
   "terminal.clear": true, "terminal.copy": true, "terminal.paste": true, "terminal.selectAll": true, "terminal.find": true,
   "zoom.in": true, "zoom.out": true, "zoom.reset": true,

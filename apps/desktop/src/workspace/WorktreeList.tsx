@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Badge } from "@xdev-asia/ui";
+import { Badge, Button } from "@xdev-asia/ui";
 import type { JSX } from "react";
 import type { ApiError, Check, FolderEntry, KeptView, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorkStatus, WorktreeStat, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
@@ -16,10 +16,12 @@ import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
 import { childrenOf, parentCandidates, parentOf } from "./lineage";
 import { folderMenuItems, groupMenuItems, projectMenuItems, worktreeMenuItems } from "./worktreeMenu";
-import { dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
+import { activeProjects, dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
 import { RepoBadge } from "./RepoBadge";
 import { useKeymap } from "@/keys/keymap";
 import { SidebarFilters } from "./SidebarFilters";
+import { VisibilityDialog } from "./VisibilityDialog";
+import { acknowledgeNew, isWorktreeVisible, newExternal, restoreAll, setWorktreeShown, visibilityRows } from "./worktreeVisibility";
 import { SidebarOptions } from "./SidebarOptions";
 import { WorkItemChip } from "./WorkItemChip";
 import { PortsChip, PortsPopover } from "./PortsChip";
@@ -173,7 +175,12 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const tree = props.items;
   // The Sleeping only filter lasts for the session; it is not one of the saved sidebar preferences.
   const [sleepingOnly, setSleepingOnly] = useState(false);
-  useKeymap({ "sidebar.sleepingOnly.toggle": () => setSleepingOnly((on) => !on) });
+  // The visibility dialog (outside and hidden worktrees) is open.
+  const [visOpen, setVisOpen] = useState(false);
+  useKeymap({
+    "sidebar.sleepingOnly.toggle": () => setSleepingOnly((on) => !on),
+    "sidebar.visibility.open": () => props.onPrefs && setVisOpen(true),
+  });
   // The repos whose "Found outside xDev" group is open; all start closed.
   const [foundOpen, setFoundOpen] = useState<string[]>([]);
   // The activity times the recent order was taken from, and how often the window has regained focus.
@@ -360,7 +367,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const sortRows = <T extends { path: string }>(list: readonly T[]): T[] => sortEntries(list, prefs.sort, snapshot.activity, (path) => props.dots[path]);
   // The repo is named on a row only when more than one repo is listed.
   const many = repoList.length > 1;
-  const shown = visibleEntries(entries, prefs, props.selected, { only: sleepingOnly, asleep: props.asleep ?? {} });
+  const shown = visibleEntries(entries, prefs, props.selected, { only: sleepingOnly, asleep: props.asleep ?? {} }, repoList.map((r) => r.id));
   // Pinned worktrees get their own group first and are left out of the status sections.
   const shownPaths = new Set(shown.entries.map((e) => e.path));
   const pinnedRows = nestRows(sortRows(pinnedEntries(tree ?? []).filter((e) => shownPaths.has(e.path))), new Set(folded));
@@ -472,9 +479,14 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   );
   const pending = props.pending ?? [];
 
-  const withFound = repoList.filter((repo) => !repo.missing && repo.found.length > 0);
+  // Outside worktrees the person has not hidden, of the projects the filter keeps.
+  const projectKept = activeProjects(prefs.projectFilter, repoList.map((r) => r.id));
+  const foundOf = (repo: RepoView) => (projectKept && !projectKept.has(repo.id) ? [] : repo.found.filter((wt) => isWorktreeVisible(wt, true, prefs)));
+  const withFound = repoList.filter((repo) => !repo.missing && foundOf(repo).length > 0);
+  const freshExternal = newExternal(repoList.flatMap((repo) => repo.found.map((wt) => wt.path)), prefs);
   const foundGroup = (repo: RepoView) => {
     const open = foundOpen.includes(repo.id);
+    const found = foundOf(repo);
     return (
       <div key={repo.id} className="ws-found" data-repo={repo.id}>
         <button
@@ -487,12 +499,12 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           <svg aria-hidden="true" className="ws-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="m6 9 6 6 6-6" />
           </svg>
-          <span className="ws-group-name">{t("workspace.found.title", { count: repo.found.length })}</span>
+          <span className="ws-group-name">{t("workspace.found.title", { count: found.length })}</span>
           {many && <span className="ws-tag">{repo.shortName}</span>}
         </button>
         {open && (
           <ul className="ws-found-list">
-            {repo.found.map((wt) => (
+            {found.map((wt) => (
               <li key={wt.path} className="ws-found-row" title={wt.path}>
                 <span className="ws-found-text">
                   <span className="ws-wt-name">{wt.name}</span>
@@ -714,6 +726,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         onMoveStatus: props.onMoveStatus && ((status: WorkStatus | null) => props.onMoveStatus?.(wt, status)),
         onRenameBranch: props.onRenameBranch && (() => props.onRenameBranch?.(wt)),
         onArchive: props.onArchive && (() => props.onArchive?.(wt)),
+        onHide: props.onPrefs && (() => props.onPrefs?.(setWorktreeShown(prefs, wt.path, false, false))),
         asleep: props.asleep?.[wt.path] === true,
         sleepable: props.sleepable?.[wt.path] !== false,
         onSleep: props.onSleep && (() => props.onSleep?.(wt)),
@@ -769,8 +782,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     >
       <div className="ws-section-head">
         <h2>{t("workspace.heading")}</h2>
-        {props.onPrefs && <SidebarFilters prefs={prefs} hidden={shown.hidden} onPrefs={props.onPrefs} sleepingOnly={sleepingOnly} onSleepingOnly={setSleepingOnly} />}
-        {props.onPrefs && <SidebarOptions prefs={prefs} onPrefs={props.onPrefs} />}
+        {props.onPrefs && <SidebarFilters prefs={prefs} hidden={shown.hidden} projects={repoList.filter((r) => !r.missing).map((r) => ({ id: r.id, name: r.shortName }))} onPrefs={props.onPrefs} sleepingOnly={sleepingOnly} onSleepingOnly={setSleepingOnly} />}
+        {props.onPrefs && <SidebarOptions prefs={prefs} onPrefs={props.onPrefs} onOpenVisibility={() => setVisOpen(true)} />}
         {props.onOpenBoard && (
           <button type="button" className="ws-icon-btn" aria-label={t("kanban.open")} title={t("kanban.open")} onClick={() => props.onOpenBoard?.()}>
             <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -808,6 +821,14 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           <ul className="ws-repos" aria-label={t("project.heading")}>
             {drawnTree.flatMap(projectItem)}
           </ul>
+        )}
+        {props.onPrefs && freshExternal.length > 0 && (
+          <p className="ws-review-line" role="status">
+            <span>{t("visibility.review.new", { count: freshExternal.length })}</span>
+            <Button variant="secondary" onClick={() => setVisOpen(true)}>
+              {t("visibility.review.action")}
+            </Button>
+          </p>
         )}
         {withFound.map(foundGroup)}
         {/* A repo whose folder is gone has no worktrees to list; it stays named so it can be found again. */}
@@ -855,6 +876,20 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         )}
         <SetupGuideEntry projects={props.items?.length} />
       </div>
+      {visOpen && props.onPrefs && (
+        <VisibilityDialog
+          rows={visibilityRows(repoList.filter((r) => !r.missing), prefs)}
+          defaultHidden={prefs.externalDefaultHidden}
+          onDefaultHidden={(on) => props.onPrefs?.({ ...prefs, externalDefaultHidden: on })}
+          onToggle={(row, on) => props.onPrefs?.(setWorktreeShown(prefs, row.path, row.external, on))}
+          onRestoreAll={() => props.onPrefs?.(restoreAll(prefs, repoList.flatMap((r) => r.found.map((wt) => wt.path))))}
+          onClose={() => {
+            // Closing the review settles the new ones: they stay hidden and are not counted again.
+            if (freshExternal.length > 0) props.onPrefs?.(acknowledgeNew(prefs, freshExternal));
+            setVisOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

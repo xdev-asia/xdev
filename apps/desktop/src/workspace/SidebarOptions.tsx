@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { JSX } from "react";
-import { Checkbox, Icon, Popover, Segmented } from "@xdev-asia/ui";
+import { Button, Checkbox, Icon, Popover, Segmented } from "@xdev-asia/ui";
 import type { ProjectOrder, SidebarGroupBy, SidebarPrefs, SidebarSort } from "@/api";
 import { useI18n } from "@/i18n";
 import { CARD_PARTS, type CardPart } from "./cardModel";
@@ -13,7 +13,7 @@ const PROJECT_ORDERS: readonly ProjectOrder[] = ["manual", "recent"];
 const LAYOUTS = ["detailed", "compact"] as const;
 
 /** The controls of the sidebar options: Group by, Sort by, card layout and the card properties. */
-export function SidebarOptionsPanel(props: { prefs: SidebarPrefs; onPrefs(prefs: SidebarPrefs): void }): JSX.Element {
+export function SidebarOptionsPanel(props: { prefs: SidebarPrefs; onPrefs(prefs: SidebarPrefs): void; onOpenVisibility?(): void }): JSX.Element {
   const { t } = useI18n();
   const { prefs, onPrefs } = props;
   return (
@@ -74,12 +74,19 @@ export function SidebarOptionsPanel(props: { prefs: SidebarPrefs; onPrefs(prefs:
           />
         ))}
       </div>
+      {props.onOpenVisibility && (
+        <div className="ws-options-row">
+          <Button variant="secondary" onClick={props.onOpenVisibility}>
+            {t("visibility.open")}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
 /** The options button of the sidebar header, with its popover. */
-export function SidebarOptions(props: { prefs: SidebarPrefs; onPrefs(prefs: SidebarPrefs): void }): JSX.Element {
+export function SidebarOptions(props: { prefs: SidebarPrefs; onPrefs(prefs: SidebarPrefs): void; onOpenVisibility?(): void }): JSX.Element {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   return (
@@ -101,7 +108,17 @@ export function SidebarOptions(props: { prefs: SidebarPrefs; onPrefs(prefs: Side
         </button>
       )}
     >
-      <SidebarOptionsPanel prefs={props.prefs} onPrefs={props.onPrefs} />
+      <SidebarOptionsPanel
+        prefs={props.prefs}
+        onPrefs={props.onPrefs}
+        onOpenVisibility={
+          props.onOpenVisibility &&
+          (() => {
+            setOpen(false);
+            props.onOpenVisibility?.();
+          })
+        }
+      />
     </Popover>
   );
 }
