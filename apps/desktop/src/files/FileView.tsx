@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import type { Api } from "@/api";
 import { useI18n } from "@/i18n";
 import { Button } from "@xdev-asia/ui";
+import { LoadError } from "./LoadError";
 import { CodeEditor } from "./CodeEditor";
 import { useEditorSettings } from "./editorSettings";
 import { loadFile, saveFile } from "./fileIO";
@@ -41,7 +42,21 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
   } else if (!entry || entry.status === "loading") {
     body = <p className="ws-empty">{t("files.loading")}</p>;
   } else if (entry.status === "error") {
-    body = <p className="ws-empty">{entry.error === "too_large" ? t("files.tooLarge") : t(`error.${entry.error}`)}</p>;
+    const failed = entry.error ?? "io";
+    body =
+      failed === "too_large" ? (
+        <div className="file-note">
+          <p className="ws-empty">{t("files.tooLarge")}</p>
+          <p className="file-note-body">{t("files.tooLarge.body")}</p>
+          {reveal}
+        </div>
+      ) : (
+        <LoadError
+          code={failed}
+          onRetry={() => void loadFile(io, worktree, rel)}
+          onReveal={() => void api.fileReveal(worktree, rel).catch(() => undefined)}
+        />
+      );
   } else if (entry.kind === "binary") {
     body = (
       <div className="file-note">
