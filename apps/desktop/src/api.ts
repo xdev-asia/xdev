@@ -181,6 +181,7 @@ import type {
   TabReport,
   CrashDetail,
   CrashReport,
+  CliStatus,
   DiagnosticsExport,
   RenderCrash,
   StartupReport,
@@ -287,6 +288,7 @@ export type { AiKeyStatus } from "@xdev/bindings";
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenTab, TabReport };
 export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, WorkerOpenOutcome, WorkerClose, ReadTab, WorkerChanged };
+export type { CliStatus } from "@xdev/bindings";
 export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
 export type { RestoreMode } from "@xdev/bindings";
 export type { Theme, EditorTheme, SidebarLook, StatusBarItems } from "@xdev/bindings";
@@ -869,6 +871,14 @@ export interface Api {
   createDoc(path: string, content: string): Promise<void>;
   // The CLI shipped beside the app, so setup commands work without it on PATH; null when absent.
   cliPath(): Promise<string | null>;
+  // The xdev command on PATH: whether a link (macOS, Linux) or shim (Windows) works, where it is and
+  // whether its folder is on PATH. Install and repair reject with `cli_missing`, `cli_link_exists` or `cli_io`.
+  cliStatus(): Promise<CliStatus>;
+  cliInstall(): Promise<CliStatus>;
+  cliRemove(): Promise<CliStatus>;
+  cliRepair(): Promise<CliStatus>;
+  // Shows the bundled binary in the file manager.
+  cliReveal(): Promise<void>;
   search(query: string, limit: number): Promise<SearchHit[]>;
   onVaultChanged(cb: (paths: string[]) => void): Promise<() => void>;
   vcsState(): Promise<VcsState>;
@@ -1733,6 +1743,11 @@ const tauriApi: Api = {
   writeDoc: (path, content) => call("write_doc", { path, content }),
   createDoc: (path, content) => call("create_doc", { path, content }),
   cliPath: () => call("cli_path"),
+  cliStatus: () => call("cli_status"),
+  cliInstall: () => call("cli_install"),
+  cliRemove: () => call("cli_remove"),
+  cliRepair: () => call("cli_repair"),
+  cliReveal: () => call("cli_reveal"),
   search: (query, limit) => call("search", { query, limit }),
   onVaultChanged: (cb) => listen<VaultChanged>("vault://changed", (e) => cb(e.payload.paths)),
   vcsState: () => call("vcs_state"),
