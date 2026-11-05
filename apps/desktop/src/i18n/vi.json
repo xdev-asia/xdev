@@ -2770,6 +2770,7 @@
   "prReview.merge.rebase": "Rebase rồi merge",
   "prReview.merge.menu": "Cách merge",
   "prReview.merge.busy": "Đang merge",
+  "prReview.merge.retry": "Thử lại",
   "prReview.merge.done": "Đã merge pull request",
   "prReview.merge.confirm.squash": "Gộp commit và merge #{number}?",
   "prReview.merge.confirm.merge": "Merge #{number} bằng merge commit?",

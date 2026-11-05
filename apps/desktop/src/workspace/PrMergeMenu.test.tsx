@@ -51,7 +51,7 @@ async function mount(a: Api, prs: PrStore, pr: PrView = PR) {
   draw();
   hooks.effects.forEach((e) => e());
   await tick();
-  return { tree: () => nodes(draw()), dialog: () => nodes(draw()).find((n) => n.type === ConfirmDialog)! };
+  return { rerun: () => { draw(); hooks.effects.forEach((e) => e()); }, tree: () => nodes(draw()), dialog: () => nodes(draw()).find((n) => n.type === ConfirmDialog)! };
 }
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; });
 
@@ -64,6 +64,26 @@ it("shows the default method on the one primary button", async () => {
   expect(buttons).toHaveLength(1);
   expect(text(buttons[0])).toBe(en("prReview.merge.rebase"));
   expect(buttons[0].props.disabled).toBe(false);
+});
+
+it("shows the error with a retry when the merge state cannot be read, then recovers", async () => {
+  let fail = true;
+  const read = vi.fn(async () => (fail ? Promise.reject({ code: "gh_failed", detail: "offline" }) : INFO));
+  const a = api(INFO, { worktreePrMergeInfo: read });
+  const m = await mount(a, new PrStore(a));
+  const alert = m.tree().find((n) => n.props.role === "alert");
+  expect(alert && text(alert)).toContain(en("error.gh_failed"));
+  const retry = m.tree().find((n) => n.props.onClick && text(n) === en("prReview.merge.retry"))!;
+  expect(retry).toBeDefined();
+  expect(m.tree().some((n) => typeof n.type !== "string" && (n.type as any).name === "Button" && text(n) === en("prReview.merge.squash"))).toBe(false);
+  fail = false;
+  hooks.effects = [];
+  retry.props.onClick();
+  m.rerun();
+  await tick();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(m.tree().some((n) => text(n) === en("prReview.merge.squash"))).toBe(true);
+  expect(m.tree().some((n) => n.props.role === "alert")).toBe(false);
 });
 
 it("hides for a merged or closed PR", async () => {

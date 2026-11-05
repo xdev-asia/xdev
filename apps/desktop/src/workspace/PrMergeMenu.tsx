@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Button, IconButton, Menu } from "@xdev-asia/ui";
-import { toApiError, type Api, type MergeBlock, type MergeMethod, type PrMergeInfo, type PrView } from "@/api";
+import { toApiError, type Api, type ApiError, type MergeBlock, type MergeMethod, type PrMergeInfo, type PrView } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import type { PrStore } from "./prs";
@@ -30,6 +30,9 @@ export function PrMergeMenu(props: {
   const [menu, setMenu] = useState(props.initialMenu ?? false);
   const [confirm, setConfirm] = useState(props.initialConfirm ?? false);
   const [busy, setBusy] = useState(false);
+  // The read failed; `attempt` makes the retry read again.
+  const [readError, setReadError] = useState<ApiError | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [note, setNote] = useState<{ error: boolean; text: string } | null>(null);
   // A second merge must wait for the first, even before the state has re-rendered.
   const inFlight = useRef(false);
@@ -37,15 +40,36 @@ export function PrMergeMenu(props: {
   useEffect(() => {
     let live = true;
     api.worktreePrMergeInfo(worktree, pr.number).then(
-      (got) => live && setInfo(got),
-      () => live && setInfo(null),
+      (got) => {
+        if (!live) return;
+        setInfo(got);
+        setReadError(null);
+      },
+      (e) => {
+        if (!live) return;
+        setInfo(null);
+        setReadError(toApiError(e));
+      },
     );
     return () => {
       live = false;
     };
-  }, [api, worktree, pr.number, pr.state, props.reloadKey]);
+  }, [api, worktree, pr.number, pr.state, props.reloadKey, attempt]);
 
   if (pr.state !== "open" && pr.state !== "draft") return null;
+  if (!info && readError) {
+    return (
+      <div className="ws-merge">
+        <p className="error-text" role="alert">
+          {t(`error.${readError.code}`)}
+          {readError.code === "gh_failed" && readError.detail ? ` ${readError.detail}` : ""}
+        </p>
+        <Button type="button" variant="secondary" onClick={() => setAttempt(attempt + 1)}>
+          {t("prReview.merge.retry")}
+        </Button>
+      </div>
+    );
+  }
   if (!info) return null;
 
   const current: MergeMethod = method && info.methods.includes(method) ? method : info.defaultMethod;

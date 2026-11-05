@@ -2770,6 +2770,7 @@
   "prReview.merge.rebase": "Rebase and merge",
   "prReview.merge.menu": "Merge method",
   "prReview.merge.busy": "Merging",
+  "prReview.merge.retry": "Retry",
   "prReview.merge.done": "Pull request merged",
   "prReview.merge.confirm.squash": "Squash and merge #{number}?",
   "prReview.merge.confirm.merge": "Merge #{number} with a merge commit?",
