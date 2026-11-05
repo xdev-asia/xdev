@@ -114,7 +114,7 @@ enum Command {
         #[command(subcommand)]
         command: app::WorktreeCommand,
     },
-    /// Terminal tabs of the running app: `list`, `wait`.
+    /// Terminal tabs of the running app: `list`, `wait`, `show`, `read`, `send`.
     Terminal {
         #[command(subcommand)]
         command: app::TerminalCommand,

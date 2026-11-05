@@ -7,7 +7,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::time::Duration;
 
-use clap::{Args, Subcommand};
+use clap::{ArgGroup, Args, Subcommand};
 use serde_json::{Value, json};
 use xdev_ipc::IpcError;
 
@@ -38,7 +38,8 @@ impl AppError {
     }
 
     /// The spec's exit codes: 3 no app, 4 timeout, 5 target gone, 6 app
-    /// stopped, 7 denied or not approved, 2 usage, 1 anything else.
+    /// stopped, 7 denied or not approved, 2 usage or an ambiguous name, 1
+    /// anything else.
     pub fn exit_code(&self) -> u8 {
         match self.code.as_str() {
             "app_not_running" => 3,
@@ -46,7 +47,7 @@ impl AppError {
             "closed" | "not_found" => 5,
             "app_stopped" => 6,
             "denied" | "needs_approval" => 7,
-            "bad_request" => 2,
+            "bad_request" | "ambiguous" => 2,
             _ => 1,
         }
     }
@@ -276,12 +277,79 @@ pub enum TerminalCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Metadata and the last lines of one tab: one `key<TAB>value` line per
+    /// field, then the last 20 lines it printed.
+    Show {
+        /// Tab id or a unique prefix of one.
+        #[arg(long, alias = "terminal")]
+        tab: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Output of one tab: the stream by default, the rendered screen with
+    /// --screen. Prints the text; with the stream, `cursor<TAB>n` on stderr
+    /// to pass as --cursor next time.
+    Read {
+        /// Tab id or a unique prefix of one.
+        #[arg(long, alias = "terminal")]
+        tab: String,
+        /// Lines, default 120, at most 5000.
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Only the text after this offset, from an earlier read.
+        #[arg(long, conflicts_with = "screen")]
+        cursor: Option<u64>,
+        #[arg(long)]
+        screen: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Type into one tab. `--text -` reads the text from stdin. Outside your
+    /// worktree and its family the person is asked first.
+    #[command(group(
+        ArgGroup::new("what")
+            .required(true)
+            .multiple(true)
+            .args(["text", "enter", "interrupt"])
+    ))]
+    Send {
+        /// Tab id or a unique prefix of one.
+        #[arg(long, alias = "terminal")]
+        tab: String,
+        /// At most 64 KiB; written as it is unless --enter goes with it.
+        #[arg(long)]
+        text: Option<String>,
+        /// Submit: an agent gets the text as a paste and then Enter, once
+        /// it is idle; a shell gets the text and Enter.
+        #[arg(long)]
+        enter: bool,
+        /// Ctrl-C first.
+        #[arg(long)]
+        interrupt: bool,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Args)]
 pub struct StatusArgs {
     #[arg(long)]
     pub json: bool,
+}
+
+/// `text`, or all of stdin for `-` (without a leading UTF-8 BOM).
+fn or_stdin(text: Option<&str>, stdin: &mut dyn Read) -> Result<Option<String>, AppError> {
+    match text {
+        Some("-") => {
+            let mut text = String::new();
+            stdin.read_to_string(&mut text).map_err(io_error)?;
+            Ok(Some(match text.strip_prefix('\u{feff}') {
+                Some(rest) => rest.to_owned(),
+                None => text,
+            }))
+        }
+        other => Ok(other.map(str::to_owned)),
+    }
 }
 
 /// What one app verb sends: method, params and whether to print JSON.
@@ -306,14 +374,7 @@ pub fn request(
             prompt,
             json,
         }) => {
-            let prompt = match prompt.as_deref() {
-                Some("-") => {
-                    let mut text = String::new();
-                    stdin.read_to_string(&mut text).map_err(io_error)?;
-                    Some(text)
-                }
-                other => other.map(str::to_owned),
-            };
+            let prompt = or_stdin(prompt.as_deref(), stdin)?;
             let params = json!({ "name": name, "from": from, "parent": parent, "agent": agent, "prompt": prompt });
             ("worktree.create", params, *json)
         }
@@ -329,6 +390,32 @@ pub fn request(
         }
         AppCommand::Terminal(TerminalCommand::List { worktree, json }) => {
             ("terminal.list", json!({ "worktree": worktree }), *json)
+        }
+        AppCommand::Terminal(TerminalCommand::Show { tab, json }) => {
+            ("terminal.show", json!({ "tab": tab }), *json)
+        }
+        AppCommand::Terminal(TerminalCommand::Read {
+            tab,
+            limit,
+            cursor,
+            screen,
+            json,
+        }) => (
+            "terminal.read",
+            json!({ "tab": tab, "limit": limit, "cursor": cursor, "screen": screen }),
+            *json,
+        ),
+        AppCommand::Terminal(TerminalCommand::Send {
+            tab,
+            text,
+            enter,
+            interrupt,
+            json,
+        }) => {
+            let text = or_stdin(text.as_deref(), stdin)?;
+            let params =
+                json!({ "tab": tab, "text": text, "enter": enter, "interrupt": interrupt });
+            ("terminal.send", params, *json)
         }
         AppCommand::Terminal(TerminalCommand::Wait {
             tab,
@@ -429,7 +516,45 @@ pub fn plain(method: &str, result: &Value) -> String {
             )
         }),
         "terminal.wait" => format!("{}\t{}\n", text(&result["state"]), text(&result["atMs"])),
+        "terminal.show" => {
+            let mut out: String = [
+                "id",
+                "worktree",
+                "title",
+                "kind",
+                "profile",
+                "state",
+                "lastOutputMs",
+                "cwd",
+            ]
+            .iter()
+            .map(|k| format!("{k}\t{}\n", text(&result[*k])))
+            .collect();
+            let preview = result["preview"].as_str().unwrap_or_default();
+            if !preview.is_empty() {
+                out.push('\n');
+                out.push_str(preview);
+                if !preview.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            out
+        }
+        "terminal.read" => result["tail"].as_str().unwrap_or_default().to_owned(),
+        "terminal.send" => format!(
+            "sent\t{}\t{}\n",
+            text(&result["bytes"]),
+            text(&result["entered"])
+        ),
         _ => format!("{result}\n"),
+    }
+}
+
+/// What a verb prints on stderr beside its plain text: the cursor of a read.
+pub fn plain_err(method: &str, result: &Value) -> Option<String> {
+    match method {
+        "terminal.read" => Some(format!("cursor\t{}\n", text(&result["nextCursor"]))),
+        _ => None,
     }
 }
 
@@ -449,6 +574,9 @@ pub fn run(cmd: &AppCommand, dir: &Path, prefix: &str) -> u8 {
                 println!("{result}");
             } else {
                 print!("{}", plain(method, &result));
+                if let Some(note) = plain_err(method, &result) {
+                    eprint!("{note}");
+                }
             }
             crate::orch::exit_for(method, &result)
         }
@@ -496,6 +624,91 @@ mod tests {
         assert_eq!(params["prompt"], "say hi\n");
         assert_eq!(params["agent"], "claude");
         assert_eq!(params["parent"], Value::Null);
+    }
+
+    #[test]
+    fn request_maps_show_read_send() {
+        let none = &mut &b""[..];
+        let show = AppCommand::Terminal(TerminalCommand::Show {
+            tab: "t1".into(),
+            json: true,
+        });
+        let (m, p, json) = request(&show, none).unwrap();
+        assert_eq!(
+            (m, p, json),
+            ("terminal.show", json!({ "tab": "t1" }), true)
+        );
+        let read = AppCommand::Terminal(TerminalCommand::Read {
+            tab: "t1".into(),
+            limit: Some(50),
+            cursor: Some(7),
+            screen: false,
+            json: false,
+        });
+        let (m, p, _) = request(&read, none).unwrap();
+        assert_eq!(m, "terminal.read");
+        assert_eq!(
+            p,
+            json!({ "tab": "t1", "limit": 50, "cursor": 7, "screen": false })
+        );
+        let send = AppCommand::Terminal(TerminalCommand::Send {
+            tab: "t1".into(),
+            text: Some("ls".into()),
+            enter: true,
+            interrupt: false,
+            json: false,
+        });
+        let (m, p, _) = request(&send, none).unwrap();
+        assert_eq!(m, "terminal.send");
+        assert_eq!(
+            p,
+            json!({ "tab": "t1", "text": "ls", "enter": true, "interrupt": false })
+        );
+        // The app's own waits fit in the default answer wait.
+        assert!(
+            answer_limit("terminal.read", &json!({ "screen": true })) >= Duration::from_secs(15)
+        );
+        assert!(
+            answer_limit("terminal.send", &json!({ "enter": true })) >= Duration::from_secs(11)
+        );
+    }
+
+    #[test]
+    fn send_text_dash_reads_stdin() {
+        let send = AppCommand::Terminal(TerminalCommand::Send {
+            tab: "t1".into(),
+            text: Some("-".into()),
+            enter: false,
+            interrupt: false,
+            json: false,
+        });
+        let (_, p, _) = request(&send, &mut &b"one\r\ntwo"[..]).unwrap();
+        assert_eq!(p["text"], "one\r\ntwo");
+        // A leading BOM (as a PowerShell pipe adds) is dropped; CRLF stays.
+        let (_, p, _) = request(&send, &mut &b"\xef\xbb\xbfhi\r\n"[..]).unwrap();
+        assert_eq!(p["text"], "hi\r\n");
+    }
+
+    #[test]
+    fn plain_read_prints_the_text_and_the_cursor_on_stderr() {
+        let read = json!({ "tail": "a\nb", "nextCursor": 42, "source": "stream" });
+        assert_eq!(plain("terminal.read", &read), "a\nb");
+        assert_eq!(
+            plain_err("terminal.read", &read).as_deref(),
+            Some("cursor\t42\n")
+        );
+        assert_eq!(plain_err("terminal.show", &read), None);
+        let sent = json!({ "handle": "t1", "bytes": 5, "entered": true });
+        assert_eq!(plain("terminal.send", &sent), "sent\t5\ttrue\n");
+        let show = json!({
+            "id": "t1", "worktree": "/w", "title": null, "kind": "agent", "profile": "claude",
+            "state": "idle", "lastOutputMs": 9, "cwd": "/w", "preview": "x\ny\n",
+        });
+        assert_eq!(
+            plain("terminal.show", &show),
+            "id\tt1\nworktree\t/w\ntitle\t-\nkind\tagent\nprofile\tclaude\nstate\tidle\nlastOutputMs\t9\ncwd\t/w\n\nx\ny\n"
+        );
+        assert_eq!(AppError::new("ambiguous", "").exit_code(), 2);
     }
 
     #[test]
