@@ -3,6 +3,7 @@
 //! only connection and talks to the UI and the PTYs around these functions.
 
 pub mod error;
+pub mod failover;
 pub mod gates;
 pub mod guide;
 pub mod ids;
@@ -33,3 +34,4 @@ pub use tasks::{BRIEF_CHARS, NewTask, TaskFilter, brief};
 pub use workers::{
     BREAKER_LIMIT, CLOSE_AFTER_MS, CLOSE_RETRY_MS, StartPlan, StartResult, Swept, WorkerView,
 };
+pub use workers::{Chain, Takeover};

@@ -7,10 +7,11 @@ use rusqlite::{OptionalExtension, params};
 use serde::Serialize;
 
 use crate::error::OrchError;
+use crate::failover::{reason_text, unsettled};
 use crate::mail::NewMessage;
 use crate::model::{
-    Dispatch, DispatchStatus, FailedStage, MessageType, Priority, StopReason, TaskStatus, Worker,
-    WorkerReceipt, WorkerState,
+    Dispatch, DispatchStatus, FailReason, FailedStage, FailoverKind, MessageType, Priority,
+    StopReason, TaskStatus, Worker, WorkerReceipt, WorkerState,
 };
 use crate::render::{NEXT_BREAKER, NEXT_STARTED};
 use crate::store::{DISPATCH_COLS, Store, WORKER_COLS, dispatch_row, enum_text, worker_row};
@@ -43,6 +44,31 @@ pub struct StartPlan {
     pub agent: String,
     pub kept: bool,
 }
+
+/// A dispatch that takes over from a failed one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Takeover {
+    /// The failed dispatch.
+    pub of: String,
+    pub reason: FailReason,
+    pub kind: FailoverKind,
+    /// The account the new worker starts on, when xDev chose it.
+    pub account: Option<String>,
+}
+
+/// What a dispatch's failover chain has done so far.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Chain {
+    pub failovers: u32,
+    pub restarts: u32,
+    /// The agents the chain ran, oldest first, without repeats.
+    pub agents: Vec<String>,
+    /// The accounts xDev chose for the chain, oldest first, without repeats.
+    pub accounts: Vec<String>,
+}
+
+/// The longest chain read back; failovers stop long before it.
+const CHAIN_LIMIT: usize = 64;
 
 /// How the start went.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -718,6 +744,137 @@ impl Store {
     }
 
     /// The dispatch failed without a verdict on the task: it is ready again.
+    /// The dispatches `dispatch_id` took over from, itself first.
+    pub fn failover_chain(&self, dispatch_id: &str) -> Result<Vec<Dispatch>, OrchError> {
+        let mut out = vec![self.dispatch_get(dispatch_id)?];
+        while out.len() < CHAIN_LIMIT {
+            let Some(prev) = out.last().and_then(|d| d.failover_of.clone()) else {
+                break;
+            };
+            out.push(self.dispatch_get(&prev)?);
+        }
+        Ok(out)
+    }
+
+    /// The failovers, restarts, agents and accounts of `dispatch_id`'s chain.
+    pub fn failover_history(&self, dispatch_id: &str) -> Result<Chain, OrchError> {
+        let mut chain = Chain::default();
+        for d in self.failover_chain(dispatch_id)?.iter().rev() {
+            match d.failover_kind {
+                Some(FailoverKind::Failover) => chain.failovers += 1,
+                Some(FailoverKind::Restart) => chain.restarts += 1,
+                None => {}
+            }
+            let agent = self.worker_get(&d.id)?.agent;
+            if !chain.agents.contains(&agent) {
+                chain.agents.push(agent);
+            }
+            if let Some(a) = &d.account
+                && !chain.accounts.contains(a)
+            {
+                chain.accounts.push(a.clone());
+            }
+        }
+        Ok(chain)
+    }
+
+    /// Marks the unsettled worker of `t.of` failed for `t.reason`, hands its
+    /// task back and starts `plan` in its place, all or nothing. The new
+    /// dispatch records the link.
+    pub fn worker_take_over(
+        &self,
+        t: &Takeover,
+        plan: &StartPlan,
+        auto_close: bool,
+        now_ms: i64,
+    ) -> Result<Dispatch, OrchError> {
+        self.atomic(|s| s.worker_take_over_unit(t, plan, auto_close, now_ms))
+    }
+
+    /// One unit of [`Store::worker_take_over`].
+    fn worker_take_over_unit(
+        &self,
+        t: &Takeover,
+        plan: &StartPlan,
+        auto_close: bool,
+        now_ms: i64,
+    ) -> Result<Dispatch, OrchError> {
+        let w = self.worker_get(&t.of)?;
+        if !unsettled(w.state) {
+            return Err(OrchError::new(
+                "invalid_transition",
+                format!(
+                    "worker {} is {}; only a running worker fails over",
+                    t.of,
+                    enum_text(&w.state)
+                ),
+            ));
+        }
+        let old = self.dispatch_get(&t.of)?;
+        if old.task_id != plan.task_id || old.run_id != plan.run_id {
+            return Err(OrchError::bad_request(format!(
+                "{} does not run task {}",
+                t.of, plan.task_id
+            )));
+        }
+        self.worker_set_state(
+            &t.of,
+            WorkerState::Failed,
+            None,
+            Some(reason_text(t.reason)),
+            now_ms,
+        )?;
+        self.give_task_back(&t.of, now_ms)?;
+        self.conn.execute(
+            "UPDATE workers SET finished_ms = ?2 WHERE dispatch_id = ?1",
+            params![t.of, now_ms],
+        )?;
+        let closes = (auto_close && !w.kept).then_some(now_ms + CLOSE_AFTER_MS);
+        self.worker_set_closes_at(&t.of, closes, now_ms)?;
+        let d = self.worker_begin_unit(plan, now_ms)?;
+        self.conn.execute(
+            "UPDATE dispatches SET failover_of = ?2, failover_reason = ?3, failover_kind = ?4,
+                 account = ?5 WHERE id = ?1",
+            params![
+                d.id,
+                t.of,
+                enum_text(&t.reason),
+                enum_text(&t.kind),
+                t.account
+            ],
+        )?;
+        self.dispatch_get(&d.id)
+    }
+
+    /// Marks an unsettled worker failed for `reason`: no backup is left.
+    pub fn worker_fail(
+        &self,
+        dispatch_id: &str,
+        reason: FailReason,
+        auto_close: bool,
+        now_ms: i64,
+    ) -> Result<Worker, OrchError> {
+        self.atomic(|s| {
+            let w = s.worker_get(dispatch_id)?;
+            if !unsettled(w.state) {
+                return Ok(w);
+            }
+            let why = reason_text(reason);
+            s.worker_settle_unit(
+                dispatch_id,
+                WorkerState::Failed,
+                Some(why),
+                auto_close,
+                now_ms,
+            )?;
+            s.conn.execute(
+                "UPDATE workers SET last_error = ?2 WHERE dispatch_id = ?1",
+                params![dispatch_id, why],
+            )?;
+            s.worker_get(dispatch_id)
+        })
+    }
+
     fn give_task_back(&self, dispatch_id: &str, now_ms: i64) -> Result<(), OrchError> {
         let d = self.dispatch_get(dispatch_id)?;
         self.conn.execute(
@@ -1276,5 +1433,130 @@ mod tests {
             .unwrap();
         assert_eq!(after, None);
         assert!(s2.ready_workers().unwrap().is_empty());
+    }
+
+    fn takeover(of: &str, kind: FailoverKind, account: Option<&str>) -> Takeover {
+        Takeover {
+            of: of.to_owned(),
+            reason: FailReason::OutOfQuota,
+            kind,
+            account: account.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_takeover_fails_the_old_worker_and_links_the_new_dispatch() {
+        let (s, run, task) = world();
+        let old = ready_worker(&s, &run, &task);
+        let mut next = plan(&run, &task, None);
+        next.tab = "tab_y".to_owned();
+        next.agent = "codex".to_owned();
+        let d = s
+            .worker_take_over(
+                &takeover(&old, FailoverKind::Failover, Some("codex-2")),
+                &next,
+                true,
+                10,
+            )
+            .unwrap();
+        assert_eq!(d.failover_of.as_deref(), Some(old.as_str()));
+        assert_eq!(d.failover_reason, Some(FailReason::OutOfQuota));
+        assert_eq!(d.failover_kind, Some(FailoverKind::Failover));
+        assert_eq!(d.account.as_deref(), Some("codex-2"));
+        assert_eq!(d.status, DispatchStatus::Dispatched);
+        let w = s.worker_get(&old).unwrap();
+        assert_eq!(w.state, WorkerState::Failed);
+        assert_eq!(
+            w.last_error.as_deref(),
+            Some(reason_text(FailReason::OutOfQuota))
+        );
+        assert_eq!(w.closes_at_ms, Some(10 + CLOSE_AFTER_MS));
+        assert_eq!(s.dispatch_get(&old).unwrap().status, DispatchStatus::Failed);
+        assert_eq!(s.task_get(&task).unwrap().status, TaskStatus::Dispatched);
+        assert_eq!(s.worker_get(&d.id).unwrap().state, WorkerState::Starting);
+        // A failover does not count toward the start breaker.
+        assert_eq!(s.start_failures(&task).unwrap(), 0);
+
+        let chain = s.failover_history(&d.id).unwrap();
+        assert_eq!(chain.failovers, 1);
+        assert_eq!(chain.restarts, 0);
+        assert_eq!(chain.agents, ["claude", "codex"]);
+        assert_eq!(chain.accounts, ["codex-2"]);
+        assert_eq!(s.failover_chain(&d.id).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_settled_or_stopped_worker_is_not_taken_over() {
+        let (s, run, task) = world();
+        let old = ready_worker(&s, &run, &task);
+        s.worker_stop_begin(&old, 3).unwrap();
+        let mut next = plan(&run, &task, None);
+        next.tab = "tab_y".to_owned();
+        let err = s
+            .worker_take_over(
+                &takeover(&old, FailoverKind::Failover, None),
+                &next,
+                true,
+                4,
+            )
+            .unwrap_err();
+        assert_eq!(err.code, "invalid_transition");
+        // All or nothing: the old worker and the task are as they were.
+        assert_eq!(s.worker_get(&old).unwrap().state, WorkerState::Stopping);
+        assert_eq!(s.task_get(&task).unwrap().status, TaskStatus::Dispatched);
+    }
+
+    #[test]
+    fn a_restart_then_a_failover_counts_each_once() {
+        let (s, run, task) = world();
+        let first = ready_worker(&s, &run, &task);
+        let mut again = plan(&run, &task, None);
+        again.tab = "tab_2".to_owned();
+        let restart = s
+            .worker_take_over(
+                &takeover(&first, FailoverKind::Restart, Some("claude-1")),
+                &again,
+                false,
+                5,
+            )
+            .unwrap();
+        // Auto-close off: the failed worker keeps its tab.
+        assert_eq!(s.worker_get(&first).unwrap().closes_at_ms, None);
+        s.worker_started(&restart.id, StartResult::Ready, 6)
+            .unwrap();
+        let mut backup = plan(&run, &task, None);
+        backup.tab = "tab_3".to_owned();
+        let over = s
+            .worker_take_over(
+                &takeover(&restart.id, FailoverKind::Failover, Some("claude-2")),
+                &backup,
+                false,
+                7,
+            )
+            .unwrap();
+        let chain = s.failover_history(&over.id).unwrap();
+        assert_eq!((chain.failovers, chain.restarts), (1, 1));
+        assert_eq!(chain.agents, ["claude"]);
+        assert_eq!(chain.accounts, ["claude-1", "claude-2"]);
+    }
+
+    #[test]
+    fn a_worker_with_no_backup_is_marked_failed() {
+        let (s, run, task) = world();
+        let d = ready_worker(&s, &run, &task);
+        let w = s.worker_fail(&d, FailReason::Crashed, true, 9).unwrap();
+        assert_eq!(w.state, WorkerState::Failed);
+        assert_eq!(
+            w.last_error.as_deref(),
+            Some(reason_text(FailReason::Crashed))
+        );
+        assert_eq!(s.task_get(&task).unwrap().status, TaskStatus::Failed);
+        // Twice is harmless.
+        assert_eq!(
+            s.worker_fail(&d, FailReason::Crashed, true, 10)
+                .unwrap()
+                .state,
+            WorkerState::Failed
+        );
     }
 }
