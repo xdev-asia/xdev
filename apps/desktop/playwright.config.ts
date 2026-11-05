@@ -15,7 +15,8 @@ export default defineConfig({
     navigationTimeout: 30_000,
   },
   webServer: {
-    command: "pnpm exec vite --port 1420 --strictPort",
+    // Plain node, so it runs where only corepack provides pnpm.
+    command: "node node_modules/vite/bin/vite.js --port 1420 --strictPort",
     url: "http://localhost:1420",
     reuseExistingServer: true,
     timeout: 120_000,

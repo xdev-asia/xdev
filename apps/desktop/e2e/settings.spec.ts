@@ -70,3 +70,11 @@ test("the appearance page switches the custom title bar", async ({ page, openApp
   await titleBar.getByRole("button", { name: "Native" }).click();
   await expect(appName).toBeDisabled();
 });
+
+test("the last settings section stays reachable in a short window", async ({ page, openApp }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openApp();
+  const nav = await openSettings(page);
+  await nav.getByRole("button", { name: "Experimental", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Experimental", exact: true })).toBeVisible();
+});

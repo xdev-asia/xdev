@@ -33,3 +33,11 @@ test("a pending crash report opens the crash dialog", async ({ page, openApp }) 
   await dialog.getByRole("button", { name: "Close" }).click();
   await expect(dialog).toBeHidden();
 });
+
+test("the header search hint sits inside the search button", async ({ page, openApp }) => {
+  await openApp();
+  const search = await page.locator(".ws-search").boundingBox();
+  const hint = await page.locator(".ws-search-hint").boundingBox();
+  expect(search && hint).toBeTruthy();
+  expect(hint!.x + hint!.width).toBeLessThanOrEqual(search!.x + search!.width + 1);
+});
