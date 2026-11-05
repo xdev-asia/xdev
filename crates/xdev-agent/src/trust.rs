@@ -14,7 +14,8 @@
 //!
 //! Every write goes through a temporary file in the same folder and a
 //! rename. A file that cannot be read as what it should be is left as it is
-//! (`Bad`). The home folder and a filesystem root are never trusted.
+//! (`Bad`). The home folder, a folder above it and a filesystem root are
+//! never trusted.
 //! [Unverified] against the vendor CLIs: the file formats come from reading
 //! another app's source, not from running the agents.
 
@@ -45,8 +46,8 @@ pub struct TrustTarget {
 
 #[derive(Debug, thiserror::Error)]
 pub enum TrustError {
-    /// The folder is the home folder or a filesystem root.
-    #[error("refusing to trust the home folder or a root")]
+    /// The folder is the home folder, one that holds it, or a filesystem root.
+    #[error("refusing to trust the home folder, a folder above it or a root")]
     Unsafe,
     #[error("{0}")]
     Io(#[from] io::Error),
@@ -73,8 +74,8 @@ pub fn trust_folder(kind: TrustKind, folder: &Path, at: &TrustTarget) -> Result<
     if folder.as_os_str().is_empty()
         || folder.parent().is_none()
         || real.parent().is_none()
-        || same(&real, &real_path(&at.home))
-        || same(folder, &at.home)
+        || holds(&real, &real_path(&at.home))
+        || holds(folder, &at.home)
     {
         return Err(TrustError::Unsafe);
     }
@@ -421,6 +422,12 @@ fn real_path(path: &Path) -> PathBuf {
     }
 }
 
+/// Whether `outer` is `inner` or one of its parents, so trusting it would
+/// trust `inner` too.
+fn holds(outer: &Path, inner: &Path) -> bool {
+    inner.ancestors().any(|a| same(a, outer))
+}
+
 /// Whether two paths are the same place; case-blind on Windows.
 fn same(a: &Path, b: &Path) -> bool {
     let a: PathBuf = a.components().collect();
@@ -546,10 +553,12 @@ mod tests {
     }
 
     #[test]
-    fn home_and_root_are_unsafe_for_every_agent() {
+    fn home_its_parents_and_root_are_unsafe_for_every_agent() {
         let f = fx();
         let at = target(&f);
         let root = f.folder.ancestors().last().unwrap().to_path_buf();
+        // A folder that holds home (`/home`, `C:\Users`) would trust it too.
+        let above_home = f.home.parent().unwrap().to_path_buf();
         for kind in [
             TrustKind::Claude,
             TrustKind::Codex,
@@ -557,7 +566,7 @@ mod tests {
             TrustKind::Copilot,
             TrustKind::Kimi,
         ] {
-            for bad in [&f.home, &root, &PathBuf::new()] {
+            for bad in [&f.home, &above_home, &root, &PathBuf::new()] {
                 let err = trust_folder(kind, bad, &at).unwrap_err();
                 assert!(matches!(err, TrustError::Unsafe), "{kind:?} {bad:?}");
                 assert_eq!(err.code(), "trust_unsafe");
