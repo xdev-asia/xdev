@@ -5,7 +5,7 @@ import { type FileTabs, isDirty } from "./fileTabs";
 
 /**
  * Saves a dirty file `autosaveMs` after its last edit, when `editor.autosave` is on. A file with a
- * conflict is never saved this way: the person chooses Overwrite or Reload. Returns the stop.
+ * conflict, or one that changed on disk, is never saved this way: the person chooses. Returns the stop.
  */
 export function startAutosave(api: Api, store: FileTabs, t: FileIo["t"]): () => void {
   // The text each pending timer waits to save; an edit replaces the timer, so it is a debounce.
@@ -29,7 +29,7 @@ export function startAutosave(api: Api, store: FileTabs, t: FileIo["t"]): () => 
       // A save in flight is left alone: its result clears the dirty state, or an edit made meanwhile
       // schedules the next one.
       if (e.saving) continue;
-      if (!autosave || !isDirty(e) || e.conflict !== null) {
+      if (!autosave || !isDirty(e) || e.conflict !== null || e.external === "changed") {
         drop(k);
         continue;
       }
