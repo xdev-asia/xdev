@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { FileText } from "@/api";
-import { MCP_FILES, MCP_MAX_BYTES, MCP_MAX_SERVERS, inspectMcpConfig, readMcpConfigs } from "./mcpConfigs";
+import { MCP_FILES, MCP_MAX_BYTES, MCP_MAX_SERVERS, inspectMcpConfig, readMcpConfigs } from "./mcpInspect";
 
 const inspect = (value: unknown) => {
   const text = JSON.stringify(value);

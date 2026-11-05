@@ -942,3 +942,12 @@
     padding-bottom: 0;
   }
 }
+
+/* Settings → Repos → MCP configs: one bordered list per file; server rows wrap under the name at 360px. */
+.mcp-file + .mcp-file {
+  margin-top: 8px;
+}
+
+.mcp-file > .settings-hint {
+  padding: 6px 14px;
+}

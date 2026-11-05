@@ -3590,5 +3590,22 @@
   "kanban.moveMenu": "Chuyển sang",
   "kanban.moveLabel": "Chuyển {name} sang trạng thái khác",
   "kanban.moveError": "Không chuyển được worktree",
-  "kanban.columnLabel": "{status}, {count} worktree"
+  "kanban.columnLabel": "{status}, {count} worktree",
+  "settings.repos.mcp.title": "Cấu hình MCP",
+  "settings.repos.mcp.hint": "Xem các máy chủ MCP mà agent có thể dùng khi làm việc trong repo này.",
+  "settings.repos.mcp.refresh": "Làm mới",
+  "settings.repos.mcp.open": "Mở",
+  "settings.repos.mcp.add": "Thêm cấu hình MCP",
+  "settings.repos.mcp.confirm": "Tạo cấu hình trống",
+  "settings.repos.mcp.cancel": "Huỷ",
+  "settings.repos.mcp.created": "Đã tạo cấu hình MCP",
+  "settings.repos.mcp.failed": "Không tạo được cấu hình MCP.",
+  "settings.repos.mcp.empty": "Không có cấu hình MCP. Thêm một cấu hình trống khi bạn muốn repo này có máy chủ MCP riêng.",
+  "settings.repos.mcp.servers": "{count} máy chủ",
+  "settings.repos.mcp.env": "{count} biến môi trường",
+  "settings.repos.mcp.disabled": "Đã tắt",
+  "settings.repos.mcp.invalid.json": "JSON không hợp lệ",
+  "settings.repos.mcp.invalid.shape": "Không phải cấu hình MCP",
+  "settings.repos.mcp.invalid.too_large": "Quá lớn để kiểm tra",
+  "settings.repos.mcp.truncated": "Đang hiện {count} máy chủ đầu tiên"
 }

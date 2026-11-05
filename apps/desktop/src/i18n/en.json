@@ -3590,5 +3590,22 @@
   "kanban.moveMenu": "Move to",
   "kanban.moveLabel": "Move {name} to another status",
   "kanban.moveError": "Could not move the worktree",
-  "kanban.columnLabel": "{status}, {count} worktrees"
+  "kanban.columnLabel": "{status}, {count} worktrees",
+  "settings.repos.mcp.title": "MCP configs",
+  "settings.repos.mcp.hint": "See the MCP servers that agents can use while they work in this repo.",
+  "settings.repos.mcp.refresh": "Refresh",
+  "settings.repos.mcp.open": "Open",
+  "settings.repos.mcp.add": "Add MCP config",
+  "settings.repos.mcp.confirm": "Create empty config",
+  "settings.repos.mcp.cancel": "Cancel",
+  "settings.repos.mcp.created": "MCP config created",
+  "settings.repos.mcp.failed": "Could not create the MCP config.",
+  "settings.repos.mcp.empty": "No MCP config found. Add an empty workspace config when you want this repo to define its own MCP servers.",
+  "settings.repos.mcp.servers": "{count} servers",
+  "settings.repos.mcp.env": "{count} env vars",
+  "settings.repos.mcp.disabled": "Disabled",
+  "settings.repos.mcp.invalid.json": "Invalid JSON",
+  "settings.repos.mcp.invalid.shape": "Not an MCP config",
+  "settings.repos.mcp.invalid.too_large": "Too large to inspect",
+  "settings.repos.mcp.truncated": "Showing the first {count} servers"
 }

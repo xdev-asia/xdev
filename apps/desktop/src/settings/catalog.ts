@@ -148,6 +148,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("repos.localScripts", "settings.repos.scripts", ["setup", "archive", "script", "kịch bản", "kich ban"], "settings.repos.scripts.localHint"),
   e("repos.issueCommand", "settings.repos.issue", ["issue", "prompt", "template", "agent", "github", "lệnh", "lenh", "mẫu", "mau"], "settings.repos.issue.hint"),
   e("repos.repoFile", "settings.repos.file", ["xdev.toml", "shared", "tabs", "unknown", "node_modules", "tab mặc định", "tab mac dinh"], "settings.repos.file.hint"),
+  e("repos.mcpConfigs", "settings.repos.mcp.title", ["mcp", "server", "config", "json", "máy chủ", "may chu", "cấu hình", "cau hinh"], "settings.repos.mcp.hint"),
   e("repos.sharedScripts", "settings.repos.scripts.shared", ["trust", "script", "tin cậy", "tin cay"], "settings.repos.scripts.trustNote"),
   // Account
   e("account.xdevId", "account.xdevId", ["account", "sign in", "sign out", "login", "xdev id", "tài khoản", "tai khoan", "đăng nhập", "dang nhap", "đăng xuất", "dang xuat"], "account.about"),
