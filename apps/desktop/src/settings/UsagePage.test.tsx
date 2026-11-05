@@ -6,7 +6,11 @@ import { mount, nodes, textOf, tick, type Node } from "@/kit/testHooks";
 import { USAGE_DEFAULTS } from "./usageDefaults";
 import { getUsageSettings, resetUsageSettingsForTests, setUsageSettings } from "./usageSettings";
 import { runSearch } from "./searchModel";
+import { Badge, Heatmap } from "@xdev-asia/ui";
+import { TokenTable } from "@/kit/UsageTab";
 import { UsagePage } from "./UsagePage";
+import { UsageRecentSessions } from "./UsageRecentSessions";
+import { UsageShare } from "./UsageShare";
 
 vi.mock("react", async (original) => (await import("@/kit/testHooks")).patchReact(await original<typeof import("react")>()));
 vi.mock("@/i18n", async (original) => ({
@@ -87,6 +91,10 @@ it("shows the empty state when the range holds nothing", async () => {
     by_agent: [],
     sessions: 0,
     tracking_since: null,
+    cost: { nanos: 0, unpriced: false, priced: false },
+    cost_by_agent: [],
+    recent_sessions: [],
+    prices_as_of: "2026-11-04",
   });
   act(m.all(), "refresh")!.props.onClick();
   await m.settle();
@@ -182,6 +190,110 @@ it("the cache timer switch stores its flag, and the lifetime row shows only whil
   await tick();
   expect((await api.usageSettings()).cacheTtlMs).toBe(3_600_000);
   expect(getUsageSettings().cacheTtlMs).toBe(3_600_000);
+});
+
+// Cost, recent sessions, cache reuse and the heatmap.
+const tk = (input: number, cache_read = 0, output = 0) => ({ input, output, cache_read, cache_write: 0 });
+const session = (id: string, agent: "claude" | "codex", total = tk(1, 2, 3), model: string | null = "m") => ({
+  id, home_id: `own-${agent}`, agent, folder: "/demo/xdev", model, first: 1, last: 2, total, days: {},
+});
+function fixture(over: Partial<Awaited<ReturnType<ReturnType<typeof createMockApi>["kitUsageReport"]>>> = {}) {
+  const today = new Date();
+  const day = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  return {
+    summary: { days: [[day, tk(100, 50, 10)]] as [string, ReturnType<typeof tk>][], by_home: [], by_folder: [], by_model: [], top_sessions: [] },
+    by_agent: [["claude", tk(1, 2, 5)], ["codex", tk(3)]] as ["claude" | "codex", ReturnType<typeof tk>][],
+    sessions: 2,
+    tracking_since: 1,
+    cost: { nanos: 12_340_000_000, unpriced: false, priced: true },
+    cost_by_agent: [["claude", { nanos: 12_000_000_000, unpriced: false, priced: true }], ["codex", { nanos: 4_200_000, unpriced: false, priced: true }]] as ["claude" | "codex", { nanos: number; unpriced: boolean; priced: boolean }][],
+    recent_sessions: [session("s1", "claude"), session("s2", "claude", tk(0), null)],
+    prices_as_of: "2026-11-04",
+    ...over,
+  };
+}
+async function show(over: Parameters<typeof fixture>[0], provider = "overview") {
+  const ctx = await open({ claude: true, codex: true });
+  vi.spyOn(ctx.api, "kitUsageReport").mockResolvedValue(fixture(over));
+  field(ctx.m.all(), "provider").props.onChange({ target: { value: provider } });
+  if (provider === "overview") act(ctx.m.all(), "refresh")!.props.onClick();
+  await ctx.m.settle();
+  await ctx.m.settle();
+  return ctx;
+}
+const ofType = (all: Node[], type: unknown) => all.filter((n) => n.type === type);
+
+it("the cost tile shows the estimate and the price date", async () => {
+  const { m } = await show({});
+  const cost = tile(m.all(), "cost");
+  expect(textOf(cost)).toContain(en("usage.stats.tile.cost"));
+  expect(textOf(cost)).toContain("$12.34");
+  expect(textOf(cost)).not.toContain(en("usage.stats.cost.excludes"));
+  expect(cost.props.title).toBe(en("usage.stats.cost.asOf", { date: "2026-11-04" }));
+});
+
+it("the cost tile says what it leaves out, and shows n/a when nothing is priced", async () => {
+  const some = await show({ cost: { nanos: 5_000_000, unpriced: true, priced: true } });
+  expect(textOf(tile(some.m.all(), "cost"))).toContain("$0.0050");
+  expect(textOf(tile(some.m.all(), "cost"))).toContain(en("usage.stats.cost.excludes"));
+  const none = await show({ cost: { nanos: 0, unpriced: true, priced: false } });
+  expect(textOf(tile(none.m.all(), "cost"))).toContain("n/a");
+  expect(textOf(tile(none.m.all(), "cost"))).not.toContain(en("usage.stats.cost.excludes"));
+});
+
+it("Overview shows the cost by provider, a 42-day heatmap and the busiest day, and no recent table", async () => {
+  const { m } = await show({});
+  const all = m.all();
+  const table = ofType(all, TokenTable).find((n) => n.props.title === en("usage.stats.byProvider"))!;
+  expect(table.props.costs).toEqual({ Claude: "$12.00", Codex: "$0.0042" });
+  const heat = ofType(all, Heatmap)[0]!;
+  expect(heat.props.cells).toHaveLength(42);
+  expect(heat.props.cells.some((c: { level: number }) => c.level === 4)).toBe(true);
+  expect(ofType(all, Badge)).toHaveLength(1);
+  expect(ofType(all, UsageRecentSessions)).toHaveLength(0);
+});
+
+it("Claude shows the cache reuse rate with its note and the recent sessions", async () => {
+  const { m } = await show({}, "claude");
+  const all = m.all();
+  const line = all.find((n) => "data-cache-line" in n.props)!;
+  expect(textOf(line)).toContain(en("usage.stats.cache.reuse", { percent: 67 }));
+  expect(textOf(line)).toContain(en("usage.stats.cache.note"));
+  expect(ofType(all, UsageRecentSessions)[0]!.props.agent).toBe("claude");
+  expect(ofType(all, Heatmap)).toHaveLength(0);
+});
+
+it("Codex shows its recent sessions and no cache line", async () => {
+  const { m } = await show({ by_agent: [["codex", tk(3)]] }, "codex");
+  const all = m.all();
+  expect(all.some((n) => "data-cache-line" in n.props)).toBe(false);
+  expect(ofType(all, UsageRecentSessions)[0]!.props.agent).toBe("codex");
+});
+
+it("recent sessions: Claude has a cache column, Codex a total column, and a missing model is named", () => {
+  const sessions = [session("abcdef123456", "claude", tk(1, 3)), session("zzzz", "claude", tk(0), null)];
+  const claude = mount(UsageRecentSessions, () => ({ agent: "claude" as const, sessions })).all();
+  expect(claude.filter((n) => n.type === "th").map(textOf)).toContain(en("usage.stats.cache.col"));
+  expect(claude.filter((n) => n.type === "th").map(textOf)).not.toContain(en("kit.usage.total"));
+  expect(claude.filter((n) => "data-cache" in n.props).map(textOf)).toEqual(["75%", "–"]);
+  expect(claude.some((n) => n.type === "td" && textOf(n) === en("usage.stats.recent.unknownModel"))).toBe(true);
+  expect(claude.some((n) => n.type === "td" && textOf(n) === "abcdef12")).toBe(true);
+  const codex = mount(UsageRecentSessions, () => ({ agent: "codex" as const, sessions })).all();
+  expect(codex.filter((n) => n.type === "th").map(textOf)).toContain(en("kit.usage.total"));
+  expect(codex.find((n) => "data-recent-desc" in n.props)!.props.children).toBe(en("usage.stats.recent.desc.codex"));
+});
+
+it("the share button is on a Claude or Codex page with the figures of that agent, and not on Overview", async () => {
+  expect(ofType((await show({})).m.all(), UsageShare)).toHaveLength(0);
+  const { m } = await show({ summary: { ...fixture().summary, by_model: [["claude-opus-4-5", tk(9)]] } }, "claude");
+  const share = ofType(m.all(), UsageShare);
+  expect(share).toHaveLength(1);
+  const data = share[0]!.props.data as { provider: string; sessions: number; topModel: string | null; tokens: number };
+  expect(data.provider).toBe("claude");
+  expect(data.sessions).toBe(2);
+  expect(data.topModel).toBe("claude-opus-4-5");
+  expect(data.tokens).toBeGreaterThan(0);
+  expect(ofType((await show({}, "codex")).m.all(), UsageShare)).toHaveLength(1);
 });
 
 it("lists the accounts with their status, reads once on open and once per Check again, and signs in", async () => {

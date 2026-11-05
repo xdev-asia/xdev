@@ -1,9 +1,11 @@
 use std::cmp::Reverse;
+use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -11,6 +13,7 @@ use serde_json::Value;
 
 use crate::AiError;
 use crate::claude::{AccountStatus, StatusState, find_cli, stdout_within};
+use crate::codex_rpc::{PROBE_ARGS, ProbeError, ProbeTimeouts, read_rate_limits};
 use crate::process::{kill_tree, own_group};
 use crate::quota::QuotaWindow;
 
@@ -20,6 +23,9 @@ const MODELS_MAX: u64 = 16 << 20;
 /// Sessions with no rate-limit line (an API-key run, a crash before the
 /// first turn) are skipped, but only this many: an old file says little.
 const MAX_FILES: usize = 10;
+/// A live result younger than this is reused, so the Accounts view and the
+/// footer do not spawn twice.
+pub(crate) const LIVE_REUSE: Duration = Duration::from_secs(60);
 const FIVE_HOURS: u64 = 300;
 const SEVEN_DAYS: u64 = 10_080;
 
@@ -88,6 +94,66 @@ pub(crate) fn status(dir: &Path) -> AccountStatus {
         Err(e) if e.kind() == io::ErrorKind::NotFound => AccountStatus::bare(StatusState::NoCodex),
         Err(_) => AccountStatus::bare(StatusState::Error),
     }
+}
+
+type Reading = Option<(Instant, Vec<QuotaWindow>)>;
+
+/// One slot per Codex home: its lock serialises the probes of that home
+/// (two probes could refresh the same token), and it holds the last result.
+fn home_slot(dir: &Path) -> Arc<Mutex<Reading>> {
+    static SLOTS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<Reading>>>>> = OnceLock::new();
+    let mut slots = SLOTS
+        .get_or_init(Mutex::default)
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    Arc::clone(slots.entry(dir.to_path_buf()).or_default())
+}
+
+/// Live read for one Codex home: one probe at a time per home, a result
+/// reused for `LIVE_REUSE`.
+pub(crate) fn live_usage(dir: &Path) -> Result<Vec<QuotaWindow>, ProbeError> {
+    live_usage_with(
+        dir,
+        &|| probe_command(dir),
+        ProbeTimeouts::default(),
+        LIVE_REUSE,
+    )
+}
+
+/// The testable core of `live_usage`: `make` builds the probe, only when
+/// no reading younger than `reuse` is kept.
+pub(crate) fn live_usage_with(
+    dir: &Path,
+    make: &dyn Fn() -> Result<Command, ProbeError>,
+    t: ProbeTimeouts,
+    reuse: Duration,
+) -> Result<Vec<QuotaWindow>, ProbeError> {
+    let slot = home_slot(dir);
+    let mut last = slot.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((at, windows)) = &*last
+        && at.elapsed() < reuse
+    {
+        return Ok(windows.clone());
+    }
+    let windows = read_rate_limits(make()?, t, unix(SystemTime::now()))?;
+    *last = Some((Instant::now(), windows.clone()));
+    Ok(windows)
+}
+
+/// The user's own `codex` as an app-server on `dir`. It runs in an empty
+/// folder of its own, so it reads no project.
+fn probe_command(dir: &Path) -> Result<Command, ProbeError> {
+    let mut cmd = codex_command().map_err(|_| ProbeError::NoCodex)?;
+    let cwd = env::temp_dir().join("xdev-codex-probe");
+    fs::create_dir_all(&cwd).map_err(ProbeError::Io)?;
+    cmd.args(PROBE_ARGS).env("CODEX_HOME", dir).current_dir(cwd);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    Ok(cmd)
 }
 
 fn exit_within(mut cmd: Command, timeout: Duration) -> io::Result<ExitStatus> {
@@ -293,7 +359,69 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
+    use crate::codex_rpc::tests::{LOG, fake, quick};
+
+    #[test]
+    fn a_second_call_within_the_reuse_window_spawns_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let spawns = AtomicUsize::new(0);
+        let make = || {
+            spawns.fetch_add(1, Ordering::SeqCst);
+            Ok(fake("ok"))
+        };
+        let first = live_usage_with(tmp.path(), &make, quick(), Duration::from_secs(60)).unwrap();
+        let second = live_usage_with(tmp.path(), &make, quick(), Duration::from_secs(60)).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(spawns.load(Ordering::SeqCst), 1);
+        // With no reuse the next call spawns again.
+        live_usage_with(tmp.path(), &make, quick(), Duration::ZERO).unwrap();
+        assert_eq!(spawns.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn a_failure_is_not_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let spawns = AtomicUsize::new(0);
+        let make = || {
+            spawns.fetch_add(1, Ordering::SeqCst);
+            Ok(fake("exit3"))
+        };
+        for _ in 0..2 {
+            assert!(live_usage_with(tmp.path(), &make, quick(), Duration::from_secs(60)).is_err());
+        }
+        assert_eq!(spawns.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn probes_of_one_home_never_overlap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let log = tmp.path().join("probe.log");
+        let make = || {
+            let mut cmd = fake("slow");
+            cmd.env(LOG, &log);
+            Ok(cmd)
+        };
+        thread::scope(|s| {
+            for _ in 0..2 {
+                s.spawn(|| {
+                    live_usage_with(tmp.path(), &make, quick(), Duration::ZERO).unwrap();
+                });
+            }
+        });
+        // `s` is a start and `r` the reply: the second start follows the first reply.
+        assert_eq!(fs::read_to_string(&log).unwrap(), "s\nr\ns\nr\n");
+    }
+
+    #[test]
+    fn a_missing_binary_is_reported() {
+        let tmp = tempfile::tempdir().unwrap();
+        let make = || Ok(Command::new("xdev-no-such-codex-binary"));
+        let err = live_usage_with(tmp.path(), &make, quick(), Duration::ZERO).unwrap_err();
+        assert!(matches!(err, ProbeError::NoCodex), "{err:?}");
+    }
 
     #[test]
     fn models_skip_hidden_ones() {

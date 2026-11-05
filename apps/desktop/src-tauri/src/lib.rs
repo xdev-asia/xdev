@@ -45,6 +45,7 @@ mod tasks;
 mod terminal_themes;
 mod tray;
 mod updater;
+mod usage_share;
 mod workspace;
 mod xdev_id;
 
@@ -85,6 +86,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(updater::Pending::default())
         .manage(xdev_id::XdevIdHub::production())
         .manage(updater::Phase::default())
@@ -443,6 +446,8 @@ pub fn run() {
             kit::kit_skill_restore,
             kit::kit_usage,
             kit::kit_usage_report,
+            usage_share::usage_share_copy_image,
+            usage_share::usage_share_post,
             kit::kit_paths_exist,
             kit::kit_prompt_history,
             agent_sessions::agent_sessions,

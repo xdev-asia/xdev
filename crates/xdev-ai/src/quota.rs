@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+use std::path::Path;
 use std::time::SystemTime;
 
 use crate::accounts::{AccountEntry, Provider};
 use crate::claude::{self, AccountStatus, StatusState};
 use crate::codex;
+use crate::codex_rpc::ProbeError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -56,6 +58,16 @@ pub struct Quota {
 
 /// Reads the account's usage, unless `status` already shows it cannot work.
 pub fn quota(entry: &AccountEntry, status: &AccountStatus, reserve_percent: u8) -> Quota {
+    quota_with(entry, status, reserve_percent, &codex::live_usage)
+}
+
+/// `quota` with the Codex live read injected.
+pub(crate) fn quota_with(
+    entry: &AccountEntry,
+    status: &AccountStatus,
+    reserve_percent: u8,
+    live: &dyn Fn(&Path) -> Result<Vec<QuotaWindow>, ProbeError>,
+) -> Quota {
     let unknown = |reason| Quota {
         name: entry.name.clone(),
         state: QuotaState::Unknown,
@@ -76,9 +88,14 @@ pub fn quota(entry: &AccountEntry, status: &AccountStatus, reserve_percent: u8) 
             Ok(windows) => (windows, None),
             Err(reason) => return unknown(reason),
         },
-        Provider::Codex => match codex::usage(&entry.dir, SystemTime::now()) {
-            Some(usage) => (usage.windows, Some(usage.as_of)),
-            None => return unknown(Reason::NoSessions),
+        Provider::Codex => match live(&entry.dir) {
+            Ok(windows) => (windows, None),
+            Err(ProbeError::Auth(_)) => return unknown(Reason::Expired),
+            // Any other failure: the limits its last session recorded.
+            Err(_) => match codex::usage(&entry.dir, SystemTime::now()) {
+                Some(usage) => (usage.windows, Some(usage.as_of)),
+                None => return unknown(Reason::NoSessions),
+            },
         },
     };
     let state = classify(&windows, reserve_percent);
@@ -128,4 +145,89 @@ fn highest(windows: &[QuotaWindow]) -> Option<f64> {
         .iter()
         .filter_map(|w| w.utilization)
         .max_by(f64::total_cmp)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use serde_json::json;
+
+    use super::*;
+
+    fn entry(dir: &Path) -> AccountEntry {
+        AccountEntry {
+            name: "cx".into(),
+            provider: Provider::Codex,
+            dir: dir.to_path_buf(),
+        }
+    }
+
+    fn signed_in() -> AccountStatus {
+        AccountStatus::bare(StatusState::LoggedIn)
+    }
+
+    fn live_window() -> Vec<QuotaWindow> {
+        vec![QuotaWindow {
+            key: "five_hour".into(),
+            utilization: Some(12.0),
+            resets_at: None,
+        }]
+    }
+
+    fn with_log(dir: &Path) {
+        let line = json!({
+            "timestamp": "2026-11-02T09:00:00Z",
+            "payload": { "type": "token_count", "rate_limits": {
+                "primary": { "used_percent": 50.0, "window_minutes": 300, "resets_at": 4_102_444_800_i64 }
+            }}
+        });
+        fs::create_dir_all(dir.join("sessions")).unwrap();
+        fs::write(dir.join("sessions/a.jsonl"), format!("{line}\n")).unwrap();
+    }
+
+    #[test]
+    fn a_live_reading_has_no_as_of() {
+        let tmp = tempfile::tempdir().unwrap();
+        let q = quota_with(&entry(tmp.path()), &signed_in(), 30, &|_| Ok(live_window()));
+        assert_eq!(q.state, QuotaState::Ok);
+        assert_eq!(q.as_of, None);
+        assert_eq!(q.windows, live_window());
+    }
+
+    #[test]
+    fn an_auth_failure_is_expired_even_with_logs() {
+        let tmp = tempfile::tempdir().unwrap();
+        with_log(tmp.path());
+        let q = quota_with(&entry(tmp.path()), &signed_in(), 30, &|_| {
+            Err(ProbeError::Auth("x".into()))
+        });
+        assert_eq!(q.state, QuotaState::Unknown);
+        assert_eq!(q.reason, Some(Reason::Expired));
+    }
+
+    #[test]
+    fn another_failure_falls_back_to_the_session_log() {
+        let tmp = tempfile::tempdir().unwrap();
+        with_log(tmp.path());
+        let fails: [fn() -> ProbeError; 3] = [
+            || ProbeError::Timeout,
+            || ProbeError::NoCodex,
+            || ProbeError::Exited(Some(1)),
+        ];
+        for fail in fails {
+            let q = quota_with(&entry(tmp.path()), &signed_in(), 30, &|_| Err(fail()));
+            assert_eq!(q.state, QuotaState::Ok);
+            assert_eq!(q.as_of.as_deref(), Some("2026-11-02T09:00:00Z"));
+        }
+    }
+
+    #[test]
+    fn a_failure_with_no_logs_is_no_sessions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let q = quota_with(&entry(tmp.path()), &signed_in(), 30, &|_| {
+            Err(ProbeError::Timeout)
+        });
+        assert_eq!(q.reason, Some(Reason::NoSessions));
+    }
 }

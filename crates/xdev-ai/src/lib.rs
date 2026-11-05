@@ -3,6 +3,7 @@
 mod accounts;
 mod claude;
 mod codex;
+mod codex_rpc;
 pub mod ollama;
 pub mod process;
 mod quota;
