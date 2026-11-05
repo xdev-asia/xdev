@@ -309,7 +309,7 @@ impl From<CmdError> for AppError {
     }
 }
 
-fn bad_request(message: impl Into<String>) -> AppError {
+pub(crate) fn bad_request(message: impl Into<String>) -> AppError {
     AppError::new("bad_request", message)
 }
 
@@ -1019,6 +1019,8 @@ pub(crate) mod tests {
         pub answer: Option<bool>,
         /// The fake UI: answers every `open-worker` with this, or never.
         pub open_answer: Option<orchestration::WorkerOpenOutcome>,
+        /// The fake UI: answers every `read-tab` with this text, or never.
+        pub read_answer: Option<String>,
         /// `nested_worker_max_depth` the calls run under.
         pub max_depth: u32,
         /// Whether a write to a PTY lands; what was written.
@@ -1081,6 +1083,7 @@ pub(crate) mod tests {
             orch: OrchHub::default(),
             answer: None,
             open_answer: None,
+            read_answer: None,
             max_depth: 1,
             pty_alive: true,
             pty_writes: Mutex::default(),
@@ -1117,6 +1120,12 @@ pub(crate) mod tests {
                 {
                     let id = payload["dispatch"].as_str().unwrap().to_owned();
                     self.orch.opens.answer(&id, outcome.clone());
+                }
+                if event == "orchestration://read-tab"
+                    && let Some(text) = &self.read_answer
+                {
+                    let request = payload["request"].as_u64().unwrap();
+                    self.orch.reads.answer(&request, text.clone());
                 }
                 self.events
                     .lock()

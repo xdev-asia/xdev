@@ -96,8 +96,12 @@ export async function openWorker(api: Api, host: OrchestrationHost, open: Worker
   return { kind: "ok" };
 }
 
-/** The last `maxChars` characters of the tab's terminal text; "" for a tab that has no terminal. */
+/**
+ * The last `maxChars` characters of the tab's terminal text, or its last `maxLines` lines when that is set; "" for a
+ * tab that has no terminal.
+ */
 export function readTab(host: OrchestrationHost, e: ReadTab): string {
+  if (e.maxLines !== undefined) return (host.terminal(e.tab)?.lines(e.maxLines) ?? []).join("\n");
   const lines = host.terminal(e.tab)?.lines(READ_LINES) ?? [];
   const text = lines.join("\n");
   if (e.maxChars >= text.length) return text;

@@ -64,6 +64,10 @@ pub struct ReadTab {
     pub request: u64,
     pub tab: String,
     pub max_chars: u32,
+    /// Set: the last this many lines of the screen, not cut to `max_chars`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub max_lines: Option<u32>,
 }
 
 /// Payload of `orchestration://worker-changed`: re-read the strip of `tab`.
@@ -339,6 +343,7 @@ fn pump_once(app: &AppHandle) {
                     request,
                     tab: tab.to_owned(),
                     max_chars: 2000,
+                    max_lines: None,
                 };
                 hub.reads
                     .ask(
@@ -1073,6 +1078,7 @@ fn handle_verb(
                             request,
                             tab,
                             max_chars,
+                            max_lines: None,
                         });
                         if let Ok(p) = payload {
                             (ctx.emit)("orchestration://read-tab", p);

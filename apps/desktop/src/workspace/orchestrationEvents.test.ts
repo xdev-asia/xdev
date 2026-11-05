@@ -156,6 +156,12 @@ describe("readTab", () => {
     expect(readTab(h, { request: 1, tab: "t", maxChars: 2 })).toBe("b");
     expect(readTab(h, { request: 1, tab: "t", maxChars: 3 })).toBe("\u{1F600}b");
   });
+  it("readTab uses maxLines when it is set", () => {
+    const asked: number[] = [];
+    const { h } = host({ terminal: () => ({ lines: (n: number) => (asked.push(n), ["one", "two"]) }) });
+    expect(readTab(h, { request: 1, tab: "t", maxChars: 2, maxLines: 30 })).toBe("one\ntwo");
+    expect(asked).toEqual([30]);
+  });
   it("an unknown tab and a zero budget give an empty text", () => {
     const { h } = host({ terminal: term });
     expect(readTab(h, { request: 1, tab: "nope", maxChars: 100 })).toBe("");

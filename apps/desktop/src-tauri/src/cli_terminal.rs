@@ -4,13 +4,16 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::cli_verbs::{Ctx, TabReport, params};
+use crate::cli_verbs::{Ctx, TabReport, bad_request, params};
 use crate::endpoint::{AppError, Request};
+use crate::orchestration::ReadTab;
 use crate::term_tail::TailRead;
 
 /// How many lines `terminal read` gives without `--limit`, and at most.
 pub const READ_LIMIT_DEFAULT: usize = 120;
 pub const READ_LIMIT_MAX: usize = 5000;
+/// What a screen read asks for in chars; the UI goes by lines when asked.
+const SCREEN_MAX_CHARS: u32 = 200_000;
 /// How many lines `terminal show` previews.
 pub const SHOW_PREVIEW_LINES: usize = 20;
 
@@ -26,6 +29,8 @@ struct ReadParams {
     tab: String,
     limit: Option<usize>,
     cursor: Option<u64>,
+    #[serde(default)]
+    screen: bool,
 }
 
 fn kind(t: &TabReport) -> &'static str {
@@ -71,20 +76,57 @@ fn stream(ctx: &Ctx<'_>, id: &str, cursor: Option<u64>, limit: usize) -> TailRea
         })
 }
 
+/// The last `lines` lines of the tab's screen, as the UI renders it; `None`
+/// when the UI does not answer within the read wait.
+fn screen(ctx: &Ctx<'_>, id: &str, lines: usize) -> Option<String> {
+    let request = ctx.orch.next_read();
+    let ask = ReadTab {
+        request,
+        tab: id.to_owned(),
+        max_chars: SCREEN_MAX_CHARS,
+        max_lines: Some(u32::try_from(lines).unwrap_or(u32::MAX)),
+    };
+    let send = || {
+        if let Ok(p) = serde_json::to_value(&ask) {
+            (ctx.emit)("orchestration://read-tab", p);
+        }
+    };
+    ctx.orch.reads.ask(request, send, ctx.orch.waits.read)
+}
+
 /// `terminal.read`: the last `limit` lines the tab printed, or only those
-/// after `cursor`, escape-stripped.
+/// after `cursor`, escape-stripped. With `screen`, the rendered screen from
+/// the UI instead, or the stream (`screen-unavailable`) when it does not answer.
 pub(crate) fn terminal_read(ctx: &Ctx<'_>, req: &Request) -> Result<Value, AppError> {
     let p: ReadParams = params(req)?;
     let limit = p
         .limit
         .unwrap_or(READ_LIMIT_DEFAULT)
         .clamp(1, READ_LIMIT_MAX);
+    if p.screen && p.cursor.is_some() {
+        return Err(bad_request(
+            "a screen has no cursor: use --screen or --cursor, not both",
+        ));
+    }
     let t = ctx.board.resolve(&p.tab)?;
-    let r = stream(ctx, &t.id, p.cursor, limit);
+    let mut r = stream(ctx, &t.id, p.cursor, limit);
+    let mut source = "stream";
+    if p.screen {
+        match screen(ctx, &t.id, limit) {
+            Some(text) => {
+                source = "screen";
+                r.returned_line_count = text.lines().count();
+                r.text = text;
+                r.truncated = false;
+                r.limited = false;
+            }
+            None => source = "screen-unavailable",
+        }
+    }
     Ok(json!({
         "handle": t.id,
         "status": t.state(),
-        "source": "stream",
+        "source": source,
         "tail": r.text,
         "truncated": r.truncated,
         "limited": r.limited,
@@ -97,7 +139,9 @@ pub(crate) fn terminal_read(ctx: &Ctx<'_>, req: &Request) -> Result<Value, AppEr
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use std::time::Duration;
+
+    use serde_json::{Value, json};
 
     use crate::cli_verbs::tests::{fixture, tab};
 
@@ -225,5 +269,63 @@ mod tests {
         assert_eq!(read(99_999), 5000);
         assert_eq!(read(7), 7);
         assert_eq!(read(0), 1);
+    }
+
+    #[test]
+    fn read_screen_returns_what_the_ui_answers() {
+        let mut f = fixture();
+        f.read_answer = Some("  top\n> prompt".to_owned());
+        f.board
+            .replace(vec![tab("p-other", &f.other, true, "idle")], None);
+        f.tails.feed("p-other", b"streamed\n");
+        let r = f
+            .call(
+                None,
+                "terminal.read",
+                json!({"tab": "p-other", "screen": true, "limit": 30}),
+            )
+            .unwrap();
+        assert_eq!(r["source"], "screen");
+        assert_eq!(r["tail"], "  top\n> prompt");
+        assert_eq!(r["returnedLineCount"], 2);
+        // The cursors stay those of the stream.
+        assert_eq!(r["nextCursor"], 9);
+        let asked: Vec<Value> = f
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(e, _)| e == "orchestration://read-tab")
+            .map(|(_, p)| p.clone())
+            .collect();
+        assert_eq!(asked.len(), 1);
+        assert_eq!(asked[0]["tab"], "p-other");
+        assert_eq!(asked[0]["maxLines"], 30);
+    }
+
+    #[test]
+    fn read_screen_falls_back_to_the_stream_when_nobody_answers() {
+        let mut f = fixture();
+        // Meant to expire: the fake UI never answers.
+        f.orch.waits.read = Duration::from_millis(100);
+        f.board
+            .replace(vec![tab("p-other", &f.other, true, "idle")], None);
+        f.tails.feed("p-other", b"streamed\r\n");
+        let r = f
+            .call(
+                None,
+                "terminal.read",
+                json!({"tab": "p-other", "screen": true}),
+            )
+            .unwrap();
+        assert_eq!(r["source"], "screen-unavailable");
+        assert_eq!(r["tail"], "streamed\n");
+        // A screen has no cursor to read after.
+        let e = f.call(
+            None,
+            "terminal.read",
+            json!({"tab": "p-other", "screen": true, "cursor": 0}),
+        );
+        assert_eq!(e.unwrap_err().code, "bad_request");
     }
 }
