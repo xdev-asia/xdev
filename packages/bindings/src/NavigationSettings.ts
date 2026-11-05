@@ -13,4 +13,12 @@ confirmClosePinned: boolean,
 /**
  * Ask before closing a tab that has a running process.
  */
-confirmCloseRunning: boolean, askBeforeDeleteWorktree: boolean, };
+confirmCloseRunning: boolean, askBeforeDeleteWorktree: boolean, 
+/**
+ * Delete a dirty worktree without the second confirmation.
+ */
+alwaysForceDeleteWorktrees: boolean, 
+/**
+ * Delete the branch with the folder even when it is not merged.
+ */
+alwaysDeleteKeptBranches: boolean, };

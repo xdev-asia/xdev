@@ -6,6 +6,8 @@ export const NAVIGATION_DEFAULTS: NavigationSettings = {
   confirmClosePinned: true,
   confirmCloseRunning: true,
   askBeforeDeleteWorktree: true,
+  alwaysForceDeleteWorktrees: false,
+  alwaysDeleteKeptBranches: false,
 };
 
 /** `DiffSettings::default()` in Rust. */
