@@ -44,6 +44,8 @@ mod ship;
 mod squads;
 mod status;
 mod tasks;
+#[allow(dead_code)] // fed from pty.rs by the next change
+mod term_tail;
 mod terminal_themes;
 mod tray;
 mod updater;
