@@ -324,6 +324,7 @@ export type { TerminalLinkClick } from "./TerminalLinkClick";
 export type { TerminalSettings } from "./TerminalSettings";
 export type { TestResult } from "./TestResult";
 export type { Theme } from "./Theme";
+export type { TitlebarMode } from "./TitlebarMode";
 export type { Tokens } from "./Tokens";
 export type { UiSettings } from "./UiSettings";
 export type { UpdateChannel } from "./UpdateChannel";

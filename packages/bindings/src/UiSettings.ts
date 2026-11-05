@@ -4,6 +4,7 @@ import type { RestoreMode } from "./RestoreMode";
 import type { SidebarLook } from "./SidebarLook";
 import type { StatusBarItems } from "./StatusBarItems";
 import type { Theme } from "./Theme";
+import type { TitlebarMode } from "./TitlebarMode";
 
 /**
  * View settings of the whole window. Not `Eq`: `zoom` is an `f32`.
@@ -60,4 +61,12 @@ hiddenApps: Array<string>,
 /**
  * Which of xDev's own footer items show.
  */
-statusBar: StatusBarItems, };
+statusBar: StatusBarItems, 
+/**
+ * Native window frame, or xDev's own title bar. A file from before it loads `Native`.
+ */
+titlebar: TitlebarMode, 
+/**
+ * The app name shows in the custom title bar.
+ */
+showTitlebarName: boolean, };

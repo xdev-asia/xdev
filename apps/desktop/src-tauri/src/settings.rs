@@ -940,6 +940,12 @@ pub struct UiSettings {
     /// Which of xDev's own footer items show.
     #[serde(deserialize_with = "lenient")]
     pub status_bar: StatusBarItems,
+    /// Native window frame, or xDev's own title bar. A file from before it loads `Native`.
+    #[serde(deserialize_with = "lenient")]
+    pub titlebar: TitlebarMode,
+    /// The app name shows in the custom title bar.
+    #[serde(deserialize_with = "lenient_show_titlebar_name")]
+    pub show_titlebar_name: bool,
 }
 
 /// The longest `UiSettings::ui_font`, in characters.
@@ -960,6 +966,8 @@ impl Default for UiSettings {
             reduce_effects: false,
             hidden_apps: Vec::new(),
             status_bar: StatusBarItems::default(),
+            titlebar: TitlebarMode::Native,
+            show_titlebar_name: true,
         }
     }
 }
@@ -1048,6 +1056,29 @@ impl Default for StatusBarItems {
             ports: true,
             keep_awake: true,
         }
+    }
+}
+
+/// Settings → Appearance → Title bar. A value this build does not know reads
+/// as `Native`, so it does not reset the zoom beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum TitlebarMode {
+    /// The operating system's window frame.
+    #[default]
+    Native,
+    /// No system frame; the window draws its own title bar.
+    Custom,
+}
+
+impl<'de> serde::Deserialize<'de> for TitlebarMode {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("custom") => TitlebarMode::Custom,
+            _ => TitlebarMode::Native,
+        })
     }
 }
 
@@ -2003,6 +2034,10 @@ fn lenient_fast<'de, D: serde::Deserializer<'de>>(de: D) -> Result<f32, D::Error
 
 fn lenient_contrast<'de, D: serde::Deserializer<'de>>(de: D) -> Result<f32, D::Error> {
     lenient_or(de, TerminalSettings::default().minimum_contrast)
+}
+
+fn lenient_show_titlebar_name<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::Error> {
+    lenient_or(de, true)
 }
 
 fn lenient_bool_false<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::Error> {
@@ -2973,6 +3008,33 @@ then sum up"
         assert!(json.contains("\"editorThemeLight\":\"dark\""));
         assert!(json.contains("\"tokenUsage\":true"));
         assert_eq!(serde_json::from_str::<UiSettings>(&json).unwrap(), ui);
+    }
+
+    #[test]
+    fn titlebar_defaults_for_an_old_file() {
+        let old: UiSettings = serde_json::from_str(r#"{"zoom":1.5}"#).unwrap();
+        assert_eq!(old.titlebar, TitlebarMode::Native);
+        assert!(old.show_titlebar_name);
+        let odd: UiSettings =
+            serde_json::from_str(r#"{"zoom":1.5,"titlebar":"wide","showTitlebarName":"no"}"#)
+                .unwrap();
+        assert_eq!(odd.zoom, 1.5);
+        assert_eq!(odd.titlebar, TitlebarMode::Native);
+        assert!(odd.show_titlebar_name);
+    }
+
+    #[test]
+    fn titlebar_round_trips() {
+        let ui = UiSettings {
+            titlebar: TitlebarMode::Custom,
+            show_titlebar_name: false,
+            ..UiSettings::default()
+        };
+        let json = serde_json::to_string(&ui).unwrap();
+        assert!(json.contains(r#""titlebar":"custom""#));
+        assert!(json.contains(r#""showTitlebarName":false"#));
+        assert_eq!(serde_json::from_str::<UiSettings>(&json).unwrap(), ui);
+        assert_eq!(ui.clone().clamped(), ui);
     }
 
     #[test]
