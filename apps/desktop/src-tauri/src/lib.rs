@@ -9,6 +9,7 @@ mod cli_verbs;
 mod clipboard;
 mod commands;
 mod endpoint;
+mod file_head;
 mod file_watch;
 mod files;
 mod history;
@@ -380,6 +381,7 @@ pub fn run() {
             workspace::worktree_changes,
             workspace::worktree_stat,
             workspace::worktree_file_diff,
+            file_head::worktree_file_head,
             review::worktree_review,
             review::worktree_review_file,
             review::worktree_stage,

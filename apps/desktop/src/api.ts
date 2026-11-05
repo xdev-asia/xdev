@@ -931,6 +931,8 @@ export interface Api {
   // Against the commit the worktree started from.
   worktreeChanges(path: string): Promise<WorktreeChange[]>;
   worktreeFileDiff(path: string, file: string): Promise<WorktreeFileDiff>;
+  /** A file at HEAD and on disk now; the base for change markers. */
+  worktreeFileHead(path: string, file: string): Promise<WorktreeFileDiff>;
   // The new commit's id, or null when none of `files` had a change. Rejects with `empty_message`.
   worktreeCommit(path: string, files: string[], message: string): Promise<string | null>;
   // Line counts against the start ref (against HEAD for the primary checkout), untracked files included.
@@ -1598,6 +1600,7 @@ const tauriApi: Api = {
   sidebarPrefsPut: (prefs) => call("sidebar_prefs_put", { prefs }),
   worktreeChanges: (path) => call("worktree_changes", { path }),
   worktreeFileDiff: (path, file) => call("worktree_file_diff", { path, file }),
+  worktreeFileHead: (path, file) => call("worktree_file_head", { path, file }),
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
   worktreeStat: (path) => call("worktree_stat", { path }),
   worktreeShip: (path) => call("worktree_ship", { path }),

@@ -43,6 +43,7 @@ type WorkspaceApi = Pick<
   | "folderForget"
   | "worktreeChanges"
   | "worktreeFileDiff"
+  | "worktreeFileHead"
   | "worktreeCommit"
   | "worktreeStat"
   | "worktreeShip"
@@ -1077,6 +1078,14 @@ export function createMockWorkspace(
       const change = changes.get(path)?.find((c) => c.path === file);
       if (!change) return reject("bad_arg", file);
       return demoDiff(file, change.kind);
+    },
+    async worktreeFileHead(path, file) {
+      // Any known checkout, the primary one too; a file with no change reads the same on both sides.
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const change = changes.get(path)?.find((c) => c.path === file);
+      if (change) return demoDiff(file, change.kind);
+      const text = `// ${file}\nexport const value = 1;\n`;
+      return { old: text, new: text, skip: null };
     },
     async worktreeCommit(path, files, message) {
       const found = findWorktree(path);
