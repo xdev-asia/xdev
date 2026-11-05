@@ -28,6 +28,7 @@ const ALL: Record<ActionId, true> = {
   "settings.open": true, "settings.shortcuts": true,
   "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true,
   "quickCommands.open": true, "quickOpen.open": true,
+  "composer.open": true,
 };
 
 it("every ActionId has exactly one def", () => {

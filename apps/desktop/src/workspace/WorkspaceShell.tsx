@@ -21,6 +21,7 @@ import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
 import { startOptionAsAltProbe } from "@/terminal/optionAsAlt";
 import { startAutosave } from "@/files/autosave";
 import { useWorktreeWatch } from "./useWorktreeWatch";
+import { ComposerHost, type ComposerRequest } from "@/composer/ComposerHost";
 import { fileTabId, fileTabRel, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { paneOf, splitPane } from "./paneTree";
@@ -192,6 +193,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [groupName, setGroupName] = useState<{ id: string | null; name: string; error?: ApiError["code"] } | null>(null);
   const [selected, setSelected] = useState<string | null>(() => readSelected());
   const [view, setView] = useState<View>("workspace");
+  const [composerAsk, setComposerAsk] = useState<ComposerRequest | null>(null);
   // The docs app mounts on first visit and then stays, so its editor state survives a switch.
   const [docsMounted, setDocsMounted] = useState(false);
   // A request for the Agent kit to open a tab; a new `seq` is a new request.
@@ -1949,6 +1951,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               onSleep={() => void Promise.all([...picked.paths].map((p) => sessions?.sleepWorktree(p, sessionFallback(api))))}
               onStatus={(status: WorkStatus) => void bulkEach((path) => api.worktreeDetails(path, { status }))}
               onClear={() => setPicked(clearPicked())}
+              onSendPrompt={() => setComposerAsk((r) => ({ worktrees: [...picked.paths], seq: (r?.seq ?? 0) + 1 }))}
             />
           )}
           <SurfaceBoundary id="sidebar.worktrees" surface="Workspace list" titleKey="boundary.worktrees.title">
@@ -2389,6 +2392,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           if (side) openFileSide(current.path, rel, line, column);
           else requestOpenFile({ worktree: current.path, rel, line, column });
         }}
+      />
+      <ComposerHost
+        api={api}
+        sessions={sessions}
+        shownTab={current ? (shownTab[current.path] ?? null) : null}
+        names={Object.fromEntries(all.map((w) => [w.path, worktreeName(all, w.path)]))}
+        active={view === "workspace" && !dialogOpen}
+        request={composerAsk}
       />
       <PaletteHost
         open={jumpOpen}
