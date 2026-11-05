@@ -51,6 +51,7 @@ function fakeHost(over: Partial<DispatchHost> = {}) {
   const host: DispatchHost = {
     sessions: sessions as unknown as DispatchHost["sessions"],
     setup: vi.fn(),
+    ensureMounted: vi.fn(),
     defer: () => false,
     terminalLines: () => ["line one", "line two"],
     ...over,
@@ -119,6 +120,23 @@ describe("startAutomationDispatch", () => {
     api.__automationDispatch(dispatch({ created: false }));
     await flush();
     expect(f.host.setup).not.toHaveBeenCalled();
+  });
+
+  it("mounts the worktree before setup and before the tab opens", async () => {
+    const order: string[] = [];
+    const f = fakeHost({
+      ensureMounted: (w) => void order.push(`mount ${w}`),
+      setup: (w) => void order.push(`setup ${w}`),
+    });
+    const open = f.host.sessions.open.bind(f.host.sessions);
+    (f.host.sessions as { open: typeof open }).open = (...args: Parameters<typeof open>) => {
+      order.push(`open ${args[0]}`);
+      return open(...args);
+    };
+    const { api } = await setup(f.host);
+    api.__automationDispatch(dispatch({ worktree: "/new", created: true }));
+    await flush();
+    expect(order).toEqual(["mount /new", "setup /new", "open /new"]);
   });
 
   it("waits for setup when the repo says so", async () => {

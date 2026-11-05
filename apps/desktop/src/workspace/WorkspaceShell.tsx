@@ -796,6 +796,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (!sessions) return;
     return startAutomationDispatch(api, {
       sessions,
+      ensureMounted: (w) => live.ensureMounted(w),
       setup: (worktree, repoId, decision) => live.automationSetup(worktree, repoId, decision),
       defer: (worktree, launch) => gate.defer(worktree, launch),
       terminalLines: (id, max) => terminalOf(id)?.lines(max) ?? null,

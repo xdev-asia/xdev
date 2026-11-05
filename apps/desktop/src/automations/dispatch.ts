@@ -11,6 +11,8 @@ export const START_DEADLINE_MS = 120_000;
 /** What the dispatch client needs from the window. */
 export interface DispatchHost {
   sessions: Pick<Sessions, "open" | "tabs" | "subscribe">;
+  /** Lists and mounts `worktree` (hidden) so its tabs start a pty; a worktree made for the run is not listed yet. */
+  ensureMounted(worktree: string): void;
   /** What a worktree made for a run does about setup: `run` starts it; `inherit` starts it only when the repo's setup is trusted with a Run policy; `skip` does nothing. */
   setup(worktree: string, repoId: string, decision: SetupDecision): Promise<void> | void;
   /** Runs `launch` at once, or after setup has exited when the repo waits for it; false means "run it now". */
@@ -133,6 +135,8 @@ export function startAutomationDispatch(api: Api, host: DispatchHost): () => voi
     api.onAutomationDispatch((e) => {
       if (stopped) return;
       void (async () => {
+        // Tabs only start in a mounted worktree; one made for this run is not listed yet.
+        host.ensureMounted(e.worktree);
         // Setup starts first, so the repo's "wait for setup" can hold the agent back.
         if (e.created) await Promise.resolve(host.setup(e.worktree, e.repoId, e.setup)).catch(() => {});
         if (stopped) return;
