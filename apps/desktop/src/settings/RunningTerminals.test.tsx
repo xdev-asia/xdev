@@ -112,3 +112,45 @@ it("an older service says which version it is from and to restart it", async () 
   expect(JSON.stringify(v.all().map((n) => n.props.children))).toContain(en("ptyd.oldVersion", { version: "0.3.9" }));
   expect(v.button(en("settings.terminal.service.restart"))).toBeDefined();
 });
+
+const buttonsOf = (row: Node) => nodes(row).filter((n) => n.type === "button").map((n) => n.props.children);
+
+it("clear confirms then calls ptydClearScrollback", async () => {
+  const v = await view((api) => {
+    running(api);
+    api.__ptydSet({ state: "running", serviceVersion: "0.4.0", features: ["clear"] });
+  });
+  const clear = vi.spyOn(v.api, "ptydClearScrollback");
+  const row = v.rows()[0];
+  nodes(row).find((n) => n.type === "button" && n.props.children === en("settings.terminal.service.clear"))!.props.onClick();
+  expect(v.dialog().props.title).toBe(en("settings.terminal.service.clearTitle"));
+  expect(clear).not.toHaveBeenCalled();
+  v.dialog().props.onConfirm();
+  await tick();
+  expect(clear).toHaveBeenCalledWith("a");
+});
+
+it("clear hidden without feature", async () => {
+  const v = await view(running);
+  expect(buttonsOf(v.rows()[0])).not.toContain(en("settings.terminal.service.clear"));
+});
+
+it("go to hidden when no owner", async () => {
+  const v = await view(running);
+  expect(buttonsOf(v.rows()[0])).not.toContain(en("settings.terminal.service.goTo"));
+});
+
+it("go to asks the workspace for that terminal's tab", async () => {
+  const { onTabJump } = await import("@/workspace/tabJump");
+  const seen: string[] = [];
+  const off = onTabJump((id) => (seen.push(id), true));
+  const v = await view((api) => {
+    running(api);
+    void api.ptyAttach("a", 0, () => {});
+  });
+  await tick();
+  const go = nodes(v.rows()[0]).find((n) => n.type === "button" && n.props.children === en("settings.terminal.service.goTo"))!;
+  go.props.onClick();
+  off();
+  expect(seen).toEqual(["a"]);
+});
