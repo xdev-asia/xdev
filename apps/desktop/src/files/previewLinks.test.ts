@@ -45,6 +45,14 @@ describe("fillImages", () => {
     stop();
     expect(urls.revoke).toHaveBeenCalledWith("blob:1");
   });
+  it("reads a leading / image from the worktree root, like a link, not from the file's folder", async () => {
+    const api = { fileBytes: vi.fn(async () => new Uint8Array(1)) };
+    const list = [el({ "data-src": "/img/a.png" }), el({ "data-src": "/../out.png" })];
+    fillImages({ querySelectorAll: () => list }, { api, worktree: "W", rel: "docs/deep/a.md", urls: { create: () => "blob:1", revoke() {} } });
+    await tick();
+    expect(api.fileBytes).toHaveBeenCalledTimes(1);
+    expect(api.fileBytes).toHaveBeenCalledWith("W", "img/a.png");
+  });
   it("does not read a remote image or one outside the worktree", async () => {
     const api = { fileBytes: vi.fn(async () => new Uint8Array(1)) };
     const list = [el({ "data-src": "https://x/a.png" }), el({ "data-src": "../../a.png" })];
