@@ -77,3 +77,41 @@ it("follows ptyd://status as it changes", async () => {
   await tick();
   expect(b.draw()).not.toBeNull();
 });
+
+const hold = (api: ReturnType<typeof createMockApi>) => api.__ptydSet({ state: "newer-version", serviceVersion: "9.0.0" });
+const dialogOf = (b: Awaited<ReturnType<typeof banner>>) => b.all().find((n) => n.props.confirmLabel !== undefined)!;
+const reopenButton = (b: Awaited<ReturnType<typeof banner>>, key: string) => b.all().find((n) => n.type === "button" && n.props.children === en(key));
+
+it("newer version shows hold", async () => {
+  for (const setup of [hold, (api: ReturnType<typeof createMockApi>) => api.__ptydSet({ state: "fallback", reason: "ptyd_version" })]) {
+    const b = await banner(setup);
+    expect(b.all()[0].props.className).toContain("banner banner-warn ws-tabs-banner");
+    const text = JSON.stringify(b.all().map((n) => n.props.children));
+    expect(text).toContain(en("ptyd.newerTitle"));
+    expect(text).toContain(en("ptyd.newerBody"));
+    expect(reopenButton(b, "ptyd.reopen")!.props.className).toBe("btn-secondary");
+  }
+});
+
+it("reopen confirms and restarts", async () => {
+  const b = await banner(hold);
+  const restart = vi.spyOn(b.api, "ptydRestart");
+  reopenButton(b, "ptyd.reopen")!.props.onClick();
+  expect(dialogOf(b).props.open).toBe(true);
+  expect(dialogOf(b).props.title).toBe(en("ptyd.reopenTitle"));
+  expect(restart).not.toHaveBeenCalled();
+  dialogOf(b).props.onConfirm();
+  await tick();
+  expect(restart).toHaveBeenCalledTimes(1);
+  // The service is ours now: the banner goes.
+  expect(b.draw()).toBeNull();
+});
+
+it("failure shows try again", async () => {
+  const b = await banner(hold);
+  vi.spyOn(b.api, "ptydRestart").mockRejectedValueOnce({ code: "ptyd_unreachable" });
+  reopenButton(b, "ptyd.reopen")!.props.onClick();
+  dialogOf(b).props.onConfirm();
+  await tick();
+  expect(reopenButton(b, "ptyd.reopenAgain")).toBeDefined();
+});
