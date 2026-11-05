@@ -7,7 +7,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::attribute::attribute;
 use crate::urls::AdvertisedUrls;
-use crate::{Listener, PortKind, PortScan, Probe, Proc, PtyRoot, ScanError, WorkspacePort};
+use crate::{
+    Listener, PortEvidence, PortKind, PortScan, Probe, Proc, PtyRoot, ScanError, WorkspacePort,
+};
 
 /// How long one command may run.
 pub const SCAN_TIMEOUT: Duration = Duration::from_secs(4);
@@ -15,6 +17,16 @@ pub const SCAN_TIMEOUT: Duration = Duration::from_secs(4);
 const PAUSE_FIRST: Duration = Duration::from_secs(60);
 /// The longest pause.
 const PAUSE_MAX: Duration = Duration::from_secs(300);
+
+/// What the person agreed to when asking for a stop.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StopConsent {
+    /// They confirmed the stop. Nothing is read or signalled without it.
+    pub confirmed: bool,
+    /// They confirmed a second time that a port no xDev terminal started
+    /// (matched by working folder or command line only) may be stopped.
+    pub outside_terminal: bool,
+}
 
 /// Why a stop was refused or failed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -25,6 +37,12 @@ pub enum StopError {
     NotOwned,
     #[error("the port has no known process")]
     NoPid,
+    #[error("the stop was not confirmed")]
+    NotConfirmed,
+    /// Matched to a worktree by folder or command only, without the second
+    /// confirmation.
+    #[error("the port was not started by an xDev terminal")]
+    NotStartedByApp,
     #[error("the port belongs to this app")]
     OwnProcess,
     /// No fresh list: the last one may name a pid the OS has since reused.
@@ -44,6 +62,8 @@ impl StopError {
             Self::Gone => "port_gone",
             Self::NotOwned => "port_not_owned",
             Self::NoPid => "port_no_pid",
+            Self::NotConfirmed => "port_stop_unconfirmed",
+            Self::NotStartedByApp => "port_not_started_by_app",
             Self::OwnProcess => "port_own_process",
             Self::Unavailable => "port_scan_unavailable",
             Self::Changed => "port_changed",
@@ -249,7 +269,9 @@ impl<P: Probe> Scanner<P> {
         }
     }
 
-    /// Ends the process behind port `id`. Refuses unless a fresh scan lists
+    /// Ends the process behind port `id`, once `consent` confirms it. Only a
+    /// listener under a terminal xDev started in that worktree is stopped,
+    /// unless `consent.outside_terminal`. Refuses unless a fresh scan lists
     /// it, then reads the live tables once more right before the signal: the
     /// pid must still exist, still listen on that port, and keep the name and
     /// start time the scan saw, so a reused pid is never hit. `protected`
@@ -257,11 +279,15 @@ impl<P: Probe> Scanner<P> {
     pub fn stop(
         &self,
         id: &str,
+        consent: StopConsent,
         roots: &[PtyRoot],
         worktrees: &[PathBuf],
         urls: &Mutex<AdvertisedUrls>,
         protected: &[u32],
     ) -> Result<PortScan, StopError> {
+        if !consent.confirmed {
+            return Err(StopError::NotConfirmed);
+        }
         let scan = self.scan(roots, worktrees, urls, true);
         if scan.unavailable.is_some() {
             return Err(StopError::Unavailable);
@@ -273,6 +299,9 @@ impl<P: Probe> Scanner<P> {
             .ok_or(StopError::Gone)?;
         if port.kind != PortKind::Workspace {
             return Err(StopError::NotOwned);
+        }
+        if port.evidence != Some(PortEvidence::Terminal) && !consent.outside_terminal {
+            return Err(StopError::NotStartedByApp);
         }
         let pid = port.pid.ok_or(StopError::NoPid)?;
         if protected.contains(&pid) {
@@ -399,6 +428,19 @@ mod tests {
             cmd: "node".into(),
             cwd: Some(PathBuf::from(cwd)),
             start: Some(1_000),
+        }
+    }
+
+    /// Confirmed twice: the cwd-matched ports these tests use may be stopped.
+    const YES: StopConsent = StopConsent {
+        confirmed: true,
+        outside_terminal: true,
+    };
+
+    fn root(pid: u32) -> PtyRoot {
+        PtyRoot {
+            pid,
+            worktree: PathBuf::from("/w/a"),
         }
     }
 
@@ -530,14 +572,16 @@ mod tests {
     fn stop_ends_a_workspace_process_once_and_rescans() {
         let (s, f, urls, wts) = with_port("/w/a");
         let id = "127.0.0.1:5173:7";
-        s.stop(id, &[], &wts, &urls, &[]).unwrap();
+        s.stop(id, YES, &[], &wts, &urls, &[]).unwrap();
         assert_eq!(*f.killed.lock().unwrap(), vec![7]);
     }
 
     #[test]
     fn stop_refuses_a_port_that_is_gone() {
         let (s, f, urls, wts) = with_port("/w/a");
-        let err = s.stop("localhost:1:2", &[], &wts, &urls, &[]).unwrap_err();
+        let err = s
+            .stop("localhost:1:2", YES, &[], &wts, &urls, &[])
+            .unwrap_err();
         assert_eq!(err, StopError::Gone);
         assert_eq!(err.code(), "port_gone");
         assert!(f.killed.lock().unwrap().is_empty());
@@ -547,7 +591,7 @@ mod tests {
     fn stop_refuses_a_port_no_worktree_owns() {
         let (s, f, urls, wts) = with_port("/elsewhere");
         let err = s
-            .stop("127.0.0.1:5173:7", &[], &wts, &urls, &[])
+            .stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
             .unwrap_err();
         assert_eq!(err, StopError::NotOwned);
         assert!(f.killed.lock().unwrap().is_empty());
@@ -562,7 +606,7 @@ mod tests {
             pid: None,
         }]));
         let err = s
-            .stop("127.0.0.1:9:unknown", &[], &wts, &urls, &[])
+            .stop("127.0.0.1:9:unknown", YES, &[], &wts, &urls, &[])
             .unwrap_err();
         // No pid also means no owner here, so the owner check speaks first.
         assert!(matches!(err, StopError::NotOwned | StopError::NoPid));
@@ -573,7 +617,7 @@ mod tests {
     fn stop_refuses_the_apps_own_process() {
         let (s, f, urls, wts) = with_port("/w/a");
         let err = s
-            .stop("127.0.0.1:5173:7", &[], &wts, &urls, &[7])
+            .stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[7])
             .unwrap_err();
         assert_eq!(err, StopError::OwnProcess);
         assert_eq!(err.code(), "port_own_process");
@@ -593,7 +637,7 @@ mod tests {
         advance(10);
         let calls = f.calls.load(Ordering::SeqCst);
         let err = s
-            .stop("127.0.0.1:5173:7", &[], &wts, &urls, &[])
+            .stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
             .unwrap_err();
         assert_eq!(err, StopError::Unavailable);
         assert_eq!(err.code(), "port_scan_unavailable");
@@ -614,7 +658,7 @@ mod tests {
         reused.start = Some(2_000);
         *f.later.lock().unwrap() = Some(vec![reused]);
         let err = s
-            .stop("127.0.0.1:5173:7", &[], &wts, &urls, &[])
+            .stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
             .unwrap_err();
         assert_eq!(err, StopError::Changed);
         assert_eq!(err.code(), "port_changed");
@@ -628,7 +672,7 @@ mod tests {
         again.start = Some(1_001);
         *f.later.lock().unwrap() = Some(vec![again]);
         let err = s
-            .stop("127.0.0.1:5173:7", &[], &wts, &urls, &[])
+            .stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
             .unwrap_err();
         assert_eq!(err, StopError::Changed);
         assert!(f.killed.lock().unwrap().is_empty());
@@ -640,9 +684,76 @@ mod tests {
         // The scan sees 5173 on pid 7; the check right after sees it on pid 9.
         f.queue(Ok(vec![listen(5173, 9)]));
         let err = s
-            .stop("127.0.0.1:5173:7", &[], &wts, &urls, &[])
+            .stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
             .unwrap_err();
         assert_eq!(err, StopError::Changed);
+        assert!(f.killed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn stop_without_confirmation_reads_and_signals_nothing() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        let err = s
+            .stop(
+                "127.0.0.1:5173:7",
+                StopConsent::default(),
+                &[root(7)],
+                &wts,
+                &urls,
+                &[],
+            )
+            .unwrap_err();
+        assert_eq!(err, StopError::NotConfirmed);
+        assert_eq!(err.code(), "port_stop_unconfirmed");
+        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
+        assert!(f.killed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn stop_ends_a_listener_under_an_xdev_terminal_with_one_confirmation() {
+        let (s, f, urls, wts) = with_port("/elsewhere");
+        let once = StopConsent {
+            confirmed: true,
+            outside_terminal: false,
+        };
+        s.stop("127.0.0.1:5173:7", once, &[root(7)], &wts, &urls, &[])
+            .unwrap();
+        assert_eq!(*f.killed.lock().unwrap(), vec![7]);
+    }
+
+    #[test]
+    fn a_port_matched_by_folder_only_needs_the_second_confirmation() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        let once = StopConsent {
+            confirmed: true,
+            outside_terminal: false,
+        };
+        let err = s
+            .stop("127.0.0.1:5173:7", once, &[], &wts, &urls, &[])
+            .unwrap_err();
+        assert_eq!(err, StopError::NotStartedByApp);
+        assert_eq!(err.code(), "port_not_started_by_app");
+        assert!(f.killed.lock().unwrap().is_empty());
+        s.stop("127.0.0.1:5173:7", YES, &[], &wts, &urls, &[])
+            .unwrap();
+        assert_eq!(*f.killed.lock().unwrap(), vec![7]);
+    }
+
+    #[test]
+    fn a_port_matched_by_command_only_needs_the_second_confirmation() {
+        let (s, f, urls, wts) = setup();
+        f.queue(Ok(vec![listen(5173, 7)]));
+        let mut p = proc(7, "/elsewhere");
+        p.cmd = "node /w/a/server.js".into();
+        *f.procs.lock().unwrap() = vec![p];
+        let once = StopConsent {
+            confirmed: true,
+            outside_terminal: false,
+        };
+        let err = s
+            .stop("127.0.0.1:5173:7", once, &[], &wts, &urls, &[])
+            .unwrap_err();
+        assert_eq!(err, StopError::NotStartedByApp);
         assert!(f.killed.lock().unwrap().is_empty());
     }
 

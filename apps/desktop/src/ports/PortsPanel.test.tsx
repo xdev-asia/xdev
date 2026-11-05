@@ -137,16 +137,51 @@ it("opens a port in the browser by id", async () => {
   expect(lastOpenedPort()).toBe("localhost:5173:1");
 });
 
-it("stops a process and tells the person", async () => {
+it("stops a port under an xDev terminal after a confirming click and tells the person", async () => {
   const api = createMockApi({});
-  const store = storeWith(api, scan([port({ port: 5173, pid: 9, worktree: OAK })]));
+  const store = storeWith(api, scan([port({ port: 5173, pid: 9, worktree: OAK, evidence: "terminal" })]));
   await store.refresh();
   const stop = vi.spyOn(store, "stop").mockResolvedValue();
   const m = mount(api, store);
   m.all().find((n) => n.props.label === en("ports.stop"))?.props.onClick();
   await tick();
-  expect(stop).toHaveBeenCalledWith("localhost:5173:1");
+  // The first click only asks.
+  expect(stop).not.toHaveBeenCalled();
+  const confirm = m.all().find((n) => n.props["data-action"] === "stop-confirm");
+  expect(confirm?.props.children).toBe(en("ports.stopConfirm", { port: 5173 }));
+  expect(m.all().filter((n) => n.props["data-action"] === "stop-confirm" || n.props.variant === "primary")).toHaveLength(1);
+  confirm?.props.onClick();
+  await tick();
+  expect(stop).toHaveBeenCalledWith("localhost:5173:1", { confirmed: true, outsideTerminal: false });
   expect(m.html()).toContain(en("ports.stopped", { port: 5173 }));
+});
+
+it("asks a second time before stopping a port no xDev terminal started", async () => {
+  const api = createMockApi({});
+  const store = storeWith(api, scan([port({ port: 3000, pid: 9, worktree: OAK, evidence: "cwd" })]));
+  await store.refresh();
+  const stop = vi.spyOn(store, "stop").mockResolvedValue();
+  const m = mount(api, store);
+  m.all().find((n) => n.props.label === en("ports.stop"))?.props.onClick();
+  m.all().find((n) => n.props["data-action"] === "stop-confirm")?.props.onClick();
+  await tick();
+  expect(stop).not.toHaveBeenCalled();
+  expect(m.html()).toContain(en("ports.stopOutsideNote", { port: 3000 }));
+  m.all().find((n) => n.props["data-action"] === "stop-outside")?.props.onClick();
+  await tick();
+  expect(stop).toHaveBeenCalledWith("localhost:3000:1", { confirmed: true, outsideTerminal: true });
+});
+
+it("cancels an asked stop and the menu entry only asks", async () => {
+  const api = createMockApi({});
+  const store = storeWith(api, scan([port({ port: 5173, pid: 9, worktree: OAK, evidence: "terminal" })]));
+  await store.refresh();
+  const stop = vi.spyOn(store, "stop").mockResolvedValue();
+  const m = mount(api, store);
+  m.all().find((n) => n.props.label === en("ports.stop"))?.props.onClick();
+  m.all().find((n) => n.props.label === en("dialog.cancel"))?.props.onClick();
+  expect(m.all().some((n) => n.props["data-action"] === "stop-confirm")).toBe(false);
+  expect(stop).not.toHaveBeenCalled();
 });
 
 it("is polled only while visible", () => {

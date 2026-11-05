@@ -1,4 +1,4 @@
-import { toApiError, type Api, type ApiError, type PortScan } from "@/api";
+import { toApiError, type Api, type ApiError, type PortScan, type PortStopConsent } from "@/api";
 
 const POLL_MS = 30_000;
 const AFTER_URL_MS = 1_000;
@@ -104,8 +104,8 @@ export class PortsStore {
   }
 
   /** Stops the process behind port `id`, then scans again half a second later. */
-  async stop(id: string): Promise<void> {
-    const scan = await this.api.portsStop(this.worktrees, id);
+  async stop(id: string, consent: PortStopConsent): Promise<void> {
+    const scan = await this.api.portsStop(this.worktrees, id, consent);
     this.failures = 0;
     this.current = { scan, error: null, loading: false };
     this.bump();

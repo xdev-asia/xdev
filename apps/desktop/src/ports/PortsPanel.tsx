@@ -22,6 +22,8 @@ export function PortsPanel(props: {
   const [note, setNote] = useState<string | null>(null);
   const [actionError, setActionError] = useState<ApiError | null>(null);
   const [menu, setMenu] = useState<{ at: { x: number; y: number }; port: WorkspacePort } | null>(null);
+  // Stop asks first, like the card chip; a port no xDev terminal started asks a second time.
+  const [asking, setAsking] = useState<{ id: string; outside: boolean } | null>(null);
 
   useSyncExternalStore(useCallback((fn: () => void) => store.subscribe(fn), [store]), () => store.snapshot(), () => store.snapshot());
   const { scan, error, loading } = store.state();
@@ -43,14 +45,34 @@ export function PortsPanel(props: {
     setActionError(null);
     if (await copyText(text)) setNote(t("ports.copied", { address: text }));
   };
-  const stop = async (p: WorkspacePort) => {
+  const askStop = (p: WorkspacePort) => {
     setActionError(null);
+    setNote(null);
+    setAsking({ id: p.id, outside: false });
+  };
+  const stop = async (p: WorkspacePort, outsideTerminal: boolean) => {
+    setActionError(null);
+    setAsking(null);
+    setNote(null);
     try {
-      await store.stop(p.id);
+      await store.stop(p.id, { confirmed: true, outsideTerminal });
       setNote(t("ports.stopped", { port: p.port }));
     } catch (e) {
       fail(e);
     }
+  };
+  /** The confirming click: stops a port under an xDev terminal, else asks once more. */
+  const confirmStop = (p: WorkspacePort) => {
+    if (asking?.outside || p.evidence === "terminal") {
+      void stop(p, asking?.outside ?? false);
+      return;
+    }
+    setAsking({ id: p.id, outside: true });
+    setNote(t("ports.stopOutsideNote", { port: p.port }));
+  };
+  const cancelStop = () => {
+    setAsking(null);
+    setNote(null);
   };
   const canStop = (p: WorkspacePort) => p.kind === "workspace" && p.pid !== null;
 
@@ -59,7 +81,7 @@ export function PortsPanel(props: {
     { id: "copy", labelKey: "ports.copy", run: () => void copy(portAddress(p)) },
     { id: "details", labelKey: "ports.copyDetails", run: () => void copy(JSON.stringify(p, null, 2)) },
     { id: "sep", labelKey: "", kind: "separator" },
-    { id: "stop", labelKey: "ports.stop", danger: true, disabled: !canStop(p), run: () => void stop(p) },
+    { id: "stop", labelKey: "ports.stop", danger: true, disabled: !canStop(p), run: () => askStop(p) },
   ];
 
   const row = (p: WorkspacePort) => {
@@ -68,6 +90,7 @@ export function PortsPanel(props: {
     const how = p.evidence ? ` · ${t(`ports.evidence.${p.evidence}`)}` : "";
     const process = p.processName ?? (p.pid !== null ? t("ports.process.pid", { pid: p.pid }) : t("ports.process.unknown"));
     const address = portAddress(p);
+    const ask = asking?.id === p.id ? asking : null;
     return (
       <ListRow
         key={p.id}
@@ -89,7 +112,15 @@ export function PortsPanel(props: {
           <span className="pt-actions">
             <IconButton icon="globe" label={t("ports.open")} onClick={() => open(p)} />
             <IconButton icon="copy" label={t("ports.copy")} onClick={() => void copy(address)} />
-            {canStop(p) && <IconButton icon="stop" label={t("ports.stop")} onClick={() => void stop(p)} />}
+            {canStop(p) && !ask && <IconButton icon="stop" label={t("ports.stop")} onClick={() => askStop(p)} />}
+            {canStop(p) && ask && (
+              <>
+                <button type="button" className="btn-secondary pt-stop" data-action={ask.outside ? "stop-outside" : "stop-confirm"} onClick={() => confirmStop(p)}>
+                  {ask.outside ? t("ports.stopOutside") : t("ports.stopConfirm", { port: p.port })}
+                </button>
+                <IconButton icon="close" label={t("dialog.cancel")} onClick={cancelStop} />
+              </>
+            )}
           </span>
         }
       />

@@ -185,6 +185,9 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 
 export { createMockApi };
 /** The kinds of `HookKind` that are scripts; the others are lists. */
+/** What the person agreed to before a port stop. */
+export type PortStopConsent = { confirmed: boolean; outsideTerminal: boolean };
+
 export type ScriptKind = Extract<HookKind, "setup" | "archive">;
 export type { Target };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
@@ -436,6 +439,8 @@ export type ErrorCode =
   | "port_own_process"
   | "port_scan_unavailable"
   | "port_changed"
+  | "port_stop_unconfirmed"
+  | "port_not_started_by_app"
   | "stop_failed"
   | "open_failed"
   | "ptyd_unreachable"
@@ -1066,7 +1071,9 @@ export interface Api {
   // Ports: one scan of the local listeners for these worktrees (`force` skips the back-off wait), stopping
   // the process behind a port id, opening its URL in the OS browser, and a terminal printing a new URL.
   portsScan(worktrees: string[], force: boolean): Promise<PortScan>;
-  portsStop(worktrees: string[], id: string): Promise<PortScan>;
+  // A stop needs `confirmed`; a port no xDev terminal started also needs `outsideTerminal`, the second
+  // confirmation. Rejects with `port_stop_unconfirmed` / `port_not_started_by_app` otherwise.
+  portsStop(worktrees: string[], id: string, consent: PortStopConsent): Promise<PortScan>;
   portsOpen(id: string): Promise<void>;
   onPortsAdvertised(cb: (worktree: string) => void): Promise<() => void>;
   usageSettings(): Promise<UsageSettings>;
@@ -1180,6 +1187,8 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "port_own_process",
   "port_scan_unavailable",
   "port_changed",
+  "port_stop_unconfirmed",
+  "port_not_started_by_app",
   "stop_failed",
   "open_failed",
   "ptyd_unreachable",
@@ -1574,7 +1583,7 @@ const tauriApi: Api = {
   keepAwakeAgents: (working) => call("keep_awake_agents", { working }),
   onKeepAwakeChanged: (cb) => listen<AwakeView>("keep-awake://changed", (e) => cb(e.payload)),
   portsScan: (worktrees, force) => call("ports_scan", { worktrees, force }),
-  portsStop: (worktrees, id) => call("ports_stop", { worktrees, id }),
+  portsStop: (worktrees, id, consent) => call("ports_stop", { worktrees, id, confirmed: consent.confirmed, outsideTerminal: consent.outsideTerminal }),
   portsOpen: (id) => call("ports_open", { id }),
   onPortsAdvertised: (cb) => listen<{ worktree: string }>("ports://advertised", (e) => cb(e.payload.worktree)),
   usageSettings: () => call("usage_settings_get"),

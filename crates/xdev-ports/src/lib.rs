@@ -10,7 +10,7 @@ pub mod scanner;
 pub mod urls;
 
 pub use probe::{Listener, OsProbe, Probe, Proc, PtyRoot, ScanError};
-pub use scanner::{Scanner, StopError};
+pub use scanner::{Scanner, StopConsent, StopError};
 
 use serde::{Deserialize, Serialize};
 
