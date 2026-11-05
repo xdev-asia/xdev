@@ -332,6 +332,41 @@ pub fn parse(bytes: &[u8]) -> Result<(CustomScheme, Vec<String>), ThemeError> {
     ))
 }
 
+/// Parse a theme file in any format this build reads: the native JSON, Warp theme YAML or an
+/// iTerm `.itermcolors` plist. `fallback_name` names a file that carries none.
+pub fn parse_any(
+    bytes: &[u8],
+    fallback_name: &str,
+) -> Result<(CustomScheme, Vec<String>), ThemeError> {
+    use crate::scheme_formats::{Format, iterm_to_doc, sniff, warp_to_doc};
+    if bytes.len() as u64 > THEME_FILE_MAX {
+        return Err(ThemeError::too_large());
+    }
+    let text = std::str::from_utf8(bytes).map_err(|_| ThemeError::invalid("file"))?;
+    let name = fallback_name.trim();
+    let name = if name.is_empty() { "Imported" } else { name };
+    let converted = match sniff(text) {
+        Format::Json => return parse(bytes),
+        Format::ItermColors => iterm_to_doc(text, name),
+        Format::WarpYaml => warp_to_doc(text, name),
+    }
+    .map_err(|f| ThemeError::invalid(&f))?;
+    parse(converted.to_string().as_bytes())
+}
+
+/// The file's stem, as a default scheme name.
+fn stem_name(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| {
+            s.chars()
+                .filter(|c| !c.is_control())
+                .take(THEME_NAME_MAX)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 // ---- Store: `<data_dir>/themes/<slug>.json` ----
 
 /// The folder the imported schemes live in.
@@ -430,7 +465,7 @@ pub fn list(dir: &Path) -> Vec<CustomScheme> {
 
 /// Reads and checks the file at `source` and says what saving it would meet.
 pub fn preview(dir: &Path, source: &Path) -> Result<SchemePreview, CmdError> {
-    let (scheme, ignored_keys) = parse(&read_capped(source)?)?;
+    let (scheme, ignored_keys) = parse_any(&read_capped(source)?, &stem_name(source))?;
     let stem = scheme.id.trim_start_matches("custom-").to_string();
     Ok(SchemePreview {
         low_contrast: contrast_ratio(&scheme.colors.foreground, &scheme.colors.background)
@@ -470,7 +505,16 @@ fn stored_bytes(scheme: &CustomScheme) -> Vec<u8> {
 /// whole beside the old file, then renamed over it), or gets a numbered stem,
 /// as `on_taken` says.
 pub fn import(dir: &Path, source: &Path, on_taken: OnNameTaken) -> Result<CustomScheme, CmdError> {
-    let (mut scheme, _) = parse(&read_capped(source)?)?;
+    let (scheme, _) = parse_any(&read_capped(source)?, &stem_name(source))?;
+    save(dir, scheme, on_taken)
+}
+
+/// Saves an already parsed scheme; the name rules of `import` apply.
+pub fn save(
+    dir: &Path,
+    mut scheme: CustomScheme,
+    on_taken: OnNameTaken,
+) -> Result<CustomScheme, CmdError> {
     let base = scheme.id.trim_start_matches("custom-").to_string();
     let mut stem = base.clone();
     if file_of(dir, &stem).exists() {
@@ -917,5 +961,42 @@ mod tests {
                 .code,
             "not_found"
         );
+    }
+
+    #[test]
+    fn other_formats_parse_through_parse_any() {
+        let warp = "background: '#002b36'
+foreground: '#839496'
+terminal_colors:
+  normal:
+    black: '#000001'
+    red: '#000002'
+    green: '#000003'
+    yellow: '#000004'
+    blue: '#000005'
+    magenta: '#000006'
+    cyan: '#000007'
+    white: '#000008'
+  bright:
+    black: '#000011'
+    red: '#000012'
+    green: '#000013'
+    yellow: '#000014'
+    blue: '#000015'
+    magenta: '#000016'
+    cyan: '#000017'
+    white: '#000018'
+";
+        let (s, _) = parse_any(warp.as_bytes(), "My Warp").unwrap();
+        assert_eq!(s.name, "My Warp");
+        assert_eq!(s.id, "custom-my-warp");
+        assert_eq!(s.colors.bright_white, "#000018");
+        let plist = "<?xml version=\"1.0\"?><plist><dict><key>Background Color</key><dict><key>Blue Component</key><real>0</real><key>Green Component</key><real>0</real><key>Red Component</key><real>0</real></dict></dict></plist>";
+        // Missing ANSI colours are named, not guessed.
+        assert_eq!(
+            parse_any(plist.as_bytes(), "x"),
+            Err(ThemeError::invalid("foreground"))
+        );
+        assert!(parse_any(file().to_string().as_bytes(), "ignored").is_ok());
     }
 }
