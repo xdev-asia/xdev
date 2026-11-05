@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 use xdev_kit::Agent;
-use xdev_orch::{InstallOpts, InstallReport, SkillEnv, guide, skills};
+use xdev_orch::{AGENT_IDS, InstallOpts, InstallReport, SkillEnv, guide, skills};
 
 use crate::Outcome;
 
@@ -39,6 +39,16 @@ pub enum SkillsCommand {
         /// Only this skill (a topic or folder name); repeat for more.
         #[arg(long = "skill")]
         skills: Vec<String>,
+        /// Every bundled skill. This is what no `--skill` means.
+        #[arg(long, conflicts_with = "skills")]
+        all: bool,
+        /// Only this agent (codex, claude, gemini, cursor, factory); repeat for more.
+        #[arg(long = "agent")]
+        agents: Vec<String>,
+        /// Install into the current repository (`.claude/skills`,
+        /// `.agents/skills`) instead of your home.
+        #[arg(long)]
+        local: bool,
         /// Replace copies that were edited, after a backup.
         #[arg(long)]
         force: bool,
@@ -57,6 +67,26 @@ pub enum SkillsCommand {
         #[arg(long)]
         force: bool,
         /// Say what would change; change nothing.
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove the copies and links xDev wrote; never a folder it did not write.
+    Uninstall {
+        /// Only this skill (a topic or folder name); repeat for more.
+        #[arg(long = "skill")]
+        skills: Vec<String>,
+        /// Only this agent (codex, claude, gemini, cursor, factory); repeat for more.
+        #[arg(long = "agent")]
+        agents: Vec<String>,
+        /// Work in the current repository instead of your home.
+        #[arg(long)]
+        local: bool,
+        /// Also remove copies that were edited, after a backup.
+        #[arg(long)]
+        force: bool,
+        /// Say what would be removed; remove nothing.
         #[arg(long)]
         dry_run: bool,
         #[arg(long)]
@@ -217,16 +247,54 @@ pub fn run(command: SkillsCommand, data_dir: &Path) -> Result<Outcome, &'static 
         }
         SkillsCommand::Install {
             skills,
+            all: _,
+            agents,
+            local,
             force,
             dry_run,
             json,
-        } => change(data_dir, &skills, force, dry_run, json, false),
+        } => change(
+            data_dir,
+            Change::Install,
+            &skills,
+            &agents,
+            local,
+            force,
+            dry_run,
+            json,
+        ),
         SkillsCommand::Update {
             skills,
             force,
             dry_run,
             json,
-        } => change(data_dir, &skills, force, dry_run, json, true),
+        } => change(
+            data_dir,
+            Change::Update,
+            &skills,
+            &[],
+            false,
+            force,
+            dry_run,
+            json,
+        ),
+        SkillsCommand::Uninstall {
+            skills,
+            agents,
+            local,
+            force,
+            dry_run,
+            json,
+        } => change(
+            data_dir,
+            Change::Uninstall,
+            &skills,
+            &agents,
+            local,
+            force,
+            dry_run,
+            json,
+        ),
     }
 }
 
@@ -283,35 +351,96 @@ fn select(names: &[String]) -> Result<Vec<&'static guide::Bundled>, String> {
     Ok(out)
 }
 
-/// `install` (writes what is missing) or `update` (`present_only`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Change {
+    /// Writes what is missing.
+    Install,
+    /// Only what is already there.
+    Update,
+    Uninstall,
+}
+
+/// The agent ids given, or the first that is not one xDev knows.
+fn check_agents(agents: &[String]) -> Result<(), String> {
+    match agents.iter().find(|a| !AGENT_IDS.contains(&a.as_str())) {
+        Some(a) => Err(format!(
+            "no agent named {a}; choose from {}",
+            AGENT_IDS.join(", ")
+        )),
+        None => Ok(()),
+    }
+}
+
+/// The root of the repository holding `cwd`, for `--local`.
+fn local_root(cwd: &Path) -> Result<PathBuf, String> {
+    xdev_core::Repo::discover(cwd)
+        .map(|r| r.root())
+        .map_err(|_| {
+            "--local needs a git repository; run it inside one or leave --local out".to_owned()
+        })
+}
+
+/// Runs one change over the chosen skills and joins the reports.
+fn apply(
+    env: &SkillEnv,
+    change: Change,
+    chosen: &[&'static guide::Bundled],
+    opts: InstallOpts<'_>,
+) -> Result<InstallReport, xdev_orch::OrchError> {
+    let mut report = InstallReport::default();
+    for b in chosen {
+        let r = match change {
+            Change::Uninstall => skills::uninstall_one(env, b, opts)?,
+            _ => skills::install_one(env, b, opts, &skills::system_link)?,
+        };
+        report.targets.extend(r.targets);
+        report.backup = report.backup.or(r.backup);
+    }
+    Ok(report)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn change(
     data_dir: &Path,
+    kind: Change,
     names: &[String],
+    agents: &[String],
+    local: bool,
     force: bool,
     dry_run: bool,
     json: bool,
-    present_only: bool,
 ) -> Result<Outcome, &'static str> {
-    let chosen = match select(names) {
+    let chosen = match select(names).and_then(|c| check_agents(agents).map(|()| c)) {
         Ok(c) => c,
         Err(msg) => {
             eprintln!("error: {msg}");
             return Ok(Outcome::Exit(5));
         }
     };
+    let repo = if local {
+        match std::env::current_dir()
+            .map_err(|e| e.to_string())
+            .and_then(|d| local_root(&d))
+        {
+            Ok(r) => Some(r),
+            Err(msg) => {
+                eprintln!("error: {msg}");
+                return Ok(Outcome::Exit(5));
+            }
+        }
+    } else {
+        None
+    };
     let env = env_of(data_dir)?;
     let opts = InstallOpts {
         force,
         dry_run,
-        present_only,
+        present_only: kind == Change::Update,
+        agents,
+        local: repo.as_deref(),
         ..InstallOpts::default()
     };
-    let mut report = InstallReport::default();
-    for b in chosen {
-        let r = skills::install_one(&env, b, opts, &skills::system_link).map_err(|_| "io")?;
-        report.targets.extend(r.targets);
-        report.backup = report.backup.or(r.backup);
-    }
+    let report = apply(&env, kind, &chosen, opts).map_err(|_| "io")?;
     if json {
         println!("{}", serde_json::to_string(&report).map_err(|_| "io")?);
     } else {
@@ -426,5 +555,108 @@ mod tests {
         let cols: Vec<&str> = text.trim_end().split('\t').collect();
         assert_eq!(&cols[..3], ["x", "user", "agents"]);
         assert_eq!(cols.len(), 4);
+    }
+
+    fn temp_env(dir: &Path) -> SkillEnv {
+        SkillEnv {
+            user_home: dir.join("home"),
+            claude_homes: vec![dir.join("home/.claude")],
+            data_dir: dir.join("data"),
+            now_ms: 7,
+        }
+    }
+
+    fn all_skills() -> Vec<&'static guide::Bundled> {
+        select(&[]).unwrap()
+    }
+
+    #[test]
+    fn agent_ids_are_checked() {
+        assert!(check_agents(&["claude".to_owned(), "cursor".to_owned()]).is_ok());
+        let e = check_agents(&["nope".to_owned()]).unwrap_err();
+        assert!(e.contains("nope") && e.contains("codex"));
+    }
+
+    #[test]
+    fn the_agent_flag_limits_the_targets() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = temp_env(dir.path());
+        let only = vec!["claude".to_owned()];
+        let opts = InstallOpts {
+            agents: &only,
+            ..InstallOpts::default()
+        };
+        let r = apply(&env, Change::Install, &all_skills(), opts).unwrap();
+        assert_eq!(r.targets.len(), guide::BUNDLED.len());
+        assert!(r.targets.iter().all(|t| t.agent == "claude"));
+        assert!(!dir.path().join("home/.agents").exists());
+    }
+
+    #[test]
+    fn local_needs_a_repo_and_writes_inside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("plain");
+        std::fs::create_dir_all(&outside).unwrap();
+        // Inside the sandbox temp folder there is no repo above `plain`.
+        let err = local_root(&outside).unwrap_err();
+        assert!(err.contains("git repository"));
+
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let ok = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .arg(&repo)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok);
+        let root = local_root(&repo).unwrap();
+        let env = temp_env(dir.path());
+        let opts = InstallOpts {
+            local: Some(&root),
+            ..InstallOpts::default()
+        };
+        let r = apply(&env, Change::Install, &all_skills(), opts).unwrap();
+        assert_eq!(r.targets.len(), 2 * guide::BUNDLED.len());
+        assert!(
+            repo.join(".agents/skills/xdev-orchestration/SKILL.md")
+                .is_file()
+        );
+        assert!(
+            repo.join(".claude/skills/xdev-orchestration/SKILL.md")
+                .is_file()
+        );
+        assert!(!dir.path().join("home").exists());
+    }
+
+    #[test]
+    fn all_is_what_no_skill_flag_means() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = temp_env(dir.path());
+        let r = apply(&env, Change::Install, &all_skills(), InstallOpts::default()).unwrap();
+        for b in &guide::BUNDLED {
+            assert!(r.targets.iter().any(|t| t.skill == b.skill));
+        }
+    }
+
+    #[test]
+    fn uninstall_removes_what_install_wrote() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = temp_env(dir.path());
+        apply(&env, Change::Install, &all_skills(), InstallOpts::default()).unwrap();
+        let one = select(&["cli".to_owned()]).unwrap();
+        let r = apply(&env, Change::Uninstall, &one, InstallOpts::default()).unwrap();
+        assert!(r.targets.iter().all(|t| t.skill == "xdev-cli"));
+        assert!(
+            r.targets
+                .iter()
+                .all(|t| t.action == xdev_orch::Action::Removed)
+        );
+        assert!(!dir.path().join("home/.agents/skills/xdev-cli").exists());
+        assert!(
+            dir.path()
+                .join("home/.agents/skills/xdev-orchestration")
+                .exists()
+        );
     }
 }
