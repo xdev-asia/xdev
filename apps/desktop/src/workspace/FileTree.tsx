@@ -1,11 +1,12 @@
 import { Icon } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type DirListing, type WorktreeChange } from "@/api";
+import { toApiError, type Api, type DirListing, type FsEvent, type WorktreeChange } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NameDialog } from "@/files/NameDialog";
 import { fileName, fileTabs } from "@/files/fileTabs";
 import { openFile } from "@/files/openFile";
+import { dirsToReload } from "@/files/treeRefresh";
 import { copyAbsolute, copyRelative, createEntry, deleteEntry, parentOf, renameEntry, type TreeIo } from "@/files/treeActions";
 import { useI18n } from "@/i18n";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
@@ -88,8 +89,10 @@ export function FileTree(props: {
   onOpen: (file: string) => void;
   /** Opens the search in files; the link is off until something handles it. */
   onSearch?: () => void;
+  /** The latest batch of disk events; each new array is read once. Held while a name dialog is open. */
+  events?: FsEvent[] | null;
 }): JSX.Element {
-  const { api, worktree, changes, onOpen, onSearch } = props;
+  const { api, worktree, changes, onOpen, onSearch, events = null } = props;
   const { t } = useI18n();
   const [folders, setFolders] = useState<Record<string, Folder>>({});
   const [open, setOpen] = useState<string[]>([]);
@@ -127,6 +130,26 @@ export function FileTree(props: {
     setFolders((all) => Object.fromEntries(Object.entries(all).filter(([dir]) => shown.includes(dir))));
     for (const dir of shown) read(dir);
   }, [api, worktree, changes, refresh]);
+
+  // Disk events wait here while a name dialog is open, so its sibling check keeps a steady list.
+  const pending = useRef<FsEvent[]>([]);
+  const seenEvents = useRef<FsEvent[] | null>(null);
+  const naming = ask !== null && ask.kind !== "delete";
+  useEffect(() => {
+    if (events && events !== seenEvents.current) {
+      seenEvents.current = events;
+      pending.current.push(...events);
+    }
+    if (naming || pending.current.length === 0) return;
+    const batch = pending.current;
+    pending.current = [];
+    const dirs = dirsToReload(batch, new Set(["", ...openNow.current]));
+    if (dirs === "all") return void setRefresh((n) => n + 1);
+    for (const dir of dirs) {
+      asked.current.delete(dir);
+      read(dir);
+    }
+  }, [events, naming]);
 
   function toggle(dir: string): void {
     const closing = open.includes(dir);

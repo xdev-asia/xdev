@@ -15,6 +15,7 @@ import { useNavHistory } from "@/nav/useNavHistory";
 import { useKeymap, type ActionId } from "@/keys/keymap";
 import { setTerminalKeyHost, startDiagnosticToasts } from "@/keys/terminalKey";
 import { startAutosave } from "@/files/autosave";
+import { useWorktreeWatch } from "./useWorktreeWatch";
 import { fileTabId, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { paneOf, splitPane } from "./paneTree";
@@ -731,6 +732,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     requestOpenFile({ worktree, rel, line });
   }
   useEffect(() => startAutosave(api, fileTabs, t), [api, t]);
+  const fsEvents = useWorktreeWatch(api, current?.path ?? null);
 
   function toggleBell(): void {
     const next = !bellOpen;
@@ -1907,6 +1909,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   api={api}
                   worktree={current.path}
                   changes={markedChanges}
+                  events={fsEvents}
                   onOpen={(file) => openFile(current.path, file)}
                 />
               ) : (
