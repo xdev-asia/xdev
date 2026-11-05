@@ -135,7 +135,7 @@ describe("PtyClient", () => {
     await new PtyClient(api, "f1", "src-1", true).start("/demo", "claude", 80, 24, () => {});
     expect(spawn.mock.calls[0].slice(7, 9)).toEqual(["src-1", true]);
     await new PtyClient(api, "f2").start("/demo", "shell", 80, 24, () => {});
-    expect(spawn.mock.calls[1].slice(7)).toEqual([undefined, undefined, undefined]);
+    expect(spawn.mock.calls[1].slice(7)).toEqual([undefined, undefined, undefined, undefined]);
   });
 
   it("an argv agent gets its prompt in the spawn and nothing is typed", async () => {

@@ -41,10 +41,10 @@ function fakeHost(over: Partial<DispatchHost> = {}) {
       listeners.add(l);
       return () => void listeners.delete(l);
     },
-    open(worktree: string, profile: string, _account?: string | null, _cli?: unknown, extraArgs?: string[]) {
+    open(worktree: string, profile: string, _account?: string | null, _cli?: unknown, opts: { extraArgs?: string[] } = {}) {
       const tab = mkTab(`tab-${tabs.length + 1}`, worktree);
       tabs.push(tab);
-      opened.push({ worktree, profile, ...(extraArgs ? { extraArgs } : {}) });
+      opened.push({ worktree, profile, ...(opts.extraArgs ? { extraArgs: opts.extraArgs } : {}) });
       return tab;
     },
   };
