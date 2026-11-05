@@ -11,12 +11,16 @@ default-members = [
     "crates/xdev-export",
     "crates/xdev-mcp",
     "crates/xdev-ai",
+    "crates/xdev-id",
     "crates/xdev-kit",
+    "crates/xdev-orch",
     "crates/xdev-api",
     "crates/xdev-policy",
     "crates/xdev-agent",
     "crates/xdev-pty",
     "crates/xdev-ipc",
+    "crates/xdev-awake",
+    "crates/xdev-input-source",
     "crates/xdev-workspace",
     "crates/xdev-cli",
 ]
@@ -34,15 +38,21 @@ xdev-ai = { path = "crates/xdev-ai" }
 xdev-core = { path = "crates/xdev-core" }
 xdev-export = { path = "crates/xdev-export" }
 xdev-git = { path = "crates/xdev-git" }
+xdev-id = { path = "crates/xdev-id" }
 xdev-ipc = { path = "crates/xdev-ipc" }
+xdev-awake = { path = "crates/xdev-awake" }
+xdev-input-source = { path = "crates/xdev-input-source" }
 xdev-kit = { path = "crates/xdev-kit" }
 xdev-mcp = { path = "crates/xdev-mcp" }
+xdev-orch = { path = "crates/xdev-orch" }
 xdev-policy = { path = "crates/xdev-policy" }
 xdev-pty = { path = "crates/xdev-pty" }
 xdev-store = { path = "crates/xdev-store" }
 xdev-vault = { path = "crates/xdev-vault" }
 xdev-workspace = { path = "crates/xdev-workspace" }
 
+# base64url for PKCE; already in the build.
+base64 = "0.23.1"
 blake3 = "1.8.7"
 dirs = "7.0.0"
 # Token bytes from the OS; already in the build through uuid.
@@ -76,6 +86,8 @@ ts-rs = "12.0.1"
 unicode-segmentation = "1"
 # One blocking HTTPS call; rustls with its bundled roots, no async runtime.
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
+# Parsing the sign-in callback and building the authorize link; already in the build.
+url = "2.5.8"
 # The UTF-16 string a pipe's security descriptor is parsed from; already in the
 # build through interprocess.
 widestring = "1.2.1"

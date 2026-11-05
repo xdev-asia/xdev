@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { JSX } from "react";
 import type { Api } from "@/api";
 import { useI18n } from "@/i18n";
-import { SETTING_ENTRIES } from "./catalog";
+import { entriesFor } from "./catalog";
+import { PLATFORM } from "@/platform";
 import { SECTIONS, type SettingsFilter } from "./sections";
 import { RevealSetting, SettingsSearch } from "./SettingsSearch";
 import { runSearch } from "./searchModel";
@@ -18,7 +19,7 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
   const section = visible.find((s) => s.id === active) ?? visible.find((s) => s.id === found.best) ?? (found.active ? null : SECTIONS[0]);
   let filter: SettingsFilter | undefined;
   if (found.active) filter = { query, ids: found.ids };
-  else if (props.target) filter = { query: "", ids: new Set(SETTING_ENTRIES.map((e) => e.id)), target: props.target };
+  else if (props.target) filter = { query: "", ids: new Set(entriesFor(PLATFORM).map((e) => e.id)), target: props.target };
   // A section's link to another one (General → Open In Apps); a typed query would hide the target, so it clears.
   const openSection = (id: string) => {
     if (!SECTIONS.some((s) => s.id === id)) return;

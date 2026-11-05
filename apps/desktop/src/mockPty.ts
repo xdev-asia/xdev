@@ -102,7 +102,7 @@ export function createMockPty(
   };
 
   return {
-    async ptySpawn(id, cwd, profileId, account, _cols, _rows, onData, resume) {
+    async ptySpawn(id, cwd, profileId, account, _cols, _rows, onData, resume, fork) {
       if (profileId === SETUP_PROFILE) {
         if (ptys.has(id)) return reject("pty_exists");
         const run = await setupRun(cwd);
@@ -135,6 +135,8 @@ export function createMockPty(
       const agent = !profileId.startsWith("shell");
       // Like Rust: only an agent resumes, and the id is a plain token.
       if (resume !== undefined && (!agent || !SESSION_ID.test(resume))) return reject("bad_arg", "resume");
+      // A fork continues a copy of a session, so it needs the id too.
+      if (fork && resume === undefined) return reject("bad_arg", "fork");
       const permissions = agent ? (profiles.__permissions(profileId) ?? "ask") : "ask";
       if (agent) {
         // A skip launch is approved for one start only.

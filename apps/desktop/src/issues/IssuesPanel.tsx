@@ -1,18 +1,23 @@
+import { Segmented } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type Issue, type IssueDetail } from "@/api";
+import { toApiError, type Api, type ApiError, type Issue, type IssueDetail, type PrSummary } from "@/api";
 import { useI18n } from "@/i18n";
 import { ago } from "@/workspace/ago";
 import { IssueDetailView } from "./IssueDetailView";
 import { issueQuery } from "./issueStart";
+import { NewIssueForm } from "./NewIssueForm";
+import { PrsList } from "./PrsList";
+import { ProjectsList } from "./ProjectsList";
 
 export const SEARCH_DEBOUNCE_MS = 300;
 const REASONS: readonly string[] = ["gh_missing", "gh_auth", "not_github"];
 
 type Filter = "open" | "closed";
+export type IssuesView = "issues" | "prs" | "projects";
 
 /** The GitHub issues of a repo: filters, search and one row per issue. */
-export function IssuesPanel(props: { api: Api; repoId: string; onStart?: (detail: IssueDetail) => void }): JSX.Element {
+export function IssuesPanel(props: { api: Api; repoId: string; onStart?: (detail: IssueDetail) => void; /** A pull request row was clicked; without it the row opens on GitHub. */ onOpenPr?: (pr: PrSummary) => void }): JSX.Element {
   const { api, repoId, onStart } = props;
   const { t } = useI18n();
   const [state, setState] = useState<Filter>("open");
@@ -23,6 +28,8 @@ export function IssuesPanel(props: { api: Api; repoId: string; onStart?: (detail
   const [issues, setIssues] = useState<Issue[] | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  const [view, setView] = useState<IssuesView>("issues");
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     if (draft === search) return;
@@ -46,9 +53,53 @@ export function IssuesPanel(props: { api: Api; repoId: string; onStart?: (detail
   if (selected !== null) {
     return <IssueDetailView api={api} repoId={repoId} number={selected} onBack={() => setSelected(null)} onStart={onStart} />;
   }
+  const views = (
+    <Segmented
+      label={t("issues.view.label")}
+      value={view}
+      onChange={(v) => {
+        setView(v as IssuesView);
+        setAdding(false);
+      }}
+      options={(["issues", "prs", "projects"] as const).map((v) => ({ value: v, label: t(`issues.view.${v}`) }))}
+    />
+  );
+  if (view === "prs") {
+    return (
+      <div className="ws-issues">
+        {views}
+        <PrsList api={api} repoId={repoId} searchDebounceMs={SEARCH_DEBOUNCE_MS} onOpen={props.onOpenPr} />
+      </div>
+    );
+  }
+  if (view === "projects") {
+    return (
+      <div className="ws-issues">
+        {views}
+        <ProjectsList api={api} repoId={repoId} />
+      </div>
+    );
+  }
+  if (adding) {
+    return (
+      <div className="ws-issues">
+        {views}
+        <NewIssueForm
+          api={api}
+          repoId={repoId}
+          onCreated={(issue) => {
+            setAdding(false);
+            setSelected(issue.number);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      </div>
+    );
+  }
   const now = Date.now();
   return (
     <div className="ws-issues">
+      {views}
       <div className="ws-issues-bar">
         <div className="ws-issues-states" role="group" aria-label={t("issues.state")}>
           {(["open", "closed"] as const).map((s) => (
@@ -63,6 +114,9 @@ export function IssuesPanel(props: { api: Api; repoId: string; onStart?: (detail
         </label>
         <button type="button" className="ws-checks-btn" onClick={() => setTick(tick + 1)}>
           {t("issues.refresh")}
+        </button>
+        <button type="button" className="ws-checks-btn" onClick={() => setAdding(true)}>
+          {t("issues.new.open")}
         </button>
       </div>
       <input

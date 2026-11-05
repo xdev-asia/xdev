@@ -281,8 +281,7 @@ pub fn agents_settings_put(
     app: AppHandle,
     settings: settings::AgentsSettings,
 ) -> Result<settings::AgentsSettings, CmdError> {
-    settings_store::write(&app, &[SettingsSection::Agents], |s| s.agents = settings)
-        .map(|s| s.agents)
+    crate::power::put_agents(&app, settings.clamped())
 }
 
 /// Settings → Stats & Usage as stored; the defaults when nothing is.
@@ -300,6 +299,29 @@ pub fn usage_settings_put(
 ) -> Result<settings::UsageSettings, CmdError> {
     let settings = settings.normalized();
     settings_store::write(&app, &[SettingsSection::Usage], |s| s.usage = settings).map(|s| s.usage)
+}
+
+/// Settings → General, Window and Updates groups as stored; the defaults
+/// when nothing is.
+#[tauri::command(async)]
+pub fn shell_settings_get(app: AppHandle) -> settings::ShellSettings {
+    settings_store::read(&app).shell
+}
+
+/// Stores the Window and Updates settings and returns what was stored. The
+/// "still running in the tray" notice flag is kept from the stored value.
+#[tauri::command(async)]
+pub fn shell_settings_put(
+    app: AppHandle,
+    settings: settings::ShellSettings,
+) -> Result<settings::ShellSettings, CmdError> {
+    let stored = settings_store::write(&app, &[SettingsSection::Shell], |s| {
+        s.shell = settings.for_put(&s.shell)
+    })
+    .map(|s| s.shell)?;
+    // The tray follows the setting at once.
+    crate::tray::sync(&app);
+    Ok(stored)
 }
 
 /// The global git `user.name` that the git-username prefix shows; a repo's

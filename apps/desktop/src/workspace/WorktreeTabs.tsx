@@ -1,3 +1,4 @@
+import { Button, EmptyState } from "@xdev-asia/ui";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
@@ -18,7 +19,11 @@ import { getQuickCommands, selectCommands } from "@/quickCommands/store";
 import { quickCommandsSubmenu } from "@/quickCommands/submenu";
 import { ReviewView } from "@/review/ReviewView";
 import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
-import { copyContext, copyText } from "@/terminal/terminalActions";
+import { CONTEXT_LINES, copyContext, copyText } from "@/terminal/terminalActions";
+import { handoffPrompt, sourceFirstPrompt } from "@/agentSessions/handoff";
+import { HandOffDialog, type HandOffChoice } from "@/agentSessions/HandOffDialog";
+import { sendToOpenedTab } from "./agentPrompt";
+import { pushToast } from "./toastStore";
 import { terminalMenuItems } from "@/terminal/terminalMenu";
 import { registerTerminal } from "@/terminal/terminalRegistry";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
@@ -49,6 +54,7 @@ import { cycleTab, mruOrder, nthTab } from "./tabNav";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { titleStatus } from "./titles";
 import { PtydBanner } from "@/terminal/PtydBanner";
+import { WorkerStrip } from "./WorkerStrip";
 
 // Offered while the profile view has not loaded: the built-in agents and the default shell.
 const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
@@ -105,6 +111,10 @@ export function WorktreeTabs(props: {
   /** A new value opens the Command popover of the focused pane. */
   quickSeq?: number;
   onManageQuickCommands?: () => void;
+  /** Every worktree, for the hand off dialog's picker. */
+  worktrees?: { path: string; label: string }[];
+  /** Brings a tab of any worktree to the front; used after a hand off to another worktree. */
+  onJump?(tabId: string): void;
 }): JSX.Element {
   const { api, sessions, worktree, visible, reveal } = props;
   const { t } = useI18n();
@@ -117,6 +127,8 @@ export function WorktreeTabs(props: {
   const [closing, setClosing] = useState<{ reason: CloseReason; run: () => void } | null>(null);
   // The tab whose title dialog is open, and the terminal menu (tab, pointer, that terminal's handle).
   const [titling, setTitling] = useState<string | null>(null);
+  // The hand off dialog: the source tab and its terminal text, read when the menu item was picked.
+  const [handingOff, setHandingOff] = useState<{ id: string; lines: string[] } | null>(null);
   const [termMenu, setTermMenu] = useState<{ id: string; at: { x: number; y: number }; handle: TerminalHandle } | null>(null);
   // Bumped when a key moves focus, so the terminal in front takes the keyboard.
   const [kick, setKick] = useState(0);
@@ -412,8 +424,34 @@ export function WorktreeTabs(props: {
       // A tab whose pty never started has nothing to show; the reason stays in the banner.
       () => void sessions.close(tab.id),
       ownAccount(tab),
-      tab.resumeOf ?? undefined,
+      tab.forkOf ?? tab.resumeOf ?? undefined,
+      tab.forkOf !== null,
     );
+  }
+
+  // A claude or codex tab can fork once its session id is known.
+  const forkable = (tab: Tab): boolean => tab.agent && (tab.cli === "claude" || tab.cli === "codex");
+  function forkSession(tab: Tab): void {
+    if (!tab.agentSession) return;
+    setMenuPane(null);
+    setError(null);
+    sessions.fork(worktree, tab.profileId, ownAccount(tab), tab.agentSession, tab.title, tab.cli);
+  }
+
+  // Opens an agent in `choice.worktree` and types the source's state into it once it has started.
+  async function handOff(source: Tab, lines: string[], choice: HandOffChoice): Promise<void> {
+    const firstPrompt = await sourceFirstPrompt(api, worktree, source.agentSession);
+    const text = handoffPrompt({
+      fromProfile: profileName(view, source.profileId, t),
+      worktree,
+      branch: props.branch ?? null,
+      firstPrompt,
+      lines,
+    });
+    const opened = sessions.open(choice.worktree, choice.profileId, null, cliFor(choice.profileId));
+    props.onJump?.(opened.id);
+    const sent = await sendToOpenedTab(sessions, choice.worktree, opened.id, text);
+    pushToast({ text: sent ? t("agentFork.handedOff") : t("agentFork.notReady") });
   }
 
   function again(tab: Tab): void {
@@ -444,6 +482,8 @@ export function WorktreeTabs(props: {
           branch: props.branch ?? null,
           exitCode: tab.exitCode,
         }),
+      forkSession: forkable(tab) ? () => forkSession(tab) : undefined,
+      handOff: forkable(tab) && props.worktrees ? () => setHandingOff({ id: tab.id, lines: handle.lines(CONTEXT_LINES) }) : undefined,
       copyTerminalId: () => void copyText(tab.id),
       copyPaneId: () => pane && void copyText(pane),
       quickCommands: quickCommandsSubmenu(
@@ -571,7 +611,19 @@ export function WorktreeTabs(props: {
                   </button>
                 </div>
               )}
-              {(everFront.has(tab.id) || !sessions.deferred(tab.id)) && <Terminal
+              <WorkerStrip api={api} tab={tab.id} running={running(tab)} />
+              {tab.asleep && (
+                <EmptyState
+                  title={t("sleep.tab.title")}
+                  hint={t(tab.agent ? "sleep.tab.hint" : "sleep.tab.hint.shell")}
+                  actions={
+                    <Button type="button" variant="primary" data-field="wake" onClick={() => sessions.wake(tab.id)}>
+                      {t("sleep.wake")}
+                    </Button>
+                  }
+                />
+              )}
+              {!tab.asleep && (everFront.has(tab.id) || !sessions.deferred(tab.id)) && <Terminal
                 key={`${tab.id}:${attempts[tab.id] ?? 0}`}
                 api={api}
                 client={tab.client}
@@ -643,6 +695,19 @@ export function WorktreeTabs(props: {
       {dialog}
       {termMenu && byId.get(termMenu.id) && (
         <ContextMenu at={termMenu.at} items={termMenuItems(byId.get(termMenu.id)!, termMenu.handle)} onClose={() => setTermMenu(null)} />
+      )}
+      {handingOff && byId.get(handingOff.id) && props.worktrees && (
+        <HandOffDialog
+          profiles={agents.map((id) => ({ value: id, label: profileName(view, id, t) }))}
+          worktrees={props.worktrees.map((w) => ({ value: w.path, label: w.label }))}
+          sourceProfile={byId.get(handingOff.id)!.profileId}
+          sourceWorktree={worktree}
+          onConfirm={(choice) => {
+            void handOff(byId.get(handingOff.id)!, handingOff.lines, choice);
+            setHandingOff(null);
+          }}
+          onCancel={() => setHandingOff(null)}
+        />
       )}
       {titling && byId.get(titling) && (
         <TabTitleDialog

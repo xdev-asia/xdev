@@ -6,8 +6,9 @@ use std::sync::{Mutex, OnceLock};
 
 use tauri::State;
 use xdev_git::{
-    GhAccount, GhExec, GitError, Issue, IssueDetail, IssueQuery, SystemGh, issue_list,
-    issue_open_web, issue_view as gh_issue_view, parse_issue_ref, repo_name,
+    GhAccount, GhExec, GitError, Issue, IssueDetail, IssueDraft, IssueQuery, SystemGh,
+    issue_create as gh_issue_create, issue_list, issue_open_web, issue_view as gh_issue_view,
+    parse_issue_ref, repo_name,
 };
 use xdev_workspace::{Registry, WorkspaceError};
 
@@ -16,13 +17,13 @@ use crate::commands::{AppState, CmdError};
 use crate::ship::run_gh;
 
 /// `owner/repo` by repo id, asked of `gh` once per process.
-fn names() -> &'static Mutex<HashMap<String, String>> {
+pub(crate) fn names() -> &'static Mutex<HashMap<String, String>> {
     static NAMES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
     NAMES.get_or_init(Mutex::default)
 }
 
 /// The repo's main checkout, where `gh` finds its remote.
-fn main_path(data: &Path, repo_id: &str) -> Result<PathBuf, CmdError> {
+pub(crate) fn main_path(data: &Path, repo_id: &str) -> Result<PathBuf, CmdError> {
     let reg = Registry::load(data)?;
     reg.repos
         .iter()
@@ -32,7 +33,7 @@ fn main_path(data: &Path, repo_id: &str) -> Result<PathBuf, CmdError> {
 }
 
 /// The `gh` login the repo is bound to, if any.
-fn account_of(data: &Path, repo_id: &str) -> Result<Option<GhAccount>, CmdError> {
+pub(crate) fn account_of(data: &Path, repo_id: &str) -> Result<Option<GhAccount>, CmdError> {
     let reg = Registry::load(data)?;
     reg.repos
         .iter()
@@ -61,6 +62,15 @@ fn view_with(
 
 fn open_with(gh: &dyn GhExec, data: &Path, repo_id: &str, number: u64) -> Result<(), CmdError> {
     Ok(issue_open_web(gh, &main_path(data, repo_id)?, number)?)
+}
+
+fn create_issue_with(
+    gh: &dyn GhExec,
+    data: &Path,
+    repo_id: &str,
+    draft: &IssueDraft,
+) -> Result<Issue, CmdError> {
+    Ok(gh_issue_create(gh, &main_path(data, repo_id)?, draft)?)
 }
 
 fn resolve_with(
@@ -133,6 +143,20 @@ pub fn issue_open(
     let account = account_of(data, &repo_id)?;
     run_gh(&SystemGh, account, |gh| {
         open_with(gh, data, &repo_id, number)
+    })
+}
+
+/// Makes an issue from a title and a body and returns it as `gh` stored it.
+#[tauri::command(async)]
+pub fn issue_create(
+    state: State<'_, AppState>,
+    repo_id: String,
+    draft: IssueDraft,
+) -> Result<Issue, CmdError> {
+    let data = data_dir(&state)?;
+    let account = account_of(data, &repo_id)?;
+    run_gh(&SystemGh, account, |gh| {
+        create_issue_with(gh, data, &repo_id, &draft)
     })
 }
 
@@ -249,6 +273,33 @@ mod tests {
             5
         );
         assert_eq!(fake.calls.borrow()[1][..3], ["issue", "view", "5"]);
+    }
+
+    #[test]
+    fn create_runs_in_the_main_checkout_with_the_body_on_stdin() {
+        let (_tmp, data) = fixture("r-new");
+        let fake = Fake::new(vec![
+            (
+                0,
+                "https://github.com/acme/app/issues/5
+",
+                "",
+            ),
+            (0, ISSUE, ""),
+        ]);
+        let draft = IssueDraft {
+            title: "T".into(),
+            body: "b".into(),
+        };
+        let issue = create_issue_with(&fake, &data, "r-new", &draft).unwrap();
+        assert_eq!(issue.number, 5);
+        assert_eq!(fake.calls.borrow()[0][..3], ["issue", "create", "--title"]);
+        let blank = IssueDraft {
+            title: " ".into(),
+            body: String::new(),
+        };
+        let err = create_issue_with(&fake, &data, "r-new", &blank).unwrap_err();
+        assert_eq!(err.code, "bad_draft");
     }
 
     #[test]
