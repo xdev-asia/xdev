@@ -82,13 +82,10 @@ export function PaneView(props: {
   onFocus: (pane: string) => void;
   onResize: (split: string, sizes: number[]) => void;
   onEqualize: () => void;
-  /** The tab being dragged; while set, every pane shows edge drop zones. */
-  draggingTab?: string | null;
-  /** A tab was dropped on an edge of a pane. */
-  onTabDrop?: (pane: string, zone: DropZone, tab: string) => void;
+  /** The tab drag in progress; while set, every pane shows edge drop zones and the one under the pointer is lit. */
+  tabDrag?: { id: string; over: { pane: string; zone: DropZone } | null } | null;
 }): JSX.Element {
-  const { layout, strip, onFocus, onResize, onEqualize, draggingTab, onTabDrop } = props;
-  const [over, setOver] = useState<string | null>(null);
+  const { layout, strip, onFocus, onResize, onEqualize, tabDrag } = props;
   const { t } = useI18n();
   const [drag, setDrag] = useState<Drag | null>(null);
 
@@ -102,25 +99,10 @@ export function PaneView(props: {
       onPointerDown={() => onFocus(n.id)}
     >
       {strip(n)}
-      {draggingTab && onTabDrop && (
-        <div className="ws-dropzones" aria-hidden="true">
+      {tabDrag && (
+        <div className="ws-dropzones" data-dropzones={n.id} aria-hidden="true">
           {DROP_ZONES.map((zone) => (
-            <div
-              key={zone}
-              className="ws-dropzone"
-              data-zone={zone}
-              data-over={over === `${n.id}:${zone}` || undefined}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setOver(`${n.id}:${zone}`);
-              }}
-              onDragLeave={() => setOver((cur) => (cur === `${n.id}:${zone}` ? null : cur))}
-              onDrop={(e) => {
-                e.preventDefault();
-                setOver(null);
-                onTabDrop(n.id, zone, draggingTab);
-              }}
-            />
+            <div key={zone} className="ws-dropzone" data-zone={zone} data-over={(tabDrag.over?.pane === n.id && tabDrag.over.zone === zone) || undefined} />
           ))}
         </div>
       )}

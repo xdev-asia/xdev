@@ -4061,3 +4061,11 @@ button.ws-tree-row:focus-visible {
   background: var(--bg-3);
   opacity: 0.8;
 }
+
+.ws-tab[data-dragging="true"] {
+  user-select: none;
+}
+
+.ws-dropzone {
+  pointer-events: none;
+}

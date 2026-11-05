@@ -2,7 +2,8 @@ import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { Icon, Spinner } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
-import { dropBefore, middleClick } from "./TabStrip";
+import { middleClick } from "./TabStrip";
+import { beforeOf, insertAt, pastThreshold, zoneFor } from "./tabDrag";
 import { TabIndicator } from "./TabIndicator";
 import { TabHoverCard } from "./TabHoverCard";
 import { reorderTabs } from "./sessions";
@@ -34,11 +35,37 @@ it("reorderTabs keeps the same array when nothing moves", () => {
   expect(reorderTabs(tabs, "a", "x")).toBe(tabs);
 });
 
-it("dropBefore picks the tab itself or the next one", () => {
+it("beforeOf picks the tab itself or the next one", () => {
   const ids = ["a", "b", "c"];
-  expect(dropBefore(ids, "b", false)).toBe("b");
-  expect(dropBefore(ids, "b", true)).toBe("c");
-  expect(dropBefore(ids, "c", true)).toBeNull();
+  expect(beforeOf(ids, { id: "b", after: false })).toBe("b");
+  expect(beforeOf(ids, { id: "b", after: true })).toBe("c");
+  expect(beforeOf(ids, { id: "c", after: true })).toBeNull();
+});
+
+it("pastThreshold starts a drag only after more than 4px", () => {
+  expect(pastThreshold({ x: 10, y: 10 }, 13, 10)).toBe(false);
+  expect(pastThreshold({ x: 10, y: 10 }, 13, 13)).toBe(true);
+  expect(pastThreshold({ x: 10, y: 10 }, 10, 15)).toBe(true);
+});
+
+it("zoneFor maps a point of a pane body to an edge zone", () => {
+  const box = { left: 100, top: 50, width: 400, height: 200 };
+  expect(zoneFor(box, 120, 150)).toBe("left");
+  expect(zoneFor(box, 480, 60)).toBe("right");
+  expect(zoneFor(box, 300, 60)).toBe("top");
+  expect(zoneFor(box, 300, 240)).toBe("bottom");
+  expect(zoneFor(box, 300, 150)).toBeNull();
+  expect(zoneFor(box, 50, 150)).toBeNull();
+  expect(zoneFor(box, 300, 300)).toBeNull();
+});
+
+it("insertAt finds the tab under x and which side of it", () => {
+  const boxes = [{ id: "a", left: 0, width: 100 }, { id: "b", left: 100, width: 100 }];
+  expect(insertAt(boxes, 20)).toEqual({ id: "a", after: false });
+  expect(insertAt(boxes, 80)).toEqual({ id: "a", after: true });
+  expect(insertAt(boxes, 120)).toEqual({ id: "b", after: false });
+  expect(insertAt(boxes, 900)).toEqual({ id: "b", after: true });
+  expect(insertAt([], 5)).toBeNull();
 });
 
 it("splitPane can put the new pane first", () => {

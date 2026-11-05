@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties, JSX, ReactNode } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import type { PtyProfile } from "@/api";
@@ -11,6 +11,8 @@ import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import type { Tab, TabColor } from "./sessions";
 import { tabColorVar, tabMenuItems } from "./tabMenu";
 import type { TabStatus } from "./status";
+import type { DropZone } from "./sessions";
+import { beforeOf, insertAt, pastThreshold, zoneFor } from "./tabDrag";
 import { TabIndicator } from "./TabIndicator";
 import { CardPortal, HOVER_DELAY_MS, TabHoverCard, useTabHover } from "./TabHoverCard";
 import { cacheLeftMs, formatCacheLeft, useNow } from "./cacheTimer";
@@ -34,6 +36,21 @@ export interface MenuGroup {
   picker?: boolean;
 }
 
+/** What a drag in a strip tells its owner: the tab and the pane zone under the pointer. */
+export interface TabDrag {
+  id: string;
+  over: { pane: string; zone: DropZone } | null;
+}
+
+interface PressState {
+  id: string;
+  x: number;
+  y: number;
+  pointerId: number;
+  mark: { id: string; after: boolean } | null;
+  over: { pane: string; zone: DropZone } | null;
+}
+
 /**
  * Middle-click handlers of a tab: they close it through `close`, the same path as the close button
  * (so its confirm dialogs run). Pinned tabs have no close button and ignore the middle button too.
@@ -52,10 +69,20 @@ export function middleClick(id: string, pinned: boolean, close: (id: string) => 
   };
 }
 
-/** The tab a dragged tab lands before: `id` itself, or the next one when dropped on its right half. */
-export function dropBefore(ids: readonly string[], id: string, after: boolean): string | null {
-  if (!after) return id;
-  return ids[ids.indexOf(id) + 1] ?? null;
+/** What the pointer is over during a tab drag: a spot in a strip, or a zone of a pane body. */
+export function hitTest(pane: string, x: number, y: number): { mark: { id: string; after: boolean } | null; over: { pane: string; zone: DropZone } | null } {
+  const el = document.elementFromPoint(x, y);
+  const list = el?.closest(".ws-tablist");
+  if (list && list.getAttribute("data-pane-id") === pane) {
+    const boxes = Array.from(list.querySelectorAll("[data-tab-id]")).map((t) => {
+      const r = t.getBoundingClientRect();
+      return { id: t.getAttribute("data-tab-id")!, left: r.left, width: r.width };
+    });
+    return { mark: insertAt(boxes, x), over: null };
+  }
+  const zones = el?.closest("[data-dropzones]");
+  const zone = zones ? zoneFor(zones.getBoundingClientRect(), x, y) : null;
+  return { mark: null, over: zones && zone ? { pane: zones.getAttribute("data-dropzones")!, zone } : null };
 }
 
 /** The prompt cache countdown of a tab, or a "cold" mark once it ran out. */
@@ -97,7 +124,9 @@ export function TabStrip(props: {
   /** A tab of this pane was dropped before `before` (null: at the end) of the strip. */
   onReorder?: (id: string, before: string | null) => void;
   /** A tab drag started (its id) or ended (null); the pane area shows drop zones meanwhile. */
-  onDragTab?: (id: string | null) => void;
+  onDragTab?: (drag: TabDrag | null) => void;
+  /** A tab was dropped on an edge zone of a pane. */
+  onDropZone?: (id: string, pane: string, zone: DropZone) => void;
   onPin: (id: string, pinned: boolean) => void;
   onCopyTabId: (id: string) => void;
   /** Opens the title dialog for a tab. */
@@ -121,9 +150,28 @@ export function TabStrip(props: {
   // The tab context menu: which tab, and where the pointer was.
   const [context, setContext] = useState<{ id: string; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [press] = useState<{ cur: PressState | null; dragging: boolean; suppress: boolean }>(() => ({ cur: null, dragging: false, suppress: false }));
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropMark, setDropMark] = useState<{ id: string; after: boolean } | null>(null);
   const hover = useTabHover();
+  const endDrag = () => {
+    press.cur = null;
+    press.dragging = false;
+    setDragId(null);
+    setDropMark(null);
+    props.onDragTab?.(null);
+  };
+  // Escape cancels a drag in progress; the release that follows is no click.
+  useEffect(() => {
+    if (!dragId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      press.suppress = true;
+      endDrag();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [dragId]);
   const cardId = `ws-tab-card-${props.pane}`;
 
   const name = (tab: Tab) => profileName(view, tab.profileId, t);
@@ -211,7 +259,7 @@ export function TabStrip(props: {
 
   return (
     <div className="ws-tabstrip" data-pane={props.pane}>
-      <div className="ws-tablist" role="tablist" aria-label={t("workspace.tabs.label")}>
+      <div className="ws-tablist" data-pane-id={props.pane} role="tablist" aria-label={t("workspace.tabs.label")}>
         {items.map((item) => {
           const tab = item.tab;
           const selected = item.id === active;
@@ -225,33 +273,45 @@ export function TabStrip(props: {
               style={tab && tab.color !== "none" ? ({ "--ws-tab-color": `var(${tabColorVar(tab.color)!})` } as CSSProperties) : undefined}
               data-dragging={dragId === item.id || undefined}
               data-drop={dropMark?.id === item.id ? (dropMark.after ? "after" : "before") : undefined}
-              draggable={renaming !== item.id && !!props.onReorder}
-              onDragStart={(e) => {
-                e.dataTransfer.setData("application/x-xdev-tab", item.id);
-                e.dataTransfer.effectAllowed = "move";
-                hover.hide();
-                setDragId(item.id);
-                props.onDragTab?.(item.id);
+              data-tab-id={item.id}
+              data-pane-id={props.pane}
+              onPointerDown={(e) => {
+                if (e.button !== 0 || !props.onReorder || renaming === item.id || (e.target as Element).closest(".ws-tab-close")) return;
+                press.suppress = false;
+                press.cur = { id: item.id, x: e.clientX, y: e.clientY, pointerId: e.pointerId, mark: null, over: null };
               }}
-              onDragEnd={() => {
-                setDragId(null);
-                setDropMark(null);
-                props.onDragTab?.(null);
+              onPointerMove={(e) => {
+                const p = press.cur;
+                if (!p || e.pointerId !== p.pointerId) return;
+                if (!press.dragging) {
+                  if (!pastThreshold(p, e.clientX, e.clientY)) return;
+                  press.dragging = true;
+                  e.currentTarget.setPointerCapture?.(e.pointerId);
+                  hover.hide();
+                  setDragId(p.id);
+                }
+                const h = hitTest(props.pane, e.clientX, e.clientY);
+                p.mark = h.mark && h.mark.id !== p.id ? h.mark : null;
+                p.over = h.over;
+                setDropMark(p.mark);
+                props.onDragTab?.({ id: p.id, over: p.over });
               }}
-              onDragOver={(e) => {
-                if (!dragId || dragId === item.id) return;
+              onPointerUp={(e) => {
+                const p = press.cur;
+                if (!p || e.pointerId !== p.pointerId) return;
+                if (press.dragging) {
+                  press.suppress = true;
+                  if (p.over) props.onDropZone?.(p.id, p.over.pane, p.over.zone);
+                  else if (p.mark) props.onReorder?.(p.id, beforeOf(items.map((i) => i.id), p.mark));
+                }
+                endDrag();
+              }}
+              onPointerCancel={endDrag}
+              onClickCapture={(e) => {
+                if (!press.suppress) return;
+                press.suppress = false;
+                e.stopPropagation();
                 e.preventDefault();
-                const r = e.currentTarget.getBoundingClientRect();
-                setDropMark({ id: item.id, after: e.clientX > r.left + r.width / 2 });
-              }}
-              onDrop={(e) => {
-                if (!dragId) return;
-                e.preventDefault();
-                const r = e.currentTarget.getBoundingClientRect();
-                props.onReorder?.(dragId, dropBefore(items.map((i) => i.id), item.id, e.clientX > r.left + r.width / 2));
-                setDragId(null);
-                setDropMark(null);
-                props.onDragTab?.(null);
               }}
               {...middleClick(item.id, !!tab?.pinned, props.onClose)}
               onContextMenu={(e) => {
