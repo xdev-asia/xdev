@@ -1,4 +1,4 @@
-import type { DiffSettings, NavigationSettings } from "@/api";
+import type { AutomationsSettings, DiffSettings, NavigationSettings } from "@/api";
 
 /** `NavigationSettings::default()` in Rust. */
 export const NAVIGATION_DEFAULTS: NavigationSettings = {
@@ -18,3 +18,6 @@ export const DIFF_DEFAULTS: DiffSettings = {
   wordWrap: false,
   fileTree: false,
 };
+
+/** `AutomationsSettings::default()` in Rust: the sidebar entry shows and a delete asks. */
+export const AUTOMATIONS_DEFAULTS: AutomationsSettings = { showButton: true, skipDeleteConfirm: false };
