@@ -16,7 +16,17 @@ pub struct ShellLine {
 
 /// Trims; an empty command is no precheck; the timeout is clamped to 1..=600 s.
 pub fn normalize(p: Option<Precheck>) -> Option<Precheck> {
-    p
+    let p = p?;
+    let command = p.command.trim().to_string();
+    if command.is_empty() {
+        return None;
+    }
+    Some(Precheck {
+        command,
+        timeout_seconds: p
+            .timeout_seconds
+            .clamp(1, crate::model::PRECHECK_TIMEOUT_MAX_S),
+    })
 }
 
 pub fn run(
