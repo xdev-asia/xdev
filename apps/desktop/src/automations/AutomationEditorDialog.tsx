@@ -83,7 +83,7 @@ export function AutomationEditorDialog(props: {
     if (problem === "freshSession" || problem === "extraArgs") setAdvanced(true);
     if (problem !== null || saving) return;
     setSaving(true);
-    const input = buildInput(draft, { timezone, dtstart: automation?.dtstart ?? Date.now(), enabled: automation?.enabled ?? true });
+    const input = buildInput(draft, { timezone, dtstart: automation?.dtstart ?? Date.now(), enabled: automation?.enabled ?? true, defaultName: t("automations.defaultName") });
     try {
       const saved = automation ? await api.automationUpdate(automation.id, input) : await api.automationCreate(input);
       pushToast({ text: t(automation ? "automations.toast.updated" : "automations.toast.saved") });

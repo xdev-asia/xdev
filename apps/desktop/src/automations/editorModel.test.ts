@@ -71,6 +71,8 @@ describe("buildInput", () => {
 
   it("sends a precheck only when there is a command", () => {
     expect(buildInput({ ...ready(), precheckCommand: "  " }, opts).precheck).toBeNull();
+    // A blank name takes the default in the person's language, not the backend's English one.
+    expect(buildInput({ ...ready(), name: "  " }, { ...opts, defaultName: "Tự động hóa chưa đặt tên" }).name).toBe("Tự động hóa chưa đặt tên");
     expect(buildInput({ ...ready(), precheckCommand: " gh pr list ", precheckTimeout: 120 }, opts).precheck).toEqual({ command: "gh pr list", timeoutSeconds: 120 });
   });
 

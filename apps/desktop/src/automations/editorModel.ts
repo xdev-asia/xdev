@@ -105,12 +105,13 @@ export function problemOf(d: EditorDraft, ctx: Context): Problem | null {
   return null;
 }
 
-export function buildInput(d: EditorDraft, opts: { timezone: string; dtstart: number; enabled: boolean }): AutomationInput {
+/** `defaultName` is the name a blank one takes, in the person's language (`automations.defaultName`). */
+export function buildInput(d: EditorDraft, opts: { timezone: string; dtstart: number; enabled: boolean; defaultName?: string }): AutomationInput {
   const command = d.precheckCommand.trim();
   const extra = d.extraArgs.trim();
   const existing = d.mode === "existing";
   return {
-    name: d.name.trim(),
+    name: d.name.trim() || (opts.defaultName ?? ""),
     prompt: d.prompt.trim(),
     precheck: command ? { command, timeoutSeconds: d.precheckTimeout } : null,
     agent: d.agent,

@@ -94,7 +94,7 @@ it("sends the create payload", async () => {
   await vi.waitFor(() => expect(onSaved).toHaveBeenCalled(), { timeout: 5_000 });
   const sent = create.mock.calls[0][0];
   expect(sent).toMatchObject({
-    name: "", prompt: "Audit the repo", precheck: null, agent: "claude", extraAgentArgs: null, repoId: repo.id, workspaceMode: "existing", worktree, baseBranch: null,
+    name: "Untitled automation", prompt: "Audit the repo", precheck: null, agent: "claude", extraAgentArgs: null, repoId: repo.id, workspaceMode: "existing", worktree, baseBranch: null,
     setupDecision: "inherit", reuseSession: false, rrule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=0", enabled: true, missedRunGraceMinutes: 720,
   });
   expect(sent.timezone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
