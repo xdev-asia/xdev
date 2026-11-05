@@ -28,6 +28,7 @@ mod endpoint;
 mod file_head;
 mod file_watch;
 mod files;
+mod foreign_terms;
 mod gitlab;
 mod history;
 mod hooks;
@@ -40,6 +41,7 @@ mod links;
 mod links_open;
 mod mcp_tools;
 mod network;
+mod notch;
 mod notes;
 mod open_in;
 mod orch_pump;
@@ -149,6 +151,7 @@ pub fn run() {
         .manage(cli_verbs::CliHub::default())
         .manage(orchestration::OrchHub::default())
         .manage(keybindings::LastSent::default())
+        .manage(notch::Notch::default())
         .manage(startup::Startup::from_env())
         .on_window_event(|window, event| {
             if window.label() == "main"
@@ -208,6 +211,7 @@ pub fn run() {
             }
             workspace::start_migrations(app.handle());
             tray::sync(app.handle());
+            notch::sync(app.handle());
             app_menu::listen(app.handle());
             app_menu::install(app.handle());
             {
@@ -741,6 +745,10 @@ pub fn run() {
             orchestration::orchestration_handoff,
             orchestration::orchestration_tab_stop,
             orch_sweep::orchestration_worker_failover,
+            foreign_terms::foreign_terms_scan,
+            notch::notch_report,
+            notch::notch_state,
+            notch::notch_open,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")

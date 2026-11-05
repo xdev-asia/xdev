@@ -46,6 +46,7 @@ export const SHELL_DEFAULTS: ShellSettings = {
   trayNoticeShown: false,
   updateChannel: "stable",
   updateDelayDays: 0,
+  notchStatus: false,
 };
 
 /** What the mock build picker lists; the running mock version is newer than the last one. */
