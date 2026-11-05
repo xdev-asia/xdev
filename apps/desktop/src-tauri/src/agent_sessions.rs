@@ -564,3 +564,7 @@ fn select(
 #[cfg(test)]
 #[path = "agent_sessions_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "agent_sessions_bench.rs"]
+mod bench;
