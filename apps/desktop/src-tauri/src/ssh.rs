@@ -19,7 +19,7 @@ fn guard() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn cmd_error(e: SshError) -> CmdError {
+pub(crate) fn cmd_error(e: SshError) -> CmdError {
     CmdError {
         code: match e {
             SshError::Io(_) => "io",

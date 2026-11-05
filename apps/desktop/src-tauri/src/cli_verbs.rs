@@ -945,6 +945,9 @@ impl Handler for AppVerbs {
         caller: &Caller,
         gone: &dyn Fn() -> bool,
     ) -> Result<Value, AppError> {
+        if req.method == "ssh.askpass" {
+            return crate::ssh_connect::askpass_verb(&self.app, req, gone);
+        }
         let app = &self.app;
         let state = app.state::<AppState>();
         let data = data_dir(&state)?;

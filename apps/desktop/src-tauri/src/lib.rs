@@ -59,6 +59,7 @@ mod shell;
 mod ship;
 mod squads;
 mod ssh;
+mod ssh_connect;
 mod startup;
 mod status;
 mod tasks;
@@ -149,6 +150,7 @@ pub fn run() {
         })
         .manage(crumbs)
         .setup(move |app| {
+            app.manage(ssh_connect::SshConnections::system(app.handle().clone()));
             if let Some((data, local)) = &index_dirs {
                 xdev_core::move_indexes(data, local);
             }
@@ -586,6 +588,11 @@ pub fn run() {
             ssh::ssh_host_remove,
             ssh::ssh_hosts_remove_many,
             ssh::ssh_config_sync,
+            ssh_connect::ssh_host_test,
+            ssh_connect::ssh_connect,
+            ssh_connect::ssh_disconnect,
+            ssh_connect::ssh_connections_list,
+            ssh_connect::ssh_auth_reply,
             gitlab::gitlab_detect,
             gitlab::gitlab_mr_list,
             gitlab::gitlab_mr_view,
@@ -679,6 +686,9 @@ pub fn run() {
                 app.state::<app_stats::AppStatsHub>().close_all();
                 app.state::<pty::Ptys>().quit(on_quit);
                 app.state::<power::Awake>().release();
+                if let Some(ssh) = app.try_state::<ssh_connect::SshConnections>() {
+                    ssh.kill_all();
+                }
                 if let Some(running) = app.try_state::<endpoint::Running>() {
                     running.stop();
                 }
