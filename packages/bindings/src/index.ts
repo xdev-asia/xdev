@@ -278,6 +278,8 @@ export type { RepoIcon } from "./RepoIcon";
 export type { RepoLog } from "./RepoLog";
 export type { RepoView } from "./RepoView";
 export type { RerunReport } from "./RerunReport";
+export type { ResourceRow } from "./ResourceRow";
+export type { ResourceSnapshot } from "./ResourceSnapshot";
 export type { RestoreMode } from "./RestoreMode";
 export type { ReviewBase } from "./ReviewBase";
 export type { ReviewBaseKind } from "./ReviewBaseKind";

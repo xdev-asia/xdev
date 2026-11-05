@@ -320,6 +320,14 @@ impl Ptys {
             .collect()
     }
 
+    /// Tab id and root pid of every terminal that has a pid.
+    pub(crate) fn pids(&self) -> Vec<(String, u32)> {
+        self.map()
+            .iter()
+            .filter_map(|(id, h)| Some((id.clone(), h.pid()?)))
+            .collect()
+    }
+
     /// The pid of the terminal service, when the terminals run in it.
     pub(crate) fn service_pid(&self) -> Option<u32> {
         Some(self.host().service()?.welcome().pid)

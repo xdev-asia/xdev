@@ -58,6 +58,7 @@ mod quick_commands;
 mod recipes;
 mod redact;
 mod repo_env;
+mod resources;
 mod reveal;
 mod review;
 mod review_notes;
@@ -456,6 +457,9 @@ pub fn run() {
             power::keep_awake_agents,
             app_stats::app_stats_get,
             app_stats::app_stats_busy,
+            term_tail::term_tail_read,
+            term_tail::transcript_save,
+            resources::resources_snapshot,
             ports::ports_scan,
             ports::ports_stop,
             ports::ports_open,
