@@ -17,9 +17,10 @@ export interface RowMenuActions {
   handOff(): void;
   copyCommand(command: string): void;
   jump(): void;
+  copyFirstPrompt?(text: string): void;
 }
 
-/** The row's "More" menu: hand off, the resume command when the agent has one, and the open tab when there is one. */
+/** The row's "More" menu: hand off, the resume command when the agent has one, the first prompt when there is one, and the open tab when there is one. */
 export function rowMenuItems(
   row: SessionRow,
   tab: string | null,
@@ -28,9 +29,11 @@ export function rowMenuItems(
   canHandOff: boolean,
 ): MenuEntry[] {
   const command = resumeCommand(row);
+  const prompt = row.session.title?.trim() ?? "";
   const items: MenuEntry[] = [];
   if (tab !== null) items.push({ label: t("agentSessions.menu.jump"), onSelect: actions.jump });
   items.push({ label: t("agentSessions.menu.handOff"), disabled: !canHandOff, onSelect: actions.handOff });
   if (command !== null) items.push({ label: t("agentSessions.menu.copyCommand"), onSelect: () => actions.copyCommand(command) });
+  if (prompt !== "" && actions.copyFirstPrompt) items.push({ label: t("agentSessions.menu.copyFirstPrompt"), onSelect: () => actions.copyFirstPrompt?.(prompt) });
   return items;
 }

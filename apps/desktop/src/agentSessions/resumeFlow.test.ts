@@ -56,4 +56,22 @@ describe("startResume", () => {
     const s = live();
     expect(startResume(s, row("/demo/wt/a", "/demo/wt/a", "acct-work"), null, vi.fn())).toMatchObject({ account: "work" });
   });
+
+  it("routes a picked destination through the same path", () => {
+    const s = live();
+    const ask = vi.fn();
+    const r = row("/demo/wt/a", "/demo/wt/a/src");
+    expect(startResume(s, r, "/demo/wt/b", ask, "session")).toMatchObject({ worktree: "/demo/wt/a", resumeOf: "abc" });
+    expect(startResume(s, r, "/demo/wt/b", ask, "newTab")).toMatchObject({ worktree: "/demo/wt/a" });
+    // Here asks first, because the session's folder is outside the worktree on screen.
+    expect(startResume(s, r, "/demo/wt/b", ask, "here")).toBeNull();
+    expect(ask).toHaveBeenCalledWith({ row: r, worktree: "/demo/wt/b" });
+  });
+
+  it("does nothing for a destination without a target", () => {
+    const s = live();
+    const ask = vi.fn();
+    expect(startResume(s, row("/demo/wt/a", "/demo/wt/a"), "/demo/wt/a", ask, "session")).toBeNull();
+    expect(ask).not.toHaveBeenCalled();
+  });
 });
