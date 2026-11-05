@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api } from "@/api";
 import { DiffView } from "@/components/DiffView";
+import { ImageDiff } from "@/review/ImageDiff";
+import { isImagePath } from "@/review/imageDiff";
 import { useI18n } from "@/i18n";
 
 /** What reading the file from disk gave, for the comparison. */
@@ -19,10 +21,19 @@ export async function readDisk(api: Api, worktree: string, rel: string): Promise
 }
 
 /** The dialog's body for each state: a line of words, or the diff with the disk version as the base. */
-export function CompareBody(props: { state: DiskState; current: string }): JSX.Element {
+export function CompareBody(props: { state: DiskState; current: string; image?: { api: Api; worktree: string; rel: string } }): JSX.Element {
   const { t } = useI18n();
   const { state } = props;
   if (state.kind === "reading") return <p className="dialog-body" role="status">{t("files.external.reading")}</p>;
+  // A changed image is shown as images: the committed one and the one on disk.
+  if (state.kind === "binary" && props.image && isImagePath(props.image.rel)) {
+    const { api, worktree, rel } = props.image;
+    return (
+      <div className="file-compare-diff">
+        <ImageDiff api={api} worktree={worktree} path={rel} kind="modified" base={null} />
+      </div>
+    );
+  }
   if (state.kind === "binary") return <p className="dialog-body">{t("files.external.binary")}</p>;
   if (state.kind === "error") return <p className="dialog-warn">{t("files.external.readError", { error: t(`error.${state.error}`) })}</p>;
   return (
@@ -66,7 +77,7 @@ export function CompareDialog(props: { api: Api; worktree: string; rel: string; 
     >
       <h2 id="file-compare-title" className="dialog-title">{t("files.external.compareTitle")}</h2>
       <p className="dialog-body">{t("files.external.compareBody")}</p>
-      <CompareBody state={state} current={current} />
+      <CompareBody state={state} current={current} image={{ api, worktree, rel }} />
       <div className="dialog-actions">
         <button type="button" className="btn-secondary" autoFocus onClick={onClose}>{t("dialog.close")}</button>
         <Button type="button" onClick={onReload}>{t("files.external.reload")}</Button>

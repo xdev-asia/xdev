@@ -353,9 +353,9 @@ it("shows git_identity inline", async () => {
 it("shows the binary placeholder", async () => {
   const api = createMockApi({});
   const read = vi.spyOn(api, "worktreeReviewFile").mockResolvedValueOnce({ old: null, new: null, skip: "binary" });
-  const binary = mount(() => section(api, "docs/logo.png"));
+  const binary = mount(() => section(api, "docs/blob.bin"));
   await tick();
-  expect(read).toHaveBeenCalledWith(OAK, START, "docs/logo.png");
+  expect(read).toHaveBeenCalledWith(OAK, START, "docs/blob.bin");
   expect(binary.html()).toContain(en("workspace.diff.binary"));
   expect(binary.find((n) => n.type === DiffView)).toBeUndefined();
 

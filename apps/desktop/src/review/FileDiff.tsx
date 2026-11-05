@@ -12,6 +12,8 @@ import { ProblemNote } from "@/components/ChangesPanel";
 import { diffTheme, DiffStats } from "@/components/DiffView";
 import { highlight, theme } from "@/components/Editor";
 import { useI18n, type I18n } from "@/i18n";
+import { ImageDiff } from "./ImageDiff";
+import { isImagePath } from "./imageDiff";
 import { noteExtension, setNotes, type NoteHandlers } from "./noteWidgets";
 import { ignoreWhitespaceDiff, onlyWhitespace, whitespaceSupported } from "./whitespace";
 import type { ViewOptions } from "./viewOptions";
@@ -126,9 +128,11 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
   const live = useRef({ handlers: props.handlers, i18n });
   live.current = { handlers: props.handlers, i18n };
 
+  // A changed image is drawn as images, not read as text.
+  const image = isImagePath(file.path);
   // Only an open file reads its two sides.
   useEffect(() => {
-    if (!open) return;
+    if (!open || image) return;
     let alive = true;
     setProblem(null);
     api.worktreeReviewFile(worktree, base, file.path).then(
@@ -142,7 +146,7 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
     return () => {
       alive = false;
     };
-  }, [api, worktree, base, file.path, open, rev]);
+  }, [api, worktree, base, file.path, open, rev, image]);
 
   const shown = open && diff && !diff.skip ? diff : null;
   useEffect(() => {
@@ -196,10 +200,11 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
         )}
       </header>
       {open && problem && <ProblemNote problem={problem} />}
-      {open && diff?.skip === "binary" && <p className="ws-empty">{t("workspace.diff.binary")}</p>}
-      {open && diff?.skip === "too_large" && <p className="ws-empty">{t("workspace.diff.tooLarge")}</p>}
+      {open && image && <ImageDiff api={api} worktree={worktree} path={file.path} kind={file.kind} base={base} rev={rev} />}
+      {open && !image && diff?.skip === "binary" && <p className="ws-empty">{t("workspace.diff.binary")}</p>}
+      {open && !image && diff?.skip === "too_large" && <p className="ws-empty">{t("workspace.diff.tooLarge")}</p>}
       {blank && <p className="ws-empty">{t("review.whitespaceOnly")}</p>}
-      {open && !problem && !diff && <p className="ws-empty">{t("review.loading")}</p>}
+      {open && !image && !problem && !diff && <p className="ws-empty">{t("review.loading")}</p>}
       {shown && <div className="rv-file-body editor diff" ref={host} />}
     </section>
   );
