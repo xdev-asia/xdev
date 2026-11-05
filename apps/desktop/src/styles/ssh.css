@@ -66,3 +66,16 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* The footer SSH segment: a status dot and the count of live connections. */
+.ws-ssh {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A long host list scrolls inside the footer menu instead of running off screen. */
+.ws-ssh-menu .x-menu {
+  max-height: min(360px, 60vh);
+  overflow-y: auto;
+}

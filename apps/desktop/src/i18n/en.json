@@ -4015,5 +4015,6 @@
   "ssh.auth.hint": "Goes to ssh once and is not saved.",
   "ssh.auth.confirmHint": "Type yes to accept or no to refuse.",
   "ssh.auth.continue": "Continue",
-  "ssh.auth.cancel": "Cancel"
+  "ssh.auth.cancel": "Cancel",
+  "ssh.footer.item": "SSH {count}"
 }

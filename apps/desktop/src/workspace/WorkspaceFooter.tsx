@@ -8,6 +8,7 @@ import { ALL_ITEMS, useStatusBarItems } from "@/ui/statusBarItems";
 import { useQuota } from "@/shell/useQuota";
 import { useUpdate, type Update } from "@/shell/useUpdate";
 import { KeepAwakeItem } from "./KeepAwakeItem";
+import { SshStatusItem } from "./SshStatusItem";
 import { UsagePopover } from "./UsagePopover";
 import { pushToast } from "./toastStore";
 import { footerQuota, shownPercent } from "./usageModel";
@@ -115,6 +116,8 @@ export function WorkspaceFooter(props: {
   ports?: ReactNode;
   /** The keep-awake item, shown before the version. */
   keepAwake?: ReactNode;
+  /** The SSH connections segment; it renders nothing while no host is connected or connecting. */
+  ssh?: ReactNode;
   hidden?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -196,6 +199,7 @@ export function WorkspaceFooter(props: {
           </span>
         </>
       )}
+      {props.ssh}
       {items.ports && props.ports}
       {items.keepAwake && props.keepAwake}
       {items.version && <span className="ws-mono">{`v${props.version}`}</span>}
@@ -220,9 +224,13 @@ export function LiveWorkspaceFooter(props: {
   onUsageSettings?: () => void;
   /** The ports item; shown when Settings → Appearance has it on. */
   ports?: ReactNode;
+  /** Opens Settings on the SSH section; the SSH segment shows only when this is given. */
+  onManageSsh?: () => void;
+  /** Opens a terminal tab on an SSH host, by alias. */
+  onOpenSshTerminal?: (alias: string) => void;
   hidden?: boolean;
 }): JSX.Element {
-  const { api, hidden, onManageAccounts, onUseAccount, onUsageSettings, ...rest } = props;
+  const { api, hidden, onManageAccounts, onUseAccount, onUsageSettings, onManageSsh, onOpenSshTerminal, ...rest } = props;
   const { t } = useI18n();
   const { quota, loading, refresh } = useQuota(api, hidden === true);
   const update = useUpdate(api);
@@ -347,6 +355,7 @@ export function LiveWorkspaceFooter(props: {
       }
       ports={rest.ports}
       keepAwake={<KeepAwakeItem api={api} />}
+      ssh={onManageSsh && <SshStatusItem api={api} onOpenTerminal={onOpenSshTerminal} onManage={onManageSsh} />}
     />
   );
 }

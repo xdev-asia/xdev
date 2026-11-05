@@ -4015,5 +4015,6 @@
   "ssh.auth.hint": "Chỉ gửi cho ssh một lần và không được lưu.",
   "ssh.auth.confirmHint": "Gõ yes để chấp nhận hoặc no để từ chối.",
   "ssh.auth.continue": "Tiếp tục",
-  "ssh.auth.cancel": "Huỷ"
+  "ssh.auth.cancel": "Huỷ",
+  "ssh.footer.item": "SSH {count}"
 }
