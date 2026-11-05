@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Badge, Heatmap } from "@xdev-asia/ui";
-import { toApiError, type Account, type Agent, type Quota, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
+import { toApiError, type Account, type AppStatsView, type Agent, type Quota, type ApiError, type UsageDisplay, type UsageReport, type UsageScope, type UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
+import { formatBusy } from "@/stats/formatBusy";
 import { dayRange, displayPath, formatCount, localDay, totalOf, type Tokens } from "@/kit/kitUi";
 import type { ShareCardData } from "@/kit/shareCard";
 import { TokenTable } from "@/kit/UsageTab";
@@ -50,12 +51,25 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const [error, setError] = useState<ApiError["code"]>();
   const [reads, setReads] = useState(0);
   // Credentials: read once on open and once per Check again; never polled.
+  const [appStats, setAppStats] = useState<AppStatsView>();
   const [accounts, setAccounts] = useState<Account[]>();
   const [quota, setQuota] = useState<Quota[]>([]);
   const [checking, setChecking] = useState(false);
   // The first read of the page reads the new log bytes; Refresh and Enable ask for it again.
   const refresh = useRef(true);
   const saving = useRef(false);
+
+  // The counters xDev keeps are read once; a failed read hides the block.
+  useEffect(() => {
+    let live = true;
+    api.appStats().then(
+      (v) => live && setAppStats(v),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [api]);
 
   useEffect(() => {
     api.usageSettings().then(
@@ -238,6 +252,38 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
           </div>
         ))}
       </div>
+
+      {appStats !== undefined && (
+        <section className="kit-block" data-app-stats aria-label={t("usage.app.title")}>
+          <h3 className="kit-h">{t("usage.app.title")}</h3>
+          <p className="settings-hint">{t("usage.app.hint")}</p>
+          {appStats.agentsStarted === 0 && appStats.prsCreated === 0 ? (
+            <p className="kit-empty" data-app-stats-empty>
+              {t("usage.app.empty")}
+            </p>
+          ) : (
+            <div className="usage-tiles">
+              {(
+                [
+                  ["agents", formatCount(appStats.agentsStarted, locale)],
+                  ["busy", formatBusy(appStats.agentBusyMs, t)],
+                  ["prs", formatCount(appStats.prsCreated, locale)],
+                ] as const
+              ).map(([key, value]) => (
+                <div className="usage-tile" key={key} data-app-tile={key}>
+                  <span className="usage-tile-label">{t(`usage.app.tile.${key}`)}</span>
+                  <strong className="usage-tile-value">{value}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+          {appStats.sinceMs !== null && (
+            <p className="settings-hint" data-app-since>
+              {t("usage.app.since", { date: new Date(appStats.sinceMs).toLocaleDateString(locale) })}
+            </p>
+          )}
+        </section>
+      )}
 
       <div className="ws-fields usage-controls">
         <label className="ws-field">

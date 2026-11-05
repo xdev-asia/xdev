@@ -117,6 +117,63 @@ it("a failed read shows the error code", async () => {
   expect(m.all().some((n) => n.props.role === "alert" && textOf(n) === en("error.io"))).toBe(true);
 });
 
+// --- the app stats block ---
+
+type StatsSeed = { agentsStarted: number; prsCreated: number; agentBusyMs: number; sinceMs: number | null };
+const ZERO: StatsSeed = { agentsStarted: 0, prsCreated: 0, agentBusyMs: 0, sinceMs: null };
+const appTile = (all: Node[], key: string) => all.find((n) => n.props["data-app-tile"] === key)!;
+const valueOf = (n: Node) => textOf(nodes(n.props.children).find((c) => c.props.className === "usage-tile-value")!);
+
+async function openStats(seed: StatsSeed | "fail", filter?: { query: string; ids: Set<string> }) {
+  resetUsageSettingsForTests();
+  const api = createMockApi({});
+  await api.usageSettingsPut({ ...USAGE_DEFAULTS, scan: { claude: true, codex: false } });
+  if (seed === "fail") vi.spyOn(api, "appStats").mockRejectedValue({ code: "io" });
+  else vi.spyOn(api, "appStats").mockResolvedValue(seed);
+  const m = mount(UsagePage, () => ({ api, onChanged: vi.fn(), filter }));
+  await m.settle();
+  await m.settle();
+  return m;
+}
+
+it("app stats tiles show counts and busy time", async () => {
+  const m = await openStats({ agentsStarted: 3, prsCreated: 2, agentBusyMs: 3_660_000, sinceMs: 1_700_000_000_000 });
+  const all = m.all();
+  expect(valueOf(appTile(all, "agents"))).toBe("3");
+  expect(valueOf(appTile(all, "prs"))).toBe("2");
+  expect(valueOf(appTile(all, "busy"))).toBe("1h 1m");
+  expect(textOf(appTile(all, "agents"))).toContain(en("usage.app.tile.agents"));
+  expect(all.some((n) => n.props["data-app-stats-empty"] !== undefined)).toBe(false);
+});
+
+it("app stats show the empty line when agents and prs are 0", async () => {
+  const m = await openStats(ZERO);
+  const all = m.all();
+  const empty = all.find((n) => n.props["data-app-stats-empty"] !== undefined);
+  expect(empty && textOf(empty)).toBe(en("usage.app.empty"));
+  expect(all.some((n) => n.props["data-app-tile"] !== undefined)).toBe(false);
+});
+
+it("app stats show tracking since when sinceMs is set", async () => {
+  const ms = 1_700_000_000_000;
+  const m = await openStats({ ...ZERO, agentsStarted: 1, sinceMs: ms });
+  const since = m.all().find((n) => n.props["data-app-since"] !== undefined);
+  expect(since && textOf(since)).toBe(en("usage.app.since", { date: new Date(ms).toLocaleDateString("en") }));
+  const none = await openStats(ZERO);
+  expect(none.all().some((n) => n.props["data-app-since"] !== undefined)).toBe(false);
+});
+
+it("app stats hidden while a settings search filter is set", async () => {
+  const m = await openStats({ ...ZERO, agentsStarted: 1 }, { query: "x", ids: new Set(["usage.display"]) });
+  expect(m.all().some((n) => n.props["data-app-stats"] !== undefined)).toBe(false);
+});
+
+it("app stats read failure hides the block", async () => {
+  const m = await openStats("fail");
+  expect(m.all().some((n) => n.props["data-app-stats"] !== undefined)).toBe(false);
+  expect(m.all().some((n) => n.props.role === "alert")).toBe(false);
+});
+
 // --- the usage settings rows ---
 
 const sw = (all: Node[], id: string) => all.find((n) => n.props["data-switch"] === id)!;
