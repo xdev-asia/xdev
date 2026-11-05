@@ -36,7 +36,7 @@ use crate::settings::GitSettings;
 use crate::tasks::gate;
 
 /// Files bigger than this are not read into the diff view.
-const MAX_BYTES: u64 = 1 << 20;
+pub(crate) const MAX_BYTES: u64 = 1 << 20;
 /// Git's own look for binary: a NUL in the first 8 KiB.
 const SNIFF_BYTES: usize = 8 << 10;
 
@@ -363,7 +363,7 @@ fn changes(data: &Path, path: &Path) -> Result<Vec<WorktreeChange>, CmdError> {
         .collect())
 }
 
-fn skipped(why: Skip) -> WorktreeFileDiff {
+pub(crate) fn skipped(why: Skip) -> WorktreeFileDiff {
     WorktreeFileDiff {
         old: None,
         new: None,
@@ -371,7 +371,7 @@ fn skipped(why: Skip) -> WorktreeFileDiff {
     }
 }
 
-fn is_binary(bytes: &[u8]) -> bool {
+pub(crate) fn is_binary(bytes: &[u8]) -> bool {
     bytes[..bytes.len().min(SNIFF_BYTES)].contains(&0) || std::str::from_utf8(bytes).is_err()
 }
 

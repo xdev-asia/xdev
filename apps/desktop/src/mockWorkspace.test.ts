@@ -576,4 +576,71 @@ describe("mock repo hooks", () => {
       await expect(api.worktreeConflictAbort(FIRST, true)).rejects.toMatchObject({ code: "no_conflict" });
     });
   });
+
+  describe("history and updates", () => {
+    const ID = "a".repeat(40);
+    const commit = (id: string, subject: string) => ({ id, parents: [], author: "A", email: "a@example.com", time: 1, subject, body: "", refs: [] });
+    const log = {
+      commits: [commit(ID, "newest"), commit("b".repeat(40), "middle"), commit("c".repeat(40), "oldest")],
+      head: ID,
+      branch: "oak",
+      upstream: null,
+      base: null,
+      mergeBase: null,
+      incoming: false,
+      outgoing: false,
+      hasMore: false,
+    };
+    const files = { id: ID, parent: null, files: [{ path: "a.ts", oldPath: null, status: "modified" as const, added: 1, removed: 0 }] };
+    const seeded = () => createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, log: { [FIRST]: log }, commitFiles: { [`${FIRST}#${ID}`]: files }, hostless: ["/demo/xdev"] });
+
+    it("pages the log and returns the files of a seeded commit", async () => {
+      const api = seeded();
+      const page = await api.worktreeLog(FIRST, 2, 0);
+      expect(page.commits.map((c) => c.subject)).toEqual(["newest", "middle"]);
+      expect(page.hasMore).toBe(true);
+      expect((await api.worktreeLog(FIRST, 2, 2)).hasMore).toBe(false);
+      expect((await api.worktreeCommitFiles(FIRST, ID)).files[0].path).toBe("a.ts");
+      expect((await api.worktreeCommitFile(FIRST, ID, "a.ts")).skip).toBeNull();
+      expect((await createMockWorkspace().worktreeLog(FIRST, 50, 0)).commits).toEqual([]);
+    });
+
+    it("refuses an unknown worktree, a bad id or file, and a repo without a web remote", async () => {
+      const api = seeded();
+      await expect(api.worktreeLog("/nope", 50, 0)).rejects.toMatchObject({ code: "worktree_unknown" });
+      await expect(api.worktreeCommitFiles(FIRST, "--x")).rejects.toMatchObject({ code: "git" });
+      await expect(api.worktreeCommitFile(FIRST, ID, "zz.ts")).rejects.toMatchObject({ code: "bad_arg" });
+      await expect(api.worktreeOpenFileOnHost(FIRST, "../a", null, null)).rejects.toMatchObject({ code: "bad_arg" });
+      await expect(api.worktreeOpenCommit("/demo/xdev", ID)).rejects.toMatchObject({ code: "no_web_remote" });
+      await expect(api.worktreeOpenFileOnHost("/demo/xdev", "a.ts", null, null)).rejects.toMatchObject({ code: "no_web_remote" });
+      await expect(api.worktreeOpenCommit(FIRST, ID)).resolves.toBeUndefined();
+      await expect(api.worktreeOpenFileOnHost(FIRST, "a.ts", 1, 3)).resolves.toBeUndefined();
+    });
+
+    it("fast-forward moves the remote and refuses a split history", async () => {
+      const behind = createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: { ahead: 0, behind: 2 } } });
+      expect((await behind.worktreeFastForward(FIRST)).upstream).toMatchObject({ ahead: 0, behind: 0 });
+      const split = createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: { ahead: 1, behind: 1 } } });
+      await expect(split.worktreeFastForward(FIRST)).rejects.toMatchObject({ code: "pull_diverged" });
+      await expect(createMockWorkspace().worktreeFastForward(FIRST)).rejects.toMatchObject({ code: "no_upstream" });
+    });
+
+    it("a pull follows the policy, and sync then pushes", async () => {
+      const split = { ahead: 1, behind: 1 };
+      const withPolicy = (pullPolicy: "ff-only" | "merge" | "rebase" | "git-config") =>
+        createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: split }, git: { pullPolicy } });
+      await expect(withPolicy("ff-only").worktreePull(FIRST)).rejects.toMatchObject({ code: "pull_diverged" });
+      await expect(withPolicy("git-config").worktreePull(FIRST)).rejects.toMatchObject({ code: "pull_policy" });
+      expect((await withPolicy("merge").worktreePull(FIRST)).upstream).toMatchObject({ ahead: 1, behind: 0 });
+      expect((await withPolicy("rebase").worktreeSync(FIRST)).upstream).toMatchObject({ ahead: 0, behind: 0 });
+    });
+
+    it("a rewritten remote asks for a force push, and a rebase rewrites a pushed branch", async () => {
+      const api = createMockWorkspace({ repos: DEMO_WORKSPACE.repos, changes: {}, remotes: { [FIRST]: { ahead: 1, behind: 1 } }, rewritten: { [FIRST]: true } });
+      await expect(api.worktreeSync(FIRST)).rejects.toMatchObject({ code: "needs_force" });
+      const view = await api.worktreeForcePush(FIRST, "b".repeat(40), true);
+      expect(view.upstream).toMatchObject({ ahead: 0, behind: 0, rewritten: false });
+      await expect(createMockWorkspace().worktreeRebaseFromBase(FIRST)).resolves.toMatchObject({ branch: expect.any(String) });
+    });
+  });
 });

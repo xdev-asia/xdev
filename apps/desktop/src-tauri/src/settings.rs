@@ -5,6 +5,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::atomic::write_atomic;
+use xdev_git::PullPolicy;
+
 use crate::quick_commands::QuickCommand;
 
 /// The shape `save` writes. Bump it with a step in `MIGRATIONS` when a key
@@ -1431,6 +1433,8 @@ pub struct GitSettings {
     pub auto_rename_branch: bool,
     /// Which group Source Control draws first.
     pub source_control_group_order: SourceControlGroupOrder,
+    /// How Pull and Sync combine local and remote commits.
+    pub pull_policy: PullPolicy,
     /// The prompts behind the agent actions. A part that does not parse
     /// falls back to the defaults on its own.
     #[serde(deserialize_with = "lenient")]
@@ -1452,6 +1456,7 @@ impl Default for GitSettings {
             pr_open_after_create: false,
             auto_rename_branch: true,
             source_control_group_order: SourceControlGroupOrder::default(),
+            pull_policy: PullPolicy::default(),
             recipes: GitRecipes::default(),
         }
     }
@@ -1646,6 +1651,7 @@ mod tests {
                 pr_open_after_create: true,
                 auto_rename_branch: false,
                 source_control_group_order: SourceControlGroupOrder::StagedFirst,
+                pull_policy: PullPolicy::GitConfig,
                 recipes: GitRecipes::default(),
             },
             status: StatusSettings {
@@ -2703,6 +2709,28 @@ then sum up"
             bad.source_control_group_order,
             SourceControlGroupOrder::ChangesFirst
         );
+    }
+
+    #[test]
+    fn pull_policy_defaults_to_ff_only_and_round_trips() {
+        let git: GitSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(git.pull_policy, PullPolicy::FfOnly);
+        for (text, want) in [
+            ("ff-only", PullPolicy::FfOnly),
+            ("merge", PullPolicy::Merge),
+            ("rebase", PullPolicy::Rebase),
+            ("git-config", PullPolicy::GitConfig),
+        ] {
+            let git: GitSettings =
+                serde_json::from_str(&format!(r#"{{ "pullPolicy": "{text}" }}"#)).unwrap();
+            assert_eq!(git.pull_policy, want);
+            let out = serde_json::to_string(&git).unwrap();
+            assert!(out.contains(&format!(r#""pullPolicy":"{text}""#)), "{out}");
+        }
+        let bad: GitSettings = serde_json::from_str(r#"{ "pullPolicy": "x" }"#).unwrap();
+        assert_eq!(bad.pull_policy, PullPolicy::FfOnly);
+        let num: GitSettings = serde_json::from_str(r#"{ "pullPolicy": 3 }"#).unwrap();
+        assert_eq!(num.pull_policy, PullPolicy::FfOnly);
     }
 
     #[test]

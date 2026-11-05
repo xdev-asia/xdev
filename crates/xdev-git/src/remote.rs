@@ -15,6 +15,10 @@ pub struct Upstream {
     pub id: Option<String>,
     pub ahead: u32,
     pub behind: u32,
+    /// Ahead and behind, and every commit only on the remote has a patch-equal copy in `HEAD`
+    /// (`git rev-list --cherry-pick --right-only --no-merges HEAD...@{u}` is empty): the
+    /// remote holds older copies of local commits, as after an amend.
+    pub rewritten: bool,
 }
 
 /// What a branch adds to its base.
@@ -130,7 +134,10 @@ impl Repo {
 
     /// `(remote, branch on the remote, local branch)` behind a base, or
     /// `None` when it names no remote branch.
-    fn base_source(&self, base: &str) -> Result<Option<(String, String, String)>, GitError> {
+    pub(crate) fn base_source(
+        &self,
+        base: &str,
+    ) -> Result<Option<(String, String, String)>, GitError> {
         if !self.valid_branch_name(base)? {
             return Ok(None);
         }
@@ -255,6 +262,7 @@ impl Repo {
         } else {
             (0, 0)
         };
+        let rewritten = ahead > 0 && behind > 0 && self.only_old_copies_remote()?;
         Ok(Some(Upstream {
             remote,
             branch: merge
@@ -264,7 +272,24 @@ impl Repo {
             id,
             ahead,
             behind,
+            rewritten,
         }))
+    }
+
+    /// Every commit only on the upstream has a patch-equal copy in `HEAD`.
+    fn only_old_copies_remote(&self) -> Result<bool, GitError> {
+        let out = run::run(
+            &self.workdir,
+            &[
+                "rev-list",
+                "--cherry-pick",
+                "--right-only",
+                "--no-merges",
+                "HEAD...@{u}",
+            ],
+            None,
+        )?;
+        Ok(out.iter().all(u8::is_ascii_whitespace))
     }
 
     /// `HEAD` is already on the upstream (an ancestor of it, or equal).
@@ -290,24 +315,7 @@ impl Repo {
     /// Fast-forwards the current branch to its upstream; never merges or
     /// rebases. Histories that split are `Diverged`.
     pub fn pull(&self) -> Result<(), GitError> {
-        self.current_branch()?.ok_or(GitError::Detached)?;
-        let up = self.upstream()?.ok_or(GitError::NoUpstream)?;
-        // The upstream's own remote and branch name; the branch may be
-        // called differently there.
-        let remote = plain_remote(up.remote)?;
-        let branch = format!("refs/heads/{}", up.branch);
-        let out = run::run_long(&self.workdir, &["pull", "--ff-only", &remote, &branch])?;
-        if out.status == Some(0) {
-            return Ok(());
-        }
-        // The message is translated, so the history decides first: the pull
-        // fetched before it failed, and a branch with commits on both sides
-        // cannot fast-forward.
-        let split = matches!(self.upstream(), Ok(Some(u)) if u.ahead > 0 && u.behind > 0);
-        if split || text(&out.stderr).contains("Not possible to fast-forward") {
-            return Err(GitError::Diverged);
-        }
-        Err(failed("pull --ff-only", &out))
+        self.fast_forward()
     }
 
     /// Fetches the branch's remote. A detached `HEAD` uses `origin`, or the
@@ -389,18 +397,18 @@ impl Repo {
 
 /// A remote name from the config; one that starts with `-` would be read
 /// as an option.
-fn plain_remote(name: String) -> Result<String, GitError> {
+pub(crate) fn plain_remote(name: String) -> Result<String, GitError> {
     if name.starts_with('-') || name.chars().any(char::is_control) {
         return Err(GitError::BadId(name));
     }
     Ok(name)
 }
 
-fn text(bytes: &[u8]) -> String {
+pub(crate) fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).trim().to_owned()
 }
 
-fn failed(args: &str, out: &Output) -> GitError {
+pub(crate) fn failed(args: &str, out: &Output) -> GitError {
     GitError::Failed {
         args: args.to_owned(),
         status: out.status,

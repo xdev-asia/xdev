@@ -226,3 +226,10 @@ describe("paneTree", () => {
     expect(replaceTab(r, "nope", "z")).toBe(r);
   });
 });
+
+describe("the commit tab", () => {
+  it("never seeds a pane", () => {
+    const l = single("a");
+    expect(splitPane(l, "p1", "right", "commit:")).toBe(l);
+  });
+});

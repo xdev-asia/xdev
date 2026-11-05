@@ -7,7 +7,9 @@ import { useI18n } from "@/i18n";
 import { DEFAULT_GIT_SETTINGS } from "@/settings/gitDefaults";
 import { CreatePrDialog } from "./CreatePrDialog";
 import type { PrStore } from "./prs";
+import { PULL_POLICY_CODES, PullPolicyNotice } from "./PullPolicyNotice";
 import { shipAction } from "./ship";
+import { shipMenu, type MenuId, type Text } from "./shipMenu";
 
 const SHORT = 7;
 
@@ -22,6 +24,23 @@ type Force = { remote: string; branch: string; id: string };
 const DETAIL_CODES = new Set(["git", "push_rejected", "gh_failed", "draft_failed"]);
 const POLICY_CODES = new Set(["needs_approval", "denied"]);
 
+type UpdateOp = "fast-forward" | "rebase";
+
+// The words for a failed update: the ones that name the operation read better than the generic line.
+const UPDATE_LINES: Record<string, Partial<Record<UpdateOp, string>>> = {
+  update_dirty: { rebase: "ship.update.dirty.rebase", "fast-forward": "ship.update.dirty.fastForward" },
+  update_untracked: { rebase: "ship.update.untracked.rebase", "fast-forward": "ship.update.untracked.fastForward" },
+  update_conflicts: { rebase: "ship.update.conflicts.rebase" },
+  update_conflicted: { rebase: "ship.update.conflicted.rebase" },
+  git: { rebase: "ship.update.failed.rebase", "fast-forward": "ship.update.failed.fastForward" },
+};
+
+function errorText(error: ApiError, op: UpdateOp | null, t: (key: string, vars?: Record<string, string | number>) => string): string {
+  const key = op ? UPDATE_LINES[error.code]?.[op] : undefined;
+  if (key) return t(key, { detail: error.detail ?? "" }).trim();
+  return DETAIL_CODES.has(error.code) && error.detail ? `${t(`error.${error.code}`)} ${error.detail}` : t(`error.${error.code}`);
+}
+
 // What the agent is given of a failed push: git's own words when there are any.
 function pushOutput(error: ApiError, message: string): string {
   return error.detail ? `${message}\n${error.detail}` : message;
@@ -35,10 +54,6 @@ export function ShipBar(props: {
   checked: number;
   prs: PrStore;
   onCommit(): void;
-  // Commits the checked files and then pushes; without it the More menu has no Commit and push.
-  onCommitPush?(): void;
-  // The commit cannot be made yet (no message, nothing checked, busy): Commit and push is off too.
-  commitBlocked?: boolean;
   // After an action that moved the branch.
   onChanged(): void;
   refreshKey?: number;
@@ -49,6 +64,13 @@ export function ShipBar(props: {
   onFixPush?(output: string, branch: string): void;
   // Where a draft's agent problem links to: Settings → Git.
   onOpenGitSettings?(): void;
+  // The commit box has text. The Commit & … entries need it.
+  hasMessage?: boolean;
+  // Commits (or amends) the checked files as the Commit button does; true when a commit was made.
+  // The Commit & … entries stop when it is false.
+  onCommitFirst?(): Promise<boolean>;
+  // The base ref the bar compares against, whenever it changes.
+  onBase?(base: string): void;
 }): JSX.Element {
   const { api, worktree, prs } = props;
   const git = props.git ?? DEFAULT_GIT_SETTINGS;
@@ -62,6 +84,8 @@ export function ShipBar(props: {
   const [creating, setCreating] = useState(false);
   // The error on show came from a push, the one action a recipe can fix.
   const [pushFailed, setPushFailed] = useState(false);
+  // The update the error on show came from, so its text can name it.
+  const [op, setOp] = useState<UpdateOp | null>(null);
   // Only the newest read may write.
   const reads = useRef(0);
   const onChanged = useRef(props.onChanged);
@@ -84,6 +108,12 @@ export function ShipBar(props: {
     }
   }
 
+  const shipBase = ship?.base;
+  useEffect(() => {
+    if (shipBase !== undefined) props.onBase?.(shipBase);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shipBase]);
+
   useEffect(() => {
     void refresh();
     const again = () => {
@@ -102,11 +132,12 @@ export function ShipBar(props: {
   }, [prs, worktree]);
 
   // Runs one action; its answer is the new state of the branch.
-  async function run(act: () => Promise<ShipView | void>, push = false): Promise<void> {
+  async function run(act: () => Promise<ShipView | void>, push = false, update: UpdateOp | null = null): Promise<boolean> {
     setBusy(true);
     setMenu(false);
     setError(null);
     setPushFailed(false);
+    setOp(update);
     try {
       const view = await act();
       if (view) {
@@ -116,12 +147,46 @@ export function ShipBar(props: {
         await refresh();
       }
       onChanged.current();
+      return true;
     } catch (e) {
-      setError(toApiError(e));
-      setPushFailed(push);
+      const failure = toApiError(e);
+      // The commits were rewritten after they were pushed: only a force push publishes them.
+      if (failure.code === "needs_force" && ship?.upstream?.id) askForce();
+      else {
+        setError(failure);
+        setPushFailed(push);
+      }
+      return false;
     } finally {
       setBusy(false);
     }
+  }
+
+  // Commits first, then the follow-up; a commit that fails or is not made stops there. The commit
+  // is never rolled back.
+  async function commitThen(next: () => void | Promise<unknown>): Promise<void> {
+    setMenu(false);
+    if (!props.onCommitFirst) return;
+    setBusy(true);
+    let made = false;
+    try {
+      made = await props.onCommitFirst();
+    } finally {
+      setBusy(false);
+    }
+    if (made) await next();
+  }
+
+  function choose(id: MenuId): void {
+    if (id === "pull") void run(() => api.worktreePull(worktree));
+    else if (id === "sync") void run(() => api.worktreeSync(worktree));
+    else if (id === "fetch") void run(() => api.worktreeFetch(worktree));
+    else if (id === "force") askForce();
+    else if (id === "fast_forward") void run(() => api.worktreeFastForward(worktree), false, "fast-forward");
+    else if (id === "rebase") void run(() => api.worktreeRebaseFromBase(worktree), false, "rebase");
+    else if (id === "commit_push") void commitThen(() => (ship?.upstream?.rewritten ? askForce() : run(() => api.worktreePush(worktree), true)));
+    else if (id === "commit_sync") void commitThen(() => run(() => api.worktreeSync(worktree)));
+    else if (id === "push_then_pr") void run(() => api.worktreePush(worktree), true).then((ok) => ok && setCreating(true));
   }
 
   function askForce(): void {
@@ -131,7 +196,17 @@ export function ShipBar(props: {
     setForce({ remote: up.remote, branch: up.branch, id: up.id });
   }
 
-  const action = shipAction({ checked: props.checked, ship, pr });
+  const action = shipAction({ checked: props.checked, ship, pr, policy: git.pullPolicy });
+  const entries = shipMenu({
+    ship,
+    action,
+    checked: props.checked,
+    hasMessage: props.hasMessage ?? false,
+    busy,
+    baseRemote: ship !== null && ship.remote !== null && ship.base.startsWith(`${ship.remote}/`),
+    hasPr: pr != null && (pr.state === "open" || pr.state === "draft"),
+  });
+  const say = (x: Text) => t(x.key, x.params);
   const range = ship?.range ?? null;
   const up = ship?.upstream ?? null;
   const base = ship ? (ship.remote && ship.base.startsWith(`${ship.remote}/`) ? ship.base.slice(ship.remote.length + 1) : ship.base) : "";
@@ -194,7 +269,8 @@ export function ShipBar(props: {
         </div>
       )}
       <div className="ws-ship-actions">
-        <Button type="button" disabled={busy || action === "none" || action === "diverged"} onClick={main}>
+        {/* The Changes surface already has its primary, the Commit button; this one is secondary so the surface keeps one. */}
+        <Button type="button" variant="secondary" disabled={busy || action === "none" || action === "diverged"} onClick={main}>
           {t(`ship.action.${action}`)}
         </Button>
         <button
@@ -210,33 +286,15 @@ export function ShipBar(props: {
       </div>
       {menu && (
         <div className="ws-ship-menu" role="menu">
-          {props.onCommitPush && (
-            <button
-              type="button"
-              role="menuitem"
-              className="ws-ship-item"
-              data-action="commit-push"
-              disabled={props.commitBlocked === true}
-              onClick={() => {
-                setMenu(false);
-                props.onCommitPush?.();
-              }}
-            >
-              {t("ship.more.commitPush")}
-            </button>
+          {entries.map((e, i) =>
+            e.separator ? (
+              <hr key={`sep${i}`} className="ws-ship-sep" />
+            ) : (
+              <button key={e.id} type="button" role="menuitem" className="ws-ship-item" disabled={e.disabled} title={e.tooltip ? say(e.tooltip) : undefined} onClick={() => choose(e.id)}>
+                {say(e.label)}
+              </button>
+            ),
           )}
-          <button type="button" role="menuitem" className="ws-ship-item" onClick={() => void run(() => api.worktreePull(worktree))}>
-            {t("ship.more.pull")}
-          </button>
-          <button type="button" role="menuitem" className="ws-ship-item" onClick={() => void run(() => api.worktreeSync(worktree))}>
-            {t("ship.more.sync")}
-          </button>
-          <button type="button" role="menuitem" className="ws-ship-item" onClick={() => void run(() => api.worktreeFetch(worktree))}>
-            {t("ship.more.fetch")}
-          </button>
-          <button type="button" role="menuitem" className="ws-ship-item" disabled={!up || up.id === null} onClick={askForce}>
-            {t("ship.more.force")}
-          </button>
         </div>
       )}
       {action === "diverged" && (
@@ -252,10 +310,10 @@ export function ShipBar(props: {
           )}
         </p>
       )}
-      {error && (
+      {error && PULL_POLICY_CODES.has(error.code) && <PullPolicyNotice onOpenGitSettings={props.onOpenGitSettings} />}
+      {error && !PULL_POLICY_CODES.has(error.code) && (
         <p className="error-text" role="alert">
-          {t(`error.${error.code}`)}
-          {DETAIL_CODES.has(error.code) && error.detail ? ` ${error.detail}` : ""}
+          {errorText(error, op, t)}
           {fixable && (
             <>
               {" "}
