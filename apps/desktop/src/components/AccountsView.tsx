@@ -15,6 +15,12 @@ const RANK: Record<State, number> = { ok: 0, reserve: 1, unknown: 2, full: 3 };
 // Above this many accounts the table is the default layout.
 const TABLE_FROM = 9;
 
+/** The sign-in badge: a login whose quota read says it expired needs signing in again. */
+export function statusBadge(account: Account, quota: Quota | undefined): { key: string; state: string } {
+  if (account.status.state === "logged_in" && quota?.reason === "expired") return { key: "accounts.status.reauth", state: "reauth" };
+  return { key: `accounts.status.${account.status.state}`, state: account.status.state };
+}
+
 function minutesUntil(at: string | null | undefined): number | null {
   if (!at) return null;
   const time = Date.parse(at);
@@ -232,17 +238,18 @@ export function AccountsView({ api }: { api: Api }) {
   function card(account: Account) {
     const quota = quotaOf(account);
     const state = stateOf(account);
+    const badge = statusBadge(account, quota);
     return <section className="account-card" key={account.name} aria-label={account.name} data-state={state}>
       <div className="account-row account-card-head">
         <span className="account-dot" data-state={state} aria-hidden="true" />
         <h2>{account.name}</h2>
         <span className="badge account-provider" data-provider={account.provider}>{t(`accounts.provider.${account.provider}`)}</span>
         {activeChip(account)}
-        <span className="badge" data-state={account.status.state}>{t(`accounts.status.${account.status.state}`)}</span>
+        <span className="badge" data-state={badge.state}>{t(badge.key)}</span>
         <span className="badge account-state" data-state={state}>{t(`accounts.state.${state}`)}</span>
       </div>
       <p className="doc-path">{who(account)}</p>
-      {state === "unknown" && <p className="account-reason">{t(`accounts.reason.${quota?.reason ?? "unavailable"}`)}</p>}
+      {(state === "unknown" || quota?.reason === "expired") && <p className="account-reason">{t(`accounts.reason.${quota?.reason ?? "unavailable"}`)}</p>}
       {quota?.asOf && <p className="doc-path account-as-of">{asOfText(quota.asOf)}</p>}
       {quota?.windows.map(window => {
         const label = windowLabel(window.key);
