@@ -244,6 +244,12 @@ fn wall_now_ms() -> i64 {
         .map_or(0, |d| d.as_millis() as i64)
 }
 
+/// Whether a `pty_spawn` with these inputs is a fresh agent start: an agent that is not a plain
+/// resume. A fork of a session is a new agent.
+pub(crate) fn counts_as_start(agent: bool, resume: Option<&str>, fork: Option<bool>) -> bool {
+    agent && (resume.is_none() || fork == Some(true))
+}
+
 /// A tab id the busy command accepts: not empty, at most `TAB_ID_MAX` bytes.
 pub(crate) fn valid_tab_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= TAB_ID_MAX
@@ -477,5 +483,16 @@ mod tests {
         assert!(!valid_tab_id(&"a".repeat(TAB_ID_MAX + 1)));
         assert!(valid_tab_id("tab-1"));
         assert!(valid_tab_id(&"a".repeat(TAB_ID_MAX)));
+    }
+
+    #[test]
+    fn counts_as_start_table() {
+        assert!(counts_as_start(true, None, None));
+        assert!(counts_as_start(true, None, Some(false)));
+        assert!(!counts_as_start(true, Some("s1"), None));
+        assert!(!counts_as_start(true, Some("s1"), Some(false)));
+        assert!(counts_as_start(true, Some("s1"), Some(true)));
+        assert!(!counts_as_start(false, None, None));
+        assert!(!counts_as_start(false, Some("s1"), Some(true)));
     }
 }
