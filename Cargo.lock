@@ -6778,6 +6778,7 @@ dependencies = [
  "ts-rs",
  "url",
  "uuid",
+ "windows",
  "windows-sys 0.61.2",
  "winreg 0.56.0",
  "xdev-agent",

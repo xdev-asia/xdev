@@ -3,6 +3,7 @@
 
 #[cfg(target_os = "macos")]
 mod macos;
+mod toast;
 
 use crate::applog;
 use std::collections::{HashMap, VecDeque};
@@ -172,7 +173,7 @@ fn remove_delivered(app: &AppHandle, mine: Vec<Text>, others: Vec<Text>) {
 
 /// Reports a click on a status notification as `CLICK_EVENT`. Must run before
 /// the first notification: the plugin reports clicks only on notifications
-/// shown after a handler exists.
+/// shown after a handler exists. On Windows the toast reports its own click.
 pub fn listen_clicks(app: &AppHandle) {
     let emitter = app.clone();
     let registered = app.notification().on_action(move |performed| {
@@ -356,7 +357,8 @@ fn shown_or_error(result: Result<(), impl std::fmt::Display>) -> Result<(), CmdE
 }
 
 /// Fails with `io` when the OS refused or could not show it; the notifier
-/// treats that as best effort, the Test button shows it.
+/// treats that as best effort, the Test button shows it. Windows shows it
+/// itself, with a tag `status_dismiss` can remove it by.
 #[tauri::command(async)]
 pub fn status_notify(
     app: AppHandle,
@@ -366,6 +368,9 @@ pub fn status_notify(
     pty_id: String,
 ) -> Result<(), CmdError> {
     let id = shown.add(&pty_id, &title, &body);
+    #[cfg(windows)]
+    let result = toast::show(&app, id, &title, &body, &pty_id);
+    #[cfg(not(windows))]
     let result = app
         .notification()
         .builder()
@@ -379,9 +384,9 @@ pub fn status_notify(
 
 /// Removes the OS notifications still shown for one pane, once the person
 /// has read it. Never fails. Linux closes them through the notification
-/// plugin; macOS removes them from Notification Centre in a bundled build
-/// (not in a dev run); Windows keeps them, because the plugin cannot remove a
-/// shown one there.
+/// plugin; macOS removes them from Notification Centre and Windows from
+/// Action Center (by the tag `status_notify` gave them), both in an
+/// installed build only, not in a dev run.
 #[tauri::command(async)]
 pub fn status_dismiss(app: AppHandle, shown: State<'_, Shown>, pty_id: String) {
     let ids = shown.ids_of(&pty_id);
@@ -393,7 +398,11 @@ pub fn status_dismiss(app: AppHandle, shown: State<'_, Shown>, pty_id: String) {
         let (mine, others) = shown.texts_of(&pty_id);
         remove_delivered(&app, mine, others);
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    if let Err(e) = toast::remove(&app, &ids) {
+        applog::warn("status dismiss", &e.to_string());
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
     if let Err(e) = app.notification().remove_active(ids) {
         applog::warn("status dismiss", &e.to_string());
     }
