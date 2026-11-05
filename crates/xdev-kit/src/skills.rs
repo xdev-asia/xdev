@@ -68,6 +68,19 @@ pub fn scan_skills(homes: &[Home], worktree: Option<&Path>) -> Vec<Skill> {
     out
 }
 
+/// Skills directly under `root` (same depth and dot-folder rules as a home's
+/// `skills` folder), scope `User`, `home_id` as given. Duplicates are not
+/// marked; the caller marks them with [`mark_duplicates`].
+pub fn scan_skill_root(root: &Path, home_id: &str) -> Vec<Skill> {
+    let mut dirs = Vec::new();
+    collect_skill_dirs(root, 1, &mut dirs);
+    let mut out = Vec::new();
+    for dir in dirs {
+        push_skill(&mut out, dir, SkillScope::User, Some(home_id));
+    }
+    out
+}
+
 /// Folders holding a `SKILL.md`, at most `MAX_DEPTH` levels below `skills`.
 fn collect_skill_dirs(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     // Dot folders hold trash, version control or tool state, not skills.
@@ -176,7 +189,9 @@ fn front_matter(text: &str) -> (Option<String>, Option<String>) {
     (name, description)
 }
 
-fn mark_duplicates(skills: &mut [Skill]) {
+/// Sets `duplicate` on every skill whose name is shared with a skill of
+/// different bytes.
+pub fn mark_duplicates(skills: &mut [Skill]) {
     let mut hashes: HashMap<String, Vec<String>> = HashMap::new();
     for s in skills.iter() {
         let seen = hashes.entry(s.name.clone()).or_default();
@@ -387,5 +402,49 @@ old
         let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names, ["live"]);
         assert!(!skills[0].duplicate);
+    }
+
+    #[test]
+    fn scan_skill_root_finds_skills_and_skips_dot_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("shared");
+        write(&root.join("a/SKILL.md"), "---\nname: alpha\n---\n");
+        write(&root.join("group/b/SKILL.md"), "plain");
+        write(&root.join(".trash/c/SKILL.md"), "x");
+        write(&root.join(".hidden/SKILL.md"), "x");
+        let skills = scan_skill_root(&root, "agents");
+        let mut names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["alpha", "b"]);
+        assert!(skills.iter().all(|s| s.scope == SkillScope::User));
+        assert!(
+            skills
+                .iter()
+                .all(|s| s.home_id.as_deref() == Some("agents"))
+        );
+        assert!(scan_skill_root(&dir.path().join("none"), "agents").is_empty());
+    }
+
+    #[test]
+    fn mark_duplicates_is_public_and_stable() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("one/x/SKILL.md"),
+            "---\nname: same\n---\none",
+        );
+        write(
+            &dir.path().join("two/x/SKILL.md"),
+            "---\nname: same\n---\ntwo",
+        );
+        write(&dir.path().join("two/y/SKILL.md"), "---\nname: solo\n---\n");
+        let mut all = scan_skill_root(&dir.path().join("one"), "a");
+        all.extend(scan_skill_root(&dir.path().join("two"), "b"));
+        assert!(all.iter().all(|s| !s.duplicate));
+        mark_duplicates(&mut all);
+        let flags: Vec<(&str, bool)> = all.iter().map(|s| (s.name.as_str(), s.duplicate)).collect();
+        assert_eq!(flags, [("same", true), ("same", true), ("solo", false)]);
+        let before = all.clone();
+        mark_duplicates(&mut all);
+        assert_eq!(all, before);
     }
 }
