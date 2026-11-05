@@ -969,14 +969,19 @@ mod tests {
     // The worktree is `<tmp>/wt` so a sibling file can show a path that leaves it.
     fn link_tree() -> (TempDir, String) {
         let tmp = TempDir::new().unwrap();
-        let wt = tmp.path().join("wt");
+        // The long form: a runner's temp folder may be an 8.3 short name
+        // (`RUNNER~1`), which `canonicalize` would spell out.
+        let base = fs::canonicalize(tmp.path()).unwrap();
+        let base = base.to_string_lossy();
+        let base = PathBuf::from(base.strip_prefix(r"\\?\").unwrap_or(&base));
+        let wt = base.join("wt");
         fs::create_dir_all(wt.join("src")).unwrap();
         fs::create_dir_all(wt.join(".git")).unwrap();
         fs::create_dir_all(wt.join("dir")).unwrap();
         fs::write(wt.join("src").join("a.ts"), "x").unwrap();
         fs::write(wt.join("my file.txt"), "x").unwrap();
         fs::write(wt.join(".git").join("config"), "x").unwrap();
-        fs::write(tmp.path().join("outside.ts"), "x").unwrap();
+        fs::write(base.join("outside.ts"), "x").unwrap();
         let root = wt.to_string_lossy().into_owned();
         (tmp, root)
     }

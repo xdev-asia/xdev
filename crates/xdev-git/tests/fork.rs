@@ -71,7 +71,18 @@ impl Fork {
             &["clone", "-q", "--bare", &url(&upstream), "."],
         );
         let work = TempDir::with_prefix("fork work ").unwrap();
-        git(work.path(), &["clone", "-q", &url(&origin), "."]);
+        // A runner's global `core.autocrlf=true` would check `a.txt` out with CRLF.
+        git(
+            work.path(),
+            &[
+                "clone",
+                "-q",
+                "-c",
+                "core.autocrlf=false",
+                &url(&origin),
+                ".",
+            ],
+        );
         identity(work.path());
         git(work.path(), &["remote", "add", "upstream", &url(&upstream)]);
         let repo = Repo::discover(work.path()).unwrap();
