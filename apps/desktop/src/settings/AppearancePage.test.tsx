@@ -5,6 +5,7 @@ import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { UI_SETTINGS_DEFAULTS } from "@/mockSettings";
 import { currentEditorTheme, resetEditorThemeForTests } from "@/ui/editorTheme";
+import { resetHiddenAppsForTests } from "@/ui/hiddenApps";
 import { getThemePreference, resetThemeForTests } from "@/ui/theme";
 import { AppearancePage } from "./AppearancePage";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
@@ -58,6 +59,7 @@ beforeEach(() => {
   hooks.active = false;
   resetThemeForTests();
   resetEditorThemeForTests();
+  resetHiddenAppsForTests();
 });
 
 async function page(filter?: SettingsFilter, openSection?: (id: string) => void) {
@@ -160,7 +162,7 @@ it("a status bar switch flips one item and keeps the others", async () => {
   const p = await page();
   p.sw("tokenUsage").props.onClick();
   await tick();
-  expect((await p.api.uiSettingsGet()).statusBar).toEqual({ branch: true, tokenUsage: false, agents: true, version: true, ports: true });
+  expect((await p.api.uiSettingsGet()).statusBar).toEqual({ branch: true, tokenUsage: false, agents: true, version: true, ports: true, keepAwake: true });
   expect(p.sw("tokenUsage").props["aria-checked"]).toBe(false);
 });
 
@@ -177,7 +179,7 @@ it("a search keeps only the rows that hit", async () => {
   const p = await page(filter);
   const shown = p.all().filter((n) => n.type === SettingRow && settingShown(filter, n.props.id)).map((n) => n.props.id);
   expect(shown).toEqual(["appearance.font"]);
-  expect(p.all().filter((n) => n.type === SettingGroup).map((n) => n.props.ids.some((i: string) => filter.ids.has(i)))).toEqual([true, false, false]);
+  expect(p.all().filter((n) => n.type === SettingGroup).map((n) => n.props.ids.some((i: string) => filter.ids.has(i)))).toEqual([true, false, false, false]);
 });
 
 it("every catalog entry of the section has a control on the page", () => {
@@ -209,4 +211,84 @@ it("the link rows open the Terminal and Usage sections, and only when the page c
   act("open-usage").props.onClick();
   expect(open.mock.calls).toEqual([["terminal"], ["usage"]]);
   expect((await page()).all().some((n) => n.props["data-act"] === "open-terminal")).toBe(false);
+});
+
+const radios = (p: Awaited<ReturnType<typeof page>>) => p.all().filter((n) => n.type === "input" && n.props.type === "radio" && n.props.name === "sidebar-tint");
+const range = (p: Awaited<ReturnType<typeof page>>) => p.all().find((n) => n.type === "input" && n.props.type === "range")!;
+
+it("shows the tint swatches only while the sidebar is tinted, each with an accessible name", async () => {
+  paintEnv();
+  const p = await page();
+  expect(radios(p)).toHaveLength(0);
+  p.of(Segmented).props.onChange("tinted");
+  await tick();
+  expect(radios(p).map((n) => n.props["aria-label"])).toEqual(["None", "Blue", "Cyan", "Violet", "Green", "Amber", "Orange", "Red", "Grey"]);
+  expect(radios(p).filter((n) => n.props.checked).map((n) => n.props.value)).toEqual([""]);
+  expect(range(p).props.disabled).toBe(true);
+});
+
+it("picking a swatch writes the token name and paints the wash", async () => {
+  const env = paintEnv();
+  const p = await page();
+  p.of(Segmented).props.onChange("tinted");
+  await tick();
+  radios(p).find((n) => n.props.value === "ok")!.props.onChange();
+  await tick();
+  expect(await p.api.uiSettingsGet()).toMatchObject({ sidebar: "tinted", sidebarTint: "ok" });
+  expect(env.props["--side-tint"]).toBe("color-mix(in srgb, var(--ok) 10%, var(--bg-1))");
+  expect(range(p).props.disabled).toBe(false);
+});
+
+it("the strength slider writes when released, not on every move", async () => {
+  const env = paintEnv();
+  const p = await page();
+  p.of(Segmented).props.onChange("tinted");
+  await tick();
+  radios(p).find((n) => n.props.value === "accent")!.props.onChange();
+  await tick();
+  range(p).props.onChange({ target: { value: "0.22" } });
+  await tick();
+  expect((await p.api.uiSettingsGet()).sidebarTintOpacity).toBe(0.1);
+  range(p).props.onPointerUp();
+  await tick();
+  expect((await p.api.uiSettingsGet()).sidebarTintOpacity).toBe(0.22);
+  expect(env.props["--side-tint"]).toContain(" 22%");
+});
+
+it("the reduce effects switch writes and sets data-effects", async () => {
+  const env = paintEnv();
+  const p = await page();
+  expect(p.sw("reduceEffects").props["aria-checked"]).toBe(false);
+  p.sw("reduceEffects").props.onClick();
+  await tick();
+  expect((await p.api.uiSettingsGet()).reduceEffects).toBe(true);
+  expect(env.attrs["data-effects"]).toBe("reduced");
+});
+
+it("an app switch hides one app, and the last visible app cannot be hidden", async () => {
+  paintEnv();
+  const p = await page();
+  p.sw("app-kit").props.onClick();
+  await tick();
+  expect((await p.api.uiSettingsGet()).hiddenApps).toEqual(["kit"]);
+  expect(p.sw("app-kit").props["aria-checked"]).toBe(false);
+  p.sw("app-kit").props.onClick();
+  await tick();
+  expect((await p.api.uiSettingsGet()).hiddenApps).toEqual([]);
+  for (const id of ["changes", "tasks", "squads", "agents", "kit", "accounts", "terminal"]) {
+    p.sw(`app-${id}`).props.onClick();
+    await tick();
+  }
+  expect((await p.api.uiSettingsGet()).hiddenApps).toHaveLength(7);
+  expect(p.sw("app-docs").props.disabled).toBe(true);
+  expect(p.sw("app-kit").props.disabled).toBe(false);
+});
+
+it("the status bar has a keep-awake switch", async () => {
+  paintEnv();
+  const p = await page();
+  expect(p.sw("keepAwake").props["aria-checked"]).toBe(true);
+  p.sw("keepAwake").props.onClick();
+  await tick();
+  expect((await p.api.uiSettingsGet()).statusBar.keepAwake).toBe(false);
 });

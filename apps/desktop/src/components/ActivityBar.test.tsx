@@ -25,6 +25,11 @@ describe("ActivityBar", () => {
     expect(markup).toMatch(/data-app="changes"[^>]*aria-current="page"/);
   });
 
+  it("leaves hidden apps out", () => {
+    const markup = renderToStaticMarkup(<ActivityBar active="docs" changeCount={null} onSelect={() => {}} hidden={["kit", "squads", "nope"]} />);
+    expect([...markup.matchAll(/data-app="(\w+)"/g)].map((m) => m[1])).toEqual(["docs", "changes", "tasks", "agents", "accounts", "terminal"]);
+  });
+
   it("shows a badge and count label for pending changes", () => {
     const markup = html("docs", 3);
     expect(markup).toContain('<span class="activity-badge" aria-hidden="true">3</span>');

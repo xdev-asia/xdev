@@ -3,15 +3,18 @@ import type { JSX } from "react";
 import { FontField, Segmented, Select, ThemeSwitch, UI_FONT_SUGGESTIONS } from "@xdev-asia/ui";
 import { toApiError, type ApiError, type EditorTheme, type SidebarLook, type StatusBarItems, type UiSettings } from "@/api";
 import { useI18n } from "@/i18n";
+import { APPS } from "@/shell/apps";
+import { clampTintOpacity, SIDEBAR_TINTS, TINT_OPACITY } from "@/ui/sidebarTint";
 import { applyAppearance } from "@/ui/theme";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
 export const EDITOR_THEMES: EditorTheme[] = ["app", "light", "dark"];
 export const SIDEBAR_LOOKS: SidebarLook[] = ["default", "tinted"];
-export const STATUS_BAR_ITEMS = ["branch", "tokenUsage", "agents", "ports", "version"] as const satisfies readonly (keyof StatusBarItems)[];
+export const STATUS_BAR_ITEMS = ["branch", "tokenUsage", "agents", "ports", "keepAwake", "version"] as const satisfies readonly (keyof StatusBarItems)[];
 
-const LOOK_IDS = ["appearance.theme", "appearance.font", "appearance.sidebar"];
+const LOOK_IDS = ["appearance.theme", "appearance.font", "appearance.sidebar", "appearance.sidebarTint", "appearance.reduceEffects"];
+const APP_IDS = APPS.map((id) => `appearance.app.${id}`);
 const EDITOR_IDS = ["appearance.editorTheme"];
 const STATUS_IDS = STATUS_BAR_ITEMS.map((k) => `appearance.statusBar.${k}`);
 const LINK_IDS = ["appearance.terminalLink", "appearance.usageLink"];
@@ -22,6 +25,7 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
   const { t } = useI18n();
   const [ui, setUi] = useState<UiSettings | null>(null);
   const [font, setFont] = useState("");
+  const [opacity, setOpacity] = useState<number>(TINT_OPACITY.default);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError["code"]>();
 
@@ -30,6 +34,7 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
       (s) => {
         setUi(s);
         setFont(s.uiFont);
+        setOpacity(clampTintOpacity(s.sidebarTintOpacity));
       },
       (e) => setError(toApiError(e).code),
     );
@@ -45,6 +50,7 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
       const stored = await api.uiSettingsPut({ ...(await api.uiSettingsGet()), ...change });
       setUi(stored);
       setFont(stored.uiFont);
+      setOpacity(clampTintOpacity(stored.sidebarTintOpacity));
       applyAppearance(stored);
     } catch (e) {
       setError(toApiError(e).code);
@@ -55,6 +61,12 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
   const saveFont = () => {
     if (ui && font.trim() !== ui.uiFont) void patch({ uiFont: font });
   };
+
+  const saveOpacity = () => {
+    if (ui && opacity !== clampTintOpacity(ui.sidebarTintOpacity)) void patch({ sidebarTintOpacity: opacity });
+  };
+  const hidden = ui?.hiddenApps ?? [];
+  const toggleApp = (id: string) => void patch({ hiddenApps: hidden.includes(id) ? hidden.filter((h) => h !== id) : [...hidden, id] });
 
   const editorOptions = EDITOR_THEMES.map((v) => ({ value: v, label: t(`settings.appearance.editor.${v}`) }));
 
@@ -135,6 +147,104 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
             </div>
           </div>
         </SettingRow>
+        {ui?.sidebar === "tinted" && (
+          <SettingRow id="appearance.sidebarTint" filter={filter}>
+            <div className="ws-fields">
+              <div className="ws-field" data-field="sidebarTint">
+                <span id="sidebar-tint-label">{t("settings.appearance.tint")}</span>
+                <div className="tint-swatches" role="radiogroup" aria-labelledby="sidebar-tint-label">
+                  {["", ...SIDEBAR_TINTS].map((name) => {
+                    const label = t(name === "" ? "settings.appearance.tint.none" : `settings.appearance.tint.${name}`);
+                    return (
+                      <label className="tint-swatch" key={name} title={label}>
+                        <input
+                          type="radio"
+                          name="sidebar-tint"
+                          value={name}
+                          aria-label={label}
+                          checked={ui.sidebarTint === name}
+                          disabled={busy}
+                          onChange={() => void patch({ sidebarTint: name })}
+                        />
+                        <span className="tint-swatch-dot" data-tint={name || "none"} style={name ? { background: `var(--${name})` } : undefined} aria-hidden="true" />
+                      </label>
+                    );
+                  })}
+                </div>
+                <label className="tint-opacity">
+                  <span>{t("settings.appearance.tintOpacity")}</span>
+                  <input
+                    type="range"
+                    data-field="sidebarTintOpacity"
+                    aria-valuetext={`${Math.round(opacity * 100)}%`}
+                    min={TINT_OPACITY.min}
+                    max={TINT_OPACITY.max}
+                    step={TINT_OPACITY.step}
+                    value={opacity}
+                    disabled={busy || ui.sidebarTint === ""}
+                    onChange={(e) => setOpacity(clampTintOpacity(Number(e.target.value)))}
+                    onPointerUp={saveOpacity}
+                    onKeyUp={saveOpacity}
+                    onBlur={saveOpacity}
+                  />
+                </label>
+                <small className="settings-hint">{t("settings.appearance.tintHint")}</small>
+              </div>
+            </div>
+          </SettingRow>
+        )}
+        <SettingRow id="appearance.reduceEffects" filter={filter}>
+          <ul className="settings-list">
+            <li className="settings-item" data-switch="reduceEffects">
+              <div className="settings-item-text">
+                <strong>{t("settings.appearance.reduceEffects")}</strong>
+                <small className="settings-hint">{t("settings.appearance.reduceEffectsHint")}</small>
+              </div>
+              {ui && (
+                <button
+                  type="button"
+                  role="switch"
+                  className="agent-switch"
+                  aria-checked={ui.reduceEffects}
+                  aria-label={t("settings.appearance.reduceEffects")}
+                  disabled={busy}
+                  onClick={() => void patch({ reduceEffects: !ui.reduceEffects })}
+                />
+              )}
+            </li>
+          </ul>
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup ids={APP_IDS} filter={filter}>
+        <h4 className="settings-group">{t("settings.appearance.apps")}</h4>
+        {ui && (
+          <ul className="settings-list">
+            {APPS.map((id) => {
+              const shown = !hidden.includes(id);
+              const lastShown = shown && APPS.filter((a) => !hidden.includes(a)).length <= 1;
+              return (
+                settingShown(filter, `appearance.app.${id}`) && (
+                  <li className="settings-item" data-switch={`app-${id}`} data-setting-id={`appearance.app.${id}`} key={id}>
+                    <div className="settings-item-text">
+                      <strong>{t(`apps.${id}`)}</strong>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      className="agent-switch"
+                      aria-checked={shown}
+                      aria-label={t("settings.appearance.app.show", { app: t(`apps.${id}`) })}
+                      disabled={busy || lastShown}
+                      onClick={() => toggleApp(id)}
+                    />
+                  </li>
+                )
+              );
+            })}
+          </ul>
+        )}
+        <small className="settings-hint">{t("settings.appearance.appsHint")}</small>
       </SettingGroup>
 
       <SettingGroup ids={EDITOR_IDS} filter={filter}>

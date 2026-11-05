@@ -13,6 +13,7 @@ import { LanguageSwitch } from "./LanguageSwitch";
 import { SquadsView } from "./SquadsView";
 import { StatusBar } from "./StatusBar";
 import { TasksView } from "./TasksView";
+import { useHiddenApps, useVisibleApp } from "@/ui/hiddenApps";
 
 export type VaultFailure = { path: string; code: ApiError["code"] };
 
@@ -53,6 +54,8 @@ export function VaultEmpty(props: { failure?: VaultFailure; busy: boolean; onCre
 export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; kit?: KitHost; appRequest?: { app: AppId; seq: number } | null; onCreate(): void; onOpen(): void }): JSX.Element {
   const { t } = useI18n();
   const [app, setApp] = useState<AppId>("docs");
+  const hiddenApps = useHiddenApps();
+  useVisibleApp(app, hiddenApps, setApp);
   const [taskFocus, setTaskFocus] = useState<string | null>(null);
   const { quota } = useQuota(api, app === "accounts");
   const kitRequest = props.kit?.open ?? null;
@@ -80,7 +83,7 @@ export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; kit?
           <LanguageSwitch />
         </div>
       </header>
-      <ActivityBar active={app} changeCount={null} onSelect={setApp} />
+      <ActivityBar active={app} changeCount={null} onSelect={setApp} hidden={hiddenApps} />
       <main className="main">
         {app === "accounts" ? (
           <AccountsView api={api} />

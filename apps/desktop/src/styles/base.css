@@ -182,3 +182,29 @@ kbd {
   flex-wrap: wrap;
   gap: var(--x-space-2);
 }
+
+/* Settings > Appearance > Reduce visual effects (`data-effects` on the root), and the system's reduced-motion request. */
+[data-effects="reduced"] *,
+[data-effects="reduced"] *::before,
+[data-effects="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
+  backdrop-filter: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
