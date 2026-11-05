@@ -11,12 +11,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, State};
 use xdev_policy::{Action, Audited, Policy, Verdict};
+use xdev_ports::PortScan;
 use xdev_workspace::{
     COMMENT_MAX, CreateOptions, DetailsPatch, MadeBy, Registry, RepoView, WorkStatus, WorktreeView,
     create_worktree_linked, list, path_key, refresh_base, set_details, shared_to_link,
 };
 
 use crate::accounts::data_dir;
+use crate::automations::AutomationService;
 use crate::commands::{AppState, CmdError, load_git_settings};
 use crate::endpoint::{
     APP_PROTOCOL, AppError, Caller, Handler, Request, Scope, WAIT_MAX_S, caller_worktree, scope_of,
@@ -346,13 +348,21 @@ pub struct Ctx<'a> {
     /// Types into a live PTY; false when there is none to write to.
     #[allow(dead_code)]
     pub write_pty: &'a dyn Fn(&str, &[u8]) -> bool,
+    /// The automations store the UI's Automations page reads.
+    pub automations: &'a AutomationService,
+    /// Tells the window an automation changed and asks the tick for a pass.
+    pub announce: &'a dyn Fn(Option<&str>),
+    /// One port scan over these worktrees.
+    pub scan_ports: &'a dyn Fn(&[PathBuf]) -> PortScan,
+    /// Shows the window and puts it in front.
+    pub focus_window: &'a dyn Fn(),
 }
 
 /// One worktree as the verbs know it.
 pub(crate) struct Listed {
-    repo_id: String,
+    pub(crate) repo_id: String,
     repo: String,
-    view: WorktreeView,
+    pub(crate) view: WorktreeView,
 }
 
 /// A worktree row of `worktree ps | current | set`.
@@ -484,7 +494,7 @@ fn resolve<'a>(all: &'a [Listed], text: &str, repo: Option<&str>) -> Result<&'a 
 }
 
 /// The worktree a verb is for: the one named, else the caller's own.
-fn target<'a>(
+pub(crate) fn target<'a>(
     all: &'a [Listed],
     named: Option<&str>,
     caller: Option<&Path>,
@@ -928,6 +938,9 @@ pub fn dispatch(
         "terminal.show" => crate::cli_terminal::terminal_show(ctx, req),
         "terminal.read" => crate::cli_terminal::terminal_read(ctx, req),
         "terminal.send" => crate::cli_terminal::terminal_send(ctx, req, caller),
+        "file.open" => crate::cli_file::file_open(ctx, req, caller),
+        "ports.list" => crate::cli_ports::ports_list(ctx, req, caller),
+        m if m.starts_with("automation.") => crate::cli_automations::handle(ctx, req, caller),
         m if m.starts_with("orchestration.") => orchestration::handle(ctx, req, caller, gone),
         other => Err(bad_request(format!("unknown method {other}"))),
     }
@@ -960,6 +973,11 @@ impl Handler for AppVerbs {
         };
         let git = load_git_settings(app);
         let (now_ms, seed) = clock();
+        let automations = app.state::<AutomationService>();
+        let announce = |id: Option<&str>| crate::automations::announce(app, id.map(str::to_owned));
+        let ports = app.state::<crate::ports::Ports>();
+        let scan_ports = |worktrees: &[PathBuf]| ports.scan(&ptys.roots(), worktrees);
+        let focus_window = || crate::cli_file::bring_to_front(app);
         let ctx = Ctx {
             data,
             lock: &lock,
@@ -976,6 +994,10 @@ impl Handler for AppVerbs {
             orch: &orch,
             orch_settings: settings_store::read(app).orchestration,
             write_pty: &write_pty,
+            automations: &automations,
+            announce: &announce,
+            scan_ports: &scan_ports,
+            focus_window: &focus_window,
         };
         dispatch(&ctx, req, caller, gone)
     }
@@ -1027,6 +1049,15 @@ pub(crate) mod tests {
         /// Whether a write to a PTY lands; what was written.
         pub pty_alive: bool,
         pub pty_writes: Mutex<Vec<(String, Vec<u8>)>>,
+        /// The automations the verbs read and write, in a store of their own.
+        pub automations: AutomationService,
+        /// Ids the verbs announced.
+        pub announced: Mutex<Vec<Option<String>>>,
+        /// What the fake scan finds, and the worktree lists it was asked about.
+        pub scan: PortScan,
+        pub scanned: Mutex<Vec<Vec<PathBuf>>>,
+        /// How often the window was brought to the front.
+        pub focused: AtomicU64,
     }
 
     pub(crate) fn fixture() -> Fixture {
@@ -1046,6 +1077,7 @@ pub(crate) mod tests {
         fs::write(main.join("a.txt"), "one").unwrap();
         git(&main, &["add", "-A"]);
         git(&main, &["commit", "-q", "-m", "one"]);
+        let tmp_path = tmp.path().to_owned();
         let mut reg = Registry::load(&data).unwrap();
         let id = add_repo(&mut reg, &main, 0).unwrap().id;
         let lead = PathBuf::from(
@@ -1088,6 +1120,14 @@ pub(crate) mod tests {
             max_depth: 1,
             pty_alive: true,
             pty_writes: Mutex::default(),
+            automations: AutomationService::new(
+                xdev_automations::Store::open(&tmp_path.join("automations")).unwrap(),
+                || 1_000,
+            ),
+            announced: Mutex::default(),
+            scan: PortScan::no_terminal(),
+            scanned: Mutex::default(),
+            focused: AtomicU64::new(0),
         }
     }
 
@@ -1157,6 +1197,17 @@ pub(crate) mod tests {
                         .unwrap()
                         .push((id.to_owned(), bytes.to_vec()));
                     self.pty_alive
+                },
+                automations: &self.automations,
+                announce: &|id: Option<&str>| {
+                    self.announced.lock().unwrap().push(id.map(str::to_owned));
+                },
+                scan_ports: &|worktrees: &[PathBuf]| {
+                    self.scanned.lock().unwrap().push(worktrees.to_vec());
+                    self.scan.clone()
+                },
+                focus_window: &|| {
+                    self.focused.fetch_add(1, Ordering::SeqCst);
                 },
             };
             let req = Request {

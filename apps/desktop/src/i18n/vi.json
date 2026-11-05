@@ -3967,5 +3967,6 @@
   "agentLaunch.verdict.failedHint": "{agent} không báo phiên bản: {hint}",
   "agentLaunch.verdict.ok": "{agent} {version} đã được cài.",
   "workspace.tabs.launchOptions": "Chạy với tùy chọn",
-  "workspace.agentPicker.launchOptions": "Chạy với tùy chọn"
+  "workspace.agentPicker.launchOptions": "Chạy với tùy chọn",
+  "cli.ask.automation": "đổi một automation chạy trong"
 }

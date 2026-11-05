@@ -3967,5 +3967,6 @@
   "agentLaunch.verdict.failedHint": "{agent} did not report a version: {hint}",
   "agentLaunch.verdict.ok": "{agent} {version} is installed.",
   "workspace.tabs.launchOptions": "Launch with options",
-  "workspace.agentPicker.launchOptions": "Launch with options"
+  "workspace.agentPicker.launchOptions": "Launch with options",
+  "cli.ask.automation": "change an automation that runs in"
 }

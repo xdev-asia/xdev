@@ -92,6 +92,10 @@ pub(crate) fn io_error(e: impl std::fmt::Display) -> AppError {
     AppError::new("io", e.to_string())
 }
 
+pub(crate) fn bad_request(message: impl Into<String>) -> AppError {
+    AppError::new("bad_request", message)
+}
+
 impl Client {
     /// Reads the token in `dir`, connects and says hello. No `endpoint.json`,
     /// or one an app left behind (nothing listens on the endpoint), is
@@ -359,6 +363,9 @@ pub fn request(
 ) -> Result<(&'static str, Value, bool), AppError> {
     Ok(match cmd {
         AppCommand::Orchestration(o) => return crate::orch::request(o, stdin),
+        AppCommand::File(c) => return Ok(crate::file::request(c)),
+        AppCommand::Ports(a) => return Ok(crate::ports::request(a)),
+        AppCommand::Automations(c) => return crate::automations::request(c),
         AppCommand::Status(a) => ("status", json!({}), a.json),
         AppCommand::Worktree(WorktreeCommand::Ps { all, json }) => {
             ("worktree.ps", json!({ "all": all }), *json)
@@ -436,9 +443,12 @@ pub enum AppCommand {
     Worktree(WorktreeCommand),
     Terminal(TerminalCommand),
     Orchestration(Box<crate::orch::OrchArgs>),
+    File(crate::file::FileCommand),
+    Ports(crate::ports::PortsArgs),
+    Automations(crate::automations::AutomationsCommand),
 }
 
-fn text(v: &Value) -> String {
+pub(crate) fn text(v: &Value) -> String {
     match v {
         Value::Null => "-".to_owned(),
         Value::String(s) if s.is_empty() => "-".to_owned(),
@@ -474,7 +484,11 @@ fn row_line(r: &Value) -> String {
 
 /// The plain text of a verb's result, one line per row.
 pub fn plain(method: &str, result: &Value) -> String {
-    if let Some(text) = crate::orch::plain(method, result) {
+    if let Some(text) = crate::orch::plain(method, result)
+        .or_else(|| crate::file::plain(method, result))
+        .or_else(|| crate::ports::plain(method, result))
+        .or_else(|| crate::automations::plain(method, result))
+    {
         return text;
     }
     let rows = |f: fn(&Value) -> String| -> String {

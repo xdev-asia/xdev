@@ -1,4 +1,5 @@
 import type { Api, CliAsk } from "@/api";
+import { openFile } from "@/files/openFile";
 import { dismissToast, pushToast } from "./toastStore";
 
 /** How long the person has to answer a CLI write; the backend gives up at the same time. */
@@ -24,6 +25,10 @@ const VERB_KEYS: Record<string, string> = {
   "worktree.create": "cli.ask.create",
   "worktree.set": "cli.ask.set",
   "terminal.send": "cli.ask.send",
+  "automation.run": "cli.ask.automation",
+  "automation.enable": "cli.ask.automation",
+  "automation.disable": "cli.ask.automation",
+  "automation.remove": "cli.ask.automation",
 };
 
 /** The toast for one `cli://ask`: Allow / Deny, gone after 60 s with no answer sent. */
@@ -52,6 +57,7 @@ export function startCliEvents(api: Api, host: CliEventHost): () => void {
     api.onWorkspaceChanged(() => host.reload()),
     api.onCliOpenTab((e) => host.openTab(e.worktree, e.profile, e.prompt)),
     api.onCliAsk((e) => void askToast(api, e, host.t)),
+    api.onCliOpenFile((e) => openFile({ worktree: e.worktree, rel: e.path, line: e.line ?? undefined, column: e.column ?? undefined })),
   ];
   return () => {
     for (const off of offs) void off.then((stop) => stop()).catch(() => {});

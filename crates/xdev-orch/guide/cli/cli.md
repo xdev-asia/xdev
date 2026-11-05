@@ -28,6 +28,44 @@ xdev worktree set --status in-review --comment <text>
 - `worktree create` makes a child of your worktree and prints `id`, `branch`, `path`. The new tab is not focused. `--from <ref>` sets the start point. `--prompt <text>` types text into the agent once it is ready; `-` reads stdin.
 - `worktree set` changes the status, comment or title of a worktree (default: yours). Status is one of `todo`, `in-progress`, `in-review`, `completed`, `none`. A comment is at most 2000 characters.
 
+## Open a file
+
+```sh
+xdev file open <path> --line 12
+xdev file open src/main.rs:12:3
+```
+
+- `file open` shows a file in the xDev window and brings the window to the front. The path is absolute or relative to the current folder, and must be inside a worktree xDev knows. A `..` that leaves the worktree is refused.
+- `--line` and `--column` (1-based) win over a `:line:column` suffix. It prints `opened`, the worktree, the path, the line and the column.
+
+## Ports
+
+```sh
+xdev ports
+xdev ports --all --json
+xdev ports --worktree <id>
+```
+
+- `ports`: the listening ports of your worktree, as a table of `PORT`, `PID`, `PROCESS`, `WORKTREE`. From outside xDev's terminals it lists every worktree.
+- `--worktree <id>` picks another worktree. `--all` lists every worktree.
+- `--json` gives `ports`, each with `port`, `pid`, `process`, `worktree`, `worktreeName`, `url`, `protocol`, and `unavailable` when the scan could not run.
+
+## Automations
+
+```sh
+xdev automations list
+xdev automations show <id>
+xdev automations runs <id> --limit 5
+xdev automations run <id>
+xdev automations disable <id>
+xdev automations remove <id> --yes
+```
+
+- `list`, `show`, `runs`: read only. An id is the full id, a unique prefix, or the exact name. `runs` shows the newest runs, `--limit` is 1 to 200, default 10.
+- `run` queues a run now, as Run now does in the app, paused or not. The window starts it. It prints `queued`, the run id and the status.
+- `enable` lets the schedule run it; `disable` stops the schedule. `remove` deletes the automation and its runs, and needs `--yes`.
+- `run`, `enable`, `disable` and `remove` change state. Like the worktree writes, they pass when the automation's worktree is yours and otherwise ask the person.
+
 ## Wait
 
 ```sh

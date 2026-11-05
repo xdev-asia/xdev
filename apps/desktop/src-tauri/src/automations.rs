@@ -834,7 +834,7 @@ fn kick(app: &AppHandle) {
     }
 }
 
-fn announce(app: &AppHandle, automation_id: Option<String>) {
+pub(crate) fn announce(app: &AppHandle, automation_id: Option<String>) {
     use tauri::Emitter;
     let _ = app.emit(CHANGED_EVENT, AutomationsChanged { automation_id });
     kick(app);
