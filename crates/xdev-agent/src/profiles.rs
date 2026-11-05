@@ -341,9 +341,12 @@ impl Profiles {
         if disk.version != VERSION {
             return Err(ProfileError::Bad);
         }
+        let mut disk = disk;
+        let mut default_agent = disk.default_agent.clone();
+        rename_clashes(&mut disk.profiles, &mut default_agent);
         let mut found = Profiles {
             approvals: disk.approvals,
-            default_agent: disk.default_agent,
+            default_agent,
             default_shell: disk.default_shell,
             profiles: Vec::with_capacity(disk.profiles.len()),
             shells: Vec::with_capacity(disk.shells.len()),
@@ -402,10 +405,14 @@ impl Profiles {
         self.profiles.iter().find(|p| p.id == id)
     }
 
-    /// Insert or replace by id. A built-in keeps its CLI whatever the caller
+    /// Insert or replace by id; disabling the default agent resets it to `auto`. A built-in keeps its CLI whatever the caller
     /// sends; a custom profile cannot name one.
     pub fn put(&mut self, profile: Profile) -> Result<(), ProfileError> {
         let profile = checked(profile)?;
+        // A disabled agent cannot stay the default; `auto` takes over.
+        if !profile.enabled && self.default_agent == DefaultAgent::Agent(profile.id.clone()) {
+            self.default_agent = DefaultAgent::Auto;
+        }
         match self.profiles.iter_mut().find(|p| p.id == profile.id) {
             Some(slot) => *slot = profile,
             None => self.profiles.push(profile),
@@ -561,6 +568,32 @@ fn checked(mut profile: Profile) -> Result<Profile, ProfileError> {
         return Err(invalid("env"));
     }
     Ok(profile)
+}
+
+/// A stored custom profile (a program, no CLI) whose id is now a built-in id is renamed
+/// to the first free `<id>-custom`, `<id>-custom-2`, ...; the default agent
+/// follows. Its program and args stay. The file is rewritten on the next save.
+fn rename_clashes(profiles: &mut [Profile], default_agent: &mut DefaultAgent) {
+    let taken: Vec<String> = profiles.iter().map(|p| p.id.clone()).collect();
+    let mut used = taken.clone();
+    for profile in profiles.iter_mut() {
+        if profile.cli.is_some() || profile.program.is_none() || Cli::of_id(&profile.id).is_none() {
+            continue;
+        }
+        let old = std::mem::take(&mut profile.id);
+        let new = (1..)
+            .map(|n| match n {
+                1 => format!("{old}-custom"),
+                n => format!("{old}-custom-{n}"),
+            })
+            .find(|id| !used.contains(id))
+            .expect("an endless range has a free id");
+        used.push(new.clone());
+        if *default_agent == DefaultAgent::Agent(old) {
+            *default_agent = DefaultAgent::Agent(new.clone());
+        }
+        profile.id = new;
+    }
 }
 
 fn checked_shell(shell: CustomShell) -> Result<CustomShell, ProfileError> {
@@ -898,6 +931,46 @@ mod tests {
     }
 
     #[test]
+    fn custom_id_clash_is_renamed() {
+        let d = tempdir();
+        fs::write(
+            d.path().join(FILE),
+            r#"{"version":1,"defaultAgent":"aider","profiles":[
+              {"id":"aider","name":"My aider","program":"aider-x","args":["-v"]},
+              {"id":"aider-custom","name":"Other","program":"o"}]}"#,
+        )
+        .unwrap();
+        let p = Profiles::load(d.path()).unwrap();
+        // The built-in aider is back, the stored one is kept under a free id.
+        assert!(p.get("aider").unwrap().cli.is_some());
+        let moved = p.get("aider-custom-2").unwrap();
+        assert_eq!(moved.program.as_deref(), Some("aider-x"));
+        assert_eq!(moved.args, ["-v"]);
+        assert!(p.get("aider-custom").unwrap().cli.is_none());
+        assert_eq!(
+            p.default_agent,
+            DefaultAgent::Agent("aider-custom-2".into())
+        );
+    }
+
+    #[test]
+    fn old_default_string_reads_as_agent() {
+        let d = tempdir();
+        fs::write(
+            d.path().join(FILE),
+            r#"{"version":1,"defaultAgent":"codex"}"#,
+        )
+        .unwrap();
+        let p = Profiles::load(d.path()).unwrap();
+        assert_eq!(p.default_agent, DefaultAgent::Agent("codex".into()));
+    }
+
+    #[test]
+    fn default_auto_by_default() {
+        assert_eq!(Profiles::default().default_agent, DefaultAgent::Auto);
+    }
+
+    #[test]
     fn failed_save_leaves_no_temp_file() {
         let d = tempdir();
         // A folder where the file belongs makes the final rename fail.
@@ -990,6 +1063,17 @@ mod tests {
         p.remove("mine").unwrap();
         assert_eq!(p.default_agent, DefaultAgent::Auto);
         assert!(p.get("mine").is_none());
+    }
+
+    #[test]
+    fn disabling_default_resets_to_auto() {
+        let mut p = Profiles::default();
+        p.set_defaults(Approvals::Ask, DefaultAgent::Agent("codex".into()), None)
+            .unwrap();
+        let mut c = p.get("codex").unwrap().clone();
+        c.enabled = false;
+        p.put(c).unwrap();
+        assert_eq!(p.default_agent, DefaultAgent::Auto);
     }
 
     #[test]
