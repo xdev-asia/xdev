@@ -38,6 +38,7 @@ import {
   focusPane,
   leaves,
   pinFirst,
+  movePane as moveLeaf,
   neighbour,
   paneOf,
   removeTab,
@@ -839,6 +840,7 @@ export function WorktreeTabs(props: {
             onFocus={(pane) => layout.focused !== pane && setLayout(focusPane(layout, pane))}
             onResize={(split, sizes) => setLayout(resize(layout, split, sizes))}
             onEqualize={() => setLayout(equalize(layout))}
+            onMovePane={(source, target, zone) => setLayout(moveLeaf(layout, source, target, zone))}
             tabDrag={drag}
           />
         )}
