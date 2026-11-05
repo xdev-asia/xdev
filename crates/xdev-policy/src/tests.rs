@@ -337,6 +337,32 @@ fn cli_worktree_writes_pass_for_own_and_family_and_ask_otherwise() {
     ));
 }
 
+fn cli(op: &str, scope: &str) -> Action {
+    Action::CliWorktree {
+        op: op.into(),
+        worktree: "/w".into(),
+        scope: scope.into(),
+    }
+}
+
+#[test]
+fn cli_send_in_own_or_family_scope_is_allowed() {
+    let policy = Policy::default();
+    assert_eq!(policy.check(&cli("send", "own")), Verdict::Allow);
+    assert_eq!(policy.check(&cli("send", "family")), Verdict::Allow);
+}
+
+#[test]
+fn cli_send_elsewhere_asks() {
+    let policy = Policy::default();
+    for scope in ["other", "external"] {
+        assert!(
+            matches!(policy.check(&cli("send", scope)), Verdict::Ask { .. }),
+            "{scope}"
+        );
+    }
+}
+
 #[test]
 fn a_refusal_is_audited_as_deny() {
     let dir = tempfile::tempdir().unwrap();
