@@ -37,10 +37,10 @@ pub enum SkillsCommand {
 pub fn get_text(topic: &str, reference: Option<&str>, references: bool) -> Result<String, String> {
     let main = guide::get(topic).ok_or_else(|| format!("no guide named {topic}"))?;
     if references {
-        return Ok(guide::references().join("\n") + "\n");
+        return Ok(guide::references(topic).join("\n") + "\n");
     }
     match reference {
-        Some(name) => guide::reference(name)
+        Some(name) => guide::reference(topic, name)
             .map(str::to_owned)
             .ok_or_else(|| format!("no reference named {name}")),
         None => Ok(main.to_owned()),
