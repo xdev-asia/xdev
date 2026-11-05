@@ -3,11 +3,14 @@
 //! Everything here reads local tables only; nothing touches the network.
 
 pub mod attribute;
+mod os;
 pub mod parse;
 mod probe;
+pub mod scanner;
 pub mod urls;
 
 pub use probe::{Listener, OsProbe, Probe, Proc, PtyRoot, ScanError};
+pub use scanner::{Scanner, StopError};
 
 use serde::{Deserialize, Serialize};
 
