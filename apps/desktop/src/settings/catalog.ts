@@ -163,6 +163,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("repos.baseRef", "settings.repos.baseRef", ["base", "branch", "main", "nhánh", "nhanh"], "settings.repos.baseRefHint"),
   e("repos.worktreeRoot", "settings.repos.worktreeRoot", ["folder", "directory", "path", "thư mục", "thu muc"], "settings.repos.worktreeRootHint"),
   e("repos.sparsePresets", "settings.repos.presets", ["sparse", "preset", "folders", "checkout", "mẫu", "mau", "thư mục", "thu muc"], "settings.repos.presets.hint"),
+  e("repos.env", "settings.repos.env", ["environment", "env", "variable", "variables", "secret", "key", "value", "terminal", "biến môi trường", "bien moi truong", "bí mật", "bi mat"], "settings.repos.env.hint"),
   e("repos.scriptPolicy", "settings.repos.scripts.policy", ["setup", "script", "run", "kịch bản", "kich ban"]),
   e("repos.scriptSource", "settings.repos.scripts.source", ["setup", "script", "shared", "local", "kịch bản", "kich ban"]),
   e("repos.localScripts", "settings.repos.scripts", ["setup", "archive", "script", "kịch bản", "kich ban"], "settings.repos.scripts.localHint"),
@@ -210,6 +211,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("advanced.proxy", "settings.advanced.proxy", ["proxy", "http", "https", "socks5", "network", "terminal", "update", "máy chủ proxy", "may chu proxy", "mạng", "mang"], "settings.advanced.proxy.hint"),
   e("advanced.noProxy", "settings.advanced.noProxy", ["proxy", "bypass", "no_proxy", "exclude", "hosts", "bỏ qua", "bo qua", "loại trừ", "loai tru"], "settings.advanced.noProxy.hint"),
   e("advanced.nodeMirror", "settings.advanced.nodeMirror", ["node", "npm", "registry", "mirror", "package", "gương", "guong", "kho gói", "kho goi"], "settings.advanced.nodeMirror.hint"),
+  e("advanced.export", "settings.config.export", ["export", "import", "backup", "restore", "settings", "save", "load", "json", "xuất", "xuat", "nhập", "nhap", "sao lưu", "sao luu"], "settings.config.export.hint"),
   e("advanced.machineName", "settings.advanced.machineName", ["machine", "name", "host", "hostname", "computer", "device", "tên máy", "ten may", "máy tính", "may tinh"], "settings.advanced.machineName.hint"),
   // Account: agent account routing
   e("account.routing.policy", "settings.account.routing.policy", ["account", "routing", "policy", "quota", "round robin", "priority", "most quota", "new tab", "tài khoản", "tai khoan", "định tuyến", "dinh tuyen", "hạn mức", "han muc", "luân phiên", "luan phien", "ưu tiên", "uu tien"], "settings.account.routing.lead"),

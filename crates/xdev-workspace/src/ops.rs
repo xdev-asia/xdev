@@ -49,6 +49,10 @@ pub struct RepoView {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<SparsePreset>>"))]
     pub sparse_presets: Vec<SparsePreset>,
+    /// Environment rows; a secret row has no value here.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<crate::RepoEnvVar>>"))]
+    pub env: Vec<crate::RepoEnvVar>,
     /// The folder is gone or no longer a repo; the entry stays so a
     /// reconnected drive finds it again.
     pub missing: bool,
@@ -229,6 +233,9 @@ pub struct RepoPatch {
     /// The whole list; `Some(vec![])` clears it.
     #[serde(default)]
     pub sparse_presets: Option<Vec<SparsePreset>>,
+    /// The whole list; `Some(vec![])` clears it. Secret values are not part of it.
+    #[serde(default)]
+    pub env: Option<Vec<crate::RepoEnvVar>>,
 }
 
 /// 1 to 40 characters: `[a-z0-9]` first, then `[a-z0-9._-]`. No `:` or `/`,
@@ -327,6 +334,7 @@ pub fn update_repo(
         .as_deref()
         .map(clean_sparse_presets)
         .transpose()?;
+    let env = patch.env.as_deref().map(crate::clean_env).transpose()?;
     let docs_dir = patch
         .docs_dir
         .as_deref()
@@ -380,6 +388,9 @@ pub fn update_repo(
     }
     if let Some(presets) = sparse_presets {
         entry.sparse_presets = presets;
+    }
+    if let Some(rows) = env {
+        entry.env = rows;
     }
     let worktrees = reg.worktrees.clone();
     let view = sync_repo(reg, idx, 0, false);
@@ -473,6 +484,7 @@ fn missing_view(entry: &RepoEntry) -> RepoView {
         gh_account: entry.gh_account.clone(),
         local_issue_command: entry.local_issue_command.clone(),
         sparse_presets: entry.sparse_presets.clone(),
+        env: entry.env.clone(),
         missing: true,
         worktrees: Vec::new(),
         found: Vec::new(),

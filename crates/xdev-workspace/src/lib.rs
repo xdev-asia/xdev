@@ -1,6 +1,7 @@
 //! The desktop app's list of repos and the worktrees made from them.
 
 mod create;
+mod env;
 mod files;
 mod groups;
 mod hooks;
@@ -22,6 +23,10 @@ pub use xdev_git::GhAccount;
 use xdev_git::GitError;
 
 pub use create::{CreateProject, Created, PROJECT_NAME_MAX, ProjectKind, create_project};
+pub use env::{
+    ENV_KEY_MAX, ENV_MAX, ENV_VALUE_MAX, EnvPreviewRow, MASK, RESERVED_PREFIX, RepoEnvVar,
+    SecretStore, clean_env, is_reserved, merge_env, preview_env, valid_key,
+};
 pub use files::{
     Eol, FileKind, FileText, IMAGE_MAX, MEDIA_MAX, MediaKind, OsTrash, READ_MAX, Trash,
     WriteOutcome, create_entry, entry_path, link_rel, media_kind, read_bytes, read_file,
@@ -162,6 +167,9 @@ pub enum WorkspaceError {
     /// A text over its size cap.
     #[error("too large: {0}")]
     TooLarge(String),
+    /// An environment row with a key that is not usable.
+    #[error("not a usable environment variable: {0}")]
+    BadEnv(String),
 }
 
 impl WorkspaceError {
@@ -204,6 +212,7 @@ impl WorkspaceError {
             WorkspaceError::BadColor(_) => "bad_color",
             WorkspaceError::BadIcon(_) => "bad_icon",
             WorkspaceError::TooLarge(_) => "too_large",
+            WorkspaceError::BadEnv(_) => "bad_env",
         }
     }
 }

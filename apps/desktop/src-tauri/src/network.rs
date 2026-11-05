@@ -110,6 +110,38 @@ pub(crate) fn terminal_env(
     s: &NetworkSettings,
     is_set: &dyn Fn(&str) -> bool,
 ) -> Vec<(String, OsString)> {
+    terminal_env_with_project(s, &[], is_set)
+}
+
+/// `terminal_env` plus a project's variables (`xdev_workspace::merge_env`).
+/// A project variable overrides what the terminal inherits, so it ignores
+/// `is_set`, except an `XDEV_*` name, which is the app's own and is dropped.
+/// The network variables then treat a project name as already set.
+pub(crate) fn terminal_env_with_project(
+    s: &NetworkSettings,
+    project: &[(String, String)],
+    is_set: &dyn Fn(&str) -> bool,
+) -> Vec<(String, OsString)> {
+    let same = |a: &str, b: &str| {
+        if cfg!(windows) {
+            a.eq_ignore_ascii_case(b)
+        } else {
+            a == b
+        }
+    };
+    let mut out: Vec<(String, OsString)> = project
+        .iter()
+        .filter(|(k, _)| !xdev_workspace::is_reserved(k))
+        .map(|(k, v)| (k.clone(), OsString::from(v)))
+        .collect();
+    let taken: Vec<String> = out.iter().map(|(k, _)| k.clone()).collect();
+    out.extend(network_env(s, &|name| {
+        is_set(name) || taken.iter().any(|t| same(t, name))
+    }));
+    out
+}
+
+fn network_env(s: &NetworkSettings, is_set: &dyn Fn(&str) -> bool) -> Vec<(String, OsString)> {
     let mut out: Vec<(String, OsString)> = Vec::new();
     let mut add = |name: &str, value: &str| {
         let taken = |n: &str| {
@@ -147,6 +179,62 @@ pub(crate) fn terminal_env(
         add("npm_config_registry", mirror);
     }
     out
+}
+
+/// The repo whose folder, worktree folder or worktree holds `cwd`; the
+/// deepest match wins, so a repo nested in another gets its own.
+pub(crate) fn repo_for_cwd<'a>(
+    reg: &'a xdev_workspace::Registry,
+    cwd: &std::path::Path,
+) -> Option<&'a xdev_workspace::RepoEntry> {
+    let key = xdev_workspace::path_key(cwd);
+    let inside = |root: &std::path::Path| {
+        let r = xdev_workspace::path_key(root);
+        (key == r || key.starts_with(&format!("{r}/"))).then_some(r.len())
+    };
+    reg.repos
+        .iter()
+        .filter_map(|repo| {
+            let own = [inside(&repo.path), inside(&repo.worktree_root)];
+            let trees = reg
+                .worktrees
+                .iter()
+                .filter(|w| w.repo_id == repo.id)
+                .map(|w| inside(&w.path));
+            own.into_iter()
+                .chain(trees)
+                .flatten()
+                .max()
+                .map(|n| (n, repo))
+        })
+        .max_by_key(|(n, _)| *n)
+        .map(|(_, repo)| repo)
+}
+
+/// Lays the environment of the repo `cwd` belongs to over `env`: a project
+/// variable replaces an inherited one of the same name and never an `XDEV_*`
+/// one. Nothing happens when `cwd` is in no repo.
+#[allow(dead_code)] // called from the launch path in pty.rs once it adopts it
+pub(crate) fn add_project_env(
+    env: &mut Vec<(String, OsString)>,
+    reg: &xdev_workspace::Registry,
+    secrets: &dyn xdev_workspace::SecretStore,
+    cwd: &std::path::Path,
+) {
+    let Some(repo) = repo_for_cwd(reg, cwd) else {
+        return;
+    };
+    let vars = xdev_workspace::merge_env(&repo.env, &|key| secrets.get(&repo.id, key));
+    for (key, value) in vars {
+        env.retain(|(k, _)| {
+            if cfg!(windows) {
+                !k.eq_ignore_ascii_case(&key)
+            } else {
+                *k != key
+            }
+        });
+        env.push((key, OsString::from(value)));
+    }
 }
 
 /// What an HTTP client should use.
@@ -453,5 +541,105 @@ mod tests {
         assert_eq!(s.no_proxy, ["a", "b"]);
         assert_eq!(s.node_mirror, "https://m");
         assert_eq!(s.machine_name, "n");
+    }
+
+    fn repo(
+        id: &str,
+        path: &str,
+        env: Vec<xdev_workspace::RepoEnvVar>,
+    ) -> xdev_workspace::RepoEntry {
+        xdev_workspace::RepoEntry {
+            id: id.into(),
+            short_name: id.into(),
+            path: path.into(),
+            worktree_root: format!("{path}-wt").into(),
+            env,
+            ..Default::default()
+        }
+    }
+
+    fn var(key: &str, value: &str, secret: bool) -> xdev_workspace::RepoEnvVar {
+        xdev_workspace::RepoEnvVar {
+            key: key.into(),
+            value: value.into(),
+            secret,
+        }
+    }
+
+    #[test]
+    fn project_env_overrides_inherited_but_not_the_apps_own() {
+        let project = vec![
+            ("HTTP_PROXY".to_owned(), "http://mine:1".to_owned()),
+            ("FOO".to_owned(), "bar".to_owned()),
+            ("XDEV_ROOT_PATH".to_owned(), "evil".to_owned()),
+        ];
+        let env = env_map(terminal_env_with_project(
+            &net("http://p:8080", &[], ""),
+            &project,
+            &|n| n == "FOO" || n == "HTTP_PROXY",
+        ));
+        assert_eq!(env["FOO"], "bar");
+        assert_eq!(env["HTTP_PROXY"], "http://mine:1");
+        assert!(!env.contains_key("XDEV_ROOT_PATH"));
+        // The network settings still fill the names the project did not set.
+        assert_eq!(env["HTTPS_PROXY"], "http://p:8080");
+    }
+
+    #[test]
+    fn terminal_env_without_a_project_is_unchanged() {
+        let n = net("http://p:8080", &[], "https://m.example");
+        assert_eq!(
+            terminal_env(&n, &|_| false),
+            terminal_env_with_project(&n, &[], &|_| false)
+        );
+    }
+
+    #[test]
+    fn a_repo_is_found_from_its_folder_a_worktree_or_the_worktree_root() {
+        let mut reg = xdev_workspace::Registry::default();
+        reg.repos.push(repo("a", "/work/a", vec![]));
+        reg.repos.push(repo("b", "/work/a/nested/b", vec![]));
+        reg.worktrees.push(
+            serde_json::from_str(
+                r#"{"repo_id":"a","path":"/elsewhere/feat","start":"","pinned":false,"created_ms":0,"made_here":false}"#,
+            )
+            .unwrap(),
+        );
+        let id = |p: &str| repo_for_cwd(&reg, std::path::Path::new(p)).map(|r| r.id.as_str());
+        assert_eq!(id("/work/a/src"), Some("a"));
+        assert_eq!(id("/work/a-wt/x/y"), Some("a"));
+        assert_eq!(id("/elsewhere/feat/sub"), Some("a"));
+        assert_eq!(id("/work/a/nested/b/src"), Some("b"));
+        assert_eq!(id("/work/ab"), None);
+        assert_eq!(id("/tmp"), None);
+    }
+
+    #[test]
+    fn add_project_env_replaces_inherited_and_reads_secrets_from_the_store() {
+        let mut reg = xdev_workspace::Registry::default();
+        reg.repos.push(repo(
+            "a",
+            "/work/a",
+            vec![
+                var("PLAIN", "p", false),
+                var("TOKEN", "", true),
+                var("XDEV_ROOT_PATH", "evil", false),
+            ],
+        ));
+        let secrets = crate::repo_env::MemorySecrets::default();
+        xdev_workspace::SecretStore::set(&secrets, "a", "TOKEN", "s3").unwrap();
+        let mut env: Vec<(String, OsString)> = vec![
+            ("PLAIN".into(), "old".into()),
+            ("XDEV_ROOT_PATH".into(), "/work/a".into()),
+        ];
+        add_project_env(&mut env, &reg, &secrets, std::path::Path::new("/work/a/x"));
+        let env = env_map(env);
+        assert_eq!(env["PLAIN"], "p");
+        assert_eq!(env["TOKEN"], "s3");
+        assert_eq!(env["XDEV_ROOT_PATH"], "/work/a");
+
+        let mut other: Vec<(String, OsString)> = vec![];
+        add_project_env(&mut other, &reg, &secrets, std::path::Path::new("/tmp"));
+        assert!(other.is_empty());
     }
 }

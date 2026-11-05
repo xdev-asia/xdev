@@ -1073,3 +1073,55 @@
   flex-direction: column;
   gap: var(--x-space-1);
 }
+
+.env-row {
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.env-row .ws-field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.env-row .env-problem {
+  flex-basis: 100%;
+}
+
+.env-row .env-remove,
+.config-io button {
+  min-height: 24px;
+  min-width: 24px;
+}
+
+.env-preview {
+  margin: var(--x-space-1) 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.config-io {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+}
+
+.config-sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-1) var(--x-space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.config-preview {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.config-preview li {
+  overflow-wrap: anywhere;
+}

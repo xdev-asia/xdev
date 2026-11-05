@@ -1147,6 +1147,10 @@ pub fn pty_spawn(
     }
     add_extra_args(&mut launch, extra_args.as_deref().unwrap_or_default())?;
     add_network_env(&mut launch.env, &settings_store::read(&app).network);
+    // The repo's own variables (Settings → Repos → Environment) win over inherited ones.
+    if let Ok(reg) = xdev_workspace::Registry::load(data) {
+        crate::network::add_project_env(&mut launch.env, &reg, &crate::repo_env::Keychain, &cwd);
+    }
     let starts_agent = crate::app_stats::counts_as_start(launch.agent, resume.as_deref(), fork);
     let routed = routed_start(&launch);
     let exit_id = id.clone();

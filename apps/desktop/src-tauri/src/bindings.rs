@@ -71,6 +71,11 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     RenderCrash::export_all(cfg)?;
     StartupReport::export_all(cfg)?;
     DiagnosticsExport::export_all(cfg)?;
+    crate::config_io::ImportPreview::export_all(cfg)?;
+    crate::config_io::ImportApplied::export_all(cfg)?;
+    crate::config_io::ConfigExported::export_all(cfg)?;
+    xdev_workspace::RepoEnvVar::export_all(cfg)?;
+    xdev_workspace::EnvPreviewRow::export_all(cfg)?;
     CliStatus::export_all(cfg)?;
     McpToolView::export_all(cfg)?;
     McpActivityView::export_all(cfg)?;

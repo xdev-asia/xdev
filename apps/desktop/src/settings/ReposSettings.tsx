@@ -23,6 +23,7 @@ import { sparseDirs } from "@/workspace/createSource";
 import { addPreset, removePreset } from "@/workspace/sparsePresets";
 import { colorField, ghField, iconField, identityPatch, shown, type GhState, type IdentityDraft } from "./repoIdentityForm";
 import { McpConfigs } from "./McpConfigs";
+import { RepoEnv } from "./RepoEnv";
 import { SettingGroup, SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
@@ -604,6 +605,9 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
               </SettingRow>
               <SettingRow id="repos.sparsePresets" filter={filter}>
                 {presetRows(repo)}
+              </SettingRow>
+              <SettingRow id="repos.env" filter={filter}>
+                <RepoEnv api={api} repo={repo} onSaved={(next) => setRepos((list) => list?.map((r) => (r.id === next.id ? next : r)) ?? null)} />
               </SettingRow>
             </div>
             <SettingGroup ids={SCRIPT_IDS} filter={filter}>

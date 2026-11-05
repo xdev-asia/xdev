@@ -6752,6 +6752,7 @@ dependencies = [
  "blake3",
  "block2",
  "dunce",
+ "keyring",
  "notify-debouncer-full",
  "objc2",
  "objc2-app-kit",

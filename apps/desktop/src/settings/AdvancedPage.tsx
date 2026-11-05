@@ -4,10 +4,12 @@ import { Button, Field, Textarea } from "@xdev-asia/ui";
 import { toApiError, type ApiError, type NetworkSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import { fromDraft, mirrorProblem, proxyProblem, toDraft, type NetworkDraft } from "./advancedNetwork";
+import { ConfigIo } from "./ConfigIo";
 import { SettingGroup, SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
 const IDS = ["advanced.proxy", "advanced.noProxy", "advanced.nodeMirror", "advanced.machineName"];
+const CONFIG_IDS = ["advanced.export"];
 const EMPTY: NetworkDraft = { proxyUrl: "", noProxy: "", nodeMirror: "", machineName: "" };
 
 /** Settings → Advanced: the proxy and its bypass list, the Node mirror and this machine's name. */
@@ -20,7 +22,7 @@ export function AdvancedPage(props: SettingsSectionProps): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError["code"]>();
 
-  useEffect(() => {
+  const load = (): void => {
     api.networkSettings().then(
       (s) => {
         setSaved(s);
@@ -29,7 +31,9 @@ export function AdvancedPage(props: SettingsSectionProps): JSX.Element {
       (e: unknown) => setError(toApiError(e).code),
     );
     api.machineName().then(setHostName, () => {});
-  }, [api]);
+  };
+
+  useEffect(load, [api]);
 
   const proxyIssue = proxyProblem(draft.proxyUrl);
   const mirrorIssue = mirrorProblem(draft.nodeMirror);
@@ -131,6 +135,12 @@ export function AdvancedPage(props: SettingsSectionProps): JSX.Element {
             </Button>
           </>
         )}
+      </SettingGroup>
+      <SettingGroup ids={CONFIG_IDS} filter={filter}>
+        <h4 className="settings-group">{t("settings.config.title")}</h4>
+        <SettingRow id="advanced.export" filter={filter}>
+          <ConfigIo api={api} onApplied={load} />
+        </SettingRow>
       </SettingGroup>
     </div>
   );

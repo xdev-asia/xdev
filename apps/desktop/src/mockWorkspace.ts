@@ -781,6 +781,15 @@ export function createMockWorkspace(
         presets = dedupePresets([...(presets ?? []), { name: p.name, dirs }]);
       }
       if (presets !== undefined && presets.length > SPARSE_PRESETS_MAX) return reject("too_large", "sparse presets");
+      if (patch.env !== undefined) {
+        const keys = new Set<string>();
+        for (const row of patch.env) {
+          const key = row.key.trim();
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || key.startsWith("XDEV_") || row.value.includes("\0")) return reject("bad_env", key);
+          keys.add(key);
+        }
+        if (patch.env.length > 100) return reject("too_large", "env");
+      }
       if (shortName !== undefined) repo.shortName = shortName;
       if (baseRef !== undefined) repo.baseRef = baseRef;
       if (worktreeRoot !== undefined) repo.worktreeRoot = trimPath(worktreeRoot);
@@ -793,6 +802,12 @@ export function createMockWorkspace(
       if (icon !== undefined) repo.icon = icon;
       if (patch.ghAccount !== undefined) repo.ghAccount = patch.ghAccount;
       if (localIssueCommand !== undefined) repo.localIssueCommand = localIssueCommand;
+      if (patch.env !== undefined) {
+        const rows = new Map<string, { key: string; value: string; secret: boolean }>();
+        for (const r of patch.env) rows.set(r.key.trim(), { key: r.key.trim(), value: r.secret ? "" : r.value, secret: r.secret });
+        if (rows.size > 0) repo.env = [...rows.values()];
+        else delete repo.env;
+      }
       if (presets !== undefined && presets.length > 0) repo.sparsePresets = presets;
       else if (presets !== undefined) delete repo.sparsePresets;
       return structuredClone(repo);
