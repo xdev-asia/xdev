@@ -6,6 +6,7 @@ mod commit;
 mod conflict;
 mod diff;
 mod gh;
+mod gh_review;
 mod history;
 mod range;
 mod remote;
@@ -26,6 +27,10 @@ pub use gh::{
     issue_create, issue_list, issue_open_web, issue_view, parse_issue_ref, parse_pr_ref, pr_checks,
     pr_create, pr_get, pr_list, pr_open_number, pr_open_web, pr_view, project_list, project_open,
     repo_name, run_failed_log,
+};
+pub use gh_review::{
+    COMMENT_BODY_MAX, COMMENTS_PER_SOURCE, MergeBlock, MergeMethod, PrComment, PrCommentDraft,
+    PrCommentKind, PrComments, PrMergeInfo, PrReaction, Reaction, RerunReport,
 };
 pub use history::Commit;
 pub use remote::{BaseRange, BaseRefresh, Upstream};
@@ -86,6 +91,15 @@ pub enum GitError {
     BadUrl(String),
     #[error("cancelled")]
     Cancelled,
+    #[error("the comment is too large")]
+    CommentTooLarge,
+    #[error("the comment is empty")]
+    EmptyComment,
+    #[error("no check to rerun")]
+    NothingToRerun,
+    /// The text is the block's kebab name, so it lands in `detail`.
+    #[error("{}", .0.as_str())]
+    MergeBlocked(MergeBlock),
     #[error("git {args} failed ({status:?}): {stderr}")]
     Failed {
         args: String,
@@ -120,6 +134,10 @@ impl GitError {
             GitError::Hook { .. } => "hook_failed",
             GitError::BadUrl(_) => "bad_arg",
             GitError::Cancelled => "cancelled",
+            GitError::CommentTooLarge => "comment_too_large",
+            GitError::EmptyComment => "empty_comment",
+            GitError::NothingToRerun => "nothing_to_rerun",
+            GitError::MergeBlocked(_) => "merge_blocked",
             GitError::StillConflicted => "still_conflicted",
             GitError::NoConflict => "no_conflict",
             GitError::BadId(_) | GitError::Timeout | GitError::Failed { .. } => "git",
@@ -198,5 +216,20 @@ impl Repo {
             root.pop();
         }
         root
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn review_errors_have_codes() {
+        assert_eq!(GitError::CommentTooLarge.code(), "comment_too_large");
+        assert_eq!(GitError::EmptyComment.code(), "empty_comment");
+        assert_eq!(GitError::NothingToRerun.code(), "nothing_to_rerun");
+        let blocked = GitError::MergeBlocked(MergeBlock::ChangesRequested);
+        assert_eq!(blocked.code(), "merge_blocked");
+        assert_eq!(blocked.to_string(), "changes-requested");
     }
 }

@@ -569,4 +569,72 @@ describe("mock repo hooks", () => {
       await expect(api.worktreeConflictAbort(FIRST, true)).rejects.toMatchObject({ code: "no_conflict" });
     });
   });
+
+  describe("pull request review", () => {
+    const PATH = "/demo/wt/xdev-elm";
+    const NUMBER = 41;
+
+    it("lists the seeded comments of the PR and none for another number", async () => {
+      const api = createMockWorkspace();
+      const { comments, truncated } = await api.worktreePrComments(PATH, NUMBER);
+      expect(truncated).toBe(false);
+      expect(comments.map((c) => c.kind)).toContain("review");
+      expect((await api.worktreePrComments(PATH, 99)).comments).toEqual([]);
+      await expect(api.worktreePrComments("/nope", NUMBER)).rejects.toMatchObject({ code: "worktree_unknown" });
+    });
+
+    it("posts a conversation comment, a thread reply and an inline comment", async () => {
+      const api = createMockWorkspace();
+      const draft = { body: "hi", replyTo: null, path: null, line: null, startLine: null };
+      await api.worktreePrCommentPost(PATH, NUMBER, draft);
+      await api.worktreePrCommentPost(PATH, NUMBER, { ...draft, body: "re", replyTo: 1 });
+      await api.worktreePrCommentPost(PATH, NUMBER, { ...draft, body: "inline", path: "a.ts", line: 3, startLine: 1 });
+      const { comments } = await api.worktreePrComments(PATH, NUMBER);
+      const added = comments.slice(-3);
+      expect(added.map((c) => c.id)).toEqual([7, 8, 9]);
+      expect(added[0]).toMatchObject({ kind: "conversation", body: "hi" });
+      expect(added[1]).toMatchObject({ kind: "thread", replyTo: 1, threadId: "T1", path: "src/session.ts" });
+      expect(added[2]).toMatchObject({ kind: "thread", path: "a.ts", line: 3, startLine: 1, replyTo: null });
+    });
+
+    it("rejects a blank or oversized body", async () => {
+      const api = createMockWorkspace();
+      const draft = { body: " ", replyTo: null, path: null, line: null, startLine: null };
+      await expect(api.worktreePrCommentPost(PATH, NUMBER, draft)).rejects.toMatchObject({ code: "empty_comment" });
+      await expect(api.worktreePrCommentPost(PATH, NUMBER, { ...draft, body: "x".repeat(65537) })).rejects.toMatchObject({ code: "comment_too_large" });
+      await expect(api.worktreePrCommentPost("/nope", NUMBER, draft)).rejects.toMatchObject({ code: "worktree_unknown" });
+    });
+
+    it("resolves every comment of a thread and reacts", async () => {
+      const api = createMockWorkspace();
+      await api.worktreePrThreadResolve(PATH, "T1", true);
+      let { comments } = await api.worktreePrComments(PATH, NUMBER);
+      expect(comments.filter((c) => c.threadId === "T1").every((c) => c.resolved)).toBe(true);
+      await api.worktreePrReaction(PATH, "DEMO_1", "THUMBS_UP", true);
+      await api.worktreePrReaction(PATH, "DEMO_1", "HEART", true);
+      ({ comments } = await api.worktreePrComments(PATH, NUMBER));
+      expect(comments[0].reactions).toEqual([{ content: "THUMBS_UP", count: 2, mine: true }, { content: "HEART", count: 1, mine: true }]);
+      await api.worktreePrReaction(PATH, "DEMO_1", "HEART", false);
+      ({ comments } = await api.worktreePrComments(PATH, NUMBER));
+      expect(comments[0].reactions.map((r) => r.content)).toEqual(["THUMBS_UP"]);
+    });
+
+    it("counts the runs a rerun asks for, or rejects", async () => {
+      const api = createMockWorkspace();
+      expect(await api.worktreePrChecksRerun(PATH, NUMBER, true)).toEqual({ started: 1, skipped: 0 });
+      expect(await api.worktreePrChecksRerun(PATH, NUMBER, false)).toEqual({ started: 1, skipped: 0 });
+      await expect(api.worktreePrChecksRerun(PATH, 99, true)).rejects.toMatchObject({ code: "nothing_to_rerun" });
+    });
+
+    it("merges, or rejects with the block as detail", async () => {
+      const api = createMockWorkspace();
+      expect((await api.worktreePrMergeInfo(PATH, NUMBER)).methods).toEqual(["squash", "merge", "rebase"]);
+      await api.worktreePrMerge(PATH, NUMBER, "squash");
+      expect((await api.worktreePr(PATH))?.state).toBe("merged");
+      const info = { block: "draft" as const, checksFailed: false, methods: ["merge" as const], defaultMethod: "merge" as const };
+      const blocked = createMockWorkspace({ ...DEMO_WORKSPACE, mergeInfo: { [PATH]: info } });
+      await expect(blocked.worktreePrMerge(PATH, NUMBER, "merge")).rejects.toEqual({ code: "merge_blocked", detail: "draft" });
+      expect(await blocked.worktreePrMergeInfo(PATH, NUMBER)).toEqual(info);
+    });
+  });
 });

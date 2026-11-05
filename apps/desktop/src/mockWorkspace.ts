@@ -2,7 +2,7 @@ import { normalizePrefix, previewPrefix } from "./settings/branchPrefix";
 import type { SettingsEmit } from "./mockSettings";
 import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, Check, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, Check, MergeBlock, PrComment, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SidebarItem, VaultView, PrDraft, PrView, ShipView, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 import { fromWork } from "@/workspace/branchName";
 import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
@@ -55,6 +55,13 @@ type WorkspaceApi = Pick<
   | "worktreePr"
   | "worktreePrCreate"
   | "worktreePrChecks"
+  | "worktreePrComments"
+  | "worktreePrCommentPost"
+  | "worktreePrThreadResolve"
+  | "worktreePrReaction"
+  | "worktreePrChecksRerun"
+  | "worktreePrMergeInfo"
+  | "worktreePrMerge"
   | "worktreePrOpen"
   | "worktreeCheckLog"
   | "worktreeDraftCommit"
@@ -91,6 +98,9 @@ export type MockWorkspaceSeed = {
   // Pull requests and their checks by worktree path.
   prs?: Record<string, PrView>;
   checks?: Record<string, Check[]>;
+  // Review comments and merge state of each worktree's PR, by worktree path.
+  prComments?: Record<string, PrComment[]>;
+  mergeInfo?: Record<string, PrMergeInfo>;
   // The next commit or amend in that worktree is rejected with `hook_failed`; the text is the hook output.
   hookFailure?: Record<string, string>;
   // Worktrees that already track a remote branch, with how far they have drifted.
@@ -164,10 +174,22 @@ export type MockSetupRun = { text: string; code: number };
 // The fake remote of one worktree.
 type Remote = { tracked: boolean; ahead: number; behind: number; commits: Commit[] };
 
+// Like `COMMENT_BODY_MAX` in Rust.
+const COMMENT_BODY_MAX = 64 * 1024;
+
+const DEFAULT_MERGE_INFO: PrMergeInfo = { block: null, checksFailed: false, methods: ["squash", "merge", "rebase"], defaultMethod: "squash" };
+
 const DEMO_START = "5555555555555555555555555555555555555555";
 
 function worktree(path: string, name: string, branch: string, primary: boolean): WorktreeView {
   return { path, name, branch, head: DEMO_START, start: primary ? null : DEMO_START, primary, pinned: false, detached: false, ...NO_DETAILS, defaultBranch: primary };
+}
+
+function demoComment(id: number, over: Partial<PrComment> & Pick<PrComment, "kind" | "author" | "body">): PrComment {
+  return {
+    id, nodeId: `DEMO_${id}`, authorBot: false, createdAt: `2026-11-0${Math.min(id, 5)}T09:00:00Z`, url: `https://example.test/pull/41#comment-${id}`,
+    path: null, line: null, startLine: null, threadId: null, replyTo: null, resolved: false, outdated: false, diffHunk: null, reactions: [], ...over,
+  };
 }
 
 export const DEMO_WORKSPACE: MockWorkspaceSeed = {
@@ -196,6 +218,25 @@ export const DEMO_WORKSPACE: MockWorkspaceSeed = {
       found: [],
     },
   ],
+  prs: {
+    "/demo/wt/xdev-elm": { number: 41, url: "https://example.test/pull/41", state: "open", title: "Show session status", base: "main", head: "elm" },
+  },
+  checks: {
+    "/demo/wt/xdev-elm": [
+      { name: "build", workflow: "ci", bucket: "pass", link: "https://example.test/o/r/actions/runs/101/job/1" },
+      { name: "test", workflow: "ci", bucket: "fail", link: "https://example.test/o/r/actions/runs/101/job/2" },
+    ],
+  },
+  prComments: {
+    "/demo/wt/xdev-elm": [
+      demoComment(1, { kind: "thread", author: "maya", body: "Should this fall back to the last known status?", path: "src/session.ts", line: 12, threadId: "T1", diffHunk: "@@ -10,3 +10,4 @@\n const a = 1;\n+const b = 2;", reactions: [{ content: "THUMBS_UP", count: 1, mine: false }] }),
+      demoComment(2, { kind: "thread", author: "oak-dev", body: "Yes, fixed in the next commit.", path: "src/session.ts", line: 12, threadId: "T1", replyTo: 1 }),
+      demoComment(3, { kind: "thread", author: "coderabbitai[bot]", authorBot: true, body: "Consider naming this constant.", path: "src/status.ts", line: 4, threadId: "T2", diffHunk: "@@ -1,2 +1,3 @@\n+export const X = 1;" }),
+      demoComment(4, { kind: "thread", author: "maya", body: "Typo in the label.", path: "src/lib/format.ts", line: 3, threadId: "T3", resolved: true, diffHunk: "@@ -1 +1 @@\n-lable\n+label" }),
+      demoComment(5, { kind: "review", author: "maya", body: "Looks good overall, two small notes." }),
+      demoComment(6, { kind: "conversation", author: "sam", body: "Can we ship this today?" }),
+    ],
+  },
   changes: {
     "/demo/wt/xdev-oak": [
       { path: "docs/old-notes.md", kind: "deleted" },
@@ -425,6 +466,8 @@ export function createMockWorkspace(
   let prNumber = 0;
   const prs = new Map<string, PrView>(Object.entries(structuredClone(seed.prs ?? {})));
   const checks = new Map<string, Check[]>(Object.entries(structuredClone(seed.checks ?? {})));
+  const prComments = new Map<string, PrComment[]>(Object.entries(structuredClone(seed.prComments ?? {})));
+  const mergeInfo = new Map<string, PrMergeInfo>(Object.entries(structuredClone(seed.mergeInfo ?? {})));
   const hooks = new Map<string, string>(Object.entries(seed.hookFailure ?? {}));
   const remotes = new Map<string, Remote>();
   const stagedFiles = new Map<string, Set<string>>();
@@ -1226,6 +1269,74 @@ export function createMockWorkspace(
     async worktreePrChecks(path, number) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       return prs.get(path)?.number === number ? structuredClone(checks.get(path) ?? []) : [];
+    },
+    async worktreePrComments(path, number) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const list = prComments.get(path) ?? [];
+      return prs.get(path)?.number === number ? { comments: structuredClone(list), truncated: false } : { comments: [], truncated: false };
+    },
+    async worktreePrCommentPost(path, _number, draft) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (draft.body.trim() === "") return reject("empty_comment");
+      if (draft.body.length > COMMENT_BODY_MAX) return reject("comment_too_large");
+      const list = prComments.get(path) ?? [];
+      const id = list.reduce((m, c) => Math.max(m, c.id), 0) + 1;
+      const root = draft.replyTo === null ? undefined : list.find((c) => c.id === draft.replyTo && c.kind === "thread");
+      const base = { id, nodeId: `MOCK_${id}`, author: "you", authorBot: false, body: draft.body, createdAt: new Date().toISOString(), url: `https://example.test/pull/comment-${id}`, resolved: false, outdated: false, diffHunk: null, reactions: [] };
+      if (root) {
+        list.push({ ...base, kind: "thread", path: root.path, line: root.line, startLine: root.startLine, threadId: root.threadId, replyTo: root.id, resolved: root.resolved });
+      } else if (draft.path !== null) {
+        list.push({ ...base, kind: "thread", path: draft.path, line: draft.line, startLine: draft.startLine, threadId: `MOCK_THREAD_${id}`, replyTo: null });
+      } else {
+        list.push({ ...base, kind: "conversation", path: null, line: null, startLine: null, threadId: null, replyTo: null });
+      }
+      prComments.set(path, list);
+    },
+    async worktreePrThreadResolve(path, threadId, resolved) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      for (const c of prComments.get(path) ?? []) if (c.threadId === threadId) c.resolved = resolved;
+    },
+    async worktreePrReaction(path, subjectId, content: Reaction, on) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const comment = (prComments.get(path) ?? []).find((c) => c.nodeId === subjectId);
+      if (!comment) return reject("gh_failed");
+      const mine = comment.reactions.find((r) => r.content === content);
+      if (on) {
+        if (mine) {
+          if (!mine.mine) { mine.mine = true; mine.count += 1; }
+        } else comment.reactions.push({ content, count: 1, mine: true });
+      } else if (mine?.mine) {
+        mine.count -= 1;
+        mine.mine = false;
+        if (mine.count === 0) comment.reactions = comment.reactions.filter((r) => r !== mine);
+      }
+    },
+    async worktreePrChecksRerun(path, number, failedOnly) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const list = prs.get(path)?.number === number ? checks.get(path) ?? [] : [];
+      const runs = new Set<string>();
+      let skipped = 0;
+      for (const c of list) {
+        if (failedOnly && c.bucket !== "fail" && c.bucket !== "cancel") continue;
+        const run = /\/actions\/runs\/(\d+)/.exec(c.link ?? "")?.[1];
+        if (run) runs.add(run); else skipped += 1;
+      }
+      if (runs.size === 0) return reject("nothing_to_rerun");
+      return { started: runs.size, skipped };
+    },
+    async worktreePrMergeInfo(path, number) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const pr = prs.get(path);
+      if (!pr || pr.number !== number) return reject("pr_not_found");
+      return structuredClone(mergeInfo.get(path) ?? DEFAULT_MERGE_INFO);
+    },
+    async worktreePrMerge(path, number) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const pr = prs.get(path);
+      if (!pr || pr.number !== number) return reject("pr_not_found");
+      const block: MergeBlock | null | undefined = mergeInfo.get(path)?.block;
+      if (block) return reject("merge_blocked", block);
+      prs.set(path, { ...pr, state: "merged" });
     },
     async worktreePrOpen(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

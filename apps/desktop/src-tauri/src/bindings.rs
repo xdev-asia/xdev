@@ -185,6 +185,16 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::PrQuery::export_all(cfg)?;
     xdev_git::IssueDraft::export_all(cfg)?;
     xdev_git::ProjectSummary::export_all(cfg)?;
+    xdev_git::PrComment::export_all(cfg)?;
+    xdev_git::PrComments::export_all(cfg)?;
+    xdev_git::PrCommentKind::export_all(cfg)?;
+    xdev_git::PrReaction::export_all(cfg)?;
+    xdev_git::Reaction::export_all(cfg)?;
+    xdev_git::PrCommentDraft::export_all(cfg)?;
+    xdev_git::MergeMethod::export_all(cfg)?;
+    xdev_git::MergeBlock::export_all(cfg)?;
+    xdev_git::PrMergeInfo::export_all(cfg)?;
+    xdev_git::RerunReport::export_all(cfg)?;
     CreateRequest::export_all(cfg)?;
     xdev_workspace::RepoIcon::export_all(cfg)?;
     KitText::export_all(cfg)?;

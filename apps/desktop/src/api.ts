@@ -113,6 +113,16 @@ import type {
   PrDraft,
   PrView,
   PrState,
+  PrComment,
+  PrComments,
+  PrCommentKind,
+  PrCommentDraft,
+  PrReaction,
+  Reaction,
+  MergeMethod,
+  MergeBlock,
+  PrMergeInfo,
+  RerunReport,
   Issue,
   IssueComment,
   IssueDetail,
@@ -294,6 +304,16 @@ export type {
   PrDraft,
   PrView,
   PrState,
+  PrComment,
+  PrComments,
+  PrCommentKind,
+  PrCommentDraft,
+  PrReaction,
+  Reaction,
+  MergeMethod,
+  MergeBlock,
+  PrMergeInfo,
+  RerunReport,
   Issue,
   IssueComment,
   IssueDetail,
@@ -469,6 +489,10 @@ export type ErrorCode =
   | "pr_not_found"
   | "gh_scope"
   | "bad_draft"
+  | "comment_too_large"
+  | "empty_comment"
+  | "nothing_to_rerun"
+  | "merge_blocked"
   | "branch_in_use"
   | "bad_sparse"
   | "draft_failed"
@@ -870,6 +894,18 @@ export interface Api {
   worktreePr(path: string): Promise<PrView | null>;
   worktreePrCreate(path: string, draft: PrDraft): Promise<PrView>;
   worktreePrChecks(path: string, number: number): Promise<Check[]>;
+  // Every review comment of the PR, oldest first, read with one GraphQL call.
+  worktreePrComments(path: string, number: number): Promise<PrComments>;
+  // A conversation comment, a reply (`replyTo`) or an inline comment (`path` and `line`). Rejects with
+  // `empty_comment` or `comment_too_large`.
+  worktreePrCommentPost(path: string, number: number, draft: PrCommentDraft): Promise<void>;
+  worktreePrThreadResolve(path: string, threadId: string, resolved: boolean): Promise<void>;
+  worktreePrReaction(path: string, subjectId: string, content: Reaction, on: boolean): Promise<void>;
+  // Reruns the GitHub Actions runs behind the checks. Rejects with `nothing_to_rerun`.
+  worktreePrChecksRerun(path: string, number: number, failedOnly: boolean): Promise<RerunReport>;
+  worktreePrMergeInfo(path: string, number: number): Promise<PrMergeInfo>;
+  // Rejects with `merge_blocked`; `detail` is the `MergeBlock`.
+  worktreePrMerge(path: string, number: number, method: MergeMethod): Promise<void>;
   worktreePrOpen(path: string, checks: boolean): Promise<void>;
   // The logins `gh` holds, active one flagged; [] when none or `gh` is not signed in. Rejects with
   // `gh_missing`. A repo bound to a login that is gone rejects its `gh` calls with `gh_account_missing`.
@@ -1189,6 +1225,10 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "pr_not_found",
   "gh_scope",
   "bad_draft",
+  "comment_too_large",
+  "empty_comment",
+  "nothing_to_rerun",
+  "merge_blocked",
   "branch_in_use",
   "bad_sparse",
   "draft_failed",
@@ -1443,6 +1483,13 @@ const tauriApi: Api = {
   worktreePrCreate: (path, draft) => call("worktree_pr_create", { path, draft }),
   ghLogins: () => call("gh_logins"),
   worktreePrChecks: (path, number) => call("worktree_pr_checks", { path, number }),
+  worktreePrComments: (path, number) => call("worktree_pr_comments", { path, number }),
+  worktreePrCommentPost: (path, number, draft) => call("worktree_pr_comment_post", { path, number, draft }),
+  worktreePrThreadResolve: (path, threadId, resolved) => call("worktree_pr_thread_resolve", { path, threadId, resolved }),
+  worktreePrReaction: (path, subjectId, content, on) => call("worktree_pr_reaction", { path, subjectId, content, on }),
+  worktreePrChecksRerun: (path, number, failedOnly) => call("worktree_pr_checks_rerun", { path, number, failedOnly }),
+  worktreePrMergeInfo: (path, number) => call("worktree_pr_merge_info", { path, number }),
+  worktreePrMerge: (path, number, method) => call("worktree_pr_merge", { path, number, method }),
   worktreePrOpen: (path, checks) => call("worktree_pr_open", { path, checks }),
   issuesList: (repoId, query) => call("issues_list", { repoId, query }),
   issueView: (repoId, number) => call("issue_view", { repoId, number }),
