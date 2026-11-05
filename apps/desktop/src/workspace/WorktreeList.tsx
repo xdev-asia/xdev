@@ -24,6 +24,7 @@ import { WorkItemChip } from "./WorkItemChip";
 import { PortsChip, PortsPopover } from "./PortsChip";
 import type { LivePort } from "./livePorts";
 import { ContextMenu } from "@/ui/ContextMenu";
+import { SetupGuideEntry } from "@/onboarding/SetupGuideEntry";
 
 type T = ReturnType<typeof useI18n>["t"];
 
@@ -839,6 +840,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
             {t("group.new")}
           </button>
         )}
+        <SetupGuideEntry projects={props.items?.length} />
       </div>
     </div>
   );
