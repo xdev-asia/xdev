@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MenuAction, type SetupDecision } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type IssuesPreset, type CreateRequest, type PrSummary, type MenuAction, type SetupDecision } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -50,6 +50,7 @@ import { PortsItem } from "@/ports/PortsItem";
 import { PortsPanel } from "@/ports/PortsPanel";
 import { PortsStore } from "@/ports/portsStore";
 import { IssuesPanel } from "@/issues/IssuesPanel";
+import { issuesTabVisible } from "@/issues/issuesPreset";
 import { CreateWorktreeDialog, type AgentChoice, type CreateExtra, type CreateTab } from "./CreateWorktreeDialog";
 import { DetailsDialog } from "./DetailsDialog";
 import { RenameBranchDialog } from "./RenameBranchDialog";
@@ -262,6 +263,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The files the Changes panel last listed; the Files tree marks them.
   const [changeList, setChangeList] = useState<{ worktree: string; list: WorktreeChange[] } | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>("files");
+  // Settings → Git: where the Issues panel opens, and whether its tab shows. The shortcut pins the tab for the session.
+  const [issuesGit, setIssuesGit] = useState<{ preset: IssuesPreset; tab: boolean }>({ preset: "all", tab: true });
+  const [issuesPinned, setIssuesPinned] = useState(false);
   // The window has the person: focused and not minimised. Only then is a pane on screen seen.
   const [focused, setFocused] = useState(windowFocused);
   // The terminal panes on screen in each worktree, as its tab strip reports them.
@@ -908,7 +912,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
     setRightOpen(true);
     setPanelTab(tab);
+    if (tab === "issues") setIssuesPinned(true);
   }
+  // Read on start and again when the person comes back from Settings.
+  useEffect(() => {
+    if (view === "settings") return;
+    api.gitSettings().then(
+      (git) => setIssuesGit({ preset: git.issuesDefaultView, tab: git.showIssuesTab }),
+      () => undefined,
+    );
+  }, [api, view]);
   useEffect(() => startQuickCommands(api), [api]);
   useShellLabels(api);
   // Native menu and tray items; the latest handlers run through a ref so the listener binds once.
@@ -2081,20 +2094,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   </span>
                 )}
               </button>
-              <button
-                type="button"
-                role="tab"
-                className="ws-panel-tab"
-                aria-selected={panelTab === "issues"}
-                aria-label={t("issues.tab")}
-                title={t("issues.tab")}
-                onClick={() => setPanelTab("issues")}
-              >
-                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="9" />
-                  <circle cx="12" cy="12" r="1.5" />
-                </svg>
-              </button>
+              {issuesTabVisible(issuesGit.tab, issuesPinned, panelTab === "issues") && (
+                <button
+                  type="button"
+                  role="tab"
+                  className="ws-panel-tab"
+                  aria-selected={panelTab === "issues"}
+                  aria-label={t("issues.tab")}
+                  title={t("issues.tab")}
+                  onClick={() => setPanelTab("issues")}
+                >
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="9" />
+                    <circle cx="12" cy="12" r="1.5" />
+                  </svg>
+                </button>
+              )}
               <button
                 type="button"
                 role="tab"
@@ -2163,7 +2178,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             </div>
             <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "issues"}>
               {currentRepo && !currentRepo.missing ? (
-                <IssuesPanel key={currentRepo.id} api={api} repoId={currentRepo.id} onStart={(d) => void startFromIssue(currentRepo.id, d.issue, d)} />
+                <IssuesPanel key={`${currentRepo.id}:${issuesGit.preset}`} initialPreset={issuesGit.preset} api={api} repoId={currentRepo.id} onStart={(d) => void startFromIssue(currentRepo.id, d.issue, d)} />
               ) : (
                 <p className="ws-empty">{t("workspace.panel.empty")}</p>
               )}

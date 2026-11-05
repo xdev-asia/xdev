@@ -230,3 +230,20 @@ it("says so when the bot author list is full and adds nothing", async () => {
   expect(en("settings.git.botAuthors.limit")).toBe("Bot author override limit reached");
   expect((await v.api.gitSettings()).prBotAuthorOverrides).toEqual(full);
 });
+
+it("shows the Issues defaults: all issues and the tab shown, and stores each change", async () => {
+  const v = await view();
+  const select = () => v.all().find((n) => n.props["data-field"] === "issuesDefaultView")!;
+  const tab = () => v.all().find((n) => n.props.role === "switch" && n.props["aria-labelledby"] === "settings-git-issues-tab")!;
+  expect(select().props.value).toBe("all");
+  expect(select().props.options).toHaveLength(6);
+  expect(tab().props["aria-checked"]).toBe(true);
+  select().props.onChange({ target: { value: "review" } });
+  tab().props.onClick();
+  await tick();
+  expect(select().props.value).toBe("review");
+  expect(tab().props["aria-checked"]).toBe(false);
+  const stored = await v.api.gitSettings();
+  expect(stored.issuesDefaultView).toBe("review");
+  expect(stored.showIssuesTab).toBe(false);
+});
