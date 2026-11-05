@@ -6,7 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::GitError;
-use crate::gh::{GhExec, IssueState};
+use crate::gh::{GhExec, ISSUE_BODY_MAX, IssueState, ok, repo_name};
 
 /// Most events one timeline read returns.
 pub const ISSUE_TIMELINE_MAX: usize = 200;
@@ -85,15 +85,127 @@ fn not_built() -> GitError {
     GitError::Gh("not implemented".into())
 }
 
+const TITLE_MAX: usize = 256;
+
+/// A label or login that cannot be an argv item of its own: it would read as
+/// a flag, or it spans lines.
+fn bad_token(text: &str) -> bool {
+    text.is_empty() || text.starts_with('-') || text.contains(['\n', '\r'])
+}
+
+fn validate(edit: &IssueEdit) -> Result<(), GitError> {
+    if let Some(title) = &edit.title {
+        let title = title.trim();
+        if title.is_empty() || title.chars().count() > TITLE_MAX {
+            return Err(GitError::BadDraft);
+        }
+    }
+    if let Some(body) = &edit.body
+        && body.chars().count() > ISSUE_BODY_MAX
+    {
+        return Err(GitError::BadDraft);
+    }
+    let lists = [
+        &edit.add_labels,
+        &edit.remove_labels,
+        &edit.add_assignees,
+        &edit.remove_assignees,
+    ];
+    if lists.iter().any(|l| l.iter().any(|t| bad_token(t))) {
+        return Err(GitError::BadDraft);
+    }
+    Ok(())
+}
+
 /// Changes the parts named in `edit`: state, then body, then title, labels and
-/// assignees in one `gh issue edit`.
+/// assignees in one `gh issue edit`. Every requested part is tried; the
+/// report names the ones that failed.
 pub fn issue_edit(
-    _gh: &dyn GhExec,
-    _cwd: &Path,
-    _number: u64,
-    _edit: &IssueEdit,
+    gh: &dyn GhExec,
+    cwd: &Path,
+    number: u64,
+    edit: &IssueEdit,
 ) -> Result<IssueEditReport, GitError> {
-    Err(not_built())
+    validate(edit)?;
+    let n = number.to_string();
+    let mut report = IssueEditReport {
+        failed: Vec::new(),
+        error: None,
+    };
+    let mut fail = |part: &str, err: GitError| {
+        report.failed.push(part.to_owned());
+        report.error.get_or_insert_with(|| match err {
+            GitError::Gh(text) => text,
+            other => other.to_string(),
+        });
+    };
+
+    if let Some(state) = &edit.state {
+        let run = match state {
+            IssueState::Closed => {
+                let mut args = vec!["issue", "close", n.as_str()];
+                match edit.close_reason {
+                    Some(IssueCloseReason::Completed) => args.extend(["--reason", "completed"]),
+                    Some(IssueCloseReason::NotPlanned) => args.extend(["--reason", "not planned"]),
+                    None => {}
+                }
+                gh.run(cwd, &args, None)
+            }
+            IssueState::Open => gh.run(cwd, &["issue", "reopen", &n], None),
+        };
+        if let Err(e) = run.and_then(ok) {
+            fail("state", e);
+        }
+    }
+
+    if let Some(body) = &edit.body {
+        let sent = repo_name(gh, cwd).and_then(|repo| {
+            let text = serde_json::json!({ "body": body }).to_string();
+            let out = gh.run(
+                cwd,
+                &[
+                    "api",
+                    "--method",
+                    "PATCH",
+                    &format!("repos/{repo}/issues/{number}"),
+                    "--input",
+                    "-",
+                ],
+                Some(&text),
+            )?;
+            ok(out).map(drop)
+        });
+        if let Err(e) = sent {
+            fail("body", e);
+        }
+    }
+
+    let title = edit.title.as_deref().map(str::trim);
+    let has_fields = title.is_some()
+        || !edit.add_labels.is_empty()
+        || !edit.remove_labels.is_empty()
+        || !edit.add_assignees.is_empty()
+        || !edit.remove_assignees.is_empty();
+    if has_fields {
+        let mut args: Vec<&str> = vec!["issue", "edit", &n];
+        if let Some(title) = title {
+            args.extend(["--title", title]);
+        }
+        for (flag, items) in [
+            ("--add-label", &edit.add_labels),
+            ("--remove-label", &edit.remove_labels),
+            ("--add-assignee", &edit.add_assignees),
+            ("--remove-assignee", &edit.remove_assignees),
+        ] {
+            for item in items {
+                args.extend([flag, item.as_str()]);
+            }
+        }
+        if let Err(e) = gh.run(cwd, &args, None).and_then(ok) {
+            fail("fields", e);
+        }
+    }
+    Ok(report)
 }
 
 /// Posts a comment; the body goes on stdin as JSON.
@@ -123,4 +235,216 @@ pub fn issue_timeline(
     _number: u64,
 ) -> Result<Vec<IssueEvent>, GitError> {
     Err(not_built())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gh::GhOutput;
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+
+    type Call = (Vec<String>, Option<String>);
+
+    struct Fake {
+        calls: RefCell<Vec<Call>>,
+        script: RefCell<VecDeque<GhOutput>>,
+    }
+
+    impl Fake {
+        fn new(script: Vec<GhOutput>) -> Fake {
+            Fake {
+                calls: RefCell::new(Vec::new()),
+                script: RefCell::new(script.into()),
+            }
+        }
+    }
+
+    impl GhExec for Fake {
+        fn run(&self, _: &Path, args: &[&str], stdin: Option<&str>) -> Result<GhOutput, GitError> {
+            self.calls.borrow_mut().push((
+                args.iter().map(|s| s.to_string()).collect(),
+                stdin.map(str::to_owned),
+            ));
+            Ok(self.script.borrow_mut().pop_front().expect("scripted"))
+        }
+    }
+
+    fn out(status: i32, stdout: &str, stderr: &str) -> GhOutput {
+        GhOutput {
+            status: Some(status),
+            stdout: stdout.into(),
+            stderr: stderr.into(),
+        }
+    }
+
+    fn cwd() -> &'static Path {
+        Path::new(".")
+    }
+
+    fn args(call: &Call) -> Vec<&str> {
+        call.0.iter().map(String::as_str).collect()
+    }
+
+    #[test]
+    fn issue_edit_runs_close_with_reason() {
+        let fake = Fake::new(vec![out(0, "", ""), out(0, "", ""), out(0, "", "")]);
+        let edit = IssueEdit {
+            state: Some(IssueState::Closed),
+            close_reason: Some(IssueCloseReason::NotPlanned),
+            ..IssueEdit::default()
+        };
+        let report = issue_edit(&fake, cwd(), 7, &edit).unwrap();
+        assert!(report.failed.is_empty() && report.error.is_none());
+        let reopen = IssueEdit {
+            state: Some(IssueState::Open),
+            ..IssueEdit::default()
+        };
+        issue_edit(&fake, cwd(), 7, &reopen).unwrap();
+        let done = IssueEdit {
+            state: Some(IssueState::Closed),
+            close_reason: Some(IssueCloseReason::Completed),
+            ..IssueEdit::default()
+        };
+        issue_edit(&fake, cwd(), 7, &done).unwrap();
+        let calls = fake.calls.borrow();
+        assert_eq!(
+            args(&calls[0]),
+            ["issue", "close", "7", "--reason", "not planned"]
+        );
+        assert_eq!(args(&calls[1]), ["issue", "reopen", "7"]);
+        assert_eq!(
+            args(&calls[2]),
+            ["issue", "close", "7", "--reason", "completed"]
+        );
+    }
+
+    #[test]
+    fn issue_edit_sends_body_on_stdin() {
+        let fake = Fake::new(vec![
+            out(0, r#"{"nameWithOwner":"o/r"}"#, ""),
+            out(0, "{}", ""),
+        ]);
+        let edit = IssueEdit {
+            body: Some("line 1\r\n\"quoted\" é".into()),
+            ..IssueEdit::default()
+        };
+        let report = issue_edit(&fake, cwd(), 7, &edit).unwrap();
+        assert!(report.failed.is_empty());
+        let calls = fake.calls.borrow();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            args(&calls[1]),
+            [
+                "api",
+                "--method",
+                "PATCH",
+                "repos/o/r/issues/7",
+                "--input",
+                "-"
+            ]
+        );
+        let sent: serde_json::Value = serde_json::from_str(calls[1].1.as_ref().unwrap()).unwrap();
+        assert_eq!(
+            sent,
+            serde_json::json!({ "body": "line 1\r\n\"quoted\" é" })
+        );
+    }
+
+    #[test]
+    fn issue_edit_batches_labels_and_assignees_in_one_call() {
+        let fake = Fake::new(vec![out(0, "", "")]);
+        let edit = IssueEdit {
+            title: Some("  New title ".into()),
+            add_labels: vec!["bug".into(), "needs, comma".into()],
+            remove_labels: vec!["docs".into()],
+            add_assignees: vec!["octo".into()],
+            remove_assignees: vec!["mona".into()],
+            ..IssueEdit::default()
+        };
+        issue_edit(&fake, cwd(), 7, &edit).unwrap();
+        let calls = fake.calls.borrow();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            args(&calls[0]),
+            [
+                "issue",
+                "edit",
+                "7",
+                "--title",
+                "New title",
+                "--add-label",
+                "bug",
+                "--add-label",
+                "needs, comma",
+                "--remove-label",
+                "docs",
+                "--add-assignee",
+                "octo",
+                "--remove-assignee",
+                "mona"
+            ]
+        );
+    }
+
+    #[test]
+    fn issue_edit_empty_runs_nothing() {
+        let fake = Fake::new(vec![]);
+        let report = issue_edit(&fake, cwd(), 7, &IssueEdit::default()).unwrap();
+        assert!(report.failed.is_empty() && report.error.is_none());
+        assert!(fake.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn issue_edit_reports_partial_failure() {
+        let fake = Fake::new(vec![
+            out(1, "", "boom state"),
+            out(0, r#"{"nameWithOwner":"o/r"}"#, ""),
+            out(0, "{}", ""),
+            out(1, "", "boom fields"),
+        ]);
+        let edit = IssueEdit {
+            state: Some(IssueState::Open),
+            body: Some("b".into()),
+            add_labels: vec!["bug".into()],
+            ..IssueEdit::default()
+        };
+        let report = issue_edit(&fake, cwd(), 7, &edit).unwrap();
+        assert_eq!(report.failed, ["state", "fields"]);
+        assert_eq!(report.error.as_deref(), Some("boom state"));
+        assert_eq!(fake.calls.borrow().len(), 4);
+    }
+
+    #[test]
+    fn issue_edit_rejects_dash_label() {
+        let fake = Fake::new(vec![]);
+        for edit in [
+            IssueEdit {
+                add_labels: vec!["--web".into()],
+                ..IssueEdit::default()
+            },
+            IssueEdit {
+                remove_assignees: vec!["a\nb".into()],
+                ..IssueEdit::default()
+            },
+            IssueEdit {
+                title: Some("  ".into()),
+                ..IssueEdit::default()
+            },
+            IssueEdit {
+                title: Some("x".repeat(TITLE_MAX + 1)),
+                ..IssueEdit::default()
+            },
+            IssueEdit {
+                body: Some("x".repeat(ISSUE_BODY_MAX + 1)),
+                ..IssueEdit::default()
+            },
+        ] {
+            assert!(matches!(
+                issue_edit(&fake, cwd(), 7, &edit),
+                Err(GitError::BadDraft)
+            ));
+        }
+        assert!(fake.calls.borrow().is_empty());
+    }
 }
