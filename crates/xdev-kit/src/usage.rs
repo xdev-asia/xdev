@@ -19,11 +19,14 @@ use crate::logs::{
 };
 use crate::{Agent, Home, KitError};
 
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 /// How many counted Claude message ids a file mark keeps.
 const RECENT_IDS: usize = 256;
 const TOP_SESSIONS: usize = 20;
 const UNKNOWN: &str = "(unknown)";
+/// The model Claude Code names on messages it made up itself (an API error,
+/// an interrupt); it is no real model and has no price.
+pub(crate) const SYNTHETIC: &str = "<synthetic>";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -66,6 +69,50 @@ pub struct SessionUsage {
     pub total: Tokens,
     /// Local `YYYY-MM-DD`, by the offset the index was built with.
     pub days: BTreeMap<String, Tokens>,
+    /// The same tokens per model, then per day, so a session that changes
+    /// model is priced per model. `<synthetic>` is left out.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(skip))]
+    pub models: BTreeMap<String, BTreeMap<String, Tokens>>,
+}
+
+impl SessionUsage {
+    /// `(model, day, tokens)` for every day; a session with no per-model
+    /// split reads as all its `model`'s.
+    pub fn model_days(&self) -> Vec<(&str, &str, &Tokens)> {
+        if self.models.is_empty() {
+            let model = self.model.as_deref().unwrap_or(UNKNOWN);
+            return self
+                .days
+                .iter()
+                .map(|(d, t)| (model, d.as_str(), t))
+                .collect();
+        }
+        self.models
+            .iter()
+            .flat_map(|(m, days)| days.iter().map(move |(d, t)| (m.as_str(), d.as_str(), t)))
+            .collect()
+    }
+
+    /// The per-model split cut to the days `since..=until`.
+    pub(crate) fn models_in(
+        &self,
+        since: &str,
+        until: &str,
+    ) -> BTreeMap<String, BTreeMap<String, Tokens>> {
+        self.models
+            .iter()
+            .map(|(m, days)| {
+                let kept: BTreeMap<String, Tokens> = days
+                    .iter()
+                    .filter(|(d, _)| d.as_str() >= since && d.as_str() <= until)
+                    .map(|(d, t)| (d.clone(), *t))
+                    .collect();
+                (m.clone(), kept)
+            })
+            .filter(|(_, days)| !days.is_empty())
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -221,6 +268,7 @@ impl UsageIndex {
             last: 0,
             total: Tokens::default(),
             days: BTreeMap::new(),
+            models: BTreeMap::new(),
         });
 
         let mut bad = 0;
@@ -285,13 +333,37 @@ fn note_time(session: &mut SessionUsage, ts: Option<i64>) {
     }
 }
 
-fn add_day(session: &mut SessionUsage, ms: i64, utc_offset_minutes: i32, t: &Tokens) {
+/// Adds `t` to the total, its day, and its model's day unless `model` is
+/// `None` (a synthetic message).
+fn add_day(
+    session: &mut SessionUsage,
+    ms: i64,
+    utc_offset_minutes: i32,
+    t: &Tokens,
+    model: Option<&str>,
+) {
+    let day = day_key(ms, utc_offset_minutes);
     session.total.add(t);
-    session
-        .days
-        .entry(day_key(ms, utc_offset_minutes))
-        .or_default()
-        .add(t);
+    if let Some(model) = model {
+        session
+            .models
+            .entry(model.to_owned())
+            .or_default()
+            .entry(day.clone())
+            .or_default()
+            .add(t);
+    }
+    session.days.entry(day).or_default().add(t);
+}
+
+/// The model to count a turn's tokens under: its own, else the session's
+/// current one; `None` for a synthetic message.
+fn model_key(own: Option<&str>, session: &SessionUsage) -> Option<String> {
+    match own {
+        Some(SYNTHETIC) => None,
+        Some(m) => Some(m.to_owned()),
+        None => Some(session.model.clone().unwrap_or_else(|| UNKNOWN.to_owned())),
+    }
 }
 
 /// Claude Code: `<home>/projects/*/*.jsonl`. The read starts at `start`;
@@ -332,7 +404,8 @@ fn read_claude(
         let (true, Some(usage), false) = (is_usage_line, usage, duplicate) else {
             return;
         };
-        if let Some(model) = message.and_then(|m| m.get("model")).and_then(Value::as_str) {
+        let own_model = message.and_then(|m| m.get("model")).and_then(Value::as_str);
+        if let Some(model) = own_model.filter(|m| *m != SYNTHETIC) {
             session.model = Some(model.to_string());
         }
         if let Some(id) = id {
@@ -352,7 +425,8 @@ fn read_claude(
             cache_read: num(usage, "cache_read_input_tokens"),
             cache_write: num(usage, "cache_creation_input_tokens"),
         };
-        add_day(session, ms, utc_offset_minutes, &t);
+        let model = model_key(own_model, session);
+        add_day(session, ms, utc_offset_minutes, &t, model.as_deref());
     })
 }
 
@@ -395,7 +469,11 @@ fn read_codex(
                         .and_then(Value::as_str)
                         .map(str::to_string);
                 }
-                if let Some(model) = payload.and_then(|p| p.get("model")).and_then(Value::as_str) {
+                if let Some(model) = payload
+                    .and_then(|p| p.get("model"))
+                    .and_then(Value::as_str)
+                    .filter(|m| *m != SYNTHETIC)
+                {
                     session.model = Some(model.to_string());
                 }
             }
@@ -423,7 +501,14 @@ fn read_codex(
                             // `add_day` also adds to the total; the total is
                             // set from `total_token_usage` below.
                             let before = session.total;
-                            add_day(session, ms, utc_offset_minutes, &codex_tokens(last));
+                            let model = model_key(None, session);
+                            add_day(
+                                session,
+                                ms,
+                                utc_offset_minutes,
+                                &codex_tokens(last),
+                                model.as_deref(),
+                            );
                             session.total = before;
                         }
                         None => *bad += 1,
@@ -501,13 +586,15 @@ pub fn summarize(index: &UsageIndex, q: &UsageQuery) -> UsageSummary {
             )
             .or_default()
             .add(&in_range);
-        by_model
-            .entry(session.model.clone().unwrap_or_else(|| UNKNOWN.to_string()))
-            .or_default()
-            .add(&in_range);
+        for (model, day, t) in session.model_days() {
+            if model != SYNTHETIC && day >= q.since_day.as_str() && day <= q.until_day.as_str() {
+                by_model.entry(model.to_owned()).or_default().add(t);
+            }
+        }
         let mut s = session.clone();
         s.total = in_range;
         s.days = kept;
+        s.models = session.models_in(&q.since_day, &q.until_day);
         sessions.push(s);
     }
 
@@ -658,6 +745,56 @@ mod tests {
         assert_eq!(s.total, tok(150, 50, 100, 5));
         assert_eq!(s.first, T_NOV2_10H);
         assert_eq!(s.last, T_NOV3_08H);
+    }
+
+    #[test]
+    fn claude_tokens_are_kept_per_model_and_synthetic_is_skipped() {
+        let line = |id: &str, model: &str, input: u64| {
+            format!(
+                r#"{{"type":"assistant","cwd":"/work/demo","timestamp":"2026-11-02T10:00:00.000Z","message":{{"id":"{id}","model":"{model}","usage":{{"input_tokens":{input},"output_tokens":0}}}}}}"#
+            )
+        };
+        let text = [
+            line("m1", "model-a", 10),
+            line("m2", "model-b", 5),
+            line("m3", "<synthetic>", 0),
+        ]
+        .join("\n")
+            + "\n";
+        let (_dir, h, _file) = claude_home_with(&text);
+        let mut index = UsageIndex::default();
+        index.refresh(std::slice::from_ref(&h), 0);
+        let s = &index.sessions["own-claude:s-x"];
+        assert_eq!(s.model.as_deref(), Some("model-b"));
+        assert_eq!(s.models["model-a"]["2026-11-02"], tok(10, 0, 0, 0));
+        assert_eq!(s.models["model-b"]["2026-11-02"], tok(5, 0, 0, 0));
+        assert!(!s.models.contains_key("<synthetic>"));
+    }
+
+    #[test]
+    fn codex_tokens_follow_the_current_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let sessions = dir.path().join("sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        let ctx = |model: &str| {
+            format!(
+                r#"{{"timestamp":"2026-11-02T10:00:00.000Z","type":"turn_context","payload":{{"cwd":"/w","model":"{model}"}}}}"#
+            )
+        };
+        let event = |input: u64, last: u64| {
+            format!(
+                r#"{{"timestamp":"2026-11-02T10:00:01.000Z","type":"event_msg","payload":{{"type":"token_count","info":{{"total_token_usage":{{"input_tokens":{input},"output_tokens":0}},"last_token_usage":{{"input_tokens":{last},"output_tokens":0}}}}}}}}"#
+            )
+        };
+        let text = [ctx("gpt-a"), event(100, 100), ctx("gpt-b"), event(130, 30)].join("\n") + "\n";
+        fs::write(sessions.join("rollout-m.jsonl"), text).unwrap();
+        let h = home("own-codex", Agent::Codex, dir.path());
+        let mut index = UsageIndex::default();
+        index.refresh(std::slice::from_ref(&h), 0);
+        let s = &index.sessions["own-codex:rollout-m"];
+        assert_eq!(s.model.as_deref(), Some("gpt-b"));
+        assert_eq!(s.models["gpt-a"]["2026-11-02"], tok(100, 0, 0, 0));
+        assert_eq!(s.models["gpt-b"]["2026-11-02"], tok(30, 0, 0, 0));
     }
 
     #[test]
@@ -849,6 +986,7 @@ mod tests {
             last: 0,
             total,
             days: map,
+            models: BTreeMap::new(),
         }
     }
 
@@ -971,7 +1109,7 @@ mod tests {
         let stale = r#"{"version":99,"files":{},"sessions":{"x:y":{"id":"y","home_id":"x","agent":"claude","folder":null,"model":null,"first":0,"last":0,"total":{"input":9,"output":9,"cache_read":9,"cache_write":9},"days":{}}}}"#;
         fs::write(kit.join("usage.json"), stale).unwrap();
         let mut index = UsageIndex::load(data.path());
-        assert_eq!(index.version, 2);
+        assert_eq!(index.version, VERSION);
         assert!(index.sessions.is_empty());
 
         let claude = tempfile::tempdir().unwrap();
