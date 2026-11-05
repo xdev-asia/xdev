@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { JSX, MouseEvent } from "react";
+import type { JSX, KeyboardEvent, MouseEvent } from "react";
 import type { Api } from "@/api";
 import { renderRich, type Heading, type Parsers } from "@/doc/markdownRich";
 import { useI18n } from "@/i18n";
 import { fillMermaid, mermaidTheme, renderMermaid, type MermaidRender } from "./mermaid";
+import { CodeCopyFill } from "./CodeCopyFill";
+import { copyCode } from "./codeCopy";
 import { MermaidDialog } from "./MermaidDialog";
+import { PreviewFindBar } from "./PreviewFindBar";
 import { openFile } from "./openFile";
 import { ensureParsers, fenceLanguages } from "./parsers";
 import { useDebounced } from "./debounce";
@@ -33,6 +36,8 @@ export function MarkdownPreview(props: MarkdownPreviewProps): JSX.Element {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
   const [diagram, setDiagram] = useState<string | null>(null);
+  const [finding, setFinding] = useState(false);
+  const article = useRef<HTMLElement>(null);
   const [parsers, setParsers] = useState<Parsers>({});
   useEffect(() => {
     let live = true;
@@ -86,10 +91,40 @@ export function MarkdownPreview(props: MarkdownPreviewProps): JSX.Element {
     if (svg) return setDiagram(svg);
     const link = e.target instanceof Element ? e.target.closest("a[data-doc]") : null;
     const path = link?.getAttribute("data-doc");
-    if (path) openFile({ worktree, rel: path });
+    if (path) return openFile({ worktree, rel: path });
+    const copy = e.target instanceof Element ? e.target.closest("button.md-code-copy") : null;
+    if (copy) {
+      void copyCode(copy as HTMLButtonElement, {
+        write: (text) => navigator.clipboard.writeText(text),
+        later: (fn, ms) => void setTimeout(fn, ms),
+        labels: { copy: t("files.preview.code.copy"), copied: t("files.preview.code.copied") },
+      });
+      return;
+    }
+  };
+  // Ctrl/Cmd+F opens the find bar while the preview holds focus; Escape closes it.
+  const onKeyDown = (e: KeyboardEvent<HTMLElement>): void => {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      setFinding(true);
+    } else if (e.key === "Escape" && finding) {
+      setFinding(false);
+      article.current?.focus();
+    }
   };
   return (
-    <article className="preview md-preview" onClick={onClick} onAuxClick={(e) => e.preventDefault()}>
+    <article className="preview md-preview" ref={article} tabIndex={-1} onKeyDown={onKeyDown} onClick={onClick} onAuxClick={(e) => e.preventDefault()}>
+      {finding && (
+        <PreviewFindBar
+          host={host}
+          html={rendered.html}
+          onClose={() => {
+            setFinding(false);
+            article.current?.focus();
+          }}
+        />
+      )}
+      <CodeCopyFill host={host} html={rendered.html} />
       {/* markdown-it output with HTML input disabled, see doc/markdown.ts. */}
       <div className="preview-body" ref={host} dangerouslySetInnerHTML={{ __html: rendered.html }} />
       {diagram !== null && <MermaidDialog svg={diagram} onClose={() => setDiagram(null)} />}
