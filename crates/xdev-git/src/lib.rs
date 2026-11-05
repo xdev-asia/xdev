@@ -7,6 +7,7 @@ mod conflict;
 mod diff;
 mod gh;
 mod history;
+mod hosted;
 mod range;
 mod remote;
 mod review;
@@ -26,6 +27,7 @@ pub use gh::{
     pr_checks, pr_create, pr_open_web, pr_view, repo_name, run_failed_log,
 };
 pub use history::Commit;
+pub use hosted::hosted_file_url;
 pub use remote::{BaseRange, BaseRefresh, Upstream};
 pub use review::{Branch, StageState};
 pub use worktree::{NumStat, WorktreeEntry, global_user_name, valid_branch_name};

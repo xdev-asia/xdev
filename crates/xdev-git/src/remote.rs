@@ -1,4 +1,7 @@
+use std::time::{Duration, Instant};
+
 use crate::history::is_commit_id;
+use crate::hosted::parse_hosted;
 use crate::run::{self, Output};
 use crate::{Commit, GitError, Repo};
 
@@ -169,6 +172,103 @@ impl Repo {
             Some(remote) if remote != "." => plain_remote(remote),
             _ => self.default_remote(),
         }
+    }
+
+    /// The URL of remote `name` (`git remote get-url`); `None` when there is no such remote.
+    pub fn remote_url(&self, name: &str) -> Result<Option<String>, GitError> {
+        let name = plain_remote(name.to_owned())?;
+        let (status, out) = run::run_status(&self.workdir, &["remote", "get-url", &name], None)?;
+        let url = text(&out);
+        Ok((status == Some(0) && !url.is_empty()).then_some(url))
+    }
+
+    /// What a hosted file URL is built from: `(remote_url, ref)`. Remotes are tried in order: the
+    /// current branch's own, `origin`, the rest; only those on GitHub, GitLab or Bitbucket count.
+    /// The ref is `HEAD`'s commit when a remote-tracking ref of such a remote contains it, else
+    /// the upstream branch, else the remote's default branch (`refs/remotes/<name>/HEAD`).
+    /// `None` when no hosted remote gives one. Local git only, under a 5 s deadline in all
+    /// (`Timeout` after it).
+    pub fn remote_file_ref(&self) -> Result<Option<(String, String)>, GitError> {
+        let limit = Instant::now() + REMOTE_DEADLINE;
+        let left = || {
+            limit
+                .checked_duration_since(Instant::now())
+                .filter(|d| !d.is_zero())
+                .ok_or(GitError::Timeout)
+        };
+        let branch = self.current_branch()?;
+        let own = match &branch {
+            Some(b) => self.branch_config(b, "remote")?.filter(|r| r != "."),
+            None => None,
+        };
+        let mut order: Vec<String> = Vec::new();
+        let names = self.remote_names()?;
+        for name in own
+            .into_iter()
+            .chain(["origin".to_owned()])
+            .chain(names.iter().cloned())
+        {
+            if names.contains(&name) && !order.contains(&name) {
+                order.push(name);
+            }
+        }
+        let mut hosted: Vec<(String, String)> = Vec::new();
+        for name in order {
+            if let Some(url) = self
+                .remote_url(&name)?
+                .filter(|u| parse_hosted(u).is_some())
+            {
+                hosted.push((name, url));
+            }
+        }
+        if hosted.is_empty() {
+            return Ok(None);
+        }
+        let head = self.head()?;
+        // 1. HEAD is on a remote-tracking ref of a hosted remote: its commit is a permanent link.
+        if let Some(id) = &head {
+            for (name, url) in &hosted {
+                let prefix = format!("refs/remotes/{name}/");
+                let (status, out) = run::run_status_within(
+                    &self.workdir,
+                    &[
+                        "for-each-ref",
+                        "--contains",
+                        id,
+                        "--format=%(refname)",
+                        &prefix,
+                    ],
+                    left()?,
+                )?;
+                if status == Some(0) && !text(&out).is_empty() {
+                    return Ok(Some((url.clone(), id.clone())));
+                }
+            }
+        }
+        // 2. The upstream branch, when its remote is hosted.
+        if let Some(up) = self.upstream()?
+            && let Some((_, url)) = hosted.iter().find(|(name, _)| *name == up.remote)
+        {
+            return Ok(Some((url.clone(), up.branch)));
+        }
+        // 3. The default branch the remote reports.
+        for (name, url) in &hosted {
+            let sym = format!("refs/remotes/{name}/HEAD");
+            let (status, out) = run::run_status_within(
+                &self.workdir,
+                &["symbolic-ref", "-q", "--short", &sym],
+                left()?,
+            )?;
+            let short = text(&out);
+            if let Some(default) = short
+                .strip_prefix(&format!("{name}/"))
+                .filter(|_| status == Some(0))
+                .filter(|d| !d.is_empty())
+            {
+                return Ok(Some((url.clone(), default.to_owned())));
+            }
+        }
+        Ok(None)
     }
 
     /// The names of the configured remotes.
@@ -370,6 +470,9 @@ impl Repo {
         })
     }
 }
+
+/// The whole of `remote_file_ref` must answer within this.
+const REMOTE_DEADLINE: Duration = Duration::from_secs(5);
 
 /// A remote name from the config; one that starts with `-` would be read
 /// as an option.

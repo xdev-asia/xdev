@@ -476,3 +476,110 @@ fn refresh_without_a_remote_or_a_local_branch_does_nothing() {
         Ok(BaseRefresh::NoRemote) | Err(GitError::BadId(_))
     ));
 }
+
+// ---- the hosted URL of a file -----------------------------------------------------------------
+
+/// Points `name` at a hosted URL after its refs are in place; nothing here fetches or pushes again.
+fn host_as(dir: &Path, name: &str, url: &str) {
+    git(dir, &["remote", "set-url", name, url]);
+}
+
+#[test]
+fn remote_url_reads_a_remote_and_misses_a_stranger() {
+    let fx = Fixture::new();
+    host_as(fx.work.path(), "origin", "git@github.com:o/r.git");
+    assert_eq!(
+        fx.repo.remote_url("origin").unwrap().as_deref(),
+        Some("git@github.com:o/r.git")
+    );
+    assert_eq!(fx.repo.remote_url("nope").unwrap(), None);
+    assert!(fx.repo.remote_url("--all").is_err());
+}
+
+#[test]
+fn file_ref_is_head_when_a_hosted_remote_ref_holds_it() {
+    let fx = Fixture::new();
+    host_as(fx.work.path(), "origin", "git@github.com:o/r.git");
+    assert_eq!(
+        fx.repo.remote_file_ref().unwrap(),
+        Some(("git@github.com:o/r.git".to_owned(), fx.head()))
+    );
+}
+
+#[test]
+fn file_ref_is_the_upstream_branch_when_head_is_not_on_the_remote() {
+    let fx = Fixture::new();
+    let w = fx.work.path();
+    git(w, &["branch", "--set-upstream-to=origin/main"]);
+    commit_file(w, "b.txt", "b\n");
+    host_as(w, "origin", "https://github.com/o/r.git");
+    assert_eq!(
+        fx.repo.remote_file_ref().unwrap(),
+        Some(("https://github.com/o/r.git".to_owned(), "main".to_owned()))
+    );
+}
+
+#[test]
+fn file_ref_falls_back_to_the_default_branch_of_the_remote() {
+    let fx = Fixture::new();
+    let w = fx.work.path();
+    // No upstream, and HEAD is only local: `origin/HEAD` names the branch.
+    git(w, &["remote", "set-head", "origin", "main"]);
+    commit_file(w, "b.txt", "b\n");
+    host_as(w, "origin", "git@gitlab.com:g/r.git");
+    assert_eq!(
+        fx.repo.remote_file_ref().unwrap(),
+        Some(("git@gitlab.com:g/r.git".to_owned(), "main".to_owned()))
+    );
+}
+
+#[test]
+fn file_ref_is_none_without_a_hosted_remote_or_a_usable_ref() {
+    let fx = Fixture::new();
+    let w = fx.work.path();
+    // The remote is a local folder.
+    assert_eq!(fx.repo.remote_file_ref().unwrap(), None);
+    // Hosted, but HEAD is local only, with no upstream and no `origin/HEAD`.
+    commit_file(w, "b.txt", "b\n");
+    host_as(w, "origin", "git@github.com:o/r.git");
+    assert_eq!(fx.repo.remote_file_ref().unwrap(), None);
+}
+
+#[test]
+fn file_ref_tries_the_branch_remote_before_origin() {
+    let fx = Fixture::new();
+    let w = fx.work.path();
+    let fork = TempDir::with_prefix("remote fork ").unwrap();
+    git(
+        fork.path(),
+        &["init", "-q", "--bare", "--initial-branch=main"],
+    );
+    git(w, &["remote", "add", "fork", fork.path().to_str().unwrap()]);
+    git(w, &["push", "-q", "fork", "main"]);
+    git(w, &["config", "branch.feat.remote", "fork"]);
+    git(w, &["config", "branch.feat.merge", "refs/heads/main"]);
+    host_as(w, "origin", "git@bitbucket.org:w/r.git");
+    host_as(w, "fork", "git@github.com:me/r.git");
+    assert_eq!(
+        fx.repo.remote_file_ref().unwrap(),
+        Some(("git@github.com:me/r.git".to_owned(), fx.head()))
+    );
+    // A branch remote that is not hosted leaves origin.
+    host_as(w, "fork", "/srv/git/fork.git");
+    assert_eq!(
+        fx.repo.remote_file_ref().unwrap(),
+        Some(("git@bitbucket.org:w/r.git".to_owned(), fx.head()))
+    );
+}
+
+#[test]
+fn file_ref_is_none_for_an_unborn_head() {
+    let dir = TempDir::with_prefix("remote unborn ").unwrap();
+    git(dir.path(), &["init", "-q", "--initial-branch=main"]);
+    git(
+        dir.path(),
+        &["remote", "add", "origin", "git@github.com:o/r.git"],
+    );
+    let repo = Repo::discover(dir.path()).unwrap();
+    assert_eq!(repo.remote_file_ref().unwrap(), None);
+}
