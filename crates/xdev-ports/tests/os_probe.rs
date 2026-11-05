@@ -82,8 +82,8 @@ fn tree_helper() {
 }
 
 /// Ends the whole tree when the test ends, even by a panic. A signal stops
-/// one pid, so the tree this test started is walked here, children only
-/// through a parent that started no later than them.
+/// one pid, so the tree this test started is walked here, through the
+/// links `Proc::is_parent_of` accepts.
 struct Tree(Child);
 
 impl Drop for Tree {
@@ -94,11 +94,7 @@ impl Drop for Tree {
         while i < tree.len() {
             let parent = tree[i];
             for p in &procs {
-                let started_after = matches!((parent.start, p.start), (Some(a), Some(b)) if a <= b);
-                if p.ppid == Some(parent.pid)
-                    && started_after
-                    && !tree.iter().any(|t| t.pid == p.pid)
-                {
+                if parent.is_parent_of(p) && !tree.iter().any(|t| t.pid == p.pid) {
                     tree.push(p);
                 }
             }

@@ -89,8 +89,10 @@ struct Tree<'a> {
 }
 
 impl Tree<'_> {
-    /// The first root on the way up from `pid`, the pid itself included. The
-    /// walk stops at a cycle or after `WALK_DEPTH` parents.
+    /// The first root on the way up from `pid`, the pid itself included. A
+    /// parent link is followed only when `Proc::is_parent_of` holds, so a
+    /// stale parent pid now worn by a terminal proves nothing. The walk stops
+    /// at a cycle or after `WALK_DEPTH` parents.
     fn root_of(&self, pid: u32, roots: &HashMap<u32, usize>) -> Option<usize> {
         let mut seen = HashSet::new();
         let mut at = pid;
@@ -101,7 +103,12 @@ impl Tree<'_> {
             if !seen.insert(at) {
                 return None;
             }
-            at = self.by_pid.get(&at)?.ppid?;
+            let child = self.by_pid.get(&at)?;
+            let parent = self.by_pid.get(&child.ppid?)?;
+            if !parent.is_parent_of(child) {
+                return None;
+            }
+            at = parent.pid;
         }
         None
     }
@@ -317,7 +324,7 @@ mod tests {
             name: name.into(),
             cmd: cmd.into(),
             cwd: cwd.map(PathBuf::from),
-            start: None,
+            start: Some(100),
         }
     }
 
@@ -480,6 +487,37 @@ mod tests {
         assert!(!has_terminal(&[at("/elsewhere")], &wts));
         assert!(!has_terminal(&[], &wts));
         assert!(!has_terminal(&[at("/w/a")], &[]));
+    }
+
+    #[test]
+    fn a_parent_link_counts_only_when_the_parent_started_first() {
+        let roots = [PtyRoot {
+            pid: 10,
+            worktree: "/w/a".into(),
+        }];
+        let at = |root_start: Option<u64>, child_start: Option<u64>| {
+            let procs = [
+                Proc {
+                    start: root_start,
+                    ..proc(10, None, "zsh", "zsh", None)
+                },
+                Proc {
+                    start: child_start,
+                    ..proc(11, Some(10), "node", "node", None)
+                },
+            ];
+            run(&[listener("*", 1, Some(11))], &procs, &roots, &["/w/a"])[0].evidence
+        };
+        assert_eq!(at(Some(100), Some(100)), Some(PortEvidence::Terminal));
+        assert_eq!(at(Some(100), Some(200)), Some(PortEvidence::Terminal));
+        // The listener's real parent ended and the terminal reused its pid.
+        assert_eq!(at(Some(300), Some(200)), None);
+        assert_eq!(at(None, Some(200)), None);
+        assert_eq!(at(Some(100), None), None);
+        // A parent missing from the table proves nothing either.
+        let orphan = [proc(11, Some(10), "node", "node", None)];
+        let ports = run(&[listener("*", 1, Some(11))], &orphan, &roots, &["/w/a"]);
+        assert_eq!(ports[0].evidence, None);
     }
 
     #[test]
