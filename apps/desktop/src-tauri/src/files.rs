@@ -12,8 +12,8 @@ use tauri::ipc::{Channel, InvokeResponseBody, Response};
 use xdev_policy::Action;
 use xdev_workspace::{
     Eol, FileList, FileText, OsTrash, SearchEvent, SearchQuery, Trash, WriteOutcome, create_entry,
-    entry_path, list_files, media_kind, read_bytes, read_file, rename_entry, search_text,
-    trash_entry_with, write_file,
+    entry_path, list_files, read_bytes, read_file, rename_entry, search_text, trash_entry_with,
+    write_file,
 };
 
 use crate::accounts::data_dir;
@@ -87,27 +87,6 @@ pub fn file_bytes(
 ) -> Result<Response, CmdError> {
     let bytes = read_bytes(&root(data_dir(&state)?, &worktree)?, &rel)?;
     Ok(Response::new(InvokeResponseBody::Raw(bytes)))
-}
-
-/// The path to open in the default app: only image, audio and video files,
-/// so an executable is never launched.
-fn open_default_path(data: &Path, worktree: &Path, rel: &str) -> Result<PathBuf, CmdError> {
-    let root = root(data, worktree)?;
-    if media_kind(rel).is_none() {
-        return Err(xdev_workspace::WorkspaceError::BadName(rel.to_owned()).into());
-    }
-    Ok(entry_path(&root, rel)?)
-}
-
-/// Opens an image, audio or video file in the OS default app.
-#[tauri::command(async)]
-pub fn file_open_default(
-    state: State<'_, AppState>,
-    worktree: PathBuf,
-    rel: String,
-) -> Result<(), CmdError> {
-    let path = open_default_path(data_dir(&state)?, &worktree, &rel)?;
-    Ok(crate::reveal::reveal(&path, false)?)
 }
 
 /// Saves `text` with `eol` when the file still has the `expected` hash
@@ -357,25 +336,6 @@ mod tests {
     }
 
     #[test]
-    fn open_default_allows_only_media_files() {
-        let fx = fixture();
-        fs::write(fx.repo.join("pic.PNG"), [1u8]).unwrap();
-        let path = open_default_path(&fx.data, &fx.repo, "pic.PNG").unwrap();
-        assert!(path.ends_with("pic.PNG"));
-        for rel in ["run.exe", "run.sh", "a.txt", "setup.bat", "noext"] {
-            assert_eq!(
-                code(open_default_path(&fx.data, &fx.repo, rel)),
-                "bad_name",
-                "{rel}"
-            );
-        }
-        assert_eq!(
-            code(open_default_path(&fx.data, &fx.repo, "../x.png")),
-            "bad_path"
-        );
-    }
-
-    #[test]
     fn every_command_refuses_a_worktree_the_registry_does_not_know() {
         let fx = fixture();
         let (data, wt) = (&fx.data, &fx.stranger);
@@ -392,10 +352,6 @@ mod tests {
             "worktree_unknown"
         );
         assert_eq!(code(reveal_path(data, wt, "a.txt")), "worktree_unknown");
-        assert_eq!(
-            code(open_default_path(data, wt, "a.png")),
-            "worktree_unknown"
-        );
         assert_eq!(fs::read_to_string(wt.join("a.txt")).unwrap(), "theirs");
         assert!(!wt.join("b.txt").exists());
         assert!(bin.taken.borrow().is_empty());

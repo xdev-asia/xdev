@@ -5,6 +5,7 @@ import type { MacOptionAsAlt } from "./MacOptionAsAlt";
 import type { OnQuit } from "./OnQuit";
 import type { TerminalBell } from "./TerminalBell";
 import type { TerminalGpu } from "./TerminalGpu";
+import type { TerminalLinkClick } from "./TerminalLinkClick";
 
 /**
  * How every terminal pane looks and behaves. Values outside the ranges
@@ -67,6 +68,14 @@ fastScrollSensitivity: number,
  * 1.0..=21.0; 1 is off.
  */
 minimumContrast: number, focusFollowsMouse: boolean, 
+/**
+ * What a plain click on a terminal link does.
+ */
+linkClick: TerminalLinkClick, 
+/**
+ * What a middle click on a URL does; a value this build does not know reads as `Open`.
+ */
+urlMiddleClick: TerminalLinkClick, 
 /**
  * macOS only: whether the Option key sends Alt/Esc sequences or composes characters.
  */

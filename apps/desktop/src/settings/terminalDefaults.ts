@@ -25,6 +25,8 @@ export const TERMINAL_DEFAULTS: TerminalSettings = {
   fastScrollSensitivity: 5,
   minimumContrast: 1,
   focusFollowsMouse: false,
+  linkClick: "actions",
+  urlMiddleClick: "open",
   macOptionAsAlt: "auto",
 };
 

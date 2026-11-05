@@ -1501,6 +1501,28 @@ describe("file tabs", () => {
   });
 });
 
+it("a link menu request renders the menu with its title and closes on pick; the terminal gets the worktree", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const tab = live.open(A, "shell");
+  const onLinkSettings = vi.fn();
+  const view = harness(api, live, A, true, { onLinkSettings });
+  const term = view.terminals().find((n) => n.props.id === tab.id)!;
+  expect(term.props.worktree).toBe(A);
+  expect(term.props.onLinkSettings).toBe(onLinkSettings);
+  expect(menuOf(view)).toBeUndefined();
+  const run = vi.fn();
+  term.props.onLinkMenu({ x: 7, y: 8 }, [{ id: "open", labelKey: "termLink.open", run }], "src/a.ts:3");
+  const menu = menuOf(view)!;
+  expect(menu.props.at).toEqual({ x: 7, y: 8 });
+  expect(menu.props.title).toBe("src/a.ts:3");
+  expect(menu.props.items.map((i: { id: string }) => i.id)).toEqual(["open"]);
+  menu.props.items[0].run();
+  menu.props.onClose();
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(menuOf(view)).toBeUndefined();
+});
+
 describe("markdown preview tabs", () => {
   beforeEach(() => fileTabs.reset());
   afterEach(() => fileTabs.reset());

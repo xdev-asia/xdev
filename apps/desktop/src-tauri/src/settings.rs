@@ -1012,6 +1012,12 @@ pub struct TerminalSettings {
     pub minimum_contrast: f32,
     #[serde(deserialize_with = "lenient_bool_false")]
     pub focus_follows_mouse: bool,
+    /// What a plain click on a terminal link does.
+    #[serde(deserialize_with = "lenient")]
+    pub link_click: TerminalLinkClick,
+    /// What a middle click on a URL does; a value this build does not know reads as `Open`.
+    #[serde(deserialize_with = "lenient_middle")]
+    pub url_middle_click: TerminalLinkClick,
     /// macOS only: whether the Option key sends Alt/Esc sequences or composes characters.
     #[serde(deserialize_with = "lenient")]
     pub mac_option_as_alt: MacOptionAsAlt,
@@ -1048,6 +1054,8 @@ impl Default for TerminalSettings {
             fast_scroll_sensitivity: 5.0,
             minimum_contrast: 1.0,
             focus_follows_mouse: false,
+            link_click: TerminalLinkClick::Actions,
+            url_middle_click: TerminalLinkClick::Open,
             mac_option_as_alt: MacOptionAsAlt::Auto,
         }
     }
@@ -1184,6 +1192,17 @@ pub enum TerminalBell {
     None,
     Visual,
     Sound,
+}
+
+/// What a click on a terminal link does. A value this build does not know reads as the default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum TerminalLinkClick {
+    #[default]
+    Actions,
+    Open,
+    None,
 }
 
 /// Settings → Terminal → "Option as Alt" (macOS): which Option keys send Alt/Esc sequences.
@@ -1549,6 +1568,10 @@ where
 {
     let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
     Ok(serde_json::from_value(value).unwrap_or(default))
+}
+
+fn lenient_middle<'de, D: serde::Deserializer<'de>>(de: D) -> Result<TerminalLinkClick, D::Error> {
+    lenient_or(de, TerminalLinkClick::Open)
 }
 
 fn lenient_theme<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
@@ -2160,6 +2183,8 @@ mod tests {
             fast_scroll_sensitivity: 8.0,
             minimum_contrast: 4.5,
             focus_follows_mouse: true,
+            link_click: TerminalLinkClick::Open,
+            url_middle_click: TerminalLinkClick::None,
             mac_option_as_alt: MacOptionAsAlt::Left,
         };
         let settings = Settings {
@@ -3259,6 +3284,32 @@ then sum up"
             let want = format!("{key}: {{ min: {}, max: {} }}", range.start(), range.end());
             assert!(ui.contains(&want), "UI lacks {want}");
         }
+    }
+
+    #[test]
+    fn terminal_link_click_defaults_and_reads_leniently() {
+        let t: TerminalSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(t.link_click, TerminalLinkClick::Actions);
+        assert_eq!(t.url_middle_click, TerminalLinkClick::Open);
+
+        let t: TerminalSettings =
+            serde_json::from_str(r#"{ "linkClick": "bogus", "urlMiddleClick": "bogus" }"#).unwrap();
+        assert_eq!(t.link_click, TerminalLinkClick::Actions);
+        assert_eq!(t.url_middle_click, TerminalLinkClick::Open);
+
+        // A bad value costs only itself.
+        let t: TerminalSettings =
+            serde_json::from_str(r#"{ "linkClick": "none", "urlMiddleClick": 7, "fontSize": 15 }"#)
+                .unwrap();
+        assert_eq!(t.link_click, TerminalLinkClick::None);
+        assert_eq!(t.url_middle_click, TerminalLinkClick::Open);
+        assert_eq!(t.font_size, 15);
+
+        let t: TerminalSettings =
+            serde_json::from_str(r#"{ "linkClick": "open", "urlMiddleClick": "actions" }"#)
+                .unwrap();
+        assert_eq!(t.link_click, TerminalLinkClick::Open);
+        assert_eq!(t.url_middle_click, TerminalLinkClick::Actions);
     }
 
     /// `TERMINAL_DEFAULTS` in the UI and the generated binding name the same
