@@ -12,6 +12,9 @@ pub const TAIL_BYTES: usize = 4096;
 pub const RESTART_BACKOFF_MS: [i64; 2] = [30_000, 120_000];
 /// The quota a window reads when it is used up.
 pub const QUOTA_FULL_PERCENT: f64 = 100.0;
+/// Exit codes of a process the person interrupted with Ctrl+C: 130 on Unix,
+/// `STATUS_CONTROL_C_EXIT` on Windows. A stop, not a failure.
+pub const INTERRUPTED_CODES: [i32; 2] = [130, -1_073_741_510];
 
 /// What a provider's CLI prints when it stops for quota or a rate limit:
 /// provider, reason, and lower-case text to look for. Quota rows come first,
@@ -75,6 +78,7 @@ pub fn detect(state: WorkerState, seen: &Seen<'_>) -> Option<FailReason> {
     if seen.exited {
         return match seen.exit_code {
             Some(0) => marked,
+            Some(code) if INTERRUPTED_CODES.contains(&code) => None,
             Some(_) => marked.or(Some(FailReason::Exited)),
             None => marked.or(Some(FailReason::Crashed)),
         };
@@ -306,6 +310,10 @@ mod tests {
             detect(ready, &seen(true, Some(1), "", None)),
             Some(FailReason::Exited)
         );
+        // Ctrl+C is the person stopping it.
+        for code in INTERRUPTED_CODES {
+            assert_eq!(detect(ready, &seen(true, Some(code), "", None)), None);
+        }
         assert_eq!(
             detect(ready, &seen(true, None, "", None)),
             Some(FailReason::Crashed)

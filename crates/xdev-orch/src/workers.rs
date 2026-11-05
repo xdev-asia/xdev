@@ -743,7 +743,6 @@ impl Store {
         Ok(fresh.then_some(id))
     }
 
-    /// The dispatch failed without a verdict on the task: it is ready again.
     /// The dispatches `dispatch_id` took over from, itself first.
     pub fn failover_chain(&self, dispatch_id: &str) -> Result<Vec<Dispatch>, OrchError> {
         let mut out = vec![self.dispatch_get(dispatch_id)?];
@@ -875,6 +874,57 @@ impl Store {
         })
     }
 
+    /// Tells the coordinator that `next` took over from the failed `of`
+    /// (an `escalation`): the task's handle is now `next`.
+    pub fn worker_failover_notice(
+        &self,
+        of: &str,
+        next: Option<&str>,
+        reason: FailReason,
+        now_ms: i64,
+    ) -> Result<String, OrchError> {
+        let d = self.dispatch_get(of)?;
+        let from = self.worker_get(of)?.agent;
+        let why = reason_text(reason);
+        let (subject, body) = match next {
+            Some(next) => {
+                let agent = self.worker_get(next)?.agent;
+                (
+                    format!("worker-{} failed over", d.task_id),
+                    format!(
+                        "The worker of task {} ({from}) stopped because {why}. {next} ({agent}) continues it.",
+                        d.task_id
+                    ),
+                )
+            }
+            None => (
+                format!("worker-{} failed", d.task_id),
+                format!(
+                    "The worker of task {} ({from}) stopped because {why}, and no backup is left.",
+                    d.task_id
+                ),
+            ),
+        };
+        let m = NewMessage {
+            to: format!("run:{}", d.run_id),
+            kind: MessageType::Escalation,
+            subject,
+            body,
+            priority: Priority::High,
+            payload: Some(serde_json::json!({
+                "taskId": d.task_id,
+                "dispatchId": of,
+                "failoverReason": enum_text(&reason),
+                "handle": next,
+            })),
+            thread: None,
+        };
+        let id = self.next_id("msg");
+        self.insert_message_with_id(&id, &d.run_id, &format!("dispatch:{of}"), &m.to, &m, now_ms)?;
+        Ok(id)
+    }
+
+    /// The dispatch failed without a verdict on the task: it is ready again.
     fn give_task_back(&self, dispatch_id: &str, now_ms: i64) -> Result<(), OrchError> {
         let d = self.dispatch_get(dispatch_id)?;
         self.conn.execute(
