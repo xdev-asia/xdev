@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { TreeView } from "@xdev-asia/ui";
+import { SearchInput, TreeView } from "@xdev-asia/ui";
 import { reviewRows } from "./reviewRows";
 import type { JSX } from "react";
 import { toApiError, type Api, type ReviewData, type ReviewFile, type ReviewNote } from "@/api";
@@ -40,6 +40,8 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   const [opts, setOpts] = useState<ViewOptions>(() => fromDiffSettings(DIFF_DEFAULTS, readLocalView(storage())));
   const [saved, setSaved] = useState<DiffSettings>(DIFF_DEFAULTS);
   const [data, setData] = useState<ReviewData | null>(null);
+  const [filter, setFilter] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -160,6 +162,10 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   }, [api, worktree, sessions]);
 
   const files = data?.files ?? [];
+  const needle = filter.trim().toLowerCase();
+  const shown = needle ? files.filter((f) => f.path.toLowerCase().includes(needle)) : files;
+  // The clicked file stays marked only while it is still in the review.
+  const active = selected !== null && files.some((f) => f.path === selected) ? selected : undefined;
   const isOpen = (path: string) => expanded[path] ?? files.length <= OPEN_LIMIT;
 
   function setOption(patch: Partial<ViewOptions>): void {
@@ -182,6 +188,7 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
   }
 
   function show(path: string): void {
+    setSelected(path);
     setExpanded({ ...expanded, [path]: true });
     setTarget({ file: path, seq: target.seq + 1 });
   }
@@ -296,17 +303,29 @@ export function ReviewView(props: { api: Api; worktree: string; sessions?: Sessi
       {files.length > 0 && data && (
         <div className="rv-main">
           <nav className="rv-list" style={{ width }} aria-label={t("review.list")}>
+            <SearchInput
+              size="sm"
+              className="rv-filter"
+              value={filter}
+              placeholder={t("review.filter")}
+              aria-label={t("review.filter")}
+              labels={{ clear: t("review.filter.clear") }}
+              onChange={(e) => setFilter(e.target.value)}
+              onClear={() => setFilter("")}
+            />
+            {shown.length === 0 && <p className="ws-empty">{t("review.filter.none")}</p>}
             {opts.tree ? (
               <TreeView
-                rows={reviewRows(files, new Set(closed))}
+                rows={reviewRows(shown, new Set(closed))}
+                selected={active}
                 labels={{ tree: t("review.tree"), changed: t("review.tree.changed"), marks: { added: t("review.kind.added"), modified: t("review.kind.modified"), deleted: t("review.kind.deleted") } }}
                 onToggle={(id) => setClosed(closed.includes(id) ? closed.filter((c) => c !== id) : [...closed, id])}
                 onOpen={show}
               />
             ) : (
               <>
-              {files.map((f) => (
-                <button key={f.path} type="button" className="rv-list-item" data-path={f.path} title={f.path} onClick={() => show(f.path)}>
+              {shown.map((f) => (
+                <button key={f.path} type="button" className="rv-list-item" data-path={f.path} aria-current={f.path === active ? "true" : undefined} title={f.path} onClick={() => show(f.path)}>
                   <span className="rv-letter ws-mono" data-kind={f.kind} aria-hidden="true">
                     {LETTER[f.kind]}
                   </span>

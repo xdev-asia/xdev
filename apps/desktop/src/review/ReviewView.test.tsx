@@ -5,7 +5,7 @@ import { createMockApi, type Api } from "@/api";
 import { translate } from "@/i18n";
 import { BasePicker } from "./BasePicker";
 import { FileDiff } from "./FileDiff";
-import { TreeView } from "@xdev-asia/ui";
+import { SearchInput, TreeView } from "@xdev-asia/ui";
 import { ReviewView } from "./ReviewView";
 import { touchChanges } from "@/workspace/changesBus";
 import { VIEW_KEY } from "./viewOptions";
@@ -379,4 +379,35 @@ it("draws the file tree when the setting asks for it, folds a folder and saves t
   saveButton(v).props.onClick();
   await tick();
   expect(put).toHaveBeenCalledWith(expect.objectContaining({ fileTree: false }));
+});
+
+it("filters the file list by path, says when nothing matches and clears", async () => {
+  memoryStorage();
+  const api = createMockApi({});
+  const v = review(api);
+  await tick();
+  const input = () => v.all().find((n) => n.type === SearchInput)!;
+  const items = () => v.all().filter((n) => n.props.className === "rv-list-item").map((n) => n.props["data-path"]);
+  expect(items()).toEqual(PATHS);
+  input().props.onChange({ target: { value: "SESSION" } });
+  expect(items()).toEqual(["src/session.ts"]);
+  input().props.onChange({ target: { value: "zzz" } });
+  expect(items()).toEqual([]);
+  expect(v.html()).toContain(en("review.filter.none"));
+  input().props.onClear();
+  expect(items()).toEqual(PATHS);
+});
+
+it("the tree follows the filter and marks the file that was clicked", async () => {
+  memoryStorage();
+  const api = createMockApi({});
+  await api.diffSettingsPut({ defaultView: "inline", ignoreWhitespace: false, collapseUnchanged: true, wordWrap: false, fileTree: true });
+  const v = review(api);
+  await tick();
+  const tree = () => v.all().find((n) => n.type === TreeView)!;
+  expect(tree().props.selected).toBeUndefined();
+  tree().props.onOpen("src/status.ts");
+  expect(tree().props.selected).toBe("src/status.ts");
+  v.all().find((n) => n.type === SearchInput)!.props.onChange({ target: { value: "notes" } });
+  expect(tree().props.rows.filter((r: { kind: string }) => r.kind === "file").map((r: { id: string }) => r.id)).toEqual(["docs/old-notes.md"]);
 });

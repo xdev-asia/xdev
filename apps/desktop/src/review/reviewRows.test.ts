@@ -19,3 +19,11 @@ it("a file keeps its status letter whether it is staged or not", () => {
 it("a partly staged file counts as unstaged", () => {
   expect(reviewRows([file("a/x.ts", true, true)], new Set())[0].changed).toBe(true);
 });
+
+it("compact merges a chain of single folders, keeps the dirty dot and counts files", () => {
+  const rows = reviewRows([file("a/b/c/x.ts", false, true), file("a/b/c/y.ts", true, false), file("d/z.ts", true, false)], new Set());
+  const dirs = rows.filter((r) => r.kind === "dir");
+  expect(dirs.map((r) => [r.id, r.name, r.count])).toEqual([["a/b/c/", "a/b/c", 2], ["d/", "d", 1]]);
+  expect(dirs[0].changed).toBe(true);
+  expect(dirs[1].changed).toBeUndefined();
+});
