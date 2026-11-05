@@ -177,6 +177,23 @@ it("asks a second time before stopping a port no xDev terminal started", async (
   expect(stop).toHaveBeenCalledWith("localhost:3000:1", { confirmed: true, outsideTerminal: true });
 });
 
+it("asks a second time when the listener is the terminal's own process", async () => {
+  const api = createMockApi({});
+  const store = storeWith(api, scan([port({ port: 4000, pid: 9, worktree: OAK, evidence: "terminal" })]));
+  await store.refresh();
+  const stop = vi.spyOn(store, "stop").mockRejectedValueOnce({ code: "port_terminal_root" }).mockResolvedValue();
+  const m = mount(api, store);
+  m.all().find((n) => n.props.label === en("ports.stop"))?.props.onClick();
+  m.all().find((n) => n.props["data-action"] === "stop-confirm")?.props.onClick();
+  await tick();
+  expect(stop).toHaveBeenCalledWith("localhost:4000:1", { confirmed: true, outsideTerminal: false });
+  expect(m.all().some((n) => n.props.children === en("ports.stopTerminalNote", { port: 4000 }))).toBe(true);
+  expect(m.html()).not.toContain('role="alert"');
+  m.all().find((n) => n.props["data-action"] === "stop-outside")?.props.onClick();
+  await tick();
+  expect(stop).toHaveBeenLastCalledWith("localhost:4000:1", { confirmed: true, outsideTerminal: true });
+});
+
 it("cancels an asked stop and the menu entry only asks", async () => {
   const api = createMockApi({});
   const store = storeWith(api, scan([port({ port: 5173, pid: 9, worktree: OAK, evidence: "terminal" })]));

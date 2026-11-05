@@ -458,6 +458,7 @@ export type ErrorCode =
   | "port_changed"
   | "port_stop_unconfirmed"
   | "port_not_started_by_app"
+  | "port_terminal_root"
   | "port_still_listening"
   | "stop_failed"
   | "open_failed"
@@ -1114,7 +1115,8 @@ export interface Api {
   // the process behind a port id, opening its URL in the OS browser, and a terminal printing a new URL.
   portsScan(worktrees: string[], force: boolean): Promise<PortScan>;
   // A stop needs `confirmed`; a port no xDev terminal started also needs `outsideTerminal`, the second
-  // confirmation. Rejects with `port_stop_unconfirmed` / `port_not_started_by_app` otherwise.
+  // confirmation, and so does a listener that is a terminal's own process. Rejects with
+  // `port_stop_unconfirmed` / `port_not_started_by_app` / `port_terminal_root` otherwise.
   portsStop(worktrees: string[], id: string, consent: PortStopConsent): Promise<PortScan>;
   portsOpen(id: string): Promise<void>;
   onPortsAdvertised(cb: (worktree: string) => void): Promise<() => void>;
@@ -1230,6 +1232,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "port_changed",
   "port_stop_unconfirmed",
   "port_not_started_by_app",
+  "port_terminal_root",
   "port_still_listening",
   "stop_failed",
   "open_failed",

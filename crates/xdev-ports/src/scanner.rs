@@ -48,6 +48,11 @@ pub enum StopError {
     /// confirmation.
     #[error("the port was not started by an xDev terminal")]
     NotStartedByApp,
+    /// The listener is the terminal's own shell or program, not a process
+    /// under it: stopping it ends the terminal, so it needs the second
+    /// confirmation.
+    #[error("the port belongs to the terminal itself")]
+    TerminalRoot,
     #[error("the port belongs to this app")]
     OwnProcess,
     /// No fresh list: the last one may name a pid the OS has since reused.
@@ -73,6 +78,7 @@ impl StopError {
             Self::NoPid => "port_no_pid",
             Self::NotConfirmed => "port_stop_unconfirmed",
             Self::NotStartedByApp => "port_not_started_by_app",
+            Self::TerminalRoot => "port_terminal_root",
             Self::OwnProcess => "port_own_process",
             Self::Unavailable => "port_scan_unavailable",
             Self::Changed => "port_changed",
@@ -304,7 +310,8 @@ impl<P: Probe> Scanner<P> {
 
     /// Ends the process behind port `id`, once `consent` confirms it. Only a
     /// listener under a terminal xDev started in that worktree is stopped,
-    /// unless `consent.outside_terminal`. Refuses unless a fresh scan lists
+    /// unless `consent.outside_terminal`, which a listener that is itself a
+    /// terminal's root also needs. Refuses unless a fresh scan lists
     /// it, then reads the live tables once more right before the signal: the
     /// pid must still exist, still listen on that port, and keep the name and
     /// start time the scan saw, so a reused pid is never hit. `protected`
@@ -346,6 +353,9 @@ impl<P: Probe> Scanner<P> {
         let pid = port.pid.ok_or(StopError::NoPid)?;
         if protected.contains(&pid) {
             return Err(StopError::OwnProcess);
+        }
+        if roots.iter().any(|r| r.pid == pid) && !consent.outside_terminal {
+            return Err(StopError::TerminalRoot);
         }
         let seen = self
             .state
@@ -871,12 +881,13 @@ mod tests {
     #[test]
     fn stop_ends_a_listener_under_an_xdev_terminal_with_one_confirmation() {
         let (s, f, urls, wts) = with_port("/elsewhere");
+        *f.procs.lock().unwrap() = vec![proc(1, "/w/a"), child(7, 1)];
         let once = StopConsent {
             confirmed: true,
             outside_terminal: false,
         };
         let after = s
-            .stop("127.0.0.1:5173:7", once, &[root(7)], &wts, &urls, &[])
+            .stop("127.0.0.1:5173:7", once, &[root(1)], &wts, &urls, &[])
             .unwrap();
         assert_eq!(*f.killed.lock().unwrap(), vec![7]);
         // TERM closed the port, so there was no hard kill.
@@ -906,6 +917,24 @@ mod tests {
         assert_eq!(err, StopError::StillListening);
         assert_eq!(err.code(), "port_still_listening");
         assert_eq!(*f.hard.lock().unwrap(), vec![7]);
+    }
+
+    #[test]
+    fn a_listener_that_is_the_terminal_itself_needs_the_second_confirmation() {
+        let (s, f, urls, wts) = with_port("/w/a");
+        let once = StopConsent {
+            confirmed: true,
+            outside_terminal: false,
+        };
+        let err = s
+            .stop("127.0.0.1:5173:7", once, &[root(7)], &wts, &urls, &[])
+            .unwrap_err();
+        assert_eq!(err, StopError::TerminalRoot);
+        assert_eq!(err.code(), "port_terminal_root");
+        assert!(f.killed.lock().unwrap().is_empty());
+        s.stop("127.0.0.1:5173:7", YES, &[root(7)], &wts, &urls, &[])
+            .unwrap();
+        assert_eq!(*f.killed.lock().unwrap(), vec![7]);
     }
 
     #[test]

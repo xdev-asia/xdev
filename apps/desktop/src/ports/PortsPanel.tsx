@@ -58,6 +58,12 @@ export function PortsPanel(props: {
       await store.stop(p.id, { confirmed: true, outsideTerminal });
       setNote(t("ports.stopped", { port: p.port }));
     } catch (e) {
+      // The listener is the terminal's own process: stopping it ends the terminal, so ask once more.
+      if (!outsideTerminal && toApiError(e).code === "port_terminal_root") {
+        setAsking({ id: p.id, outside: true });
+        setNote(t("ports.stopTerminalNote", { port: p.port }));
+        return;
+      }
       fail(e);
     }
   };
