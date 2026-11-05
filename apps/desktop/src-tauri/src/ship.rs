@@ -63,6 +63,9 @@ pub struct ShipView {
     /// The branch has commits its base lacks, whatever `range` counts from;
     /// what offering a pull request goes by.
     pub ahead_of_base: bool,
+    /// The repo has remotes named both `origin` and `upstream`, so Sync fork
+    /// is offered.
+    pub has_fork_upstream: bool,
 }
 
 /// What the registry knows about a checkout.
@@ -166,6 +169,7 @@ fn view(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipView, Cm
         range,
         range_base,
         ahead_of_base,
+        has_fork_upstream: repo.has_fork_upstream()?,
     })
 }
 

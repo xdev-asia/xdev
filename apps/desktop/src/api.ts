@@ -94,6 +94,13 @@ import type {
   StageState,
   ConflictOp,
   ConflictState,
+  ConflictEntry,
+  ConflictKind,
+  ConflictResolution,
+  ForkSync,
+  ForkSyncBlock,
+  ForkSyncStatus,
+  LineCount,
   WorktreeStat,
   WorktreeView,
   WorktreeCreated,
@@ -299,6 +306,13 @@ export type {
   StageState,
   ConflictOp,
   ConflictState,
+  ConflictEntry,
+  ConflictKind,
+  ConflictResolution,
+  ForkSync,
+  ForkSyncBlock,
+  ForkSyncStatus,
+  LineCount,
   WorktreeSkip,
   WorktreeStat,
   WorktreeView,
@@ -568,6 +582,9 @@ export type ErrorCode =
   | "branch_pushed"
   | "no_conflict"
   | "still_conflicted"
+  | "conflict_gone"
+  | "conflict_changed"
+  | "not_a_conflict"
   | "bad_color"
   | "bad_icon"
   | "gh_account_missing";
@@ -961,6 +978,9 @@ export interface Api {
   worktreeFetch(path: string): Promise<ShipView>;
   // `expected` is the remote commit the caller saw; without `confirmed` this rejects with `needs_approval`.
   worktreeForcePush(path: string, expected: string, confirmed: boolean): Promise<ShipView>;
+  // Fast-forwards `origin`'s copy of `upstream`'s default branch; only when `hasForkUpstream`. The
+  // local branch, index and work tree are not touched. A refusal is a `blocked` result, not a rejection.
+  worktreeSyncFork(path: string): Promise<ForkSync>;
   // The new commit's id. Rejects with `nothing_to_amend`, or `amend_pushed` unless `confirmed`.
   worktreeAmend(path: string, files: string[], message: string, confirmed: boolean): Promise<string>;
   // Pull requests through the `gh` tool; null when the branch has none.
@@ -1043,6 +1063,11 @@ export interface Api {
   worktreeConflictContinue(path: string): Promise<void>;
   // Gives it up and drops the resolution work; gated like a discard (`confirmed`).
   worktreeConflictAbort(path: string, confirmed: boolean): Promise<void>;
+  // Settles one conflicted file the way `how` says. Rust reads the file again first: rejects with
+  // `conflict_gone` when it is no longer unmerged, `conflict_changed` when its kind is not `expected`
+  // and `not_a_conflict` when `how` is not offered for the kind (the detail is the path). Keep
+  // deletion is gated like a discard (`confirmed`).
+  worktreeConflictResolve(path: string, file: string, expected: ConflictKind, how: ConflictResolution, confirmed: boolean): Promise<void>;
   // Review notes of one worktree. A put replaces them all and rejects with `bad_note` when any is invalid.
   reviewNotes(path: string): Promise<ReviewNote[]>;
   reviewNotesPut(path: string, notes: ReviewNote[]): Promise<ReviewNote[]>;
@@ -1376,6 +1401,9 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "branch_pushed",
   "no_conflict",
   "still_conflicted",
+  "conflict_gone",
+  "conflict_changed",
+  "not_a_conflict",
   "bad_color",
   "bad_icon",
   "gh_account_missing",
@@ -1613,6 +1641,7 @@ const tauriApi: Api = {
   worktreeSync: (path) => call("worktree_sync", { path }),
   worktreeFetch: (path) => call("worktree_fetch", { path }),
   worktreeForcePush: (path, expected, confirmed) => call("worktree_force_push", { path, expected, confirmed }),
+  worktreeSyncFork: (path) => call("worktree_sync_fork", { path }),
   worktreeAmend: (path, files, message, confirmed) => call("worktree_amend", { path, files, message, confirmed }),
   worktreePr: (path) => call("worktree_pr", { path }),
   worktreePrCreate: (path, draft) => call("worktree_pr_create", { path, draft }),
@@ -1654,6 +1683,7 @@ const tauriApi: Api = {
   worktreeConflicts: (path) => call("worktree_conflicts", { path }),
   worktreeConflictContinue: (path) => call("worktree_conflict_continue", { path }),
   worktreeConflictAbort: (path, confirmed) => call("worktree_conflict_abort", { path, confirmed }),
+  worktreeConflictResolve: (path, file, expected, how, confirmed) => call("worktree_conflict_resolve", { path, file, expected, how, confirmed }),
   reviewNotes: (path) => call("review_notes_get", { path }),
   reviewNotesPut: (path, notes) => call("review_notes_put", { path, notes }),
   kitHomes: () => call("kit_homes"),

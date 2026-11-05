@@ -286,3 +286,15 @@ fn rename_branch_moves_the_checked_out_branch() {
     assert!(repo.rename_branch("trunk", "taken").is_err());
     assert_eq!(repo.current_branch().unwrap().as_deref(), Some("trunk"));
 }
+
+#[test]
+fn conflict_state_still_lists_files() {
+    let (dir, repo) = fixture();
+    git_conflicts(dir.path(), &["merge", "topic"]);
+    let state = repo.conflict_state().unwrap().expect("merge state");
+    // `files` stays next to `entries`, so older readers keep working.
+    assert_eq!(state.files, ["f.txt"]);
+    let json = serde_json::to_value(&state).unwrap();
+    assert_eq!(json["files"], serde_json::json!(["f.txt"]));
+    assert!(json["entries"].is_array());
+}

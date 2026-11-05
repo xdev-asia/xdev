@@ -521,7 +521,7 @@ describe("mock repo hooks", () => {
   });
 
   describe("branch rename and conflicts", () => {
-    const CONFLICTED = { ...DEMO_WORKSPACE, conflicts: { [FIRST]: { op: "rebase" as const, files: ["src/session.ts"], onto: "main", step: [3, 7] as [number, number] } } };
+    const CONFLICTED = { ...DEMO_WORKSPACE, conflicts: { [FIRST]: { op: "rebase" as const, files: ["src/session.ts"], onto: "main", step: [3, 7] as [number, number], entries: [{ path: "src/session.ts", kind: "both_modified" as const, present: true }] } } };
 
     it("marks only a blank-named worktree as auto-named, and renames it under its prefix", async () => {
       const api = createMockWorkspace({ ...DEMO_WORKSPACE, git: { branchPrefix: "custom", branchPrefixCustom: "me" } });

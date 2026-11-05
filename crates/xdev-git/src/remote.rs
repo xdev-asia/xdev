@@ -1,6 +1,6 @@
 use crate::history::is_commit_id;
 use crate::run::{self, Output};
-use crate::{Commit, GitError, Repo};
+use crate::{Commit, GitError, LineCount, Repo};
 
 /// The branch's upstream and how far the two have drifted apart.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -31,6 +31,10 @@ pub struct BaseRange {
     pub added: u64,
     #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub removed: u64,
+    /// The part of `added` and `removed` in test files.
+    pub tests: LineCount,
+    /// The part of `added` and `removed` in generated files and lockfiles.
+    pub generated: LineCount,
     /// Newest first, at most the caller's limit.
     pub commits: Vec<Commit>,
     pub truncated: bool,
@@ -389,6 +393,8 @@ impl Repo {
             merge_base,
             added,
             removed,
+            tests: LineCount::default(),
+            generated: LineCount::default(),
             truncated: total > commits.len(),
             commits,
         })

@@ -2,10 +2,12 @@
 //! history, commit and restore. Paths in and out are vault-relative with `/`.
 
 mod clone;
+mod code_kind;
 mod commit;
 mod commit_files;
 mod conflict;
 mod diff;
+mod fork;
 mod gh;
 mod gh_review;
 mod history;
@@ -23,8 +25,10 @@ mod worktree;
 use std::path::{Path, PathBuf};
 
 pub use clone::{CloneEvent, check_clone_url, clone_name, clone_repo, parse_progress};
+pub use code_kind::{CodeKind, LineCount, code_kind};
 pub use commit_files::{CommitFile, CommitFileStatus, CommitFiles};
-pub use conflict::{ConflictOp, ConflictState};
+pub use conflict::{ConflictEntry, ConflictKind, ConflictOp, ConflictResolution, ConflictState};
+pub use fork::{ForkSync, ForkSyncBlock, ForkSyncStatus};
 pub use gh::{
     Check, CheckBucket, GhAccount, GhEnv, GhExec, GhLogin, GhOutput, ISSUE_BODY_MAX,
     ISSUE_LIMIT_MAX, Issue, IssueComment, IssueDetail, IssueDraft, IssueQuery, IssueState, PrDraft,
@@ -95,6 +99,15 @@ pub enum GitError {
     StillConflicted,
     #[error("no merge, rebase, cherry-pick or revert in progress")]
     NoConflict,
+    /// The path the person acted on is no longer unmerged.
+    #[error("{0}")]
+    ConflictGone(String),
+    /// The path is still unmerged, but its kind is not the one shown.
+    #[error("{0}")]
+    ConflictChanged(String),
+    /// The resolution is not offered for the path's kind.
+    #[error("{0}")]
+    NotAConflict(String),
     /// Git refused because local changes are in the way. The text is what
     /// was being done: `rebase` or `fast-forward`.
     #[error("{0}")]
@@ -177,6 +190,9 @@ impl GitError {
             GitError::MergeBlocked(_) => "merge_blocked",
             GitError::StillConflicted => "still_conflicted",
             GitError::NoConflict => "no_conflict",
+            GitError::ConflictGone(_) => "conflict_gone",
+            GitError::ConflictChanged(_) => "conflict_changed",
+            GitError::NotAConflict(_) => "not_a_conflict",
             GitError::Dirty(_) => "update_dirty",
             GitError::Untracked(_) => "update_untracked",
             GitError::Conflicted => "update_conflicted",

@@ -908,7 +908,7 @@ it("hands the palette its Stage all and Discard all handlers", async () => {
 
 // ---- Conflicts ----
 
-const REBASE = { op: "rebase" as const, files: ["src/session.ts"], onto: "main", step: [3, 7] as [number, number] };
+const REBASE = { op: "rebase" as const, files: ["src/session.ts"], onto: "main", step: [3, 7] as [number, number], entries: [{ path: "src/session.ts", kind: "both_modified" as const, present: true }] };
 const conflicted = (state = REBASE) => createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), conflicts: { [OAK]: state } } });
 const sections = (view: ReturnType<typeof changes>) => view.all().filter((n) => n.type === "section").map((n) => n.props["data-group"]);
 const bar = (view: ReturnType<typeof changes>) => view.find((n) => n.props["data-conflict-bar"] !== undefined);

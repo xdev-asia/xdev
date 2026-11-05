@@ -14,6 +14,7 @@ function view(over: { ahead?: number; behind?: number; rewritten?: boolean; upst
     range: null,
     rangeBase: "origin/main",
     aheadOfBase: true,
+    hasForkUpstream: false,
     ...rest,
   };
 }

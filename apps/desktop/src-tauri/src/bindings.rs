@@ -160,6 +160,13 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     StageState::export_all(cfg)?;
     xdev_git::ConflictState::export_all(cfg)?;
     xdev_git::ConflictOp::export_all(cfg)?;
+    xdev_git::ConflictKind::export_all(cfg)?;
+    xdev_git::ConflictEntry::export_all(cfg)?;
+    xdev_git::ConflictResolution::export_all(cfg)?;
+    xdev_git::ForkSync::export_all(cfg)?;
+    xdev_git::ForkSyncStatus::export_all(cfg)?;
+    xdev_git::ForkSyncBlock::export_all(cfg)?;
+    xdev_git::LineCount::export_all(cfg)?;
     ReviewNote::export_all(cfg)?;
     xdev_workspace::DirListing::export_all(cfg)?;
     xdev_workspace::FileText::export_all(cfg)?;

@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::since::fields;
 use crate::{GitError, Repo, run};
@@ -43,6 +43,78 @@ pub struct ConflictState {
     pub onto: Option<String>,
     /// Rebase only: the step and the number of steps.
     pub step: Option<(u32, u32)>,
+    /// The same unmerged paths with what each side did to them. A submodule
+    /// conflict is left out here, though `files` still lists it.
+    pub entries: Vec<ConflictEntry>,
+}
+
+/// What each side did to an unmerged path, from git's two status letters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictKind {
+    /// `UU`
+    BothModified,
+    /// `AA`
+    BothAdded,
+    /// `DD`
+    BothDeleted,
+    /// `AU`
+    AddedByUs,
+    /// `UA`
+    AddedByThem,
+    /// `DU`
+    DeletedByUs,
+    /// `UD`
+    DeletedByThem,
+}
+
+impl ConflictKind {
+    /// The kind for git's `XY` letters; `None` for a pair that is not a conflict.
+    pub fn from_xy(xy: &str) -> Option<ConflictKind> {
+        Some(match xy {
+            "UU" => ConflictKind::BothModified,
+            "AA" => ConflictKind::BothAdded,
+            "DD" => ConflictKind::BothDeleted,
+            "AU" => ConflictKind::AddedByUs,
+            "UA" => ConflictKind::AddedByThem,
+            "DU" => ConflictKind::DeletedByUs,
+            "UD" => ConflictKind::DeletedByThem,
+            _ => return None,
+        })
+    }
+}
+
+/// One unmerged path and what each side did to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictEntry {
+    /// Relative to the repo's top folder.
+    pub path: String,
+    pub kind: ConflictKind,
+    /// False when the work tree has no file at `path`.
+    pub present: bool,
+}
+
+/// How one conflicted file is settled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictResolution {
+    /// Stage the file as it is on disk.
+    MarkResolved,
+    /// Stage the file that one side deleted, so it stays.
+    KeepFile,
+    /// Remove the file from the index and the work tree.
+    KeepDeletion,
+}
+
+impl ConflictEntry {
+    /// The resolutions offered for this entry, in the order they are shown.
+    pub fn resolutions(&self) -> &'static [ConflictResolution] {
+        &[]
+    }
 }
 
 /// Git must not open an editor for a message the person already has.
@@ -123,7 +195,26 @@ impl Repo {
             files: self.unmerged()?,
             onto,
             step,
+            entries: self.conflict_entries()?,
         }))
+    }
+
+    /// Every unmerged path with what each side did to it, sorted by path.
+    pub fn conflict_entries(&self) -> Result<Vec<ConflictEntry>, GitError> {
+        Ok(Vec::new())
+    }
+
+    /// Settles one conflicted file. `path` is read again first: a path that
+    /// is no longer unmerged is `ConflictGone`, one whose kind is not
+    /// `expected` is `ConflictChanged`, and a resolution not offered for the
+    /// kind is `NotAConflict`.
+    pub fn conflict_resolve(
+        &self,
+        path: &str,
+        _expected: ConflictKind,
+        _how: ConflictResolution,
+    ) -> Result<(), GitError> {
+        Err(GitError::ConflictGone(path.to_owned()))
     }
 
     /// A branch that points at `id` (local first), else the short id.

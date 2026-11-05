@@ -58,6 +58,7 @@ type WorkspaceApi = Pick<
   | "worktreeSync"
   | "worktreeFetch"
   | "worktreeForcePush"
+  | "worktreeSyncFork"
   | "worktreeAmend"
   | "worktreePr"
   | "worktreePrCreate"
@@ -86,6 +87,7 @@ type WorkspaceApi = Pick<
   | "worktreeConflicts"
   | "worktreeConflictContinue"
   | "worktreeConflictAbort"
+  | "worktreeConflictResolve"
   | "reviewNotes"
   | "reviewNotesPut"
   | "gitSettings"
@@ -127,7 +129,7 @@ export type MockWorkspaceSeed = {
   groups?: RepoGroup[];
   order?: string[];
   // Worktrees stopped in the middle of a merge, rebase, cherry-pick or revert, by path. The files are
-  // the unmerged ones and should be among the worktree's pending changes.
+  // the unmerged ones and should be among the worktree's pending changes; `entries` gives each one's kind.
   conflicts?: Record<string, ConflictState>;
   // The first prompt of an agent session, by session id; a worktree path stands for its latest.
   prompts?: Record<string, string>;
@@ -138,6 +140,8 @@ export type MockWorkspaceSeed = {
   hostless?: string[];
   // Worktrees whose remote holds older copies of their local commits, as after an amend.
   rewritten?: Record<string, boolean>;
+  // Worktrees whose repo has both an `origin` and an `upstream` remote, so Sync fork is offered.
+  forkUpstream?: string[];
 };
 
 // `ARCHIVE_DAYS` in Rust: archived entries show under Archived this long.
@@ -493,6 +497,8 @@ export function createMockWorkspace(
   const rewrote = new Set<string>();
   const stagedFiles = new Map<string, Set<string>>();
   const conflicts = new Map<string, ConflictState>(Object.entries(structuredClone(seed.conflicts ?? {})));
+  // Worktrees whose fork was synced once already.
+  const forkSynced = new Set<string>();
   const notes = new Map<string, ReviewNote[]>();
 
   function remoteOf(path: string): Remote {
@@ -530,9 +536,21 @@ export function createMockWorkspace(
       upstream,
       headPushed: upstream !== null && r.ahead === 0,
       atStart: r.commits.length === 0,
-      range: wt.primary ? null : { mergeBase: DEMO_START, added: counted.length * 3, removed: 0, commits: structuredClone(counted), truncated: false },
+      range: wt.primary
+        ? null
+        : {
+            mergeBase: DEMO_START,
+            added: counted.length * 3,
+            removed: 0,
+            // Part of the total, so the test lines never outnumber it.
+            tests: { added: Math.min(12, counted.length * 3), removed: 0 },
+            generated: { added: 0, removed: 0 },
+            commits: structuredClone(counted),
+            truncated: false,
+          },
       rangeBase: vsUpstream ? `origin/${upstream.branch}` : repo.baseRef,
       aheadOfBase: !wt.primary && r.commits.length > 0,
+      hasForkUpstream: seed.forkUpstream?.includes(path) ?? false,
     };
   }
 
@@ -1133,7 +1151,10 @@ export function createMockWorkspace(
       stagedFiles.set(path, set);
       // Staging an unmerged file is what marks it resolved.
       const open = conflicts.get(path);
-      if (open && staged) open.files = open.files.filter((f) => !files.includes(f));
+      if (open && staged) {
+        open.files = open.files.filter((f) => !files.includes(f));
+        open.entries = open.entries.filter((e) => !files.includes(e.path));
+      }
     },
     async worktreeStageState(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
@@ -1200,6 +1221,16 @@ export function createMockWorkspace(
       if (!state) return reject("no_conflict", path);
       if (!confirmed) return reject("needs_approval", `abort ${state.op}`);
       conflicts.delete(path);
+    },
+    async worktreeConflictResolve(path, file, expected, how, confirmed) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const state = conflicts.get(path);
+      const entry = state?.entries.find((e) => e.path === file);
+      if (!state || !entry) return reject("conflict_gone", file);
+      if (entry.kind !== expected) return reject("conflict_changed", file);
+      if (how === "keep_deletion" && !confirmed) return reject("needs_approval", `discard ${file}`);
+      state.entries = state.entries.filter((e) => e.path !== file);
+      state.files = state.files.filter((f) => f !== file);
     },
     async worktreeBranches(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
@@ -1295,6 +1326,14 @@ export function createMockWorkspace(
     },
     async worktreeFetch(path) {
       return shipView(path);
+    },
+    async worktreeSyncFork(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (!seed.forkUpstream?.includes(path)) return { status: "blocked", reason: "missing_upstream", branch: null, ahead: 0, behind: 0 };
+      // The first sync brings three commits; after that the fork is even.
+      const first = !forkSynced.has(path);
+      forkSynced.add(path);
+      return { status: first ? "synced" : "up_to_date", reason: null, branch: "main", ahead: 0, behind: first ? 3 : 0 };
     },
     async worktreeForcePush(path, expected, confirmed) {
       if (!confirmed) return reject("needs_approval", `force push ${path}`);
