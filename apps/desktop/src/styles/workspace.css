@@ -3460,3 +3460,58 @@ button.ws-tree-row:focus-visible {
   color: var(--text-2);
   font-size: 11px;
 }
+
+.ws-commit {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  overflow: auto;
+  background: var(--bg-1);
+}
+
+.ws-commit-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-commit-base {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.ws-commit-note {
+  padding: 8px 12px;
+}
+
+.ws-commit-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-commit-file {
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-commit-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-commit-row:hover {
+  background: var(--bg-2);
+}

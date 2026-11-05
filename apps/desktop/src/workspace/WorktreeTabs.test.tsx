@@ -12,6 +12,7 @@ import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
 import { ContextMenu } from "@/ui/ContextMenu";
 import { AgentIcon } from "./AgentIcon";
 import { CloseTabsDialog } from "./CloseTabsDialog";
+import { CommitView } from "./CommitView";
 import { Sessions } from "./sessions";
 import { addTab, leaves, paneOf, removeTab, resize, selectTab, splitPane, toggleExpand, type PaneLayout, type PaneNode } from "./paneTree";
 import { PaneView } from "./PaneView";
@@ -1479,4 +1480,25 @@ describe("file tabs", () => {
     expect(write).toHaveBeenCalledWith(A, "a.ts", "changed", "lf", "h1");
     expect(fileTabs.get(A, "a.ts")).toMatchObject({ saved: "changed", hash: "h2" });
   });
+});
+
+it("a commit ask opens the commit tab, and a new one points it at another commit", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live, A, true, { commit: { id: "aaaaaaa1111", file: "a.ts", seq: 1 } });
+  expect(selected(view)).toEqual(["commit:"]);
+  expect(view.find((n) => n.type === CommitView)!.props.commit).toMatchObject({ id: "aaaaaaa1111", file: "a.ts" });
+  expect(view.html()).toContain(en("commitView.tab", { id: "aaaaaaa" }));
+  // Only one commit tab: the same id, pointed at the last commit asked for.
+  const again = harness(api, live, A, true, { commit: { id: "bbbbbbb2222", file: null, seq: 2 } });
+  expect(again.all().filter((n) => n.props["data-tab"] === "commit:" && n.props.role === "tab")).toHaveLength(1);
+  expect(again.find((n) => n.type === CommitView)!.props.commit).toMatchObject({ id: "bbbbbbb2222", file: null });
+});
+
+it("ctrl_w_on_the_commit_tab_closes_it", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live, A, true, { commit: { id: "aaaaaaa1111", file: null, seq: 1 } });
+  press(view, CTRL_W);
+  expect(view.find((n) => n.props["data-tab"] === "commit:")).toBeUndefined();
 });
