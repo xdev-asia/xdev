@@ -10,6 +10,7 @@ import { HandOffDialog, type HandOffChoice } from "./HandOffDialog";
 import { SessionsPanel, type ScopeKind } from "./SessionsPanel";
 import { confirmResume, startResume, type PendingResume } from "./resumeFlow";
 import { FIRST_PROMPT_MAX, handoffPrompt } from "./handoff";
+import type { ResumeDestination } from "./resumeTarget";
 import { baseName } from "./sessionsView";
 import type { AgentSessionsStore } from "./store";
 
@@ -72,8 +73,8 @@ export function SessionsSidebar(props: {
     if (next.kind !== scope.kind || (next.kind !== "all" && scope.kind !== "all" && next.path !== scope.path)) void store.setQuery({ scope: next });
   }, [store, scope, path, repo]);
 
-  const resume = (row: SessionRow) => {
-    const tab = startResume(sessions, row, path, setAsking);
+  const resume = (row: SessionRow, dest?: ResumeDestination) => {
+    const tab = startResume(sessions, row, path, setAsking, dest);
     if (tab) props.onOpened(tab);
   };
 
@@ -118,6 +119,9 @@ export function SessionsSidebar(props: {
           const source = row.worktree ?? path;
           if (source) setHandingOff({ row, source });
         }}
+        current={path}
+        onResumeAt={resume}
+        onCopyFirstPrompt={(text) => void copyText(text).then((ok) => pushToast({ text: t(ok ? "agentSessions.firstPromptCopied" : "agentSessions.copyFailed") }))}
         onCopyCommand={(command) => void copyText(command).then((ok) => pushToast({ text: t(ok ? "agentSessions.commandCopied" : "agentSessions.copyFailed") }))}
       />
       {handingOff && (

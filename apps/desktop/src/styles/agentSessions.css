@@ -180,6 +180,7 @@
 
 .as-actions {
   display: none;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 0 8px 6px;
 }
@@ -368,4 +369,57 @@
   flex-basis: 100%;
   color: var(--text-2);
   font-size: 11px;
+}
+
+.as-resume-at {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 0 6px;
+}
+
+.as-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.as-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 8px 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+}
+
+.as-prompt-eyebrow {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.as-prompt-text {
+  margin: 0;
+  color: var(--text-1);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.as-prompt-text[data-clamped="true"] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.as-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }

@@ -29,3 +29,32 @@ export function resumeProfile(row: SessionRow): { profileId: PtyProfile; account
   const { agent, homeId } = row.session;
   return { profileId: agent, account: homeId.startsWith("acct-") ? homeId.slice("acct-".length) : null };
 }
+
+/** Where a resume can be sent from the Resume menu: this tab's worktree, the session's own, or a new tab. */
+export type ResumeDestination = "here" | "session" | "newTab";
+
+export const RESUME_DESTINATIONS: readonly ResumeDestination[] = ["here", "session", "newTab"];
+
+/** Whether the session's own worktree is known and is not the one on screen. */
+export function sessionWorktreeDiffers(row: SessionRow, current: string | null): boolean {
+  return !!row.worktree && (!current || norm(row.worktree) !== norm(current));
+}
+
+/**
+ * The target of a chosen destination. `here` is the worktree on screen (with the same mismatch check as the default);
+ * `session` is the row's own worktree and is `null` unless it is known and differs; `newTab` follows the default target.
+ */
+export function resumeDestination(row: SessionRow, current: string | null, dest: ResumeDestination): { worktree: string | null; mismatch: boolean } {
+  if (dest === "here") {
+    if (!current) return { worktree: null, mismatch: false };
+    const cwd = row.session.cwd;
+    return { worktree: current, mismatch: !cwd || !inside(cwd, current) };
+  }
+  if (dest === "session") return { worktree: sessionWorktreeDiffers(row, current) ? row.worktree : null, mismatch: false };
+  return resumeTarget(row, current);
+}
+
+/** The three destinations and whether each can run now. */
+export function resumeChoices(row: SessionRow, current: string | null): { dest: ResumeDestination; enabled: boolean }[] {
+  return RESUME_DESTINATIONS.map((dest) => ({ dest, enabled: resumeDestination(row, current, dest).worktree !== null }));
+}

@@ -42,4 +42,15 @@ describe("rowMenuItems", () => {
     expect(a.handOff).toHaveBeenCalledOnce();
     expect(a.copyCommand).toHaveBeenCalledWith("claude --resume 4f1c-9_ab");
   });
+
+  it("offers Copy first prompt only with a title and a handler", () => {
+    const withPrompt = { ...actions(), copyFirstPrompt: vi.fn() };
+    const items = rowMenuItems(row("claude"), null, t, withPrompt, true);
+    expect(labels(items)).toContain("agentSessions.menu.copyFirstPrompt");
+    for (const it of items) if (it.type !== "separator" && it.type !== "group") it.onSelect?.();
+    expect(withPrompt.copyFirstPrompt).toHaveBeenCalledWith("t");
+    const empty = { ...row("claude"), session: { ...row("claude").session, title: "  " } } as SessionRow;
+    expect(labels(rowMenuItems(empty, null, t, withPrompt, true))).not.toContain("agentSessions.menu.copyFirstPrompt");
+    expect(labels(rowMenuItems(row("claude"), null, t, actions(), true))).not.toContain("agentSessions.menu.copyFirstPrompt");
+  });
 });

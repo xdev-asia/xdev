@@ -1,13 +1,22 @@
 import type { SessionRow } from "@/api";
 import type { Sessions, Tab } from "@/workspace/sessions";
-import { resumeProfile, resumeTarget } from "./resumeTarget";
+import { resumeDestination, resumeProfile, resumeTarget, type ResumeDestination } from "./resumeTarget";
 
 /** A resume that waits for the person to accept running in another folder. */
 export type PendingResume = { row: SessionRow; worktree: string };
 
-/** Opens the resume tab at once, or hands `ask` the folder mismatch to confirm; `null` when it asked or has no target. */
-export function startResume(sessions: Sessions, row: SessionRow, current: string | null, ask: (pending: PendingResume) => void): Tab | null {
-  const { worktree, mismatch } = resumeTarget(row, current);
+/**
+ * Opens the resume tab at once, or hands `ask` the folder mismatch to confirm; `null` when it asked or has no target.
+ * `dest` is a destination picked from the Resume menu; without it the default target applies.
+ */
+export function startResume(
+  sessions: Sessions,
+  row: SessionRow,
+  current: string | null,
+  ask: (pending: PendingResume) => void,
+  dest?: ResumeDestination,
+): Tab | null {
+  const { worktree, mismatch } = dest ? resumeDestination(row, current, dest) : resumeTarget(row, current);
   if (!worktree) return null;
   if (mismatch) {
     ask({ row, worktree });

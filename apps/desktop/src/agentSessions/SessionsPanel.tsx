@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { JSX } from "react";
+import type { JSX, KeyboardEvent } from "react";
 import { Icon, type MenuEntry } from "@xdev-asia/ui";
 import type { Agent, SessionRow, SessionScope, SessionSort } from "@/api";
 import { MenuButton } from "@/automations/MenuButton";
@@ -8,7 +8,10 @@ import { useI18n } from "@/i18n";
 import { AgentIcon } from "@/workspace/AgentIcon";
 import { ago } from "@/workspace/ago";
 import { DragController } from "./dragToResume";
+import { FirstPromptCard, firstPrompt } from "./FirstPromptCard";
+import { resumeChoices, type ResumeDestination } from "./resumeTarget";
 import { rowMenuItems } from "./rowMenu";
+import { NAV_KEYS, nextRowIndex, type NavItem, type NavKey } from "./rowNav";
 import { baseName, GROUP_BYS, groupRows, HISTORY_DAYS, type SessionGroup } from "./sessionsView";
 import { DEFAULT_VIEW, type AgentSessionsState, type ViewPrefs } from "./store";
 
@@ -42,6 +45,12 @@ export interface SessionsPanelProps {
   onHandOff?(row: SessionRow): void;
   /** Put a row's resume command on the clipboard. */
   onCopyCommand?(command: string): void;
+  /** Put a row's first prompt on the clipboard. */
+  onCopyFirstPrompt?(text: string): void;
+  /** The worktree on screen, which the resume destinations are judged against. */
+  current?: string | null;
+  /** Resume a row at a destination picked from the Resume menu; without it the row has only the default Resume. */
+  onResumeAt?(row: SessionRow, dest: ResumeDestination): void;
 }
 
 /** The sessions of every agent home on this machine: search, scope, sort, and a resume on each row. */
@@ -51,6 +60,10 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
   const [text, setText] = useState(state.query.text ?? "");
   const [picked, setPicked] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [promptCopied, setPromptCopied] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  // The row that takes Tab; the first row until one has had the focus.
+  const [focused, setFocused] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const seen = useRef(props.focusSeq);
@@ -141,6 +154,29 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
     { kind: "all", label: t("agentSessions.scope.all"), enabled: true },
   ];
 
+  // Group headers and rows in screen order, for the arrow keys.
+  const navItems: NavItem[] = groups.flatMap((g): NavItem[] => ["header", ...g.rows.map((): NavItem => "row")]);
+  const navKeys: (string | null)[] = groups.flatMap((g) => [null, ...g.rows.map((r) => r.session.key)]);
+  const tabStop = navKeys.includes(focused) && focused !== null ? focused : (navKeys.find((k) => k !== null) ?? null);
+
+  const onListKeyDown = (e: KeyboardEvent<HTMLElement>) => {
+    const target = e.target as HTMLElement;
+    const item = target.closest<HTMLElement>("li[data-key]");
+    if (!item || !target.classList.contains("as-main")) return;
+    if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+      e.preventDefault();
+      item.querySelector<HTMLElement>(".as-menu-btn")?.click();
+      return;
+    }
+    if (!NAV_KEYS.includes(e.key)) return;
+    e.preventDefault();
+    const next = nextRowIndex(navItems, navKeys.indexOf(item.dataset.key ?? null), e.key as NavKey);
+    const key = next === -1 ? null : navKeys[next];
+    if (key === null) return;
+    setFocused(key);
+    [...(list.current?.querySelectorAll<HTMLElement>("li[data-key]") ?? [])].find((x) => x.dataset.key === key)?.querySelector<HTMLElement>(".as-main")?.focus();
+  };
+
   const renderRow = (row: SessionRow): JSX.Element => {
     const s = row.session;
     const tab = props.openTab(row);
@@ -158,10 +194,17 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
       {
         handOff: () => props.onHandOff?.(row),
         copyCommand: (command) => props.onCopyCommand?.(command),
+        copyFirstPrompt: props.onCopyFirstPrompt,
         jump: () => tab !== null && props.onPrimary(row, tab),
       },
       canHandOff,
     );
+    const prompt = firstPrompt(s.title);
+    const choices = props.onResumeAt && tab === null && !blocked ? resumeChoices(row, props.current ?? null) : null;
+    const destItems: MenuEntry[] = (choices ?? []).flatMap(({ dest, enabled }): MenuEntry[] => [
+      { label: t(`agentSessions.resumeAt.${dest}`), disabled: !enabled, onSelect: () => props.onResumeAt?.(row, dest) },
+      ...(!enabled ? [{ type: "group" as const, label: t(`agentSessions.resumeAt.${dest}.hint`) }] : []),
+    ]);
     const meta = [where, s.branch, s.model].filter((x): x is string => !!x);
     return (
       <li key={s.key} className="as-row" data-key={s.key} data-picked={picked === s.key ? "true" : undefined}>
@@ -169,6 +212,8 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
           type="button"
           className="as-main"
           aria-label={title}
+          tabIndex={tabStop === s.key ? 0 : -1}
+          onFocus={() => setFocused(s.key)}
           onPointerDown={(e) => {
             dragged.current = false;
             if (!blocked && e.button === 0) drag.current?.down(s.key, e.clientX, e.clientY);
@@ -211,6 +256,11 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
           >
             {tab !== null ? t("agentSessions.open") : t("agentSessions.resume")}
           </button>
+          {choices && (
+            <MenuButton label={t("agentSessions.resumeAt.label")} items={destItems} className="as-act as-resume-at" placement="bottom-start">
+              <Icon name="chevron" />
+            </MenuButton>
+          )}
           <button
             type="button"
             className="as-act"
@@ -230,6 +280,18 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
         <MenuButton label={t("agentSessions.menu.more")} items={menu} className="as-menu-btn" placement="bottom-end">
           <Icon name="more" />
         </MenuButton>
+        {picked === s.key && prompt !== null && (
+          <FirstPromptCard
+            text={prompt}
+            expanded={expanded === s.key}
+            copied={promptCopied === s.key}
+            onToggle={() => setExpanded(expanded === s.key ? null : s.key)}
+            onCopy={() => {
+              props.onCopyFirstPrompt?.(prompt);
+              setPromptCopied(s.key);
+            }}
+          />
+        )}
       </li>
     );
   };
@@ -311,7 +373,7 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
           {t("agentSessions.reading")}
         </p>
       )}
-      <div ref={list} className="as-list">
+      <div ref={list} className="as-list" onKeyDown={onListKeyDown}>
         {groups.map((g) => (
           <div key={g.id} className="as-group">
             <h3 className="as-day" title={g.kind === "folder" && g.path ? g.path : undefined}>
