@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { Menu, Popover, Tag } from "@xdev-asia/ui";
+import { Button, Field, Menu, Popover, Tag, Textarea } from "@xdev-asia/ui";
 import { toApiError, type Api, type ApiError, type IssueDetail, type IssueEdit, type IssueLabel } from "@/api";
 import { buildIssueEdit, isEmptyEdit, toggled, type IssueChoice } from "@/issues/issueEdit";
 import { renderMarkdown } from "@/doc/markdown";
@@ -33,6 +33,9 @@ export function IssueDetailView(props: {
   const [people, setPeople] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [editing, setEditing] = useState<"title" | "body" | null>(null);
+  const [draft, setDraft] = useState("");
+  const [comment, setComment] = useState("");
 
   useEffect(() => {
     let current = true;
@@ -83,6 +86,33 @@ export function IssueDetailView(props: {
   function choose(state: NonNullable<IssueChoice["state"]>): void {
     setMenu(null);
     if (detail) void apply(buildIssueEdit(detail, { state }));
+  }
+
+  function startEditing(kind: "title" | "body"): void {
+    if (!detail) return;
+    setDraft(kind === "title" ? detail.issue.title : detail.body);
+    setEditing(kind);
+  }
+
+  async function saveEditing(): Promise<void> {
+    const kind = editing;
+    if (!detail || !kind) return;
+    setEditing(null);
+    await apply(buildIssueEdit(detail, kind === "title" ? { title: draft } : { body: draft }));
+  }
+
+  async function postComment(): Promise<void> {
+    if (comment.trim() === "") return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await api.issueComment(repoId, number, comment);
+      setComment("");
+    } catch (e) {
+      setError(toApiError(e));
+    }
+    await refresh();
+    setBusy(false);
   }
 
   function openPicker(kind: "labels" | "assignees"): void {
@@ -190,6 +220,16 @@ export function IssueDetailView(props: {
             />
           </Popover>
         )}
+        {detail && (
+          <button type="button" className="ws-checks-btn" disabled={busy} onClick={() => startEditing("title")}>
+            {t("issues.edit.title")}
+          </button>
+        )}
+        {detail && (
+          <button type="button" className="ws-checks-btn" disabled={busy} onClick={() => startEditing("body")}>
+            {t("issues.edit.body")}
+          </button>
+        )}
         {onStart && detail && (
           <button type="button" className="ws-checks-btn" onClick={() => onStart(detail)}>
             {t("issues.start")}
@@ -221,6 +261,23 @@ export function IssueDetailView(props: {
             {issue.labels.length > 0 ? issue.labels.map((l) => <Tag key={l}>{l}</Tag>) : <span>{t("issues.edit.none")}</span>}
             <span>{issue.assignees.length > 0 ? issue.assignees.join(", ") : t("issues.edit.none")}</span>
           </div>
+          {editing && (
+            <div className="ws-issue-edit">
+              {editing === "title" ? (
+                <Field label={t("issues.edit.title")} value={draft} onChange={(e) => setDraft(e.target.value)} />
+              ) : (
+                <Textarea label={t("issues.edit.body")} value={draft} rows={8} onChange={(e) => setDraft(e.target.value)} />
+              )}
+              <div className="ws-checks-actions">
+                <Button disabled={busy || (editing === "title" && draft.trim() === "")} onClick={() => void saveEditing()}>
+                  {t("issues.edit.save")}
+                </Button>
+                <Button variant="secondary" onClick={() => setEditing(null)}>
+                  {t("issues.edit.cancel")}
+                </Button>
+              </div>
+            </div>
+          )}
           {detail.body.trim() ? <Markdown text={detail.body} /> : <p className="ws-empty">{t("issues.noBody")}</p>}
           <h3 className="ws-issue-comments">{t("issues.comments", { count: detail.comments.length })}</h3>
           <ul className="ws-issues-list">
@@ -234,6 +291,19 @@ export function IssueDetailView(props: {
               </li>
             ))}
           </ul>
+          <div className="ws-issue-edit">
+            <Textarea
+              label={t("issues.comment.placeholder")}
+              value={comment}
+              rows={4}
+              onChange={(e) => setComment(e.target.value)}
+            />
+            <div className="ws-checks-actions">
+              <Button variant="secondary" disabled={busy || comment.trim() === ""} onClick={() => void postComment()}>
+                {t("issues.comment.post")}
+              </Button>
+            </div>
+          </div>
         </>
       )}
     </div>

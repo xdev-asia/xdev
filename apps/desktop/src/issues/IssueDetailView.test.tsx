@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, type Api, type ApiError, type IssueDetail } from "@/api";
-import { Menu, Popover } from "@xdev-asia/ui";
+import { Button, Field, Menu, Popover, Textarea } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { IssueDetailView } from "./IssueDetailView";
 
@@ -235,4 +235,81 @@ it("an edit that rejects shows its error", async () => {
   menuItems(popover(view, en("issues.edit.close")))[0].onSelect!();
   await flush();
   expect(view.html()).toContain(en("error.bad_draft"));
+});
+
+// ---- edit: title, body, comment ----
+const findBtn = (view: ReturnType<typeof mount>, label: string) => view.nodes().find((n) => (n.type === "button" || n.type === Button) && n.props.children === label)!;
+
+it("saving a body edit sends the body only", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  findBtn(view, en("issues.edit.body")).props.onClick();
+  const area = view.nodes().find((n) => n.type === Textarea)!;
+  expect(area.props.value).toContain("narrow window");
+  area.props.onChange({ target: { value: "New text" } });
+  findBtn(view, en("issues.edit.save")).props.onClick();
+  await flush();
+  const sent = issueEdit.mock.calls[0][2];
+  expect(sent.body).toBe("New text");
+  expect(sent.title).toBeNull();
+  expect(view.html()).toContain("<p>New text</p>");
+});
+
+it("a blank title cannot be saved, and an unchanged one sends nothing", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  findBtn(view, en("issues.edit.title")).props.onClick();
+  view.nodes().find((n) => n.type === Field)!.props.onChange({ target: { value: "  " } });
+  expect(findBtn(view, en("issues.edit.save")).props.disabled).toBe(true);
+  view.nodes().find((n) => n.type === Field)!.props.onChange({ target: { value: "Footer meter overflows" } });
+  findBtn(view, en("issues.edit.save")).props.onClick();
+  await flush();
+  expect(issueEdit).not.toHaveBeenCalled();
+});
+
+it("cancel closes the editor without sending", async () => {
+  const api = createMockApi({});
+  const issueEdit = vi.fn(api.issueEdit);
+  const view = mount({ ...api, issueEdit } as Api, 1);
+  view.commit();
+  await flush();
+  findBtn(view, en("issues.edit.title")).props.onClick();
+  findBtn(view, en("issues.edit.cancel")).props.onClick();
+  expect(view.nodes().some((n) => n.type === Field)).toBe(false);
+  expect(issueEdit).not.toHaveBeenCalled();
+});
+
+it("an empty comment disables Comment; posting reloads and clears the box", async () => {
+  const api = createMockApi({});
+  const issueComment = vi.fn(api.issueComment);
+  const view = mount({ ...api, issueComment } as Api, 1);
+  view.commit();
+  await flush();
+  expect(findBtn(view, en("issues.comment.post")).props.disabled).toBe(true);
+  view.nodes().find((n) => n.type === Textarea && n.props.label === en("issues.comment.placeholder"))!.props.onChange({ target: { value: "Hello" } });
+  expect(findBtn(view, en("issues.comment.post")).props.disabled).toBe(false);
+  findBtn(view, en("issues.comment.post")).props.onClick();
+  await flush();
+  expect(issueComment).toHaveBeenCalledWith("r1", 1, "Hello");
+  expect(view.html()).toContain(en("issues.comments", { count: 2 }));
+  expect(findBtn(view, en("issues.comment.post")).props.disabled).toBe(true);
+});
+
+it("a failed comment keeps the text and shows the error", async () => {
+  const api = createMockApi({});
+  const issueComment = vi.fn(() => Promise.reject({ code: "comment_too_large" }));
+  const view = mount({ ...api, issueComment } as Api, 1);
+  view.commit();
+  await flush();
+  view.nodes().find((n) => n.type === Textarea)!.props.onChange({ target: { value: "x" } });
+  findBtn(view, en("issues.comment.post")).props.onClick();
+  await flush();
+  expect(view.html()).toContain(en("error.comment_too_large"));
+  expect(view.nodes().find((n) => n.type === Textarea)!.props.value).toBe("x");
 });
