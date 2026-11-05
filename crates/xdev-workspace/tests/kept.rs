@@ -103,7 +103,7 @@ fn delete_that_keeps_branch_lists_it() {
     let found = view.found[0].path.clone();
     xdev_workspace::adopt_worktree(&mut reg, Path::new(&found), 1).unwrap();
 
-    let removed = remove_worktree(&mut reg, Path::new(&found), false, 5).unwrap();
+    let removed = remove_worktree(&mut reg, Path::new(&found), false, false, 5).unwrap();
     assert_eq!(removed.deleted_branch, None);
     let kept = removed.kept.unwrap();
     assert_eq!(kept.reason, KeptReason::Deleted);
@@ -113,7 +113,7 @@ fn delete_that_keeps_branch_lists_it() {
 
     // Merged and made here: the branch goes, nothing is kept.
     let wt = create_worktree(&mut reg, &id, "m", None, 2, 2).unwrap();
-    let removed = remove_worktree(&mut reg, Path::new(&wt.path), false, 6).unwrap();
+    let removed = remove_worktree(&mut reg, Path::new(&wt.path), false, false, 6).unwrap();
     assert_eq!(removed.deleted_branch, wt.branch);
     assert_eq!(removed.kept, None);
     assert_eq!(reg.kept.len(), 1);
@@ -121,7 +121,7 @@ fn delete_that_keeps_branch_lists_it() {
     // Unmerged and made here: kept as Deleted.
     let wt = create_worktree(&mut reg, &id, "u", None, 3, 3).unwrap();
     commit_in(&wt.path, "u.txt");
-    let removed = remove_worktree(&mut reg, Path::new(&wt.path), false, 7).unwrap();
+    let removed = remove_worktree(&mut reg, Path::new(&wt.path), false, false, 7).unwrap();
     assert_eq!(removed.deleted_branch, None);
     assert_eq!(removed.kept.unwrap().reason, KeptReason::Deleted);
     assert_eq!(reg.kept.len(), 2);

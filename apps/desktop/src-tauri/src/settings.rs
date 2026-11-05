@@ -5,6 +5,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::atomic::write_atomic;
+use xdev_git::PullPolicy;
+
 use crate::quick_commands::QuickCommand;
 
 /// The shape `save` writes. Bump it with a step in `MIGRATIONS` when a key
@@ -385,6 +387,12 @@ pub enum SidebarSort {
     Manual,
     /// The most recent output first.
     Recent,
+    /// By title, else name.
+    Name,
+    /// Agents that need attention first, then the newest activity.
+    Smart,
+    /// By repo, then label.
+    Project,
 }
 
 /// An unknown value is the default, as for `TabOrder`.
@@ -393,7 +401,33 @@ impl<'de> serde::Deserialize<'de> for SidebarSort {
         let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
         Ok(match value.as_str() {
             Some("recent") => SidebarSort::Recent,
+            Some("name") => SidebarSort::Name,
+            Some("smart") => SidebarSort::Smart,
+            Some("project") => SidebarSort::Project,
             _ => SidebarSort::Manual,
+        })
+    }
+}
+
+/// How repo headings are ordered in the sidebar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectOrder {
+    /// The order the person arranged.
+    #[default]
+    Manual,
+    /// The repo with the newest worktree activity first.
+    Recent,
+}
+
+/// An unknown value is the default, as for `SidebarSort`.
+impl<'de> serde::Deserialize<'de> for ProjectOrder {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("recent") => ProjectOrder::Recent,
+            _ => ProjectOrder::Manual,
         })
     }
 }
@@ -412,6 +446,7 @@ pub struct CardProps {
     pub diff_stat: bool,
     pub pr: bool,
     pub project_chip: bool,
+    pub ports: bool,
 }
 
 impl Default for CardProps {
@@ -426,6 +461,7 @@ impl Default for CardProps {
             diff_stat: true,
             pr: true,
             project_chip: true,
+            ports: true,
         }
     }
 }
@@ -448,6 +484,9 @@ pub struct SidebarPrefs {
     /// One-line cards instead of the detailed ones.
     pub compact_cards: bool,
     pub card: CardProps,
+    pub project_order: ProjectOrder,
+    /// A pinned row also shows in its group.
+    pub pinned_in_groups: bool,
 }
 
 /// The order Ctrl+Tab walks the tabs of a worktree.
@@ -486,6 +525,10 @@ pub struct NavigationSettings {
     /// Ask before closing a tab that has a running process.
     pub confirm_close_running: bool,
     pub ask_before_delete_worktree: bool,
+    /// Delete a dirty worktree without the second confirmation.
+    pub always_force_delete_worktrees: bool,
+    /// Delete the branch with the folder even when it is not merged.
+    pub always_delete_kept_branches: bool,
 }
 
 impl Default for NavigationSettings {
@@ -495,6 +538,8 @@ impl Default for NavigationSettings {
             confirm_close_pinned: true,
             confirm_close_running: true,
             ask_before_delete_worktree: true,
+            always_force_delete_worktrees: false,
+            always_delete_kept_branches: false,
         }
     }
 }
@@ -965,6 +1010,9 @@ pub struct TerminalSettings {
     pub minimum_contrast: f32,
     #[serde(deserialize_with = "lenient_bool_false")]
     pub focus_follows_mouse: bool,
+    /// macOS only: whether the Option key sends Alt/Esc sequences or composes characters.
+    #[serde(deserialize_with = "lenient")]
+    pub mac_option_as_alt: MacOptionAsAlt,
 }
 
 /// The default double-click word separators, the reference app's.
@@ -998,6 +1046,7 @@ impl Default for TerminalSettings {
             fast_scroll_sensitivity: 5.0,
             minimum_contrast: 1.0,
             focus_follows_mouse: false,
+            mac_option_as_alt: MacOptionAsAlt::Auto,
         }
     }
 }
@@ -1133,6 +1182,19 @@ pub enum TerminalBell {
     None,
     Visual,
     Sound,
+}
+
+/// Settings → Terminal → "Option as Alt" (macOS): which Option keys send Alt/Esc sequences.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum MacOptionAsAlt {
+    #[default]
+    Auto,
+    Both,
+    Left,
+    Right,
+    Off,
 }
 
 /// One part of the settings file, as a `settings://changed` event names it.
@@ -1371,6 +1433,8 @@ pub struct GitSettings {
     pub auto_rename_branch: bool,
     /// Which group Source Control draws first.
     pub source_control_group_order: SourceControlGroupOrder,
+    /// How Pull and Sync combine local and remote commits.
+    pub pull_policy: PullPolicy,
     /// The prompts behind the agent actions. A part that does not parse
     /// falls back to the defaults on its own.
     #[serde(deserialize_with = "lenient")]
@@ -1392,6 +1456,7 @@ impl Default for GitSettings {
             pr_open_after_create: false,
             auto_rename_branch: true,
             source_control_group_order: SourceControlGroupOrder::default(),
+            pull_policy: PullPolicy::default(),
             recipes: GitRecipes::default(),
         }
     }
@@ -1586,6 +1651,7 @@ mod tests {
                 pr_open_after_create: true,
                 auto_rename_branch: false,
                 source_control_group_order: SourceControlGroupOrder::StagedFirst,
+                pull_policy: PullPolicy::GitConfig,
                 recipes: GitRecipes::default(),
             },
             status: StatusSettings {
@@ -1918,6 +1984,40 @@ mod tests {
     }
 
     #[test]
+    fn mac_option_as_alt_defaults_and_survives_bad_values() {
+        let old: TerminalSettings = serde_json::from_str(r#"{ "fontSize": 15 }"#).unwrap();
+        assert_eq!(old.mac_option_as_alt, MacOptionAsAlt::Auto);
+        for bad in [r#""meta""#, "3", "null"] {
+            let t: TerminalSettings = serde_json::from_str(&format!(
+                r#"{{ "fontSize": 15, "macOptionAsAlt": {bad}, "scrollback": 4000 }}"#
+            ))
+            .unwrap();
+            assert_eq!(t.mac_option_as_alt, MacOptionAsAlt::Auto, "{bad}");
+            assert_eq!(t.font_size, 15);
+            assert_eq!(t.scrollback, 4000);
+        }
+        for (value, text) in [
+            (MacOptionAsAlt::Auto, "auto"),
+            (MacOptionAsAlt::Both, "both"),
+            (MacOptionAsAlt::Left, "left"),
+            (MacOptionAsAlt::Right, "right"),
+            (MacOptionAsAlt::Off, "off"),
+        ] {
+            let t = TerminalSettings {
+                mac_option_as_alt: value,
+                ..TerminalSettings::default()
+            };
+            let json = serde_json::to_string(&t).unwrap();
+            assert!(
+                json.contains(&format!(r#""macOptionAsAlt":"{text}""#)),
+                "{json}"
+            );
+            let back: TerminalSettings = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.mac_option_as_alt, value);
+        }
+    }
+
+    #[test]
     fn an_old_terminal_file_loads_every_new_field_at_its_default() {
         let t: TerminalSettings = serde_json::from_str(r#"{ "fontSize": 15 }"#).unwrap();
         let want = TerminalSettings {
@@ -1983,6 +2083,7 @@ mod tests {
             fast_scroll_sensitivity: 8.0,
             minimum_contrast: 4.5,
             focus_follows_mouse: true,
+            mac_option_as_alt: MacOptionAsAlt::Left,
         };
         let settings = Settings {
             terminal: terminal.clone(),
@@ -2547,6 +2648,37 @@ then sum up"
     }
 
     #[test]
+    fn lineage_sort_fields_default_and_round_trip() {
+        let sb: SidebarPrefs = serde_json::from_str("{}").unwrap();
+        assert_eq!(sb.project_order, ProjectOrder::Manual);
+        assert!(!sb.pinned_in_groups);
+        assert!(sb.card.ports);
+        let nav: NavigationSettings = serde_json::from_str("{}").unwrap();
+        assert!(!nav.always_force_delete_worktrees && !nav.always_delete_kept_branches);
+        for (text, want) in [
+            ("name", SidebarSort::Name),
+            ("smart", SidebarSort::Smart),
+            ("project", SidebarSort::Project),
+        ] {
+            let sb: SidebarPrefs =
+                serde_json::from_str(&format!(r#"{{"sort":"{text}"}}"#)).unwrap();
+            assert_eq!(sb.sort, want);
+            assert!(
+                serde_json::to_string(&sb)
+                    .unwrap()
+                    .contains(&format!(r#""sort":"{text}""#))
+            );
+        }
+        let sb: SidebarPrefs =
+            serde_json::from_str(r#"{"projectOrder":"recent","pinnedInGroups":true}"#).unwrap();
+        assert_eq!(sb.project_order, ProjectOrder::Recent);
+        assert!(sb.pinned_in_groups);
+        let sb: SidebarPrefs = serde_json::from_str(r#"{"projectOrder":"x","sort":"y"}"#).unwrap();
+        assert_eq!(sb.project_order, ProjectOrder::Manual);
+        assert_eq!(sb.sort, SidebarSort::Manual);
+    }
+
+    #[test]
     fn an_unknown_sidebar_group_or_sort_is_the_default() {
         let sb: SidebarPrefs =
             serde_json::from_str(r#"{ "groupBy": "bogus", "sort": 3, "compactCards": true }"#)
@@ -2577,6 +2709,28 @@ then sum up"
             bad.source_control_group_order,
             SourceControlGroupOrder::ChangesFirst
         );
+    }
+
+    #[test]
+    fn pull_policy_defaults_to_ff_only_and_round_trips() {
+        let git: GitSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(git.pull_policy, PullPolicy::FfOnly);
+        for (text, want) in [
+            ("ff-only", PullPolicy::FfOnly),
+            ("merge", PullPolicy::Merge),
+            ("rebase", PullPolicy::Rebase),
+            ("git-config", PullPolicy::GitConfig),
+        ] {
+            let git: GitSettings =
+                serde_json::from_str(&format!(r#"{{ "pullPolicy": "{text}" }}"#)).unwrap();
+            assert_eq!(git.pull_policy, want);
+            let out = serde_json::to_string(&git).unwrap();
+            assert!(out.contains(&format!(r#""pullPolicy":"{text}""#)), "{out}");
+        }
+        let bad: GitSettings = serde_json::from_str(r#"{ "pullPolicy": "x" }"#).unwrap();
+        assert_eq!(bad.pull_policy, PullPolicy::FfOnly);
+        let num: GitSettings = serde_json::from_str(r#"{ "pullPolicy": 3 }"#).unwrap();
+        assert_eq!(num.pull_policy, PullPolicy::FfOnly);
     }
 
     #[test]
@@ -2924,6 +3078,8 @@ then sum up"
             confirm_close_pinned: false,
             confirm_close_running: false,
             ask_before_delete_worktree: false,
+            always_force_delete_worktrees: true,
+            always_delete_kept_branches: true,
         };
         let diff = DiffSettings {
             default_view: DiffView::Split,

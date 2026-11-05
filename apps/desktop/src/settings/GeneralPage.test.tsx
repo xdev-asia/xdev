@@ -88,11 +88,11 @@ it("the tab order and the navigation switches write through the api", async () =
   p.by("data-tab-order", "sequential").props.onClick();
   await tick();
   expect(put).toHaveBeenLastCalledWith({ ...NAVIGATION_DEFAULTS, tabOrder: "sequential" });
-  for (const key of ["confirmClosePinned", "confirmCloseRunning", "askBeforeDeleteWorktree"] as const) {
+  for (const key of ["confirmClosePinned", "confirmCloseRunning", "askBeforeDeleteWorktree", "alwaysForceDeleteWorktrees", "alwaysDeleteKeptBranches"] as const) {
     p.sw(key).props.onClick();
     await tick();
-    expect(await p.api.navigationSettings()).toMatchObject({ tabOrder: "sequential", [key]: false });
-    expect(p.sw(key).props["aria-checked"]).toBe(false);
+    expect(await p.api.navigationSettings()).toMatchObject({ tabOrder: "sequential", [key]: key.startsWith("always") });
+    expect(p.sw(key).props["aria-checked"]).toBe(key.startsWith("always"));
   }
 });
 

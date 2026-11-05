@@ -2256,9 +2256,49 @@ button.ws-tree-row:focus-visible {
   background: var(--bg-2);
 }
 
+.ws-ship-sep {
+  width: 100%;
+  height: 0;
+  margin: 2px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
 .ws-ship-item:disabled {
   color: var(--text-2);
   cursor: default;
+}
+
+.ws-policy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-1);
+}
+
+.ws-policy-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-policy-body {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.ws-policy-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ws-policy-hint {
+  color: var(--text-2);
 }
 
 .ws-ship-note {
@@ -3391,6 +3431,7 @@ button.ws-tree-row:focus-visible {
 .ws-options-row { display: grid; gap: var(--x-space-1); }
 .ws-options-props { display: grid; gap: var(--x-space-1); }
 .ws-options-label { color: var(--text-3); font-size: 11px; }
+.ws-options-hint { color: var(--text-3); font-size: 11px; }
 
 /* Conflict blocks in the file editor: a tint per side, a quiet marker line, and the accept actions above. */
 .file-editor .cm-conflict-ours { background: var(--x-color-ok-soft); }
@@ -3399,6 +3440,175 @@ button.ws-tree-row:focus-visible {
 .file-editor .cm-conflict-bar { display: flex; gap: var(--x-space-2); padding: var(--x-space-1) var(--x-space-2); }
 .file-editor .cm-conflict-bar button { border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--text-2); font: inherit; font-size: 11px; padding: 0 var(--x-space-2); cursor: pointer; }
 .file-editor .cm-conflict-bar button:hover { color: var(--text-1); }
+
+.ws-history {
+  border-top: 1px solid var(--line);
+}
+
+.ws-history-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ws-history-count {
+  padding: 2px 8px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.ws-history-note {
+  margin: 0;
+  padding: 6px 8px;
+  color: var(--text-2);
+}
+
+.ws-history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-history-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-history-line:hover {
+  background: var(--bg-2);
+}
+
+.ws-history-row[data-boundary] .ws-history-line {
+  color: var(--text-2);
+  cursor: default;
+}
+
+.ws-history-subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-history-more {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.ws-history-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 8px 6px 28px;
+}
+
+.ws-history-meta {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.ws-history-file {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-history-file:hover {
+  background: var(--bg-2);
+}
+
+.ws-history-fname {
+  white-space: nowrap;
+}
+
+.ws-history-dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-history-letter {
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.ws-commit {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  overflow: auto;
+  background: var(--bg-1);
+}
+
+.ws-commit-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-commit-base {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.ws-commit-note {
+  padding: 8px 12px;
+}
+
+.ws-commit-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+
+.ws-commit-file {
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-commit-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-commit-row:hover {
+  background: var(--bg-2);
+}
 
 /* The notice over an orchestration worker's terminal. */
 .ws-worker-strip {
@@ -3431,4 +3641,93 @@ button.ws-tree-row:focus-visible {
   margin-top: 10px;
   color: var(--text-2);
   font-size: 12px;
+}
+
+/* Live ports of a worktree: the chip on a card and its popover. */
+.ws-ports {
+  cursor: pointer;
+}
+
+.ws-ports:hover,
+.ws-ports:focus-visible {
+  border-color: var(--text-2);
+  color: var(--text-1);
+}
+
+.ws-ports-pop {
+  position: fixed;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: 60vh;
+  padding: 8px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-1) 16%, transparent);
+  color: var(--text-1);
+  outline: none;
+}
+
+.ws-ports-title {
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ws-ports-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+
+.ws-ports-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}
+
+.ws-ports-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ws-ports-port {
+  font-family: var(--x-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ws-ports-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-ports-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ws-ports-actions button {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
 }

@@ -10,6 +10,7 @@ import { dirsToReload } from "@/files/treeRefresh";
 import { copyAbsolute, copyRelative, createEntry, deleteEntry, parentOf, renameEntry, type TreeIo } from "@/files/treeActions";
 import { useI18n } from "@/i18n";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
+import { pushToast } from "./toastStore";
 
 // Git's own letters, so they read the same in every language. A deleted file is not on disk, so
 // the tree never meets one.
@@ -172,6 +173,14 @@ export function FileTree(props: {
     return folder && "listing" in folder ? folder.listing.entries.map((e) => e.name) : [];
   };
 
+  async function openOnHost(rel: string): Promise<void> {
+    try {
+      await api.worktreeOpenFileOnHost(worktree, rel, null, null);
+    } catch (e) {
+      pushToast({ id: "files-open-host", text: t(toApiError(e).code === "no_web_remote" ? "gitHistory.noWebRemote" : "files.openOnHostFailed") });
+    }
+  }
+
   function menuItems(target: Target | null): MenuItem[] {
     const dirOf = target === null ? "" : target.dir ? target.rel : parentOf(target.rel);
     const items: MenuItem[] = [];
@@ -194,6 +203,7 @@ export function FileTree(props: {
         { id: "sep2", labelKey: "", kind: "separator" },
         { id: "reveal", labelKey: "files.menu.reveal", run: () => void api.fileReveal(worktree, target.rel).catch(() => undefined) },
       );
+      if (!target.dir) items.push({ id: "openOnHost", labelKey: "files.menu.openOnHost", run: () => void openOnHost(target.rel) });
     }
     return items;
   }

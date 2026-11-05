@@ -12,7 +12,7 @@ import type { SettingsSectionProps } from "./sections";
 
 export const TAB_ORDERS: NavigationSettings["tabOrder"][] = ["mru", "sequential"];
 export const DIFF_VIEWS: DiffSettings["defaultView"][] = ["inline", "split"];
-export const NAVIGATION_SWITCHES = ["confirmClosePinned", "confirmCloseRunning", "askBeforeDeleteWorktree"] as const;
+export const NAVIGATION_SWITCHES = ["confirmClosePinned", "confirmCloseRunning", "askBeforeDeleteWorktree", "alwaysForceDeleteWorktrees", "alwaysDeleteKeptBranches"] as const;
 export const DIFF_SWITCHES = ["ignoreWhitespace", "collapseUnchanged", "wordWrap", "fileTree"] as const;
 // 50 % … 200 % in steps of `ZOOM_STEP`.
 // Catalog ids of the page, per group; a switch adds its key (`general.nav.confirmClosePinned`).

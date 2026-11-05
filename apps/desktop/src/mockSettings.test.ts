@@ -9,6 +9,8 @@ it("starts navigation and diff from the defaults the backend stores", async () =
     confirmClosePinned: true,
     confirmCloseRunning: true,
     askBeforeDeleteWorktree: true,
+    alwaysForceDeleteWorktrees: false,
+    alwaysDeleteKeptBranches: false,
   });
   expect(await api.diffSettings()).toEqual({
     defaultView: "inline",
@@ -71,9 +73,17 @@ it("the mock usage report follows the scan switches and keeps tracking-since acr
 it("carries the sidebar layout through a prefs put", async () => {
   const api = createMockApi({});
   expect(await api.sidebarPrefsGet()).toEqual(SIDEBAR_PREFS_DEFAULTS);
-  const next = { ...SIDEBAR_PREFS_DEFAULTS, groupBy: "pr" as const, sort: "recent" as const, compactCards: true, card: { ...SIDEBAR_PREFS_DEFAULTS.card, time: false } };
+  const next = { ...SIDEBAR_PREFS_DEFAULTS, groupBy: "pr" as const, sort: "smart" as const, projectOrder: "recent" as const, pinnedInGroups: true, compactCards: true, card: { ...SIDEBAR_PREFS_DEFAULTS.card, time: false } };
   expect(await api.sidebarPrefsPut(next)).toEqual(next);
   expect(await api.sidebarPrefsGet()).toEqual(next);
+});
+
+it("starts the pull policy at fast-forward only and stores a change", async () => {
+  const api = createMockApi({});
+  expect((await api.gitSettings()).pullPolicy).toBe("ff-only");
+  const stored = await api.setGitSettings({ ...(await api.gitSettings()), pullPolicy: "rebase" });
+  expect(stored.pullPolicy).toBe("rebase");
+  expect((await api.gitSettings()).pullPolicy).toBe("rebase");
 });
 
 it("stores the orchestration settings with the depth clamped to one through nine", async () => {

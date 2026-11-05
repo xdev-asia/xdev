@@ -9,7 +9,8 @@ import { dayRange, displayPath, homeLabel, relativeFolder, totalOf, type Tokens 
 type Range = 7 | 30;
 
 /** One table of names and their tokens: input, output, cache and the total. */
-export function TokenTable(props: { title: string; rows: Array<[string, Tokens]> }): JSX.Element {
+/** `costs` adds a column of ready-made cost text, by row name. */
+export function TokenTable(props: { title: string; rows: Array<[string, Tokens]>; costs?: Record<string, string> }): JSX.Element {
   const { t } = useI18n();
   return (
     <section className="kit-block" aria-label={props.title}>
@@ -22,6 +23,7 @@ export function TokenTable(props: { title: string; rows: Array<[string, Tokens]>
             <th scope="col" className="kit-num">{t("kit.usage.output")}</th>
             <th scope="col" className="kit-num">{t("kit.usage.cache")}</th>
             <th scope="col" className="kit-num">{t("kit.usage.total")}</th>
+            {props.costs && <th scope="col" className="kit-num">{t("usage.stats.cost.col")}</th>}
           </tr>
         </thead>
         <tbody>
@@ -32,6 +34,7 @@ export function TokenTable(props: { title: string; rows: Array<[string, Tokens]>
               <td className="kit-num">{tokens.output}</td>
               <td className="kit-num">{tokens.cache_read + tokens.cache_write}</td>
               <td className="kit-num">{totalOf(tokens)}</td>
+              {props.costs && <td className="kit-num" data-cost={name}>{props.costs[name] ?? "–"}</td>}
             </tr>
           ))}
         </tbody>

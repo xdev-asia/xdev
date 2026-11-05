@@ -9,6 +9,9 @@ import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { ContextMenu } from "@/ui/ContextMenu";
 import { FileTree } from "./FileTree";
 
+const toasts = vi.hoisted(() => ({ pushed: [] as { id: string; text: string }[] }));
+vi.mock("./toastStore", () => ({ pushToast: (toast: { id: string; text: string }) => void toasts.pushed.push(toast) }));
+
 // Hooks are stubbed only while a component under test is called; each harness keeps its own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (((() => void | (() => void))) & { deps?: unknown[] })[] }));
 vi.mock("react", async (original) => {
@@ -200,11 +203,32 @@ it("the file menu lists the actions, the folder menu has no Open", async () => {
   const view = tree(createMockApi({}));
   await tick();
   rightClick(view, "README.md");
-  expect(menuOf(view)!.items.map((i: { id: string }) => i.id)).toEqual(["open", "copyPath", "copyRel", "sep1", "newFile", "newFolder", "rename", "delete", "sep2", "reveal"]);
+  expect(menuOf(view)!.items.map((i: { id: string }) => i.id)).toEqual(["open", "copyPath", "copyRel", "sep1", "newFile", "newFolder", "rename", "delete", "sep2", "reveal", "openOnHost"]);
   menuOf(view)!.onClose();
   expect(menuOf(view)).toBeUndefined();
   rightClick(view, "docs");
   expect(menuOf(view)!.items.map((i: { id: string }) => i.id)).not.toContain("open");
+});
+
+it("Open file in browser asks the host for the file; failures are toasts", async () => {
+  const api = createMockApi({});
+  const open = vi.spyOn(api, "worktreeOpenFileOnHost").mockResolvedValue(undefined);
+  const view = tree(api);
+  await tick();
+  rightClick(view, "docs");
+  expect(menuOf(view)!.items.map((i: { id: string }) => i.id)).not.toContain("openOnHost");
+  rightClick(view, "README.md");
+  menuOf(view)!.items.find((i: { id: string }) => i.id === "openOnHost").run();
+  await tick();
+  expect(open).toHaveBeenCalledWith(OAK, "README.md", null, null);
+  open.mockRejectedValueOnce({ code: "no_web_remote", message: "x" });
+  menuOf(view)!.items.find((i: { id: string }) => i.id === "openOnHost").run();
+  await tick();
+  expect(toasts.pushed.at(-1)!.text).toBe(en("gitHistory.noWebRemote"));
+  open.mockRejectedValueOnce({ code: "open_failed", message: "x" });
+  menuOf(view)!.items.find((i: { id: string }) => i.id === "openOnHost").run();
+  await tick();
+  expect(toasts.pushed.at(-1)!.text).toBe(en("files.openOnHostFailed"));
 });
 
 it("Delete asks first; Cancel calls nothing, Move to trash calls fileTrash", async () => {

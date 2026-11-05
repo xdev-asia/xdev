@@ -12,6 +12,7 @@ import { DEFAULT_GIT_SETTINGS } from "@/settings/gitDefaults";
 import { conflictVars, operationText } from "./conflictModel";
 import type { PrStore } from "./prs";
 import type { Sessions } from "./sessions";
+import { HistoryPanel } from "./HistoryPanel";
 import { ShipBar } from "./ShipBar";
 import type { TabStatus } from "./status";
 
@@ -46,6 +47,8 @@ export function WorktreeChanges(props: {
   onResolveConflicts?(vars: Record<string, string>): void;
   // Opens Settings → Git; offered with a draft's agent problem.
   onOpenGitSettings?(): void;
+  // Opens a commit's changes in a tab: one file, or all of them when `file` is null.
+  onOpenCommit?(id: string, file: string | null): void;
   // The shared store of pull requests; the ship bar shows only when it is given.
   prs?: PrStore;
   // Gives the palette handlers for the list's bulk actions, and takes them back on unmount.
@@ -79,6 +82,8 @@ export function WorktreeChanges(props: {
   const [askPushed, setAskPushed] = useState(false);
   // Bumped when the branch may have moved, so the ship bar reads again.
   const [shipKey, setShipKey] = useState(0);
+  // The base ref the ship bar compares against; a change reloads the history graph.
+  const [base, setBase] = useState<string | undefined>(undefined);
   // Settings → Git, read with the list so a change there shows on the next focus.
   const [git, setGit] = useState<GitSettings>(DEFAULT_GIT_SETTINGS);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -330,7 +335,7 @@ export function WorktreeChanges(props: {
     }
   }
 
-  async function commit(confirmed = false): Promise<void> {
+  async function commit(confirmed = false): Promise<boolean> {
     setBusy(true);
     setProblem(null);
     setAskPushed(false);
@@ -338,6 +343,7 @@ export function WorktreeChanges(props: {
       const files = checked.map((c) => c.path);
       const sha = amend ? await api.worktreeAmend(path, files, message, confirmed) : await api.worktreeCommit(path, files, message);
       // Null: none of the files had changes any more, so the message waits for the next try.
+      const made = Boolean(sha);
       if (sha) {
         setMessage("");
         setAmend(false);
@@ -345,10 +351,12 @@ export function WorktreeChanges(props: {
         setShipKey((k) => k + 1);
       }
       await load();
+      return made;
     } catch (e) {
       const error = toApiError(e);
       if (amend && error.code === "amend_pushed") setAskPushed(true);
       else setProblem(error);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -473,6 +481,9 @@ export function WorktreeChanges(props: {
           git={git}
           onCommit={() => (message.trim() === "" ? field.current?.focus() : blocked ? undefined : void commit())}
           onChanged={() => props.onShipChanged?.()}
+          onBase={setBase}
+          hasMessage={message.trim() !== ""}
+          onCommitFirst={() => (blocked ? Promise.resolve(false) : commit())}
           onFixPush={props.onFixPush}
           onOpenGitSettings={props.onOpenGitSettings}
         />
@@ -601,6 +612,7 @@ export function WorktreeChanges(props: {
           </label>
         )}
       </ConfirmDialog>
+      <HistoryPanel api={api} worktree={path} base={base} reloadKey={shipKey} onOpenCommit={(id, file) => props.onOpenCommit?.(id, file)} />
     </div>
   );
 }
