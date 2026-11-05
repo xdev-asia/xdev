@@ -354,6 +354,32 @@ describe("startAutomationDispatch", () => {
     }
   });
 
+  it("forgets a run's watcher once the run ends", async () => {
+    const f = fakeHost();
+    const sessions = f.host.sessions as { subscribe(l: Listener): () => void };
+    const subscribe = sessions.subscribe.bind(sessions);
+    const unsubscribed: number[] = [];
+    sessions.subscribe = (l: Listener) => {
+      const i = unsubscribed.push(0) - 1;
+      const off = subscribe(l);
+      return () => {
+        unsubscribed[i]++;
+        off();
+      };
+    };
+    const { api, stop } = await setup(f.host);
+    api.__automationDispatch(dispatch());
+    await flush();
+    await f.ready(f.tabs[0]);
+    f.status(f.tabs[0], "working");
+    f.status(f.tabs[0], "done");
+    await flush();
+    expect(api.__automationReports().finishes).toHaveLength(1);
+    // Stopping later does not run the ended watcher's stop again.
+    stop();
+    expect(unsubscribed.every((n) => n === 1)).toBe(true);
+  });
+
   it("stops listening when stopped", async () => {
     const f = fakeHost();
     const { api, stop } = await setup(f.host);

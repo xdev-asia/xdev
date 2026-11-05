@@ -64,10 +64,14 @@ export function startAutomationDispatch(api: Api, host: DispatchHost): () => voi
       finished.add(runId);
       void api.automationDispatchResult({ status: "failed", runId, code: "agentNeverStarted", detail: null }).catch(() => {});
     }, START_DEADLINE_MS);
-    const end = () => {
+    // One stop for both the run's end and the dispatcher's, so `end` removes what was added.
+    const stop = () => {
       clearTimeout(never);
       off();
-      watchers.delete(off);
+    };
+    const end = () => {
+      stop();
+      watchers.delete(stop);
     };
     const off = host.sessions.subscribe(() => {
       if (stopped) return;
@@ -85,10 +89,7 @@ export function startAutomationDispatch(api: Api, host: DispatchHost): () => voi
         finish(runId, tabId, true);
       }
     });
-    watchers.add(() => {
-      clearTimeout(never);
-      off();
-    });
+    watchers.add(stop);
   };
 
   /** Resolves `refused` when the tab's spawn is refused by the policy gate or fails. */
