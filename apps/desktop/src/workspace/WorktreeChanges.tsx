@@ -1,15 +1,15 @@
-import { Button } from "@xdev-asia/ui";
+import { Button, Tag } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import { onChangesTouched, touchChanges } from "./changesBus";
 import type { JSX } from "react";
-import { toApiError, type Api, type ConflictState, type GitSettings, type StageState, type WorktreeChange, type WorktreeView } from "@/api";
+import { toApiError, type Api, type ConflictEntry, type ConflictResolution, type ConflictState, type GitSettings, type StageState, type WorktreeChange, type WorktreeView } from "@/api";
 import type { Problem } from "@/changes/useChanges";
 import { ProblemNote } from "@/components/ChangesPanel";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { diffStats } from "@/components/DiffView";
 import { useI18n } from "@/i18n";
 import { DEFAULT_GIT_SETTINGS } from "@/settings/gitDefaults";
-import { conflictVars, operationText } from "./conflictModel";
+import { conflictHintKey, conflictKindKey, conflictTitleKey, conflictVars, operationText, resolutionKey, resolutionsOf } from "./conflictModel";
 import type { PrStore } from "./prs";
 import type { Sessions } from "./sessions";
 import { HistoryPanel } from "./HistoryPanel";
@@ -23,6 +23,9 @@ const LETTER: Record<WorktreeChange["kind"], string> = { added: "A", modified: "
 export type ChangesHandlers = { stageAll(): void; discardAll(): void };
 
 type Stats = { added: number; removed: number };
+
+// A resolution refused because the row no longer matches git; the text names the file and says to refresh.
+const STALE_CODES = new Set(["conflict_gone", "conflict_changed", "not_a_conflict"]);
 
 /**
  * The uncommitted files of one worktree, and a commit of the ones left checked. Looks again when
@@ -67,6 +70,8 @@ export function WorktreeChanges(props: {
   // The merge, rebase, cherry-pick or revert in progress; null when there is none.
   const [conflict, setConflict] = useState<ConflictState | null>(null);
   const [askAbort, setAskAbort] = useState(false);
+  // The conflicted file a Keep deletion dialog is about; null while it is closed.
+  const [deleting, setDeleting] = useState<ConflictEntry | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<Record<string, Stats>>({});
   // Unchecked paths, so a file that shows up later starts checked.
@@ -190,6 +195,8 @@ export function WorktreeChanges(props: {
 
   // The unmerged files, as rows: the change list has them when git reports them, else they are made up.
   const unmerged = conflict?.files ?? [];
+  // What each side did to an unmerged file; a submodule conflict has no entry and is staged as before.
+  const entryOf = (file: string) => conflict?.entries.find((e) => e.path === file);
   const conflictList: WorktreeChange[] = unmerged.map((file) => (changes ?? []).find((c) => c.path === file) ?? { path: file, kind: "modified" });
   const checked = (changes ?? []).filter((c) => !skipped.includes(c.path) && !unmerged.includes(c.path));
   const blocked = busy || message.trim() === "" || (!amend && checked.length === 0);
@@ -248,7 +255,11 @@ export function WorktreeChanges(props: {
     // Keys typed into a control inside the row (the checkbox, or a field added later) are its own.
     const target = e.target as { tagName?: string; isContentEditable?: boolean } | null | undefined;
     if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName ?? ""))) return;
-    if (e.key === "s" && (group === "changes" || group === "conflicts")) void restage([file], true);
+    const entry = group === "conflicts" ? entryOf(file) : undefined;
+    const keep = entry && resolutionsOf(entry).find((how) => how !== "keep_deletion");
+    if (e.key === "s" && entry) {
+      if (keep) void resolveConflict(entry, keep);
+    } else if (e.key === "s" && (group === "changes" || group === "conflicts")) void restage([file], true);
     else if (e.key === "u" && group === "staged") void restage([file], false);
     else if (e.key === "Delete" && group === "changes") askDiscard([file]);
     else return;
@@ -292,6 +303,32 @@ export function WorktreeChanges(props: {
       setActing(false);
       focusList();
     }
+  }
+
+  // Settles one conflicted file; Rust reads it again first, so a stale row is refused and the list reads again.
+  async function resolveConflict(entry: ConflictEntry, how: ConflictResolution, confirmed = false): Promise<void> {
+    if (acting) return;
+    setActing(true);
+    setProblem(null);
+    try {
+      await api.worktreeConflictResolve(path, entry.path, entry.kind, how, confirmed);
+    } catch (e) {
+      const error = toApiError(e);
+      if (error.code !== "needs_approval") setProblem(error);
+    }
+    touchChanges(path, touched.current);
+    try {
+      await load();
+    } finally {
+      setActing(false);
+    }
+  }
+
+  // The dialog is the approval, as for a discard.
+  function confirmDeletion(): void {
+    const entry = deleting;
+    setDeleting(null);
+    if (entry) void resolveConflict(entry, "keep_deletion", true);
   }
 
   // Finishes the operation; a rebase that meets the next conflict shows it on the next read.
@@ -375,10 +412,42 @@ export function WorktreeChanges(props: {
     }
   }
 
+  // A conflicted file with its kind, its hint and the resolutions it offers; they wrap below the path when narrow.
+  function conflictRow(c: WorktreeChange, entry: ConflictEntry): JSX.Element {
+    return (
+      <li key={c.path} className="ws-change ws-conflict-row" tabIndex={0} onKeyDown={(e) => rowKey(e, c.path, "conflicts")}>
+        <button type="button" className="ws-change-open" title={c.path} onClick={() => void open(c.path)}>
+          <span className="ws-change-path ws-mono">{c.path}</span>
+        </button>
+        <span className="ws-conflict-meta">
+          <Tag tone="warn">{t(conflictKindKey(entry.kind))}</Tag>
+          <span className="ws-conflict-hint">{t(conflictHintKey(entry.kind))}</span>
+        </span>
+        <span className="ws-conflict-resolve">
+          {resolutionsOf(entry).map((how) => (
+            <button
+              key={how}
+              type="button"
+              className="btn-secondary"
+              data-danger={how === "keep_deletion" ? "" : undefined}
+              aria-label={t("conflicts.resolve.label", { action: t(resolutionKey(how)), path: c.path })}
+              disabled={acting}
+              onClick={() => (how === "keep_deletion" ? setDeleting(entry) : void resolveConflict(entry, how))}
+            >
+              {t(resolutionKey(how))}
+            </button>
+          ))}
+        </span>
+      </li>
+    );
+  }
+
   function list(files: WorktreeChange[], group: "staged" | "changes" | "conflicts"): JSX.Element {
     return (
       <ul className="ws-change-list">
         {files.map((c) => {
+          const entry = group === "conflicts" ? entryOf(c.path) : undefined;
+          if (entry) return conflictRow(c, entry);
           const s = stats[c.path];
           return (
             <li key={c.path} className="ws-change" tabIndex={0} onKeyDown={(e) => rowKey(e, c.path, group)}>
@@ -489,7 +558,14 @@ export function WorktreeChanges(props: {
         />
       )}
       {loadProblem && <ProblemNote problem={loadProblem} />}
-      {problem && problem.code !== "hook_failed" && <ProblemNote problem={problem} onOpenSettings={props.onOpenGitSettings} />}
+      {problem && problem.code !== "hook_failed" && !STALE_CODES.has(problem.code) && <ProblemNote problem={problem} onOpenSettings={props.onOpenGitSettings} />}
+      {problem && STALE_CODES.has(problem.code) && (
+        <div className="banner banner-warn" role="alert" data-stale="">
+          <div className="banner-text">
+            <span>{t(`error.${problem.code}`, { path: problem.detail ?? "" })}</span>
+          </div>
+        </div>
+      )}
       {problem?.code === "hook_failed" && (
         <div className="ws-hook" role="alert">
           <span>{t("error.hook_failed")}</span>
@@ -538,8 +614,10 @@ export function WorktreeChanges(props: {
       {conflictList.length > 0 && (
         <section className="ws-change-group" data-group="conflicts" aria-label={t("conflicts.group", { count: conflictList.length })}>
           <header className="ws-change-head">
-            <span className="ws-change-group-name">{t("conflicts.group", { count: conflictList.length })}</span>
+            <span className="ws-change-group-name">{t(conflictTitleKey(conflict?.op ?? "merge"))}</span>
+            <span className="ws-change-group-count ws-mono">{conflictList.length}</span>
           </header>
+          <p className="ws-conflict-note">{t("conflicts.note")}</p>
           {list(conflictList, "conflicts")}
         </section>
       )}
@@ -597,6 +675,18 @@ export function WorktreeChanges(props: {
         </ul>
       </ConfirmDialog>
       <ConfirmDialog
+        open={deleting !== null}
+        title={t("conflicts.resolve.confirmDeletion", { path: deleting?.path ?? "" })}
+        body={t("conflicts.resolve.confirmDeletionBody")}
+        warning={agentBusy ? t("changes.discard.agent") : undefined}
+        confirmLabel={t("conflicts.resolve.keepDeletion")}
+        onConfirm={confirmDeletion}
+        onCancel={() => {
+          setDeleting(null);
+          focusList();
+        }}
+      />
+      <ConfirmDialog
         open={discarding !== null}
         title={discarding && discarding.length === 1 ? t("changes.discard.title", { path: discarding[0] }) : t("changes.discard.titleMany", { count: discarding?.length ?? 0 })}
         body={t("changes.discard.body")}
@@ -616,3 +706,4 @@ export function WorktreeChanges(props: {
     </div>
   );
 }
+

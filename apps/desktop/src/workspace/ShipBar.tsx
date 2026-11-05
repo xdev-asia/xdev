@@ -1,4 +1,4 @@
-import { Button } from "@xdev-asia/ui";
+import { Button, DiffStat, Popover } from "@xdev-asia/ui";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type GitSettings, type PrView, type ShipView } from "@/api";
@@ -9,7 +9,8 @@ import { CreatePrDialog } from "./CreatePrDialog";
 import type { PrStore } from "./prs";
 import { PULL_POLICY_CODES, PullPolicyNotice } from "./PullPolicyNotice";
 import { shipAction } from "./ship";
-import { shipMenu, type MenuId, type Text } from "./shipMenu";
+import { breakdownRows, countsAria } from "./shipBreakdown";
+import { forkSyncText, shipMenu, type MenuId, type Text } from "./shipMenu";
 
 const SHORT = 7;
 
@@ -80,6 +81,10 @@ export function ShipBar(props: {
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState(false);
   const [listed, setListed] = useState(false);
+  // The Code breakdown popover on the line counts.
+  const [breakdown, setBreakdown] = useState(false);
+  // What the last Sync fork did; cleared when another action starts.
+  const [forkNote, setForkNote] = useState<Text | null>(null);
   const [force, setForce] = useState<Force | null>(null);
   const [creating, setCreating] = useState(false);
   // The error on show came from a push, the one action a recipe can fix.
@@ -136,6 +141,7 @@ export function ShipBar(props: {
     setBusy(true);
     setMenu(false);
     setError(null);
+    setForkNote(null);
     setPushFailed(false);
     setOp(update);
     try {
@@ -186,7 +192,17 @@ export function ShipBar(props: {
     else if (id === "rebase") void run(() => api.worktreeRebaseFromBase(worktree), false, "rebase");
     else if (id === "commit_push") void commitThen(() => (ship?.upstream?.rewritten ? askForce() : run(() => api.worktreePush(worktree), true)));
     else if (id === "commit_sync") void commitThen(() => run(() => api.worktreeSync(worktree)));
+    else if (id === "sync_fork") void syncFork();
     else if (id === "push_then_pr") void run(() => api.worktreePush(worktree), true).then((ok) => ok && setCreating(true));
+  }
+
+  // Moves origin's default branch only; the bar reads again for the remote-tracking refs.
+  async function syncFork(): Promise<void> {
+    let note: Text | null = null;
+    const ok = await run(async () => {
+      note = forkSyncText(await api.worktreeSyncFork(worktree));
+    });
+    if (ok) setForkNote(note);
   }
 
   function askForce(): void {
@@ -231,9 +247,35 @@ export function ShipBar(props: {
               {t("ship.branchRow", { branch: ship.branch, base })}
             </span>
             {range && (
-              <span className="ws-ship-counts ws-mono">
-                {t("ship.counts", { added: range.added, removed: range.removed })}
-              </span>
+              <Popover
+                open={breakdown}
+                onClose={() => setBreakdown(false)}
+                label={t("ship.breakdown.title")}
+                className="ws-ship-breakdown"
+                placement="bottom-end"
+                trigger={(pop) => (
+                  <button type="button" className="ws-ship-counts ws-ship-counts-button ws-mono" {...pop} aria-label={countsAria(range, t)} onClick={() => setBreakdown((v) => !v)}>
+                    {t("ship.counts", { added: range.added, removed: range.removed })}
+                  </button>
+                )}
+              >
+                <div className="ws-ship-breakdown-head">
+                  <span className="ws-ship-breakdown-title">{t("ship.breakdown.title")}</span>
+                  <span className="ws-ship-breakdown-sub">{t("ship.breakdown.subtitle")}</span>
+                </div>
+                <ul className="ws-ship-breakdown-rows">
+                  {breakdownRows(range).map((row) => (
+                    <li key={row.id} className="ws-ship-breakdown-row">
+                      <span>{t(row.label)}</span>
+                      <DiffStat
+                        added={row.added}
+                        removed={row.removed}
+                        labels={{ diffStat: (added, removed) => t("ship.breakdown.row", { label: t(row.label), added, removed }) }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </Popover>
             )}
             {range && ship.rangeBase !== ship.base && (
               <span className="ws-ship-counts ws-mono" data-range-base={ship.rangeBase}>
@@ -308,6 +350,11 @@ export function ShipBar(props: {
               </button>
             </>
           )}
+        </p>
+      )}
+      {forkNote && (
+        <p className="ws-ship-note" role="status" data-fork-sync="">
+          {say(forkNote)}
         </p>
       )}
       {error && PULL_POLICY_CODES.has(error.code) && <PullPolicyNotice onOpenGitSettings={props.onOpenGitSettings} />}

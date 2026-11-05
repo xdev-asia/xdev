@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use tempfile::TempDir;
-use xdev_git::{ConflictOp, GitError, Repo};
+use xdev_git::{ConflictKind, ConflictOp, ConflictResolution, GitError, Repo};
 
 /// Runs setup commands; never used for the code under test.
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -285,4 +285,260 @@ fn rename_branch_moves_the_checked_out_branch() {
     git(root, &["branch", "taken"]);
     assert!(repo.rename_branch("trunk", "taken").is_err());
     assert_eq!(repo.current_branch().unwrap().as_deref(), Some("trunk"));
+}
+
+#[test]
+fn conflict_state_still_lists_files() {
+    let (dir, repo) = fixture();
+    git_conflicts(dir.path(), &["merge", "topic"]);
+    let state = repo.conflict_state().unwrap().expect("merge state");
+    // `files` stays next to `entries`, so older readers keep working.
+    assert_eq!(state.files, ["f.txt"]);
+    let json = serde_json::to_value(&state).unwrap();
+    assert_eq!(json["files"], serde_json::json!(["f.txt"]));
+    assert!(json["entries"].is_array());
+}
+
+#[test]
+fn conflict_entries_reports_both_modified_and_deleted_by_them() {
+    let (dir, repo) = fixture();
+    let root = dir.path();
+    // `topic` deletes `g.txt`, which `main` changes; both change `f.txt`.
+    git(root, &["checkout", "-q", "main~1"]);
+    write_commit(root, "g.txt", "g\n", "add g");
+    let base = git(root, &["rev-parse", "HEAD"]);
+    git(root, &["branch", "-f", "topic2", &base]);
+    git(root, &["checkout", "-q", "topic2"]);
+    write_commit(root, "f.txt", "topic2\n", "f on topic2");
+    git(root, &["rm", "-q", "g.txt"]);
+    git(root, &["commit", "-q", "-m", "drop g"]);
+    git(root, &["checkout", "-q", "-B", "mine", &base]);
+    write_commit(root, "f.txt", "mine\n", "f on mine");
+    write_commit(root, "g.txt", "g changed\n", "g on mine");
+    git_conflicts(root, &["merge", "topic2"]);
+
+    let entries = repo.conflict_entries().unwrap();
+    let got: Vec<_> = entries
+        .iter()
+        .map(|e| (e.path.as_str(), e.kind, e.present))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("f.txt", ConflictKind::BothModified, true),
+            ("g.txt", ConflictKind::DeletedByThem, true),
+        ]
+    );
+    let state = repo.conflict_state().unwrap().unwrap();
+    assert_eq!(state.entries, entries);
+    assert_eq!(state.files, ["f.txt", "g.txt"]);
+}
+
+#[test]
+fn conflict_entries_are_relative_to_the_top_folder() {
+    let (dir, _) = fixture();
+    let root = dir.path();
+    git_conflicts(root, &["merge", "topic"]);
+    fs::create_dir(root.join("sub")).unwrap();
+    let repo = Repo::discover(&root.join("sub")).unwrap();
+    let paths: Vec<_> = repo
+        .conflict_entries()
+        .unwrap()
+        .into_iter()
+        .map(|e| e.path)
+        .collect();
+    assert_eq!(paths, ["f.txt"]);
+}
+
+/// `mine` changes `g.txt`, which `topic2` deletes; both change `f.txt`.
+/// Stops in the merge of `topic2` into `mine`.
+fn modify_delete(root: &Path) {
+    git(root, &["checkout", "-q", "main~1"]);
+    write_commit(root, "g.txt", "g\n", "add g");
+    let base = git(root, &["rev-parse", "HEAD"]);
+    git(root, &["checkout", "-q", "-b", "topic2"]);
+    write_commit(root, "f.txt", "topic2\n", "f on topic2");
+    git(root, &["rm", "-q", "g.txt"]);
+    git(root, &["commit", "-q", "-m", "drop g"]);
+    git(root, &["checkout", "-q", "-b", "mine", &base]);
+    write_commit(root, "f.txt", "mine\n", "f on mine");
+    write_commit(root, "g.txt", "g changed\n", "g on mine");
+    git_conflicts(root, &["merge", "topic2"]);
+}
+
+/// From the base, both sides rename `f.txt` unchanged, `ours` to `h.txt`
+/// and `topic` to `g.txt`: `f.txt` is both deleted and gone from disk,
+/// `h.txt` added by us and `g.txt` added by them.
+fn rename_rename(root: &Path) {
+    git(root, &["checkout", "-q", "-B", "topic", "main~1"]);
+    git(root, &["mv", "f.txt", "g.txt"]);
+    git(root, &["commit", "-q", "-m", "to g"]);
+    git(root, &["checkout", "-q", "-b", "ours", "main~1"]);
+    git(root, &["mv", "f.txt", "h.txt"]);
+    git(root, &["commit", "-q", "-m", "to h"]);
+    git_conflicts(root, &["merge", "topic"]);
+}
+
+fn kinds(repo: &Repo) -> Vec<(String, ConflictKind, bool)> {
+    repo.conflict_entries()
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.path, e.kind, e.present))
+        .collect()
+}
+
+#[test]
+fn mark_resolved_stages_the_file() {
+    let (dir, repo) = fixture();
+    let root = dir.path();
+    git_conflicts(root, &["merge", "topic"]);
+    fs::write(root.join("f.txt"), "both\n").unwrap();
+    repo.conflict_resolve(
+        "f.txt",
+        ConflictKind::BothModified,
+        ConflictResolution::MarkResolved,
+    )
+    .unwrap();
+    let state = repo.conflict_state().unwrap().unwrap();
+    assert!(state.files.is_empty() && state.entries.is_empty());
+    assert_eq!(git(root, &["show", ":f.txt"]), "both");
+}
+
+#[test]
+fn keep_file_stages_the_file_one_side_deleted() {
+    let (dir, repo) = fixture();
+    let root = dir.path();
+    modify_delete(root);
+    repo.conflict_resolve(
+        "g.txt",
+        ConflictKind::DeletedByThem,
+        ConflictResolution::KeepFile,
+    )
+    .unwrap();
+    assert_eq!(git(root, &["show", ":g.txt"]), "g changed");
+    assert_eq!(repo.conflict_state().unwrap().unwrap().files, ["f.txt"]);
+}
+
+#[test]
+fn keep_deletion_removes_the_file() {
+    let (dir, repo) = fixture();
+    let root = dir.path();
+    modify_delete(root);
+    repo.conflict_resolve(
+        "g.txt",
+        ConflictKind::DeletedByThem,
+        ConflictResolution::KeepDeletion,
+    )
+    .unwrap();
+    assert!(!root.join("g.txt").exists());
+    assert_eq!(git(root, &["ls-files", "--", "g.txt"]), "");
+    assert_eq!(repo.conflict_state().unwrap().unwrap().files, ["f.txt"]);
+}
+
+#[test]
+fn keep_deletion_settles_a_file_both_sides_deleted() {
+    let (dir, repo) = fixture();
+    let root = dir.path();
+    rename_rename(root);
+    assert_eq!(
+        kinds(&repo),
+        [
+            ("f.txt".to_owned(), ConflictKind::BothDeleted, false),
+            ("g.txt".to_owned(), ConflictKind::AddedByThem, true),
+            ("h.txt".to_owned(), ConflictKind::AddedByUs, true),
+        ]
+    );
+    repo.conflict_resolve(
+        "f.txt",
+        ConflictKind::BothDeleted,
+        ConflictResolution::KeepDeletion,
+    )
+    .unwrap();
+    repo.conflict_resolve(
+        "g.txt",
+        ConflictKind::AddedByThem,
+        ConflictResolution::MarkResolved,
+    )
+    .unwrap();
+    assert_eq!(
+        kinds(&repo),
+        [("h.txt".to_owned(), ConflictKind::AddedByUs, true)]
+    );
+}
+
+#[test]
+fn resolve_refuses_a_path_no_longer_unmerged() {
+    let (dir, repo) = fixture();
+    let root = dir.path();
+    git_conflicts(root, &["merge", "topic"]);
+    resolve(root);
+    let err = repo
+        .conflict_resolve(
+            "f.txt",
+            ConflictKind::BothModified,
+            ConflictResolution::MarkResolved,
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), "conflict_gone");
+    assert_eq!(err.to_string(), "f.txt");
+    // A path git never heard of is gone too, and nothing is staged.
+    let err = repo
+        .conflict_resolve(
+            "nope.txt",
+            ConflictKind::BothModified,
+            ConflictResolution::MarkResolved,
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), "conflict_gone");
+}
+
+#[test]
+fn resolve_refuses_a_changed_kind() {
+    let (dir, repo) = fixture();
+    let root = dir.path();
+    modify_delete(root);
+    let err = repo
+        .conflict_resolve(
+            "g.txt",
+            ConflictKind::BothModified,
+            ConflictResolution::MarkResolved,
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), "conflict_changed");
+    assert_eq!(err.to_string(), "g.txt");
+    assert!(root.join("g.txt").exists());
+    assert_eq!(
+        repo.conflict_state().unwrap().unwrap().files,
+        ["f.txt", "g.txt"]
+    );
+}
+
+#[test]
+fn resolve_refuses_an_offer_not_listed() {
+    let (dir, repo) = fixture();
+    let root = dir.path();
+    modify_delete(root);
+    // A both-modified file is never deleted from here.
+    let err = repo
+        .conflict_resolve(
+            "f.txt",
+            ConflictKind::BothModified,
+            ConflictResolution::KeepDeletion,
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), "not_a_conflict");
+    assert!(root.join("f.txt").exists());
+    // A modify/delete is kept or deleted, not "marked".
+    let err = repo
+        .conflict_resolve(
+            "g.txt",
+            ConflictKind::DeletedByThem,
+            ConflictResolution::MarkResolved,
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), "not_a_conflict");
+    assert_eq!(
+        repo.conflict_state().unwrap().unwrap().files,
+        ["f.txt", "g.txt"]
+    );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ShipView } from "@/api";
-import { shipMenu, type MenuEntry, type MenuInput } from "./shipMenu";
+import { forkSyncText, shipMenu, type MenuEntry, type MenuInput } from "./shipMenu";
 
 function view(over: { ahead?: number; behind?: number; rewritten?: boolean; upstream?: boolean } & Partial<Omit<ShipView, "upstream">> = {}): ShipView {
   const { ahead = 0, behind = 0, rewritten = false, upstream = true, ...rest } = over;
@@ -14,6 +14,7 @@ function view(over: { ahead?: number; behind?: number; rewritten?: boolean; upst
     range: null,
     rangeBase: "origin/main",
     aheadOfBase: true,
+    hasForkUpstream: false,
     ...rest,
   };
 }
@@ -97,5 +98,30 @@ describe("shipMenu", () => {
   it("disables Force push without a remote-tracking commit", () => {
     expect(item(shipMenu(input({ ship: view({ upstream: false }) })), "force").disabled).toBe(true);
     expect(item(shipMenu(input()), "force").disabled).toBe(false);
+  });
+});
+
+describe("sync fork", () => {
+  const ids = (list: MenuEntry[]) => list.flatMap((e) => (e.separator ? [] : [e.id]));
+
+  it("sync_fork shown only with hasForkUpstream", () => {
+    expect(ids(shipMenu(input()))).not.toContain("sync_fork");
+    const entries = shipMenu(input({ ship: view({ hasForkUpstream: true }) }));
+    const sync = entries.find((e) => !e.separator && e.id === "sync_fork");
+    expect(sync).toMatchObject({ label: { key: "ship.menu.syncFork" }, disabled: false });
+    expect(shipMenu(input({ ship: view({ hasForkUpstream: true }), busy: true })).find((e) => !e.separator && e.id === "sync_fork")).toMatchObject({ disabled: true });
+    // Detached or without a remote of its own it is still offered: it moves origin, not the branch.
+    expect(ids(shipMenu(input({ ship: view({ hasForkUpstream: true, branch: null }) })))).toContain("sync_fork");
+  });
+
+  it("words each result", () => {
+    const base = { reason: null, branch: "main", ahead: 0, behind: 0 } as const;
+    expect(forkSyncText({ ...base, status: "up_to_date" })).toEqual({ key: "ship.syncFork.upToDate" });
+    expect(forkSyncText({ ...base, status: "synced", behind: 3 })).toEqual({ key: "ship.syncFork.synced", params: { count: 3 } });
+    expect(forkSyncText({ ...base, status: "blocked", reason: "diverged", ahead: 1 })).toEqual({ key: "ship.syncFork.diverged", params: { branch: "main" } });
+    expect(forkSyncText({ ...base, status: "blocked", reason: "missing_upstream_default_branch", branch: null })).toEqual({ key: "ship.syncFork.noDefault" });
+    expect(forkSyncText({ ...base, status: "blocked", reason: "missing_origin_branch", branch: "next" })).toEqual({ key: "ship.syncFork.noOriginBranch", params: { branch: "next" } });
+    expect(forkSyncText({ ...base, status: "blocked", reason: "missing_upstream", branch: null })).toEqual({ key: "ship.syncFork.noRemotes" });
+    expect(forkSyncText({ ...base, status: "blocked", reason: "missing_origin", branch: null })).toEqual({ key: "ship.syncFork.noRemotes" });
   });
 });

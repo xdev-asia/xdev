@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use tempfile::TempDir;
-use xdev_git::{BaseRefresh, GitError, Repo, Upstream};
+use xdev_git::{BaseRefresh, GitError, LineCount, Repo, Upstream};
 
 /// Runs setup commands; never used for the code under test.
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -476,4 +476,46 @@ fn refresh_without_a_remote_or_a_local_branch_does_nothing() {
         fx.repo.refresh_local_base("origin/--upload-pack=x"),
         Ok(BaseRefresh::NoRemote) | Err(GitError::BadId(_))
     ));
+}
+
+#[test]
+fn branch_vs_base_splits_tests_and_generated() {
+    let fx = Fixture::new();
+    let w = fx.work.path();
+    fs::create_dir_all(w.join("src")).unwrap();
+    fs::write(w.join("src/app.ts"), "a\nb\n").unwrap();
+    fs::write(w.join("src/app.test.ts"), "t\nt\nt\n").unwrap();
+    fs::write(w.join("pnpm-lock.yaml"), "l\nl\nl\nl\n").unwrap();
+    // A binary file has no line counts and adds nothing anywhere.
+    fs::write(w.join("src/logo.png"), [0u8, 1, 2, 0, 255, 0]).unwrap();
+    git(w, &["add", "-A"]);
+    git(w, &["commit", "-q", "-m", "add files"]);
+    fs::write(w.join("src/app.test.ts"), "t\n").unwrap();
+    git(w, &["commit", "-q", "-am", "trim test"]);
+
+    let range = fx.repo.branch_vs_base("main", 10).unwrap();
+    assert_eq!((range.added, range.removed), (2 + 1 + 4, 0));
+    assert_eq!(
+        range.tests,
+        LineCount {
+            added: 1,
+            removed: 0
+        }
+    );
+    assert_eq!(
+        range.generated,
+        LineCount {
+            added: 4,
+            removed: 0
+        }
+    );
+
+    // A file that is both: generated wins.
+    fs::create_dir_all(w.join("tests/__snapshots__")).unwrap();
+    fs::write(w.join("tests/__snapshots__/a.test.ts.snap"), "s\ns\n").unwrap();
+    git(w, &["add", "-A"]);
+    git(w, &["commit", "-q", "-m", "snap"]);
+    let range = fx.repo.branch_vs_base("main", 10).unwrap();
+    assert_eq!(range.generated.added, 6);
+    assert_eq!(range.tests.added, 1);
 }

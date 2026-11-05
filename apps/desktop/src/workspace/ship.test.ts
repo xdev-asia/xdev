@@ -13,9 +13,10 @@ function ship(over: { ahead?: number; behind?: number; upstream?: boolean; commi
     upstream: upstream ? { remote: "origin", branch: "oak", id: "b", ahead, behind, rewritten: false } : null,
     headPushed: ahead === 0,
     atStart: false,
-    range: { mergeBase: "m", added: 1, removed: 0, commits: Array(commits).fill(commit), truncated: false },
+    range: { mergeBase: "m", added: 1, removed: 0, tests: { added: 0, removed: 0 }, generated: { added: 0, removed: 0 }, commits: Array(commits).fill(commit), truncated: false },
     rangeBase: "main",
     aheadOfBase: commits > 0,
+    hasForkUpstream: false,
     ...rest,
   };
 }

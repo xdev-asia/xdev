@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import type { ConflictState } from "@/api";
 import { conflictVars, operationText } from "./conflictModel";
 
-const state = (over: Partial<ConflictState> = {}): ConflictState => ({ op: "rebase", files: ["a.ts", "b.ts"], onto: "main", step: [3, 7], ...over });
+const state = (over: Partial<ConflictState> = {}): ConflictState => ({ op: "rebase", files: ["a.ts", "b.ts"], onto: "main", step: [3, 7], entries: [], ...over });
 const t = (key: string, vars?: Record<string, string | number>) => `${key}${vars ? JSON.stringify(vars) : ""}`;
 
 it("words a rebase with its step and target, and falls back to the plain name", () => {

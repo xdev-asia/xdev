@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::State;
-use xdev_git::{ChangeKind, ConflictState, GitError, Repo};
+use xdev_git::{ChangeKind, ConflictKind, ConflictResolution, ConflictState, GitError, Repo};
 use xdev_policy::{Action, Audited, Gate, Verdict};
 use xdev_workspace::{Registry, WorkspaceError, path_key};
 
@@ -310,6 +310,49 @@ fn conflict_abort<G: Gate>(
     Ok(())
 }
 
+/// Settles one conflicted file. Git reads the file again first, so a row
+/// that went stale is `conflict_gone` or `conflict_changed`. Keep deletion
+/// throws the file away, so it is a discard to the policy and needs the
+/// person's yes; staging is not asked about, as for `stage`.
+fn conflict_resolve<G: Gate>(
+    gate: &Audited<G>,
+    data: &Path,
+    path: &Path,
+    file: &str,
+    expected: ConflictKind,
+    how: ConflictResolution,
+    confirmed: bool,
+) -> Result<(), CmdError> {
+    known(data, path)?;
+    let disk = inside(path, file).ok_or_else(|| bad_arg(file))?;
+    if !parent_within(path, &disk)? {
+        return Err(bad_arg(file));
+    }
+    if how == ConflictResolution::KeepDeletion {
+        let action = Action::Discard {
+            worktree: path.to_owned(),
+            paths: vec![file.to_owned()],
+        };
+        match gate.check_confirmed(&action, confirmed) {
+            Verdict::Allow => {}
+            Verdict::Ask { reason } => {
+                return Err(CmdError {
+                    code: "needs_approval",
+                    detail: Some(reason),
+                });
+            }
+            Verdict::Deny { reason } => {
+                return Err(CmdError {
+                    code: "denied",
+                    detail: Some(reason),
+                });
+            }
+        }
+    }
+    Repo::discover(path)?.conflict_resolve(file, expected, how)?;
+    Ok(())
+}
+
 fn branches(data: &Path, path: &Path) -> Result<Vec<ReviewBranch>, CmdError> {
     known(data, path)?;
     Ok(Repo::discover(path)?
@@ -403,6 +446,21 @@ pub fn worktree_conflict_abort(
     conflict_abort(&gate(data)?, data, &path, confirmed)
 }
 
+/// Settles one conflicted file: stage it, keep it, or delete it. Keep
+/// deletion is gated and confirmed like `worktree_discard`.
+#[tauri::command(async)]
+pub fn worktree_conflict_resolve(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    file: String,
+    expected: ConflictKind,
+    how: ConflictResolution,
+    confirmed: bool,
+) -> Result<(), CmdError> {
+    let data = data_dir(&state)?;
+    conflict_resolve(&gate(data)?, data, &path, &file, expected, how, confirmed)
+}
+
 #[tauri::command(async)]
 pub fn worktree_branches(
     state: State<'_, AppState>,
@@ -421,6 +479,7 @@ mod tests {
     use xdev_workspace::{Registry, add_repo, create_worktree};
 
     use super::*;
+    use xdev_git::ConflictEntry;
 
     fn git(dir: &Path, args: &[&str]) -> String {
         let out = Command::new("git")
@@ -770,6 +829,198 @@ mod tests {
             &e.action,
             Action::Discard { paths, .. } if paths == &["a.txt".to_owned()]
         )));
+    }
+
+    /// Makes `wt` stop in a merge where `topic` deleted `b.txt`, which the
+    /// worktree's branch changed.
+    fn delete_conflict(fx: &Fixture) {
+        fs::write(fx.wt.join("b.txt"), "b\n").unwrap();
+        git(&fx.wt, &["add", "b.txt"]);
+        git(&fx.wt, &["commit", "-q", "-m", "add b"]);
+        git(&fx.wt, &["checkout", "-q", "-b", "topic"]);
+        git(&fx.wt, &["rm", "-q", "b.txt"]);
+        git(&fx.wt, &["commit", "-q", "-m", "drop b"]);
+        git(&fx.wt, &["checkout", "-q", "-"]);
+        fs::write(fx.wt.join("b.txt"), "mine\n").unwrap();
+        git(&fx.wt, &["commit", "-q", "-am", "mine"]);
+        let out = Command::new("git")
+            .current_dir(&fx.wt)
+            .args(["merge", "topic"])
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+    }
+
+    #[test]
+    fn conflicts_fill_entries() {
+        let fx = fixture();
+        merge_conflict(&fx);
+        let state = conflicts(&fx.data, &fx.wt).unwrap().unwrap();
+        assert_eq!(
+            state.entries,
+            [ConflictEntry {
+                path: "a.txt".into(),
+                kind: ConflictKind::BothModified,
+                present: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn mark_resolved_stages_without_asking() {
+        let fx = fixture();
+        let ask = Audited::new(
+            FixedGate(Verdict::Ask {
+                reason: "asks".into(),
+            }),
+            &fx.data,
+        );
+        merge_conflict(&fx);
+        fs::write(fx.wt.join("a.txt"), "both\n").unwrap();
+        conflict_resolve(
+            &ask,
+            &fx.data,
+            &fx.wt,
+            "a.txt",
+            ConflictKind::BothModified,
+            ConflictResolution::MarkResolved,
+            false,
+        )
+        .unwrap();
+        assert!(
+            conflicts(&fx.data, &fx.wt)
+                .unwrap()
+                .unwrap()
+                .files
+                .is_empty()
+        );
+        // Staging is not a discard; the policy was not asked.
+        assert!(xdev_policy::read_audit(&fx.data).is_err());
+    }
+
+    #[test]
+    fn keep_deletion_asks_before_removing() {
+        let fx = fixture();
+        let ask = Audited::new(
+            FixedGate(Verdict::Ask {
+                reason: "discard asks".into(),
+            }),
+            &fx.data,
+        );
+        delete_conflict(&fx);
+        let keep = |gate: &Audited<FixedGate>, confirmed| {
+            conflict_resolve(
+                gate,
+                &fx.data,
+                &fx.wt,
+                "b.txt",
+                ConflictKind::DeletedByThem,
+                ConflictResolution::KeepDeletion,
+                confirmed,
+            )
+        };
+        let asked = keep(&ask, false).unwrap_err();
+        assert_eq!(asked.code, "needs_approval");
+        assert_eq!(asked.detail.as_deref(), Some("discard asks"));
+        assert!(fx.wt.join("b.txt").exists());
+
+        let deny = Audited::new(
+            FixedGate(Verdict::Deny {
+                reason: "no".into(),
+            }),
+            &fx.data,
+        );
+        assert_eq!(code(keep(&deny, true)), "denied");
+        assert!(fx.wt.join("b.txt").exists());
+
+        keep(&ask, true).unwrap();
+        assert!(!fx.wt.join("b.txt").exists());
+        assert!(
+            conflicts(&fx.data, &fx.wt)
+                .unwrap()
+                .unwrap()
+                .files
+                .is_empty()
+        );
+        let log = xdev_policy::read_audit(&fx.data).unwrap();
+        assert!(log.iter().any(|e| matches!(
+            &e.action,
+            Action::Discard { paths, .. } if paths == &["b.txt".to_owned()]
+        )));
+    }
+
+    #[test]
+    fn resolve_reports_a_stale_row() {
+        let fx = fixture();
+        let ask = Audited::new(
+            FixedGate(Verdict::Ask {
+                reason: "asks".into(),
+            }),
+            &fx.data,
+        );
+        delete_conflict(&fx);
+        let r = conflict_resolve(
+            &ask,
+            &fx.data,
+            &fx.wt,
+            "b.txt",
+            ConflictKind::BothModified,
+            ConflictResolution::MarkResolved,
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(r.code, "conflict_changed");
+        assert_eq!(r.detail.as_deref(), Some("b.txt"));
+        let r = conflict_resolve(
+            &ask,
+            &fx.data,
+            &fx.wt,
+            "a.txt",
+            ConflictKind::BothModified,
+            ConflictResolution::MarkResolved,
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(r.code, "conflict_gone");
+        assert_eq!(r.detail.as_deref(), Some("a.txt"));
+    }
+
+    #[test]
+    fn resolve_rejects_a_file_outside_the_worktree() {
+        let fx = fixture();
+        let ask = Audited::new(
+            FixedGate(Verdict::Ask {
+                reason: "asks".into(),
+            }),
+            &fx.data,
+        );
+        merge_conflict(&fx);
+        for file in ["../x", "", "a/../../x"] {
+            let r = conflict_resolve(
+                &ask,
+                &fx.data,
+                &fx.wt,
+                file,
+                ConflictKind::BothModified,
+                ConflictResolution::KeepDeletion,
+                true,
+            );
+            assert_eq!(code(r), "bad_arg", "{file}");
+        }
+        assert_eq!(
+            code(conflict_resolve(
+                &ask,
+                &fx.data,
+                &fx.main.join("nope"),
+                "a.txt",
+                ConflictKind::BothModified,
+                ConflictResolution::MarkResolved,
+                true,
+            )),
+            "worktree_unknown"
+        );
+        // Nothing was checked against the policy.
+        assert!(xdev_policy::read_audit(&fx.data).is_err());
     }
 
     #[test]

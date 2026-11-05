@@ -36,4 +36,9 @@ rangeBase: string,
  * The branch has commits its base lacks, whatever `range` counts from;
  * what offering a pull request goes by.
  */
-aheadOfBase: boolean, };
+aheadOfBase: boolean, 
+/**
+ * The repo has remotes named both `origin` and `upstream`, so Sync fork
+ * is offered.
+ */
+hasForkUpstream: boolean, };

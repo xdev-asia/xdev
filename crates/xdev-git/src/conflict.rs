@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::since::fields;
 use crate::{GitError, Repo, run};
@@ -43,6 +43,130 @@ pub struct ConflictState {
     pub onto: Option<String>,
     /// Rebase only: the step and the number of steps.
     pub step: Option<(u32, u32)>,
+    /// The same unmerged paths with what each side did to them. A submodule
+    /// conflict is left out here, though `files` still lists it.
+    pub entries: Vec<ConflictEntry>,
+}
+
+/// A submodule's mode in git's records.
+const GITLINK: &str = "160000";
+/// The mode git gives a side that has no file.
+const NO_FILE: &str = "000000";
+
+/// The `u` records of `git status --porcelain=v2 -z`, in git's order. A
+/// submodule conflict (any mode `160000`) is skipped. Records are split on
+/// NUL and the path is whatever follows the tenth field, so spaces and
+/// newlines in it are kept.
+pub(crate) fn parse_unmerged_v2(out: &[u8]) -> Vec<ConflictEntry> {
+    let mut entries = Vec::new();
+    let mut records = out.split(|b| *b == 0).filter(|r| !r.is_empty());
+    while let Some(record) = records.next() {
+        let record = String::from_utf8_lossy(record);
+        match record.as_bytes().first() {
+            // A rename or copy: its old path is the next field.
+            Some(b'2') => {
+                records.next();
+            }
+            Some(b'u') => entries.extend(unmerged_record(&record)),
+            _ => {}
+        }
+    }
+    entries
+}
+
+/// `u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>`.
+fn unmerged_record(record: &str) -> Option<ConflictEntry> {
+    let fields: Vec<&str> = record.splitn(11, ' ').collect();
+    let [_, xy, _, m1, m2, m3, mw, _, _, _, path] = fields.as_slice() else {
+        return None;
+    };
+    if [m1, m2, m3, mw].iter().any(|m| **m == GITLINK) || path.is_empty() {
+        return None;
+    }
+    Some(ConflictEntry {
+        path: (*path).to_owned(),
+        kind: ConflictKind::from_xy(xy)?,
+        present: *mw != NO_FILE,
+    })
+}
+
+/// What each side did to an unmerged path, from git's two status letters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictKind {
+    /// `UU`
+    BothModified,
+    /// `AA`
+    BothAdded,
+    /// `DD`
+    BothDeleted,
+    /// `AU`
+    AddedByUs,
+    /// `UA`
+    AddedByThem,
+    /// `DU`
+    DeletedByUs,
+    /// `UD`
+    DeletedByThem,
+}
+
+impl ConflictKind {
+    /// The kind for git's `XY` letters; `None` for a pair that is not a conflict.
+    pub fn from_xy(xy: &str) -> Option<ConflictKind> {
+        Some(match xy {
+            "UU" => ConflictKind::BothModified,
+            "AA" => ConflictKind::BothAdded,
+            "DD" => ConflictKind::BothDeleted,
+            "AU" => ConflictKind::AddedByUs,
+            "UA" => ConflictKind::AddedByThem,
+            "DU" => ConflictKind::DeletedByUs,
+            "UD" => ConflictKind::DeletedByThem,
+            _ => return None,
+        })
+    }
+}
+
+/// One unmerged path and what each side did to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictEntry {
+    /// Relative to the repo's top folder.
+    pub path: String,
+    pub kind: ConflictKind,
+    /// False when the work tree has no file at `path`.
+    pub present: bool,
+}
+
+/// How one conflicted file is settled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictResolution {
+    /// Stage the file as it is on disk.
+    MarkResolved,
+    /// Stage the file that one side deleted, so it stays.
+    KeepFile,
+    /// Remove the file from the index and the work tree.
+    KeepDeletion,
+}
+
+impl ConflictEntry {
+    /// The resolutions offered for this entry, in the order they are shown.
+    /// A file that is not on disk can only be deleted; a file one side
+    /// deleted is kept or deleted; any other is marked resolved once its
+    /// markers are settled.
+    pub fn resolutions(&self) -> &'static [ConflictResolution] {
+        use ConflictResolution::*;
+        if !self.present {
+            return &[KeepDeletion];
+        }
+        match self.kind {
+            ConflictKind::DeletedByUs | ConflictKind::DeletedByThem => &[KeepFile, KeepDeletion],
+            _ => &[MarkResolved],
+        }
+    }
 }
 
 /// Git must not open an editor for a message the person already has.
@@ -123,7 +247,61 @@ impl Repo {
             files: self.unmerged()?,
             onto,
             step,
+            entries: self.conflict_entries()?,
         }))
+    }
+
+    /// Every unmerged path with what each side did to it, sorted by path.
+    pub fn conflict_entries(&self) -> Result<Vec<ConflictEntry>, GitError> {
+        self.unmerged_entries(None)
+    }
+
+    /// The `u` records of the whole repo, or of one path; from the top
+    /// folder, so the paths match `unmerged`.
+    fn unmerged_entries(&self, path: Option<&str>) -> Result<Vec<ConflictEntry>, GitError> {
+        let mut args = vec!["status", "--porcelain=v2", "-z", "--untracked-files=no"];
+        if let Some(path) = path {
+            args.extend(["--", path]);
+        }
+        let out = run::run(&self.root(), &args, None)?;
+        let mut entries = parse_unmerged_v2(&out);
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(entries)
+    }
+
+    /// Settles one conflicted file. `path` is read again first: a path that
+    /// is no longer unmerged is `ConflictGone`, one whose kind is not
+    /// `expected` is `ConflictChanged`, and a resolution not offered for the
+    /// kind is `NotAConflict`.
+    pub fn conflict_resolve(
+        &self,
+        path: &str,
+        expected: ConflictKind,
+        how: ConflictResolution,
+    ) -> Result<(), GitError> {
+        // An empty pathspec would match the whole repo.
+        if path.is_empty() {
+            return Err(GitError::ConflictGone(String::new()));
+        }
+        let entry = self
+            .unmerged_entries(Some(path))?
+            .into_iter()
+            .find(|e| e.path == path)
+            .ok_or_else(|| GitError::ConflictGone(path.to_owned()))?;
+        if entry.kind != expected {
+            return Err(GitError::ConflictChanged(path.to_owned()));
+        }
+        if !entry.resolutions().contains(&how) {
+            return Err(GitError::NotAConflict(path.to_owned()));
+        }
+        let args: &[&str] = match how {
+            ConflictResolution::MarkResolved | ConflictResolution::KeepFile => &["add", "--"],
+            ConflictResolution::KeepDeletion => &["rm", "--force", "--quiet", "--"],
+        };
+        let mut args = args.to_vec();
+        args.push(path);
+        run::run(&self.root(), &args, None)?;
+        Ok(())
     }
 
     /// A branch that points at `id` (local first), else the short id.
@@ -195,4 +373,140 @@ impl Repo {
 
 fn short(id: &str) -> String {
     id.chars().take(7).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ID: &str = "78981922613b2afb6025042ff6bd878ac1994e85";
+    const ZERO: &str = "0000000000000000000000000000000000000000";
+
+    /// One `u` record of `git status --porcelain=v2 -z`.
+    fn record(xy: &str, modes: [&str; 4], path: &str) -> String {
+        let [m1, m2, m3, mw] = modes;
+        format!("u {xy} N... {m1} {m2} {m3} {mw} {ID} {ID} {ID} {path}\0")
+    }
+
+    const FILE: [&str; 4] = ["100644", "100644", "100644", "100644"];
+
+    #[test]
+    fn parse_unmerged_v2_maps_every_xy() {
+        let pairs = [
+            ("UU", ConflictKind::BothModified),
+            ("AA", ConflictKind::BothAdded),
+            ("DD", ConflictKind::BothDeleted),
+            ("AU", ConflictKind::AddedByUs),
+            ("UA", ConflictKind::AddedByThem),
+            ("DU", ConflictKind::DeletedByUs),
+            ("UD", ConflictKind::DeletedByThem),
+        ];
+        let mut out = String::new();
+        // Ordinary and renamed records around the `u` ones are skipped; a
+        // rename carries its old path as one more field.
+        out.push_str(&format!(
+            "1 .M N... 100644 100644 100644 {ID} {ID} plain.txt\0"
+        ));
+        out.push_str(&format!(
+            "2 R. N... 100644 100644 100644 {ID} {ID} R100 new name.txt\0old name.txt\0"
+        ));
+        for (i, (xy, _)) in pairs.iter().enumerate() {
+            out.push_str(&record(xy, FILE, &format!("dir/f {i}.txt")));
+        }
+        let entries = parse_unmerged_v2(out.as_bytes());
+        let kinds: Vec<_> = entries.iter().map(|e| e.kind).collect();
+        assert_eq!(kinds, pairs.map(|(_, k)| k));
+        assert_eq!(entries[0].path, "dir/f 0.txt");
+        assert!(entries.iter().all(|e| e.present));
+        assert_eq!(ConflictKind::from_xy("M."), None);
+    }
+
+    #[test]
+    fn parse_unmerged_v2_keeps_spaces_and_newlines_in_paths() {
+        let out = record("UU", FILE, "a b\nc.txt");
+        assert_eq!(parse_unmerged_v2(out.as_bytes())[0].path, "a b\nc.txt");
+    }
+
+    #[test]
+    fn parse_unmerged_v2_skips_submodules() {
+        let mut out = record("UU", ["160000", "160000", "160000", "160000"], "sub");
+        out.push_str(&record(
+            "UD",
+            ["100644", "160000", "000000", "160000"],
+            "mixed",
+        ));
+        out.push_str(&record("UU", FILE, "file.txt"));
+        let paths: Vec<_> = parse_unmerged_v2(out.as_bytes())
+            .into_iter()
+            .map(|e| e.path)
+            .collect();
+        assert_eq!(paths, ["file.txt"]);
+    }
+
+    #[test]
+    fn parse_unmerged_v2_marks_absent_worktree_file() {
+        let out = format!(
+            "u DD N... 100644 000000 000000 000000 {ID} {ZERO} {ZERO} gone.txt\0{}",
+            record("UD", FILE, "here.txt")
+        );
+        let entries = parse_unmerged_v2(out.as_bytes());
+        assert_eq!(
+            entries,
+            [
+                ConflictEntry {
+                    path: "gone.txt".into(),
+                    kind: ConflictKind::BothDeleted,
+                    present: false,
+                },
+                ConflictEntry {
+                    path: "here.txt".into(),
+                    kind: ConflictKind::DeletedByThem,
+                    present: true,
+                },
+            ]
+        );
+    }
+
+    fn entry(kind: ConflictKind, present: bool) -> ConflictEntry {
+        ConflictEntry {
+            path: "f".into(),
+            kind,
+            present,
+        }
+    }
+
+    #[test]
+    fn resolutions_follow_the_kind_and_the_file() {
+        use ConflictResolution::*;
+        for kind in [
+            ConflictKind::BothModified,
+            ConflictKind::BothAdded,
+            ConflictKind::AddedByUs,
+            ConflictKind::AddedByThem,
+        ] {
+            assert_eq!(entry(kind, true).resolutions(), [MarkResolved], "{kind:?}");
+        }
+        for kind in [ConflictKind::DeletedByUs, ConflictKind::DeletedByThem] {
+            assert_eq!(
+                entry(kind, true).resolutions(),
+                [KeepFile, KeepDeletion],
+                "{kind:?}"
+            );
+        }
+        // No file on disk: deleting it is the only thing left to settle.
+        assert_eq!(
+            entry(ConflictKind::BothDeleted, false).resolutions(),
+            [KeepDeletion]
+        );
+        assert_eq!(
+            entry(ConflictKind::DeletedByThem, false).resolutions(),
+            [KeepDeletion]
+        );
+    }
+
+    #[test]
+    fn parse_unmerged_v2_ignores_a_short_record() {
+        assert!(parse_unmerged_v2(b"u UU N... 100644\0").is_empty());
+        assert!(parse_unmerged_v2(b"").is_empty());
+    }
 }

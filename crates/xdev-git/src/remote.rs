@@ -1,6 +1,6 @@
 use crate::history::is_commit_id;
 use crate::run::{self, Output};
-use crate::{Commit, GitError, Repo};
+use crate::{CodeKind, Commit, GitError, LineCount, Repo, code_kind};
 
 /// The branch's upstream and how far the two have drifted apart.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -31,6 +31,10 @@ pub struct BaseRange {
     pub added: u64,
     #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub removed: u64,
+    /// The part of `added` and `removed` in test files.
+    pub tests: LineCount,
+    /// The part of `added` and `removed` in generated files and lockfiles.
+    pub generated: LineCount,
     /// Newest first, at most the caller's limit.
     pub commits: Vec<Commit>,
     pub truncated: bool,
@@ -349,7 +353,7 @@ impl Repo {
         self.push_with(&["push", "--porcelain", &lease, &remote, &refspec])
     }
 
-    fn push_with(&self, args: &[&str]) -> Result<(), GitError> {
+    pub(crate) fn push_with(&self, args: &[&str]) -> Result<(), GitError> {
         let out = run::run_long(&self.workdir, args)?;
         if out.status == Some(0) {
             return Ok(());
@@ -373,22 +377,34 @@ impl Repo {
     }
 
     /// What the current branch adds to `base`: the lines changed from the
-    /// merge base to `HEAD`, and its commits, newest first, at most `limit`.
+    /// merge base to `HEAD` (with the part in test and in generated files),
+    /// and its commits, newest first, at most `limit`.
     pub fn branch_vs_base(&self, base: &str, limit: usize) -> Result<BaseRange, GitError> {
         let merge_base = self
             .merge_base(base, "HEAD")?
             .ok_or_else(|| GitError::BadId(base.to_owned()))?;
         let (mut added, mut removed) = (0, 0);
+        let (mut tests, mut generated) = (LineCount::default(), LineCount::default());
         // A binary file has no line counts and adds nothing.
         for stat in self.diff_numstat(&merge_base, "HEAD")? {
-            added += stat.added.unwrap_or(0);
-            removed += stat.removed.unwrap_or(0);
+            let (a, r) = (stat.added.unwrap_or(0), stat.removed.unwrap_or(0));
+            added += a;
+            removed += r;
+            let part = match code_kind(&stat.path) {
+                CodeKind::Test => &mut tests,
+                CodeKind::Generated => &mut generated,
+                CodeKind::Source => continue,
+            };
+            part.added += a;
+            part.removed += r;
         }
         let (commits, total) = self.commits_since(&merge_base, &["**".to_owned()], limit)?;
         Ok(BaseRange {
             merge_base,
             added,
             removed,
+            tests,
+            generated,
             truncated: total > commits.len(),
             commits,
         })
@@ -417,7 +433,7 @@ pub(crate) fn failed(args: &str, out: &Output) -> GitError {
 }
 
 /// `rev-list --left-right --count` output: `<left><TAB><right>`.
-fn parse_counts(out: &[u8]) -> Result<(u32, u32), GitError> {
+pub(crate) fn parse_counts(out: &[u8]) -> Result<(u32, u32), GitError> {
     let out = text(out);
     let mut parts = out.split_whitespace().map(str::parse::<u32>);
     match (parts.next(), parts.next()) {
