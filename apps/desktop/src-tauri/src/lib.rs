@@ -22,6 +22,7 @@ mod orch_pump;
 mod orch_skill;
 mod orch_sweep;
 mod orchestration;
+mod ports;
 mod power;
 mod profiles;
 mod prs;
@@ -310,6 +311,8 @@ pub fn run() {
             power::keep_awake_get,
             power::keep_awake_set,
             power::keep_awake_agents,
+            ports::ports_scan,
+            ports::port_stop,
             pty::pty_spawn,
             pty::pty_approve,
             pty::pty_write,

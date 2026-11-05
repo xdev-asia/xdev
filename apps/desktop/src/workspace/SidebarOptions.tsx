@@ -1,12 +1,15 @@
 import { useState } from "react";
 import type { JSX } from "react";
 import { Checkbox, Icon, Popover, Segmented } from "@xdev-asia/ui";
-import type { SidebarGroupBy, SidebarPrefs, SidebarSort } from "@/api";
+import type { ProjectOrder, SidebarGroupBy, SidebarPrefs, SidebarSort } from "@/api";
 import { useI18n } from "@/i18n";
 import { CARD_PARTS, type CardPart } from "./cardModel";
 
 const GROUPS: readonly SidebarGroupBy[] = ["activity", "none", "status", "pr", "project"];
-const SORTS: readonly SidebarSort[] = ["manual", "recent"];
+const SORTS: readonly SidebarSort[] = ["manual", "recent", "name", "smart", "project"];
+/** Sorts that explain themselves under the control. */
+const SORT_HINTS: Partial<Record<SidebarSort, string>> = { smart: "sidebar.options.sort.hint.smart", manual: "sidebar.options.sort.hint.manual" };
+const PROJECT_ORDERS: readonly ProjectOrder[] = ["manual", "recent"];
 const LAYOUTS = ["detailed", "compact"] as const;
 
 /** The controls of the sidebar options: Group by, Sort by, card layout and the card properties. */
@@ -32,6 +35,24 @@ export function SidebarOptionsPanel(props: { prefs: SidebarPrefs; onPrefs(prefs:
           value={prefs.sort}
           onChange={(value) => onPrefs({ ...prefs, sort: value as SidebarSort })}
         />
+        {SORT_HINTS[prefs.sort] && <small className="ws-options-hint">{t(SORT_HINTS[prefs.sort]!)}</small>}
+      </div>
+      <div className="ws-options-row">
+        <span className="ws-options-label">{t("sidebar.options.projectOrder")}</span>
+        <Segmented
+          label={t("sidebar.options.projectOrder")}
+          options={PROJECT_ORDERS.map((value) => ({ value, label: t(`sidebar.options.projectOrder.${value}`) }))}
+          value={prefs.projectOrder}
+          onChange={(value) => onPrefs({ ...prefs, projectOrder: value as ProjectOrder })}
+        />
+      </div>
+      <div className="ws-options-row">
+        <Checkbox
+          label={t("sidebar.options.pinnedInGroups")}
+          checked={prefs.pinnedInGroups}
+          onChange={(e) => onPrefs({ ...prefs, pinnedInGroups: e.target.checked })}
+        />
+        <small className="ws-options-hint">{t("sidebar.options.pinnedInGroups.hint")}</small>
       </div>
       <div className="ws-options-row">
         <span className="ws-options-label">{t("sidebar.options.layout")}</span>

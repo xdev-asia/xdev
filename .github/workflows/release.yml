@@ -239,7 +239,9 @@ jobs:
 
   publish:
     needs: [release-please, build]
-    if: needs.release-please.outputs.release_created == 'true'
+    # build runs after rc-check, which a push skips; without !cancelled() a
+    # skipped job anywhere upstream skips this one too.
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -293,7 +295,7 @@ jobs:
   # endpoint (releases/latest/download) does not move.
   rc-latest:
     needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.rc_version != ''
+    if: ${{ !cancelled() && needs.build.result == 'success' && github.event_name == 'workflow_dispatch' && inputs.rc_version != '' }}
     runs-on: ubuntu-latest
     # The bundles were signed in this environment; publishing them waits for the same reviewer.
     environment: release

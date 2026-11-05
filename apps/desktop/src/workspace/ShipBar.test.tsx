@@ -340,3 +340,30 @@ it("hands the pull request defaults from Settings → Git to Create PR", async (
   // Not given: the defaults.
   expect(await open()).toMatchObject({ initial: { draft: false }, ai: true, generateOnOpen: false, openAfterCreate: false });
 });
+
+it("More offers Commit and push only with a handler, off while the commit is blocked", async () => {
+  const api = seeded();
+  const prs = new PrStore(api);
+  const onCommitPush = vi.fn();
+  const mk = (extra: { onCommitPush?: () => void; commitBlocked?: boolean }) =>
+    mount(() => ShipBar({ api, worktree: OAK, checked: 1, prs, onCommit: vi.fn(), onChanged: vi.fn(), ...extra }));
+  const pick = (v: ReturnType<typeof mk>) => v.find((n) => n.props["data-action"] === "commit-push");
+
+  const none = mk({});
+  await tick();
+  none.find((n) => n.props["aria-haspopup"] === "menu")!.props.onClick();
+  expect(pick(none)).toBeUndefined();
+
+  const blocked = mk({ onCommitPush, commitBlocked: true });
+  await tick();
+  blocked.find((n) => n.props["aria-haspopup"] === "menu")!.props.onClick();
+  expect(pick(blocked)!.props.disabled).toBe(true);
+  expect(pick(blocked)!.props.children).toBe(en("ship.more.commitPush"));
+
+  const open = mk({ onCommitPush, commitBlocked: false });
+  await tick();
+  open.find((n) => n.props["aria-haspopup"] === "menu")!.props.onClick();
+  expect(pick(open)!.props.disabled).toBe(false);
+  pick(open)!.props.onClick();
+  expect(onCommitPush).toHaveBeenCalledOnce();
+});
