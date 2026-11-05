@@ -26,3 +26,21 @@ test("the app icon picker wraps without a horizontal page scroll", async ({ page
   await expect(icons.getByText("Mono", { exact: true })).toBeVisible();
   expect(await fitsWidth(page)).toBe(true);
 });
+
+test("Mission Control fits at 360px", async ({ page, openApp }) => {
+  await openApp();
+  await expect(page.getByRole("main", { name: "Terminals" })).toBeVisible();
+  const mac = await page.evaluate(() => /Mac|iPhone|iPad/.test(navigator.userAgent));
+  await page.keyboard.press(mac ? "Meta+j" : "Control+j");
+  const palette = page.getByRole("dialog", { name: "Jump to…" });
+  await palette.getByRole("textbox").fill("Open Mission Control");
+  await palette.getByRole("option", { name: "Open Mission Control" }).click();
+  const mission = page.getByRole("dialog", { name: "Mission Control" });
+  await expect(mission.getByRole("listitem", { name: "Builder" })).toBeVisible();
+  expect(await fitsWidth(page)).toBe(true);
+  const box = await mission.boundingBox();
+  expect(box && box.x >= 0 && box.x + box.width <= 360).toBe(true);
+  await mission.getByRole("tab", { name: "Team map" }).click();
+  await expect(mission.getByRole("button", { name: "Lead, focus tab" })).toBeVisible();
+  expect(await fitsWidth(page)).toBe(true);
+});
