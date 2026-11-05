@@ -2345,6 +2345,7 @@
   "bulk.bar.count": "Đã chọn {count}",
   "bulk.bar.delete": "Xoá",
   "bulk.bar.pin": "Ghim",
+  "bulk.bar.sleep.hint": "Cho mọi tab trong các worktree đã chọn ngủ.",
   "bulk.bar.unpin": "Bỏ ghim",
   "bulk.bar.status": "Đặt trạng thái",
   "bulk.bar.clear": "Bỏ chọn",

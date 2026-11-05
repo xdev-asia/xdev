@@ -2345,6 +2345,7 @@
   "bulk.bar.count": "{count} selected",
   "bulk.bar.delete": "Delete",
   "bulk.bar.pin": "Pin",
+  "bulk.bar.sleep.hint": "Put every tab in the selected worktrees to sleep.",
   "bulk.bar.unpin": "Unpin",
   "bulk.bar.status": "Set status",
   "bulk.bar.clear": "Clear",
