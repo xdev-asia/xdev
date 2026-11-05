@@ -32,6 +32,7 @@ import { startAutoRename } from "./autoRename";
 import { startAutoTabTitle } from "./autoTabTitle";
 import { startAutoSleep } from "./autoSleep";
 import { startKeepAwakeReport } from "@/status/keepAwake";
+import { startBusyReport } from "@/stats/busyReport";
 import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
 import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
@@ -632,6 +633,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => {
     if (!sessions) return;
     return startKeepAwakeReport(api, sessions);
+  }, [api, sessions]);
+
+  // The time agents work, for the counters on Settings → Stats & Usage.
+  useEffect(() => {
+    if (!sessions) return;
+    return startBusyReport(api, sessions);
   }, [api, sessions]);
 
   // A pane nobody looks at that wants the person: OS notification, sound, and the jump back on a click.
