@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { Segmented } from "@xdev-asia/ui";
+import { IconButton, Segmented } from "@xdev-asia/ui";
 import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { MarkdownPane } from "./MarkdownPane";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { markdownMode } from "./markdownMode";
 import { onOpenFile } from "./openFile";
+import { Toc } from "./Toc";
+import { scrollToHeading, tocOf } from "./tocModel";
 
 const hooks = vi.hoisted(() => ({ active: false }));
 vi.mock("react", async (original) => {
@@ -91,4 +93,45 @@ it("a relative link opens that file; a click elsewhere does nothing", () => {
   vi.unstubAllGlobals();
   off();
   expect(seen).toEqual([{ worktree: W, rel: "docs/b.md" }]);
+});
+
+const heads = [
+  { level: 1, text: "Intro", id: "intro" },
+  { level: 2, text: "Setup", id: "setup" },
+  { level: 3, text: "Deep", id: "deep" },
+  { level: 4, text: "Deeper", id: "deeper" },
+];
+const toc = (list: typeof heads, onPick = vi.fn()) => run(() => nodes(Toc({ headings: list, onPick })));
+
+it("the table of contents lists h1 to h3 and scrolls to the picked heading", () => {
+  expect(tocOf(heads).map((h) => h.id)).toEqual(["intro", "setup", "deep"]);
+  const onPick = vi.fn();
+  const list = toc(heads, onPick);
+  expect(list.filter((n) => n.type === "li").map((n) => n.props["data-level"])).toEqual([1, 2, 3]);
+  const buttons = list.filter((n) => n.type === "button");
+  expect(buttons.map((n) => n.props.children)).toEqual(["Intro", "Setup", "Deep"]);
+  buttons[1].props.onClick();
+  expect(onPick).toHaveBeenCalledWith("setup");
+});
+
+it("the table of contents says so when there are no headings", () => {
+  const list = toc([]);
+  expect(list.some((n) => n.type === "button")).toBe(false);
+  expect(list.find((n) => n.props.className === "md-toc-empty")!.props.children).toBe("No headings");
+});
+
+it("scrollToHeading scrolls the element with that id inside the root, and reports a missing one", () => {
+  const scrollIntoView = vi.fn();
+  const root = { querySelector: vi.fn((sel: string) => (sel === '[id="a-1"]' ? { scrollIntoView } : null)) };
+  expect(scrollToHeading(root, "a-1")).toBe(true);
+  expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+  expect(scrollToHeading(root, 'x"y')).toBe(false);
+  expect(root.querySelector).toHaveBeenLastCalledWith('[id="x\\"y"]');
+});
+
+it("the contents toggle is disabled in Source with an explanation, and enabled in Preview", () => {
+  const button = () => pane().find((n) => n.type === IconButton)!;
+  expect(button().props).toMatchObject({ icon: "list", disabled: true, title: "Table of contents is available in preview" });
+  markdownMode.set(W, "docs/a.md", "preview");
+  expect(button().props).toMatchObject({ icon: "list", disabled: false, title: "Table of contents", label: "Table of contents" });
 });
