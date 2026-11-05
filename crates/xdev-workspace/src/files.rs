@@ -409,9 +409,21 @@ pub fn link_rel(worktree: &str, text: &str, home: Option<&Path>) -> Option<Strin
     let rel = rel?;
     let disk = entry_path(worktree, &rel).ok()?;
     // The entry itself: a link is not followed.
-    fs::symlink_metadata(disk)
-        .is_ok_and(|m| m.is_file())
-        .then_some(rel)
+    if !fs::symlink_metadata(&disk).is_ok_and(|m| m.is_file()) {
+        return None;
+    }
+    Some(on_disk_case(worktree, &disk).unwrap_or(rel))
+}
+
+/// The names below `worktree` as the disk spells them, on Windows where a printed path may use
+/// another case; `None` elsewhere or when the resolved file is not under the resolved worktree.
+fn on_disk_case(worktree: &str, disk: &Path) -> Option<String> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let abs = fs::canonicalize(disk).ok()?;
+    let top = fs::canonicalize(worktree).ok()?;
+    Split::of(&abs.to_string_lossy())?.under(&Split::of(&top.to_string_lossy())?)
 }
 
 /// `text` as a path: `file://` decoded, `~/` expanded, `\` read as `/` on Windows.
@@ -1015,7 +1027,12 @@ mod tests {
     #[test]
     fn link_rel_reads_file_uris_and_percent_escapes() {
         let (_tmp, wt) = link_tree();
-        let uri = |tail: &str| format!("file://{wt}/{tail}");
+        // `file:///C:/x` on Windows, `file:///x` elsewhere.
+        let base = match wt.replace('\\', "/") {
+            p if p.starts_with('/') => p,
+            p => format!("/{p}"),
+        };
+        let uri = |tail: &str| format!("file://{base}/{tail}");
         assert_eq!(
             link_rel(&wt, &uri("src/a.ts"), None).as_deref(),
             Some("src/a.ts")
@@ -1025,7 +1042,7 @@ mod tests {
             Some("my file.txt")
         );
         assert_eq!(
-            link_rel(&wt, &format!("FILE://localhost{wt}/src/a.ts"), None).as_deref(),
+            link_rel(&wt, &format!("FILE://localhost{base}/src/a.ts"), None).as_deref(),
             Some("src/a.ts")
         );
         assert_eq!(link_rel(&wt, &uri("my%2"), None), None);
