@@ -124,6 +124,10 @@ pub struct PrCommentDraft {
     pub path: Option<String>,
     pub line: Option<u32>,
     pub start_line: Option<u32>,
+    /// The commit the line numbers refer to (the worktree `HEAD`). An inline
+    /// comment is refused unless it is the PR head.
+    #[serde(default)]
+    pub commit: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -527,20 +531,15 @@ pub fn pr_comment_post(
     let (Some(path), Some(line)) = (&draft.path, draft.line) else {
         return conversation(&draft.body);
     };
-    let out = ok(gh.run(
-        cwd,
-        &["pr", "view", &number.to_string(), "--json", "headRefOid"],
-        None,
-    )?)?;
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Head {
-        head_ref_oid: String,
+    let head = pr_head_oid(gh, cwd, number)?;
+    // The line numbers are the worktree's: they only mean the same lines on
+    // the PR when its head is the commit they were made on.
+    if draft.commit.as_deref() != Some(head.as_str()) {
+        return Err(GitError::PrHeadMismatch);
     }
-    let head: Head = serde_json::from_str(&out.stdout).map_err(parse_error)?;
     let mut body = serde_json::json!({
         "body": draft.body,
-        "commit_id": head.head_ref_oid,
+        "commit_id": head,
         "path": path,
         "line": line,
         "side": "RIGHT",
@@ -556,6 +555,22 @@ pub fn pr_comment_post(
         &format!("repos/{repo}/pulls/{number}/comments"),
         &body,
     )
+}
+
+/// The head commit of PR `number` on GitHub.
+pub fn pr_head_oid(gh: &dyn GhExec, cwd: &Path, number: u64) -> Result<String, GitError> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Head {
+        head_ref_oid: String,
+    }
+    let out = ok(gh.run(
+        cwd,
+        &["pr", "view", &number.to_string(), "--json", "headRefOid"],
+        None,
+    )?)?;
+    let head: Head = serde_json::from_str(&out.stdout).map_err(parse_error)?;
+    Ok(head.head_ref_oid)
 }
 
 /// The author and body of review comment `id`, for the quote of a reply that
@@ -1033,6 +1048,7 @@ mod tests {
             path: None,
             line: None,
             start_line: None,
+            commit: None,
         }
     }
 
@@ -1142,6 +1158,7 @@ mod tests {
         let d = PrCommentDraft {
             path: Some("src/a.rs".into()),
             line: Some(10),
+            commit: Some("abc123".into()),
             ..draft("note")
         };
         pr_comment_post(&fake, cwd(), 7, &d).unwrap();
@@ -1151,6 +1168,33 @@ mod tests {
         assert_eq!(
             json_of(&calls[2]),
             serde_json::json!({ "body": "note", "commit_id": "abc123", "path": "src/a.rs", "line": 10, "side": "RIGHT" })
+        );
+    }
+
+    #[test]
+    fn an_inline_comment_on_another_commit_is_refused() {
+        for commit in [Some("def456".to_owned()), None] {
+            let fake = Fake::new(vec![out(0, REPO, ""), out(0, r#"{"headRefOid":"abc123"}"#, "")]);
+            let d = PrCommentDraft {
+                path: Some("src/a.rs".into()),
+                line: Some(10),
+                commit,
+                ..draft("note")
+            };
+            let err = pr_comment_post(&fake, cwd(), 7, &d).unwrap_err();
+            assert_eq!(err.code(), "pr_head_mismatch");
+            // Nothing was posted: repo name and head only.
+            assert_eq!(fake.calls.borrow().len(), 2);
+        }
+    }
+
+    #[test]
+    fn pr_head_oid_reads_the_head_commit() {
+        let fake = Fake::new(vec![out(0, r#"{"headRefOid":"abc123"}"#, "")]);
+        assert_eq!(pr_head_oid(&fake, cwd(), 7).unwrap(), "abc123");
+        assert_eq!(
+            fake.calls.borrow()[0].0,
+            ["pr", "view", "7", "--json", "headRefOid"]
         );
     }
 
@@ -1166,6 +1210,7 @@ mod tests {
                 path: Some("a.rs".into()),
                 line: Some(10),
                 start_line: start,
+                commit: Some("abc".into()),
                 ..draft("n")
             };
             pr_comment_post(&fake, cwd(), 7, &d).unwrap();

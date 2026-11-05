@@ -36,7 +36,7 @@ pub use gh::{
 pub use gh_review::{
     COMMENT_BODY_MAX, COMMENTS_PER_SOURCE, MergeBlock, MergeMethod, PrComment, PrCommentDraft,
     PrCommentKind, PrComments, PrMergeInfo, PrReaction, Reaction, RerunReport, pr_checks_rerun,
-    pr_comment_post, pr_comments, pr_merge, pr_merge_info, pr_reaction, pr_thread_resolve,
+    pr_comment_post, pr_comments, pr_head_oid, pr_merge, pr_merge_info, pr_reaction, pr_thread_resolve,
 };
 pub use history::Commit;
 pub use host_url::{HostKind, HostRepo, commit_url, file_url, parse_host_remote};
@@ -121,6 +121,9 @@ pub enum GitError {
     Cancelled,
     #[error("the comment is too large")]
     CommentTooLarge,
+    /// The commit an inline comment was made on is not the PR head.
+    #[error("the PR head is not the commit the lines were made on")]
+    PrHeadMismatch,
     #[error("the comment is empty")]
     EmptyComment,
     #[error("no check to rerun")]
@@ -163,6 +166,7 @@ impl GitError {
             GitError::BadUrl(_) => "bad_arg",
             GitError::Cancelled => "cancelled",
             GitError::CommentTooLarge => "comment_too_large",
+            GitError::PrHeadMismatch => "pr_head_mismatch",
             GitError::EmptyComment => "empty_comment",
             GitError::NothingToRerun => "nothing_to_rerun",
             GitError::MergeBlocked(_) => "merge_blocked",

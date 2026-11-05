@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMockApi, SETUP_PROFILE } from "./api";
-import { createMockWorkspace, DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE } from "./mockWorkspace";
+import { createMockWorkspace, DEFAULT_GIT_SETTINGS, DEMO_WORKSPACE, MOCK_HEAD } from "./mockWorkspace";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 const FIRST = "/demo/wt/xdev-oak";
@@ -592,10 +592,10 @@ describe("mock repo hooks", () => {
 
     it("posts a conversation comment, a thread reply and an inline comment", async () => {
       const api = createMockWorkspace();
-      const draft = { body: "hi", replyTo: null, path: null, line: null, startLine: null };
+      const draft = { body: "hi", replyTo: null, path: null, line: null, startLine: null, commit: null };
       await api.worktreePrCommentPost(PATH, NUMBER, draft);
       await api.worktreePrCommentPost(PATH, NUMBER, { ...draft, body: "re", replyTo: 1 });
-      await api.worktreePrCommentPost(PATH, NUMBER, { ...draft, body: "inline", path: "a.ts", line: 3, startLine: 1 });
+      await api.worktreePrCommentPost(PATH, NUMBER, { ...draft, body: "inline", path: "a.ts", line: 3, startLine: 1, commit: MOCK_HEAD });
       const { comments } = await api.worktreePrComments(PATH, NUMBER);
       const added = comments.slice(-3);
       expect(added.map((c) => c.id)).toEqual([7, 8, 9]);
@@ -604,9 +604,19 @@ describe("mock repo hooks", () => {
       expect(added[2]).toMatchObject({ kind: "thread", path: "a.ts", line: 3, startLine: 1, replyTo: null });
     });
 
+    it("refuses an inline comment made on another commit than the PR head", async () => {
+      const api = createMockWorkspace();
+      const inline = { body: "x", replyTo: null, path: "a.ts", line: 3, startLine: 3, commit: "2".repeat(40) };
+      await expect(api.worktreePrCommentPost(PATH, NUMBER, inline)).rejects.toMatchObject({ code: "pr_head_mismatch" });
+      await expect(api.worktreePrCommentPost(PATH, NUMBER, { ...inline, commit: null })).rejects.toMatchObject({ code: "pr_head_mismatch" });
+      expect(await api.worktreePrHead(PATH, NUMBER)).toBe(MOCK_HEAD);
+      const moved = createMockWorkspace({ ...DEMO_WORKSPACE, prHeads: { [PATH]: "3".repeat(40) } });
+      expect(await moved.worktreePrHead(PATH, NUMBER)).toBe("3".repeat(40));
+    });
+
     it("rejects a blank or oversized body", async () => {
       const api = createMockWorkspace();
-      const draft = { body: " ", replyTo: null, path: null, line: null, startLine: null };
+      const draft = { body: " ", replyTo: null, path: null, line: null, startLine: null, commit: null };
       await expect(api.worktreePrCommentPost(PATH, NUMBER, draft)).rejects.toMatchObject({ code: "empty_comment" });
       await expect(api.worktreePrCommentPost(PATH, NUMBER, { ...draft, body: "x".repeat(65537) })).rejects.toMatchObject({ code: "comment_too_large" });
       await expect(api.worktreePrCommentPost("/nope", NUMBER, draft)).rejects.toMatchObject({ code: "worktree_unknown" });

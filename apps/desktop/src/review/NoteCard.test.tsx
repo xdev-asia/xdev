@@ -172,3 +172,24 @@ it("card: a failed post shows the host detail", async () => {
   expect(html).toContain("422 Unprocessable");
   expect(html).toContain(en("review.note.postToPr"));
 });
+
+it("card: an outdated note never offers Post on PR", () => {
+  const html = mount(() => NoteCard({ note: note({ outdated: true }), onEdit: vi.fn(), onDelete: vi.fn(), onPostToPr: async () => {}, postBlocked: null })).html();
+  expect(html).not.toContain(en("review.note.postToPr"));
+});
+
+it("card: a blocked note shows Post on PR disabled with the reason, and never posts", async () => {
+  const post = vi.fn(async () => {});
+  const c = mount(() => NoteCard({ note: note(), onEdit: vi.fn(), onDelete: vi.fn(), onPostToPr: post, postBlocked: "push" }));
+  const button = c.find((x) => "data-post-pr" in x.props)!;
+  expect(button.props.disabled).toBe(true);
+  button.props.onClick();
+  await tick();
+  expect(post).not.toHaveBeenCalled();
+  expect(c.html()).toContain(en("review.note.postBlocked.push"));
+});
+
+it("card: an unread PR head says so", () => {
+  const html = mount(() => NoteCard({ note: note(), onEdit: vi.fn(), onDelete: vi.fn(), onPostToPr: async () => {}, postBlocked: "unknown" })).html();
+  expect(html).toContain(en("review.note.postBlocked.unknown"));
+});

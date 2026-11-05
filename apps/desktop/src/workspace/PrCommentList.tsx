@@ -59,7 +59,7 @@ export function PrComments(props: {
 
   async function post(body: string, replyTo: PrComment | null): Promise<boolean> {
     try {
-      await store.post(worktree, number, { body, replyTo: replyTo ? (replyTo.replyTo ?? replyTo.id) : null, path: null, line: null, startLine: null });
+      await store.post(worktree, number, { body, replyTo: replyTo ? (replyTo.replyTo ?? replyTo.id) : null, path: null, line: null, startLine: null, commit: null });
       setPostError(null);
       setReplying(null);
       return true;

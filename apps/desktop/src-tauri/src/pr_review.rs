@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use tauri::State;
 use xdev_git::{
     GhExec, MergeMethod, PrCommentDraft, PrComments, PrMergeInfo, Reaction, RerunReport, SystemGh,
-    pr_checks_rerun, pr_comment_post, pr_comments, pr_merge, pr_merge_info, pr_reaction,
+    pr_checks_rerun, pr_comment_post, pr_comments, pr_head_oid, pr_merge, pr_merge_info, pr_reaction,
     pr_thread_resolve,
 };
 
@@ -90,6 +90,17 @@ pub fn worktree_pr_comment_post(
     run_gh(&SystemGh, account, |gh| {
         post_with(gh, &path, number, &draft)
     })
+}
+
+/// The PR's head commit on GitHub, to compare with the worktree `HEAD`.
+#[tauri::command(async)]
+pub fn worktree_pr_head(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    number: u64,
+) -> Result<String, CmdError> {
+    let account = gh_account_for(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, account, |gh| Ok(pr_head_oid(gh, &path, number)?))
 }
 
 #[tauri::command(async)]
@@ -252,6 +263,7 @@ mod tests {
             path: None,
             line: None,
             start_line: None,
+            commit: None,
         };
         assert_token(&calls_of(REPO, |gh| {
             let _ = comments_with(gh, p, 7);

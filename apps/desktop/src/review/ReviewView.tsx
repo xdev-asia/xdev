@@ -12,6 +12,7 @@ import type { TabStatus } from "@/workspace/status";
 import { BasePicker } from "./BasePicker";
 import { FileDiff, type DiffHandle } from "./FileDiff";
 import { nextChange, type ChangeAt } from "./navigate";
+import { postBlock } from "./postable";
 import { sortNotes } from "./notes";
 import { noteLabel } from "./NoteCard";
 import { SendNotesMenu } from "./SendNotesMenu";
@@ -66,6 +67,8 @@ export function ReviewView(props: {
   const drag = useRef<{ x: number; width: number } | null>(null);
   const store = useReviewNotes(api, worktree);
   const [openPr, setOpenPr] = useState<number | null>(null);
+  // The PR head on GitHub, read again after every review read (a push does not move the local HEAD).
+  const [prHead, setPrHead] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     api.worktreePr(worktree).then(
@@ -76,6 +79,20 @@ export function ReviewView(props: {
       live = false;
     };
   }, [api, worktree]);
+  useEffect(() => {
+    if (openPr === null) {
+      setPrHead(null);
+      return;
+    }
+    let live = true;
+    api.worktreePrHead(worktree, openPr).then(
+      (head) => live && setPrHead(head),
+      () => live && setPrHead(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, worktree, openPr, rev]);
   const postToPr =
     props.onPostToPr ??
     (openPr === null
@@ -84,6 +101,7 @@ export function ReviewView(props: {
           api.worktreePrCommentPost(worktree, openPr, {
             body: note.body,
             replyTo: null,
+            commit: data?.headOid ?? null,
             path: note.file,
             line: note.line,
             startLine: note.startLine === note.line ? null : note.startLine,
@@ -403,6 +421,7 @@ export function ReviewView(props: {
                   edit: (id, body) => void store.edit(id, body),
                   remove: (id) => void store.remove(id),
                   post: postToPr,
+                  postBlock: props.onPostToPr ? undefined : (note) => postBlock(note, data, prHead),
                 }}
                 onRead={(path, text) => void store.reanchorFile(path, text)}
                 onChunks={(path, count) => setCounts((c) => (c[path] === count ? c : { ...c, [path]: count }))}

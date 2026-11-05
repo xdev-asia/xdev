@@ -87,7 +87,7 @@ export async function acknowledge(store: PrCommentStore, worktree: string, numbe
   const resolved = plan.resolve.length;
   if (plan.conversation !== null) {
     const body = plan.conversation;
-    jobs.push(() => store.post(worktree, number, { body, replyTo: null, path: null, line: null, startLine: null }).then(() => true));
+    jobs.push(() => store.post(worktree, number, { body, replyTo: null, path: null, line: null, startLine: null, commit: null }).then(() => true));
   }
   const done = await pool(jobs, ACK_POOL);
   const okResolved = done.slice(0, resolved).filter(Boolean).length;

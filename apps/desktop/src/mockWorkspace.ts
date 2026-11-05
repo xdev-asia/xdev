@@ -64,6 +64,7 @@ type WorkspaceApi = Pick<
   | "worktreePrChecks"
   | "worktreePrComments"
   | "worktreePrCommentPost"
+  | "worktreePrHead"
   | "worktreePrThreadResolve"
   | "worktreePrReaction"
   | "worktreePrChecksRerun"
@@ -108,6 +109,8 @@ export type MockWorkspaceSeed = {
   // Review comments and merge state of each worktree's PR, by worktree path.
   prComments?: Record<string, PrComment[]>;
   mergeInfo?: Record<string, PrMergeInfo>;
+  // The PR head on GitHub by worktree path; the mock's own HEAD when absent.
+  prHeads?: Record<string, string>;
   // The next commit or amend in that worktree is rejected with `hook_failed`; the text is the hook output.
   hookFailure?: Record<string, string>;
   // Worktrees that already track a remote branch, with how far they have drifted.
@@ -191,6 +194,8 @@ type Remote = { tracked: boolean; ahead: number; behind: number; commits: Commit
 // Like `COMMENT_BODY_MAX` in Rust.
 const COMMENT_BODY_MAX = 64 * 1024;
 
+/** The commit every mock worktree is on, and the PR head unless a seed says otherwise. */
+export const MOCK_HEAD = "1".repeat(40);
 const DEFAULT_MERGE_INFO: PrMergeInfo = { block: null, checksFailed: false, methods: ["squash", "merge", "rebase"], defaultMethod: "squash" };
 
 const DEMO_START = "5555555555555555555555555555555555555555";
@@ -1106,7 +1111,7 @@ export function createMockWorkspace(
         const staged = stagedFiles.get(path)?.has(c.path) ?? false;
         return { path: c.path, kind: c.kind, staged, unstaged: !staged };
       });
-      return { base: ref, branch: found.wt.branch, baseRef: found.repo.baseRef, files };
+      return { base: ref, branch: found.wt.branch, baseRef: found.repo.baseRef, headOid: MOCK_HEAD, files };
     },
     async worktreeReviewFile(path, base, file) {
       const found = findWorktree(path);
@@ -1358,10 +1363,17 @@ export function createMockWorkspace(
       const list = prComments.get(path) ?? [];
       return prs.get(path)?.number === number ? { comments: structuredClone(list), truncated: false } : { comments: [], truncated: false };
     },
+    async worktreePrHead(path, number) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const pr = prs.get(path);
+      if (!pr || pr.number !== number) return reject("pr_not_found");
+      return seed.prHeads?.[path] ?? MOCK_HEAD;
+    },
     async worktreePrCommentPost(path, _number, draft) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       if (draft.body.trim() === "") return reject("empty_comment");
       if (draft.body.length > COMMENT_BODY_MAX) return reject("comment_too_large");
+      if (draft.path !== null && draft.commit !== (seed.prHeads?.[path] ?? MOCK_HEAD)) return reject("pr_head_mismatch");
       const list = prComments.get(path) ?? [];
       const id = list.reduce((m, c) => Math.max(m, c.id), 0) + 1;
       const root = draft.replyTo === null ? undefined : list.find((c) => c.id === draft.replyTo && c.kind === "thread");

@@ -8,4 +8,9 @@ replyTo: number | null,
 /**
  * An inline comment on this file of the PR head.
  */
-path: string | null, line: number | null, startLine: number | null, };
+path: string | null, line: number | null, startLine: number | null, 
+/**
+ * The commit the line numbers refer to (the worktree `HEAD`). An inline
+ * comment is refused unless it is the PR head.
+ */
+commit: string | null, };

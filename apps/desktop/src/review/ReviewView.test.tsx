@@ -101,7 +101,7 @@ it("reads the review and draws one section per file against the start", async ()
 it("starts closed past thirty files", async () => {
   const api = createMockApi({});
   const files = Array.from({ length: 31 }, (_, i) => ({ path: `f${i}.ts`, kind: "modified" as const, staged: false, unstaged: true }));
-  vi.spyOn(api, "worktreeReview").mockResolvedValue({ base: { kind: "start", name: null, id: START }, branch: "oak", baseRef: "main", files });
+  vi.spyOn(api, "worktreeReview").mockResolvedValue({ base: { kind: "start", name: null, id: START }, branch: "oak", baseRef: "main", headOid: null, files });
   const v = review(api);
   await tick();
   expect(v.diffs().every((n) => n.props.open === false)).toBe(true);
@@ -313,7 +313,7 @@ it("the base picker takes a typed commit and ignores an empty one", async () => 
 
 const manyFiles = (api: Api) => {
   const files = Array.from({ length: 31 }, (_, i) => ({ path: `f${i}.ts`, kind: "modified" as const, staged: false, unstaged: true }));
-  vi.spyOn(api, "worktreeReview").mockResolvedValue({ base: { kind: "start", name: null, id: START }, branch: "oak", baseRef: "main", files });
+  vi.spyOn(api, "worktreeReview").mockResolvedValue({ base: { kind: "start", name: null, id: START }, branch: "oak", baseRef: "main", headOid: null, files });
 };
 
 it("F7 opens a closed file and goes to its first change once it is drawn", async () => {

@@ -10,4 +10,8 @@ branch: string | null,
 /**
  * The repo's base ref, offered first in the picker.
  */
-baseRef: string, files: Array<ReviewFile>, };
+baseRef: string, 
+/**
+ * The commit `HEAD` is on; `None` in a repo without commits.
+ */
+headOid: string | null, files: Array<ReviewFile>, };

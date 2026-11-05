@@ -6,6 +6,7 @@ import type { ReviewNote } from "@/api";
 import { I18nContext, type I18n } from "@/i18n";
 import { NoteCard, noteLabel } from "./NoteCard";
 import { NoteComposer } from "./NoteComposer";
+import type { PostBlock } from "./postable";
 
 /** The lines a new note covers, 1-based on the new side, and what they say now. */
 export type NoteRange = { startLine: number; line: number; anchor: string };
@@ -16,6 +17,8 @@ export type NoteHandlers = {
   remove(id: string): void;
   /** Set while the worktree has an open PR; posts the note as an inline comment. */
   post?(note: ReviewNote): Promise<void>;
+  /** Why a note cannot be posted yet; `null` when it can. */
+  postBlock?(note: ReviewNote): PostBlock | null;
 };
 
 /** The selection's lines as a range; a selection that ends at the start of a line stops on the line before. */
@@ -92,9 +95,10 @@ function build(state: EditorState, ctx: Ctx, notes: ReviewNote[], composer: Note
     for (let n = note.startLine; n <= note.line; n++) out.push(tint.range(state.doc.line(n).from));
     // The key covers everything the card shows, so an edited note draws again.
     const post = ctx.handlers().post;
-    const key = `${note.id}|${note.body}|${note.sentAt}|${note.outdated}|${note.startLine}-${note.line}|${post ? "pr" : ""}`;
+    const blocked = post ? ctx.handlers().postBlock?.(note) ?? null : null;
+    const key = `${note.id}|${note.body}|${note.sentAt}|${note.outdated}|${note.startLine}-${note.line}|${post ? "pr" : ""}|${blocked ?? ""}`;
     widgetAt(note.line, key, () =>
-      createElement(NoteCard, { note, onEdit: (body: string) => ctx.handlers().edit(note.id, body), onDelete: () => ctx.handlers().remove(note.id), onPostToPr: post ? (n: ReviewNote) => ctx.handlers().post!(n) : undefined }),
+      createElement(NoteCard, { note, onEdit: (body: string) => ctx.handlers().edit(note.id, body), onDelete: () => ctx.handlers().remove(note.id), onPostToPr: post ? (n: ReviewNote) => ctx.handlers().post!(n) : undefined, postBlocked: blocked }),
     );
   }
   if (composer && composer.line <= lines) {

@@ -115,9 +115,9 @@ describe("PrCommentStore", () => {
     const api = apiWith([comment()]);
     const store = new PrCommentStore(api);
     await store.load(PATH, 7);
-    await store.post(PATH, 7, { body: "Fixed", replyTo: 1, path: null, line: null, startLine: null });
+    await store.post(PATH, 7, { body: "Fixed", replyTo: 1, path: null, line: null, startLine: null, commit: null });
     expect(store.get(PATH)?.comments).toHaveLength(2);
-    await expect(store.post(PATH, 7, { body: " ", replyTo: null, path: null, line: null, startLine: null })).rejects.toMatchObject({ code: "empty_comment" });
+    await expect(store.post(PATH, 7, { body: " ", replyTo: null, path: null, line: null, startLine: null, commit: null })).rejects.toMatchObject({ code: "empty_comment" });
   });
 
   it("tells subscribers about each change", async () => {

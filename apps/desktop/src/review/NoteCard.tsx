@@ -4,6 +4,7 @@ import type { JSX } from "react";
 import { toApiError, type ReviewNote } from "@/api";
 import { useI18n } from "@/i18n";
 import { NoteComposer } from "./NoteComposer";
+import type { PostBlock } from "./postable";
 
 // Notes are written by the person but pasted from anywhere: raw HTML is escaped, and a link keeps no
 // `href` (nothing in the app opens outside URLs), so the rendered body stays inert.
@@ -29,6 +30,8 @@ export function NoteCard(props: {
   onDelete(): void;
   /** Present while the worktree has an open PR: posts the note as an inline comment, rejecting with an ApiError. */
   onPostToPr?(note: ReviewNote): Promise<void>;
+  /** Why the note cannot go to the PR yet: the button shows disabled with the reason. */
+  postBlocked?: PostBlock | null;
 }): JSX.Element {
   const { note } = props;
   const { t } = useI18n();
@@ -38,7 +41,7 @@ export function NoteCard(props: {
   const [error, setError] = useState<string | null>(null);
 
   async function post(): Promise<void> {
-    if (!props.onPostToPr || posting) return;
+    if (!props.onPostToPr || props.postBlocked || posting) return;
     setPosting(true);
     setError(null);
     try {
@@ -51,6 +54,7 @@ export function NoteCard(props: {
       setPosting(false);
     }
   }
+  const blocked = props.postBlocked ? (`review.note.postBlocked.${props.postBlocked}` as const) : null;
   if (editing) {
     return (
       <NoteComposer
@@ -75,8 +79,8 @@ export function NoteCard(props: {
           </span>
         )}
         <span className="rv-note-actions">
-          {props.onPostToPr && (
-            <button type="button" data-post-pr disabled={posting || posted} onClick={() => void post()}>
+          {props.onPostToPr && !note.outdated && (
+            <button type="button" data-post-pr disabled={posting || posted || !!props.postBlocked} title={blocked ? t(blocked) : undefined} onClick={() => void post()}>
               {t(posted ? "review.note.posted" : "review.note.postToPr")}
             </button>
           )}
@@ -89,6 +93,7 @@ export function NoteCard(props: {
         </span>
       </header>
       <div className="rv-note-body" dangerouslySetInnerHTML={{ __html: renderNote(note.body) }} />
+      {blocked && props.onPostToPr && !note.outdated && <p className="ws-empty">{t(blocked)}</p>}
       {error && (
         <p className="error-text" role="alert">
           {error}
