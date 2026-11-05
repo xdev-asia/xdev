@@ -440,14 +440,35 @@ fn the_file_reloads_equal() {
 #[test]
 fn a_corrupt_file_is_kept_aside_and_the_store_starts_empty() {
     let dir = tempfile::tempdir().unwrap();
+    let kept = || {
+        let mut names: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("automations.json.bad-"))
+            .collect();
+        names.sort();
+        names
+    };
     std::fs::write(dir.path().join("automations.json"), "{ not json").unwrap();
     let s = Store::open(dir.path()).unwrap();
     assert!(s.list().is_empty());
+    let first = kept();
+    assert_eq!(first.len(), 1);
     assert_eq!(
-        std::fs::read_to_string(dir.path().join("automations.json.bad")).unwrap(),
+        std::fs::read_to_string(dir.path().join(&first[0])).unwrap(),
         "{ not json"
     );
     assert!(!dir.path().join("automations.json").exists());
+    // A second bad file does not overwrite the first copy.
+    std::fs::write(dir.path().join("automations.json"), "{ also bad").unwrap();
+    Store::open(dir.path()).unwrap();
+    let both = kept();
+    assert_eq!(both.len(), 2);
+    let texts: Vec<String> = both
+        .iter()
+        .map(|n| std::fs::read_to_string(dir.path().join(n)).unwrap())
+        .collect();
+    assert!(texts.contains(&"{ not json".to_owned()) && texts.contains(&"{ also bad".to_owned()));
 }
 
 #[test]

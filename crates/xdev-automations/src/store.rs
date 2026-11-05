@@ -140,9 +140,23 @@ impl Store {
                 store.runs = f.runs;
             }
             _ => {
-                let mut bad = path.clone().into_os_string();
-                bad.push(".bad");
-                fs::rename(&path, PathBuf::from(bad))?;
+                // `.bad-<ms>`, never overwriting an earlier copy.
+                let ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_millis());
+                let bad = (0u32..)
+                    .map(|n| {
+                        let mut name = path.clone().into_os_string();
+                        name.push(if n == 0 {
+                            format!(".bad-{ms}")
+                        } else {
+                            format!(".bad-{ms}-{n}")
+                        });
+                        PathBuf::from(name)
+                    })
+                    .find(|p| !p.exists())
+                    .unwrap_or_else(|| path.with_extension("json.bad"));
+                fs::rename(&path, bad)?;
             }
         }
         Ok(store)
