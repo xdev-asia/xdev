@@ -173,7 +173,7 @@ it("the language row shows the current language and changes it through setLocale
   const p = await page();
   const select = p.by("data-field", "language");
   expect(select.props.value).toBe("vi");
-  expect(nodes(select).filter((n) => n.type === "option").map((n) => n.props.value)).toEqual(["en", "vi"]);
+  expect(nodes(select).filter((n) => n.type === "option").map((n) => n.props.value)).toEqual(["system", "en", "vi"]);
   select.props.onChange({ target: { value: "en" } });
   expect(i18n.setLocale).toHaveBeenCalledWith("en");
   expect(SETTING_ENTRIES.find((x) => x.id === "general.language")).toMatchObject({ section: "general", titleKey: "language.label" });

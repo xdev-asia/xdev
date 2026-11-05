@@ -5,7 +5,7 @@ import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { useI18n } from "@/i18n";
 import { entriesFor } from "./catalog";
 import { PLATFORM } from "@/platform";
-import { SECTIONS, type SettingsFilter } from "./sections";
+import { GROUPS, SECTIONS, type SettingsFilter } from "./sections";
 import { RevealSetting, SettingsSearch } from "./SettingsSearch";
 import { runSearch } from "./searchModel";
 
@@ -32,17 +32,26 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
       <nav className="settings-nav" aria-label={t("settings.label")}>
         <h2 className="settings-nav-title">{t("settings.title")}</h2>
         <SettingsSearch value={query} onChange={setQuery} />
-        {visible.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className="settings-nav-item"
-            aria-current={s.id === section?.id ? "page" : undefined}
-            onClick={() => setActive(s.id)}
-          >
-            {found.active ? [t(s.labelKey), <span key="n" className="settings-nav-count" title={t("settings.search.hits", { count: found.counts.get(s.id) ?? 0 })}>{found.counts.get(s.id)}</span>] : t(s.labelKey)}
-          </button>
-        ))}
+        {GROUPS.map((g) => {
+          const items = visible.filter((s) => s.group === g.id);
+          if (items.length === 0) return null;
+          return (
+            <div key={g.id} className="settings-nav-group" role="group" aria-label={t(g.labelKey)}>
+              <h3 className="settings-nav-heading">{t(g.labelKey)}</h3>
+              {items.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className="settings-nav-item"
+                  aria-current={s.id === section?.id ? "page" : undefined}
+                  onClick={() => setActive(s.id)}
+                >
+                  {found.active ? [t(s.labelKey), <span key="n" className="settings-nav-count" title={t("settings.search.hits", { count: found.counts.get(s.id) ?? 0 })}>{found.counts.get(s.id)}</span>] : t(s.labelKey)}
+                </button>
+              ))}
+            </div>
+          );
+        })}
       </nav>
       {section ? (
         <section className="settings-body" aria-label={t(section.labelKey)}>
