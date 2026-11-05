@@ -120,6 +120,40 @@ async function check(io: FileIo, worktree: string, rel: string, timers: Timers):
   else store.loaded(worktree, rel, file);
 }
 
+const baseOf = (rel: string) => rel.slice(rel.lastIndexOf("/") + 1);
+const parentOf = (rel: string) => (rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "");
+
+/**
+ * The deletes of `batch` that are renames, paired one to one with a create. A file pairs with a file
+ * of the same name in another folder; a folder with a folder of the same name elsewhere, or with a
+ * new folder beside it. A delete or create that could pair with more than one is no rename: a branch
+ * switch moves many files named alike (index.ts), and guessing would point a tab at the wrong one.
+ * Whether a delete was a folder is known from the open tabs under it; otherwise the create decides.
+ */
+function renamed(store: FileIo["store"], worktree: string, batch: FsEvent[]): Set<string> {
+  const deletes = batch.filter((e) => e.kind === "delete").map((e) => e.rel);
+  const creates = batch.filter((e) => e.kind === "create");
+  const folderOf = (d: string): boolean | null => {
+    const under = store.under(worktree, d);
+    if (under.length === 0) return null;
+    return under.some((e) => e.rel !== d);
+  };
+  const pairs = (d: string, c: FsEvent): boolean => {
+    if (c.rel === d) return false;
+    const folder = folderOf(d) ?? c.dir === true;
+    if (folder !== (c.dir === true)) return false;
+    if (!folder) return baseOf(c.rel) === baseOf(d);
+    return baseOf(c.rel) === baseOf(d) || parentOf(c.rel) === parentOf(d);
+  };
+  const out = new Set<string>();
+  for (const d of deletes) {
+    if (folderOf(d) === null) continue;
+    const found = creates.filter((c) => pairs(d, c));
+    if (found.length === 1 && deletes.filter((other) => pairs(other, found[0]!)).length === 1) out.add(d);
+  }
+  return out;
+}
+
 /**
  * Applies one batch of disk events of `worktree` to the open buffers. Which files are open is read
  * from the store; folders and unopened files cost nothing.
@@ -135,13 +169,11 @@ export function reconcile(io: FileIo, worktree: string, batch: FsEvent[], timers
     }
     return;
   }
-  const basename = (rel: string) => rel.slice(rel.lastIndexOf("/") + 1);
-  const created = batch.filter((e) => e.kind === "create" && e.dir !== true);
+  const moved = renamed(store, worktree, batch);
   for (const e of batch) {
     if (e.kind === "delete") {
       for (const entry of store.under(worktree, e.rel)) {
-        const moved = created.some((c) => c.rel !== entry.rel && basename(c.rel) === basename(entry.rel));
-        if (moved) {
+        if (moved.has(e.rel)) {
           cancel(settles, keyOf(worktree, entry.rel));
           store.markExternal(worktree, entry.rel, "renamed");
         } else {

@@ -130,6 +130,44 @@ it("a delete with a create of the same name elsewhere is renamed, at once", asyn
   expect(store.get(W, "src/a.ts")!.external).toBe("renamed");
 });
 
+it("a branch switch that moves files named alike is not a rename of the open tab", async () => {
+  const { store, clock, open, feed } = setup({});
+  open("src/index.ts");
+  // git checkout: index.ts files go in one folder and come in others.
+  feed(ev("delete", "src/index.ts", null), ev("delete", "src/util/index.ts", null), ev("create", "lib/index.ts"), ev("create", "lib/util/index.ts"));
+  expect(store.get(W, "src/index.ts")!.external).toBeNull();
+  await clock.advance(DELETE_SETTLE_MS);
+  expect(store.get(W, "src/index.ts")!.external).toBe("deleted");
+});
+
+it("one delete with two creates of its name is not a rename either", async () => {
+  const { store, clock, open, feed } = setup({});
+  open("src/index.ts");
+  feed(ev("delete", "src/index.ts", null), ev("create", "lib/index.ts"), ev("create", "app/index.ts"));
+  await clock.advance(DELETE_SETTLE_MS);
+  expect(store.get(W, "src/index.ts")!.external).toBe("deleted");
+});
+
+it("a renamed folder keeps the tabs under it as renamed, at once", async () => {
+  const { store, clock, open, feed } = setup({});
+  open("src/a.ts");
+  open("src/deep/b.ts");
+  open("keep.ts");
+  feed(ev("delete", "src", null), ev("create", "source", true));
+  expect(store.get(W, "src/a.ts")!.external).toBe("renamed");
+  expect(store.get(W, "src/deep/b.ts")!.external).toBe("renamed");
+  await clock.advance(DELETE_SETTLE_MS);
+  expect(store.get(W, "src/a.ts")!.external).toBe("renamed");
+  expect(store.get(W, "keep.ts")!.external).toBeNull();
+});
+
+it("a folder moved elsewhere under its own name is a rename too", () => {
+  const { store, open, feed } = setup({});
+  open("src/a.ts");
+  feed(ev("delete", "src", null), ev("create", "old/src", true));
+  expect(store.get(W, "src/a.ts")!.external).toBe("renamed");
+});
+
 it("a create at the deleted path before the settle time cancels the mark and reads the file", async () => {
   const { store, clock, open, feed } = setup({ "a.ts": text("again", "h2") });
   open("a.ts");
