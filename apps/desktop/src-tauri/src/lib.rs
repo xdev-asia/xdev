@@ -70,6 +70,7 @@ mod status;
 mod tasks;
 mod term_config_import;
 mod term_tail;
+mod terminal_sets;
 mod terminal_themes;
 mod tray;
 mod updater;
@@ -646,6 +647,12 @@ pub fn run() {
             quick_commands::quick_commands_recent,
             quick_commands::repo_file_commands,
             quick_commands::repo_file_commands_trust,
+            terminal_sets::terminal_sets_list,
+            terminal_sets::terminal_set_upsert,
+            terminal_sets::terminal_set_delete,
+            terminal_sets::startup_presets_list,
+            terminal_sets::startup_preset_upsert,
+            terminal_sets::startup_preset_delete,
             cli_verbs::cli_tabs_report,
             cli_verbs::cli_approve,
             xdev_id::xdev_id_state,
