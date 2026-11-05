@@ -16,6 +16,7 @@ import { UsageShare } from "./UsageShare";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import { CACHE_TTL_LONG_MS, CACHE_TTL_SHORT_MS } from "./usageDefaults";
 import type { SettingsSectionProps } from "./sections";
+import { openResourceManager } from "@/stats/resourceEvents";
 import { credentialRows } from "./usageCredentials";
 import { getUsageSettings, setUsageSettings, useUsageSettings } from "./usageSettings";
 
@@ -277,6 +278,9 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
               ))}
             </div>
           )}
+          <button type="button" className="btn-secondary" data-open-resources onClick={openResourceManager}>
+            {t("resources.open")}
+          </button>
           {appStats.sinceMs !== null && (
             <p className="settings-hint" data-app-since>
               {t("usage.app.since", { date: new Date(appStats.sinceMs).toLocaleDateString(locale) })}

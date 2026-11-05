@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, SSH_SHELL_PREFIX, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type IssuesPreset, type CreateRequest, type PrSummary, type MrSummary, type MenuAction, type SetupDecision, type BaseDrift, type Provider } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type IssuesPreset, type CreateRequest, type PrSummary, type MrSummary, type MenuAction, type SetupDecision, type BaseDrift, type Provider, type ProfilesView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
@@ -12,6 +12,8 @@ import { useI18n } from "@/i18n";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { CrashHost } from "@/crash/CrashHost";
 import { MissionHost } from "@/orchestration/MissionHost";
+import { ResourceHost } from "@/stats/ResourceHost";
+import { MergeDialog, type MergeSource } from "./MergeDialog";
 import { StartupBanner } from "@/startup/StartupBanner";
 import { onTabJump } from "./tabJump";
 import { PaletteHost } from "@/palette/PaletteHost";
@@ -196,7 +198,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [groupName, setGroupName] = useState<{ id: string | null; name: string; error?: ApiError["code"] } | null>(null);
   const [selected, setSelected] = useState<string | null>(() => readSelected());
   const [view, setView] = useState<View>("workspace");
+  // Agent and shell names for the merge headings and the resource manager rows.
+  const [nameView, setNameView] = useState<ProfilesView | null>(null);
   const [composerAsk, setComposerAsk] = useState<ComposerRequest | null>(null);
+  // The tabs whose output the merge dialog shows.
+  const [mergeSources, setMergeSources] = useState<MergeSource[] | null>(null);
   // The docs app mounts on first visit and then stays, so its editor state survives a switch.
   const [docsMounted, setDocsMounted] = useState(false);
   // A request for the Agent kit to open a tab; a new `seq` is a new request.
@@ -1766,6 +1772,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   const removingRepo = removing ? repos?.find((r) => r.worktrees.some((w) => w.path === removing.worktree.path)) : undefined;
 
+  useEffect(() => {
+    let live = true;
+    Promise.resolve().then(() => api.profiles()).then((v) => live && v && setNameView(v), () => undefined);
+    return () => void (live = false);
+  }, [api]);
+
   return (
     <ProfilesProvider api={api}>
     <div className="ws-shell">
@@ -1955,6 +1967,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               onSleep={() => void Promise.all([...picked.paths].map((p) => sessions?.sleepWorktree(p, sessionFallback(api))))}
               onStatus={(status: WorkStatus) => void bulkEach((path) => api.worktreeDetails(path, { status }))}
               onClear={() => setPicked(clearPicked())}
+              onMerge={() => {
+                if (!sessions) return;
+                const chosen = all.filter((w) => picked.paths.has(w.path));
+                setMergeSources(
+                  chosen.flatMap((w) => sessions.tabs(w.path)).map((tab) => ({ id: tab.id, title: tab.title ?? profileName(nameView, tab.profileId, t), agent: profileName(nameView, tab.profileId, t) })),
+                );
+              }}
               onSendPrompt={() => setComposerAsk((r) => ({ worktrees: [...picked.paths], seq: (r?.seq ?? 0) + 1 }))}
             />
           )}
@@ -2490,6 +2509,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         onCancel={() => setConfirmEndAll(false)}
       />
       <CrashHost api={api} />
+      {mergeSources && <MergeDialog api={api} sources={mergeSources} onClose={() => setMergeSources(null)} />}
+      <ResourceHost
+        api={api}
+        tabs={() => (sessions?.worktrees() ?? []).flatMap((w) => sessions!.tabs(w)).map((tab) => ({ id: tab.id, title: tab.title ?? profileName(nameView, tab.profileId, t), agent: profileName(nameView, tab.profileId, t) }))}
+        onStop={(id) => sessions?.close(id) ?? Promise.resolve()}
+      />
       <MissionHost api={api} focusTab={jumpTo} frontTab={() => (current ? shownTab[current.path] ?? null : null)} />
       <Toasts />
       {adding && (
