@@ -105,6 +105,11 @@ it("says why there is nothing to show", async () => {
   const store = storeWith(api, scan([]));
   await store.refresh();
   expect(mount(api, store).html()).toContain(en("ports.empty.none"));
+  const idleScan = storeWith(api, scan([], { unavailable: "no_terminal" }));
+  await idleScan.refresh();
+  const idleHtml = mount(api, idleScan).html();
+  expect(idleHtml).toContain(en("ports.empty.noTerminal"));
+  expect(idleHtml).not.toContain(en("ports.unavailable", { platform: "windows", reason: "no_terminal" }));
   const outside = storeWith(api, scan([port({ port: 1, kind: "external" })]));
   await outside.refresh();
   expect(mount(api, outside).html()).toContain(en("ports.empty.noLocal"));

@@ -140,6 +140,16 @@ fn origin(protocol: PortProtocol, host: &str, port: u16) -> String {
     }
 }
 
+/// Whether a terminal xDev started works inside one of `worktrees`. Without
+/// one there is nothing a scan could tie to a terminal, so the OS is not read.
+pub fn has_terminal(roots: &[PtyRoot], worktrees: &[std::path::PathBuf]) -> bool {
+    let trees: Vec<String> = worktrees.iter().map(|w| norm_path(w)).collect();
+    roots.iter().any(|r| {
+        let at = norm_path(&r.worktree);
+        trees.iter().any(|w| is_inside(&at, w))
+    })
+}
+
 /// The ports of `listeners`, each tied to a worktree by the first evidence that
 /// fits: a terminal the app started there, the process's working folder, its
 /// command line.
@@ -455,6 +465,21 @@ mod tests {
         }];
         let far = run(&[listener("*", 1, Some(1))], &chain(65), &roots, &["/w/a"]);
         assert_eq!(far[0].kind, PortKind::External);
+    }
+
+    #[test]
+    fn a_terminal_counts_only_inside_a_queried_worktree() {
+        let wts = [PathBuf::from("/w/a"), PathBuf::from("/w/b")];
+        let at = |w: &str| PtyRoot {
+            pid: 1,
+            worktree: PathBuf::from(w),
+        };
+        assert!(has_terminal(&[at("/w/a")], &wts));
+        assert!(has_terminal(&[at("/w/b/pkg")], &wts));
+        assert!(!has_terminal(&[at("/w/ab")], &wts));
+        assert!(!has_terminal(&[at("/elsewhere")], &wts));
+        assert!(!has_terminal(&[], &wts));
+        assert!(!has_terminal(&[at("/w/a")], &[]));
     }
 
     #[test]

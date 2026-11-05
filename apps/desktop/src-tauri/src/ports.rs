@@ -88,6 +88,10 @@ fn scan_in<P: Probe>(
     worktrees: &[PathBuf],
     force: bool,
 ) -> PortScan {
+    // No terminal of these worktrees runs: the OS is not read at all.
+    if !xdev_ports::attribute::has_terminal(roots, worktrees) {
+        return PortScan::no_terminal();
+    }
     scanner.scan(roots, worktrees, urls, force)
 }
 
@@ -209,17 +213,20 @@ pub fn feed_output(app: &AppHandle, pty: &str, worktree: &Path, bytes: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use xdev_ports::{Listener, Proc, ScanError};
 
     /// Pid 7 listens on 5173 until it is stopped; pid 8 on 22 throughout.
     #[derive(Default)]
     struct Fake {
         stopped: AtomicBool,
+        /// Reads of the OS tables.
+        calls: AtomicUsize,
     }
 
     impl Probe for Fake {
         fn listeners(&self, _t: Duration) -> Result<Vec<Listener>, ScanError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
             let mut out = vec![Listener {
                 bind_host: "127.0.0.1".into(),
                 port: 22,
@@ -235,6 +242,7 @@ mod tests {
             Ok(out)
         }
         fn processes(&self) -> Result<Vec<Proc>, ScanError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(vec![Proc {
                 pid: 7,
                 ppid: None,
@@ -263,10 +271,36 @@ mod tests {
         )
     }
 
+    /// A terminal running in `/w/a`; pid 7 is not under it.
+    fn terminal() -> [PtyRoot; 1] {
+        [PtyRoot {
+            pid: 99,
+            worktree: PathBuf::from("/w/a"),
+        }]
+    }
+
+    #[test]
+    fn makes_no_call_when_no_worktree_has_a_terminal() {
+        let (scanner, urls, wts) = fixture();
+        let elsewhere = [PtyRoot {
+            pid: 99,
+            worktree: PathBuf::from("/w/other"),
+        }];
+        for roots in [&[][..], &elsewhere[..]] {
+            let scan = scan_in(&scanner, &urls, roots, &wts, true);
+            assert!(scan.ports.is_empty());
+            assert_eq!(scan.unavailable.as_deref(), Some("no_terminal"));
+        }
+        assert_eq!(scanner.probe().calls.load(Ordering::SeqCst), 0);
+        let scan = scan_in(&scanner, &urls, &terminal(), &wts, true);
+        assert_eq!(scan.ports.len(), 2);
+        assert!(scanner.probe().calls.load(Ordering::SeqCst) > 0);
+    }
+
     #[test]
     fn a_scan_lists_the_ports_and_remembers_them_for_open() {
         let (scanner, urls, wts) = fixture();
-        let scan = scan_in(&scanner, &urls, &[], &wts, false);
+        let scan = scan_in(&scanner, &urls, &terminal(), &wts, false);
         assert_eq!(scan.ports.len(), 2);
         let url = open_target_in(&scanner, "127.0.0.1:5173:7");
         assert_eq!(url.as_deref().ok(), Some("http://127.0.0.1:5173"));
@@ -277,7 +311,7 @@ mod tests {
         let (scanner, urls, wts) = fixture();
         let before = open_target_in(&scanner, "127.0.0.1:5173:7");
         assert_eq!(before.unwrap_err().code, "port_gone");
-        scan_in(&scanner, &urls, &[], &wts, false);
+        scan_in(&scanner, &urls, &terminal(), &wts, false);
         let other = open_target_in(&scanner, "localhost:9:9");
         assert_eq!(other.unwrap_err().code, "port_gone");
     }

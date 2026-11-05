@@ -134,7 +134,9 @@ export function PortsPanel(props: {
   );
 
   const groups = scan ? groupPorts(scan.ports, active) : null;
-  const message = scan?.unavailable
+  // No terminal runs in these worktrees, so the OS was not read: an empty state, not a failure.
+  const idle = scan?.unavailable === "no_terminal";
+  const message = scan?.unavailable && !idle
     ? scan.unavailable === "scan_timeout"
       ? t("ports.paused", { seconds: scan.retryIn ?? 0 })
       : t("ports.unavailable", { platform: scan.platform, reason: scan.detail ?? scan.unavailable })
@@ -143,6 +145,7 @@ export function PortsPanel(props: {
   let body: JSX.Element | null = null;
   if (active === null) body = <EmptyState title={t("ports.empty.noWorkspace")} />;
   else if (!scan) body = error ? null : <EmptyState title={t("ports.empty.scanning")} />;
+  else if (idle) body = <EmptyState title={t("ports.empty.noTerminal")} />;
   else if (groups && scan.ports.length === 0) body = message ? null : <EmptyState title={t("ports.empty.none")} />;
   else if (groups) {
     body = (

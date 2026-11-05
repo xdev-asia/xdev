@@ -493,6 +493,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     ports.want("cards", cardPorts);
     return () => ports.want("cards", false);
   }, [ports, cardPorts]);
+  // A hidden window polls the ports every 30 s instead of every 5 s.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const update = () => ports.setHidden(document.visibilityState === "hidden");
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, [ports]);
   const livePorts = cardPorts ? livePortsByWorktree(ports.state().scan) : {};
   async function stopPort(_wt: WorktreeView, port: LivePort): Promise<void> {
     try {
