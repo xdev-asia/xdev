@@ -268,6 +268,7 @@
   "accounts.resets": "Đặt lại sau {hours} giờ {minutes} phút",
   "accounts.resetUnknown": "Chưa rõ thời gian đặt lại",
   "accounts.status.logged_in": "Đã đăng nhập",
+  "accounts.status.reauth": "Cần đăng nhập lại",
   "accounts.status.logged_out": "Chưa đăng nhập",
   "accounts.status.no_claude": "Chưa cài Claude Code",
   "accounts.status.error": "Không đọc được trạng thái",
