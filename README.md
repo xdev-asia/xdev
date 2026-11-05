@@ -2,7 +2,7 @@
 
 # xDev
 
-[![CI](https://github.com/xdev-asia/xdev/actions/workflows/ci.yml/badge.svg)](https://github.com/xdev-asia/xdev/actions/workflows/ci.yml)
+[![CI](https://github.com/xdev-asia/xdev-ide/actions/workflows/ci.yml/badge.svg)](https://github.com/xdev-asia/xdev-ide/actions/workflows/ci.yml)
 
 Local-first agentic IDE. Run Claude Code, Codex and other coding agents side by side, each in its own git worktree, with the editor, git review and project context in one window.
 
@@ -26,7 +26,7 @@ Guides: [status and notifications](docs/guide/status-and-notifications.md). All 
 
 ## Install
 
-Download from [Releases](https://github.com/xdev-asia/xdev/releases) or [xdev.asia](https://xdev.asia):
+Download from [Releases](https://github.com/xdev-asia/xdev-ide/releases) or [xdev.asia](https://xdev.asia):
 
 | OS | Builds |
 |---|---|

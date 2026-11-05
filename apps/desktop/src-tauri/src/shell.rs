@@ -371,11 +371,11 @@ pub fn quit(app: &AppHandle, mode: QuitMode) {
 /// The page a help link opens. Fixed: the webview never passes a URL.
 pub fn help_url(link: HelpLink) -> &'static str {
     match link {
-        HelpLink::Docs => "https://github.com/xdev-asia/xdev/tree/main/docs/guide",
-        HelpLink::GettingStarted => "https://github.com/xdev-asia/xdev#install",
-        HelpLink::Changelog => "https://github.com/xdev-asia/xdev/releases",
-        HelpLink::ReportIssue => "https://github.com/xdev-asia/xdev/issues/new",
-        HelpLink::Source => "https://github.com/xdev-asia/xdev",
+        HelpLink::Docs => "https://github.com/xdev-asia/xdev-ide/tree/main/docs/guide",
+        HelpLink::GettingStarted => "https://github.com/xdev-asia/xdev-ide#install",
+        HelpLink::Changelog => "https://github.com/xdev-asia/xdev-ide/releases",
+        HelpLink::ReportIssue => "https://github.com/xdev-asia/xdev-ide/issues/new",
+        HelpLink::Source => "https://github.com/xdev-asia/xdev-ide",
     }
 }
 
@@ -561,9 +561,9 @@ mod tests {
         ] {
             let url = help_url(link);
             assert!(
-                url == "https://github.com/xdev-asia/xdev"
-                    || url.starts_with("https://github.com/xdev-asia/xdev/")
-                    || url.starts_with("https://github.com/xdev-asia/xdev#"),
+                url == "https://github.com/xdev-asia/xdev-ide"
+                    || url.starts_with("https://github.com/xdev-asia/xdev-ide/")
+                    || url.starts_with("https://github.com/xdev-asia/xdev-ide#"),
                 "{link:?} {url}"
             );
         }

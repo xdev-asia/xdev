@@ -21,9 +21,9 @@ const READY_EVENT: &str = "update-ready";
 const PHASE_EVENT: &str = "update-phase";
 
 const STABLE_ENDPOINT: &str =
-    "https://github.com/xdev-asia/xdev/releases/latest/download/latest.json";
+    "https://github.com/xdev-asia/xdev-ide/releases/latest/download/latest.json";
 const RC_ENDPOINT: &str =
-    "https://github.com/xdev-asia/xdev/releases/download/rc-latest/latest.json";
+    "https://github.com/xdev-asia/xdev-ide/releases/download/rc-latest/latest.json";
 
 /// The manifest a channel follows. The stable one is also in `tauri.conf.json`.
 pub fn endpoint(channel: UpdateChannel) -> &'static str {
@@ -310,11 +310,11 @@ mod tests {
     fn each_channel_has_its_own_manifest() {
         assert_eq!(
             endpoint(UpdateChannel::Stable),
-            "https://github.com/xdev-asia/xdev/releases/latest/download/latest.json"
+            "https://github.com/xdev-asia/xdev-ide/releases/latest/download/latest.json"
         );
         assert_eq!(
             endpoint(UpdateChannel::Rc),
-            "https://github.com/xdev-asia/xdev/releases/download/rc-latest/latest.json"
+            "https://github.com/xdev-asia/xdev-ide/releases/download/rc-latest/latest.json"
         );
     }
 

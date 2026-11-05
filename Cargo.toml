@@ -30,7 +30,7 @@ default-members = [
 version = "0.7.0" # x-release-please-version
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/xdev-asia/xdev"
+repository = "https://github.com/xdev-asia/xdev-ide"
 publish = false
 
 [workspace.dependencies]
