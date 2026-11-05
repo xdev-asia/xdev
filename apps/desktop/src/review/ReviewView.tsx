@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { SearchInput, TreeView } from "@xdev-asia/ui";
+import { Badge, Button, FilterChip, SearchInput, TreeView } from "@xdev-asia/ui";
 import { reviewRows } from "./reviewRows";
 import type { JSX } from "react";
 import { toApiError, type Api, type ReviewData, type ReviewFile, type ReviewNote } from "@/api";
@@ -20,6 +20,11 @@ import { AiStatus } from "./AiStatus";
 import { readAuto, writeAuto } from "./aiReview";
 import { useAiReview } from "./useAiReview";
 import { useReviewNotes } from "./useReviewNotes";
+import { AgentChips } from "./attribution/AgentChips";
+import { LivePanel } from "./attribution/LivePanel";
+import { VersionsDialog } from "./attribution/VersionsDialog";
+import { agentCount, isMulti, multiPaths, touchersByPath } from "./attribution/attributionModel";
+import { useAttribution } from "./attribution/useAttribution";
 import type { DiffSettings } from "@/api";
 import { DIFF_DEFAULTS } from "@/settings/generalDefaults";
 import { clampListWidth, fromDiffSettings, migrateViewOptions, readLocalView, toDiffSettings, writeLocalView, type ViewOptions } from "./viewOptions";
@@ -114,6 +119,11 @@ export function ReviewView(props: {
             startLine: note.startLine === note.line ? null : note.startLine,
           }));
   const [listing, setListing] = useState(false);
+  // Who changed each file; the filter keeps the files several agents touched.
+  const attribution = useAttribution(api, worktree);
+  const [multiOnly, setMultiOnly] = useState(false);
+  const [live, setLive] = useState(false);
+  const [versionsOf, setVersionsOf] = useState<string | null>(null);
   // Folder ids (`path/`) of the tree that are folded; local to this view.
   const [closed, setClosed] = useState<string[]>([]);
   // One array per file, kept while that file's notes are the same objects, so an untouched file is not redrawn.
@@ -223,7 +233,10 @@ export function ReviewView(props: {
 
   const files = data?.files ?? [];
   const needle = filter.trim().toLowerCase();
-  const shown = needle ? files.filter((f) => f.path.toLowerCase().includes(needle)) : files;
+  const byPath = touchersByPath(attribution.files);
+  const multiCount = multiPaths(files.map((f) => f.path), byPath).length;
+  const matching = needle ? files.filter((f) => f.path.toLowerCase().includes(needle)) : files;
+  const shown = multiOnly ? matching.filter((f) => isMulti(byPath.get(f.path))) : matching;
   // The clicked file stays marked only while it is still in the review.
   const active = selected !== null && files.some((f) => f.path === selected) ? selected : undefined;
   const isOpen = (path: string) => expanded[path] ?? files.length <= OPEN_LIMIT;
@@ -346,6 +359,9 @@ export function ReviewView(props: {
             </div>
           )}
         </div>
+        <button type="button" className="rv-base-button" data-act="live" aria-expanded={live} onClick={() => setLive(!live)}>
+          {t("review.attr.live")}
+        </button>
         <button type="button" className="rv-base-button" data-act="ai-review" disabled={ai.busy || !data || files.length === 0} onClick={() => data && void ai.run(data.base.id)}>
           {t("review.ai.run")}
         </button>
@@ -372,6 +388,7 @@ export function ReviewView(props: {
         <span className="rv-count">{t("review.files", { count: files.length })}</span>
       </div>
       <AiStatus state={ai} onCancel={ai.cancel} />
+      {live && <LivePanel events={attribution.recent} onOpen={show} />}
       {problem && <ProblemNote problem={problem} />}
       {store.problem && <ProblemNote problem={store.problem} />}
       {data && files.length === 0 && <p className="ws-empty">{t("review.empty")}</p>}
@@ -388,6 +405,13 @@ export function ReviewView(props: {
               onChange={(e) => setFilter(e.target.value)}
               onClear={() => setFilter("")}
             />
+            {multiCount > 0 && (
+              <div className="task-chips attr-filter">
+                <FilterChip pressed={multiOnly} count={multiCount} onClick={() => setMultiOnly(!multiOnly)}>
+                  {t("review.attr.filter")}
+                </FilterChip>
+              </div>
+            )}
             {shown.length === 0 && <p className="ws-empty">{t("review.filter.none")}</p>}
             {opts.tree ? (
               <TreeView
@@ -405,6 +429,7 @@ export function ReviewView(props: {
                     {LETTER[f.kind]}
                   </span>
                   <span className="rv-list-path ws-mono">{f.path}</span>
+                  <AgentChips touchers={byPath.get(f.path) ?? []} compact />
                   {f.staged && <span className="rv-dot" data-partial={f.unstaged} title={t("review.staged")} />}
                 </button>
               ))}
@@ -440,6 +465,15 @@ export function ReviewView(props: {
             {files.map((f) => (
               <FileDiff
                 key={f.path}
+                extra={
+                  <span className="attr-head">
+                    <AgentChips touchers={byPath.get(f.path) ?? []} />
+                    {isMulti(byPath.get(f.path)) && <Badge status="changed">{t("review.attr.multi", { count: agentCount(byPath.get(f.path)) })}</Badge>}
+                    <Button variant="secondary" className="attr-versions-button" onClick={() => setVersionsOf(f.path)}>
+                      {t("review.attr.versions")}
+                    </Button>
+                  </span>
+                }
                 api={api}
                 worktree={worktree}
                 base={data.base.id}
@@ -480,6 +514,18 @@ export function ReviewView(props: {
             ))}
           </div>
         </div>
+      )}
+      {versionsOf !== null && (
+        <VersionsDialog
+          api={api}
+          worktree={worktree}
+          path={versionsOf}
+          onClose={() => setVersionsOf(null)}
+          onRestored={() => {
+            touchChanges(worktree, touched.current);
+            void load();
+          }}
+        />
       )}
     </div>
   );

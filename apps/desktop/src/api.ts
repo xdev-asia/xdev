@@ -323,6 +323,7 @@ import type {
 import type { Target } from "./doc/frontmatter";
 import type { LayoutSnapshot } from "./workspace/layoutSnapshot";
 import { toBytes } from "./terminal/ptyClient";
+import type { AttributionChanged, AttributionEvent, FileAttribution, FileVersion } from "@xdev/bindings";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
@@ -343,6 +344,7 @@ export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } fr
 export type { HostSource, LocalForward, SshAuthPrompt, SshConnState, SshConnectionView, SshHost, SshPromptKind, SshSyncReport, SshTestOutcome };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { ConfigExported, EnvPreviewRow, ImportApplied, ImportPreview, RepoEnvVar } from "@xdev/bindings";
+export type { AttributionChanged, AttributionEvent, AttributionSource, FileAttribution, FileVersion, Toucher } from "@xdev/bindings";
 export type { SectionPreview, ConfigChange } from "@xdev/bindings";
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind, PathEntry } from "@xdev/bindings";
@@ -1770,6 +1772,18 @@ export interface Api {
   onOrchestrationFailover(cb: (e: WorkerFailover) => void): Promise<() => void>;
   /** One page of an agent session's conversation (its CLI session id or `<home id>:<id>` key): messages, tool steps and markers. `from` absent gives the last page; `limit` is 200 when absent, at most 1000. Rejects `not_found`, `bad_path`, `io`. */
   agentConversation(key: string, from?: number, limit?: number): Promise<Conversation>;
+  /** Which agent tabs touched each file of the worktree, from the bounded event log. */
+  attributionFiles(worktree: string): Promise<FileAttribution[]>;
+  /** The latest `limit` attributions of the worktree (200 at most), newest first. */
+  attributionRecent(worktree: string, limit: number): Promise<AttributionEvent[]>;
+  /** The kept versions of one file, newest first (20 at most). */
+  attributionVersions(worktree: string, path: string): Promise<FileVersion[]>;
+  /** The text of one kept version. Rejects `not_found`. */
+  attributionVersionRead(worktree: string, path: string, id: string): Promise<string>;
+  /** Writes a kept version back into the worktree; ask the person first. Rejects `not_found`, `bad_path`, `worktree_unknown`, `io`. */
+  attributionRestore(worktree: string, path: string, id: string): Promise<void>;
+  /** `attribution://changed`: the attributions of a worktree moved. */
+  onAttributionChanged(cb: (e: AttributionChanged) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2491,6 +2505,12 @@ const tauriApi: Api = {
   orchestrationWorkerFailover: (tab) => call("orchestration_worker_failover", { tab }),
   onOrchestrationFailover: (cb) => listen<WorkerFailover>("orchestration://failover", (e) => cb(e.payload)),
   agentConversation: (key, from, limit) => call("agent_conversation", { key, from: from ?? null, limit: limit ?? null }),
+  attributionFiles: (worktree) => call("attribution_files", { worktree }),
+  attributionRecent: (worktree, limit) => call("attribution_recent", { worktree, limit }),
+  attributionVersions: (worktree, path) => call("attribution_versions", { worktree, path }),
+  attributionVersionRead: (worktree, path, id) => call("attribution_version_read", { worktree, path, id }),
+  attributionRestore: (worktree, path, id) => call("attribution_restore", { worktree, path, id }),
+  onAttributionChanged: (cb) => listen<AttributionChanged>("attribution://changed", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {

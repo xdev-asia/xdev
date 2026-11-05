@@ -5,7 +5,7 @@ import type { Chunk } from "@codemirror/merge";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import { toApiError, type Api, type ReviewFile, type ReviewNote, type WorktreeFileDiff } from "@/api";
 import type { Problem } from "@/changes/useChanges";
 import { ProblemNote } from "@/components/ChangesPanel";
@@ -47,6 +47,8 @@ export type FileDiffProps = {
   handlers: NoteHandlers;
   /** Told each time the file's new text is read (`null` when the file is gone), to re-anchor its notes. */
   onRead(path: string, text: string | null): void;
+  /** Who changed the file and its versions, drawn in the header after the path. */
+  extra?: ReactNode;
 };
 
 type Built = { chunks(): readonly Chunk[]; goTo(chunk: number): void; goToLine(line: number): void; destroy(): void; notes(list: ReviewNote[]): void };
@@ -187,6 +189,7 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
           </span>
           <span className="rv-file-path ws-mono">{file.path}</span>
         </button>
+        {props.extra}
         {shown && <DiffStats base={shown.old ?? ""} current={shown.new ?? ""} />}
         {file.unstaged && (
           <button type="button" className="rv-stage" disabled={props.busy} onClick={() => props.onStage(file, true)}>
