@@ -17,6 +17,7 @@ import { NotificationsPage } from "./notifications/NotificationsPage";
 import { QuickCommandsPage } from "./quickCommands/QuickCommandsPage";
 import { ReposSettings } from "./ReposSettings";
 import { ShortcutsPage } from "./shortcuts/ShortcutsPage";
+import { SshPage } from "./SshPage";
 import { TerminalPage } from "./TerminalPage";
 import { UsagePage } from "./UsagePage";
 import { VaultsSettings } from "./VaultsSettings";
@@ -81,6 +82,7 @@ export const SECTIONS: SettingsSection[] = [
   { id: "qcmd", group: "interface", labelKey: "qcmd.title", Component: QuickCommandsPage },
   { id: "account", group: "integrations", labelKey: "account.title", Component: AccountPage },
   { id: "vaults", group: "integrations", labelKey: "settings.vaults.title", Component: VaultsSettings },
+  { id: "ssh", group: "integrations", labelKey: "ssh.title", Component: SshPage },
   { id: "cli", group: "advanced", labelKey: "settings.cli.title", Component: CliPage },
   { id: "advanced", group: "advanced", labelKey: "settings.advanced.title", Component: AdvancedPage },
   { id: "diagnostics", group: "advanced", labelKey: "settings.diagnostics.title", Component: DiagnosticsPage },

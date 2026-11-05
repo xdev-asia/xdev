@@ -16,7 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use xdev_agent::{
     AccountSource, Cli, Context, HookEvent, Launch, LaunchError, Permissions, Profile, Profiles,
     ShellEntry, ShellKind, TrustKind, TrustTarget, default_shell_id, find_builtin, find_program,
-    list_shells, resolve, spec, trust_folder, wsl_distros,
+    list_shells, resolve, spec, ssh_shell, trust_folder, wsl_distros,
 };
 use xdev_ai::Registry;
 use xdev_policy::{Action, Audited, Policy, Verdict, agent_fingerprint};
@@ -498,7 +498,11 @@ pub(crate) fn launch_with_prompt(
     } else {
         &[]
     };
-    let shells = list_shells(&profiles.shells, distros);
+    let mut shells = list_shells(&profiles.shells, distros);
+    // A saved SSH host opens as `shell:ssh:<alias>`; the alias is checked by `ssh_shell`.
+    if let Some(entry) = id.strip_prefix("shell:ssh:").and_then(ssh_shell) {
+        shells.push(entry);
+    }
     let find = |profile: &Profile| match profile.cli {
         Some(cli) => find_builtin(cli),
         None => profile.program.as_deref().and_then(find_program),
@@ -887,6 +891,13 @@ pub(crate) fn setup_command(shell: &ShellEntry, script: &str) -> (PathBuf, Vec<S
             .collect(),
         ShellKind::Login => own(&["-l", "-c"]),
         ShellKind::Custom => own(&["-c"]),
+        // `ssh <alias> <script>` runs the script on the host.
+        ShellKind::Ssh => shell
+            .args
+            .iter()
+            .cloned()
+            .chain([script.to_owned()])
+            .collect(),
     };
     (shell.program.clone(), args)
 }
@@ -2465,6 +2476,8 @@ b",
         assert_eq!(cmd.1, ["/D", "/C", script]);
         let wsl = setup_command(&entry(ShellKind::Wsl, "wsl.exe", &["-d", "Ubuntu"]), script);
         assert_eq!(wsl.1, ["-d", "Ubuntu", "--exec", "sh", "-lc", script]);
+        let ssh = setup_command(&entry(ShellKind::Ssh, "ssh", &["web"]), script);
+        assert_eq!(ssh.1, ["web", script]);
         let login = setup_command(&entry(ShellKind::Login, "/bin/zsh", &["-l"]), script);
         assert_eq!(login.1, ["-l", "-c", script]);
         let custom = setup_command(&entry(ShellKind::Custom, "fish", &[]), script);

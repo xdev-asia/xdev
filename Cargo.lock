@@ -6794,6 +6794,7 @@ dependencies = [
  "xdev-policy",
  "xdev-ports",
  "xdev-pty",
+ "xdev-ssh",
  "xdev-store",
  "xdev-workspace",
 ]
@@ -6929,6 +6930,17 @@ dependencies = [
  "ts-rs",
  "xdev-ai",
  "xdev-ipc",
+]
+
+[[package]]
+name = "xdev-ssh"
+version = "0.7.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "ts-rs",
 ]
 
 [[package]]

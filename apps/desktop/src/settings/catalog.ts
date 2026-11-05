@@ -197,6 +197,8 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   // Command line
   e("cli.status", "settings.cli.command", ["cli", "xdev", "command", "path", "terminal", "install", "dòng lệnh", "dong lenh", "lệnh", "lenh"], "settings.cli.lead"),
   e("cli.skill", "settings.orchestration.skill.title", ["cli", "skill", "agent", "xdev", "kỹ năng", "ky nang"]),
+  // SSH: the page keeps its own host filter, so one entry.
+  e("ssh.hosts", "ssh.title", ["ssh", "host", "hosts", "server", "remote", "terminal", "config", "máy chủ", "may chu", "từ xa", "tu xa"], "ssh.intro"),
   // Diagnostics
   e("diagnostics.export", "diagnostics.export.title", ["diagnostics", "export", "bundle", "chẩn đoán", "chan doan", "xuất", "xuat"]),
   e("diagnostics.logs", "diagnostics.logs.title", ["diagnostics", "log", "logs", "nhật ký", "nhat ky"]),
