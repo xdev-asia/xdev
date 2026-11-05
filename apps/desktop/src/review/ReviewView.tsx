@@ -16,6 +16,9 @@ import { postBlock } from "./postable";
 import { sortNotes } from "./notes";
 import { noteLabel } from "./NoteCard";
 import { SendNotesMenu } from "./SendNotesMenu";
+import { AiStatus } from "./AiStatus";
+import { readAuto, writeAuto } from "./aiReview";
+import { useAiReview } from "./useAiReview";
 import { useReviewNotes } from "./useReviewNotes";
 import type { DiffSettings } from "@/api";
 import { DIFF_DEFAULTS } from "@/settings/generalDefaults";
@@ -68,6 +71,8 @@ export function ReviewView(props: {
   const cursor = useRef<ChangeAt | null>(null);
   const drag = useRef<{ x: number; width: number } | null>(null);
   const store = useReviewNotes(api, worktree);
+  const ai = useAiReview(api, worktree);
+  const [auto, setAuto] = useState(() => readAuto(storage()));
   const [openPr, setOpenPr] = useState<number | null>(null);
   // The PR head on GitHub, read again after every review read (a push does not move the local HEAD).
   const [prHead, setPrHead] = useState<string | null>(null);
@@ -114,7 +119,7 @@ export function ReviewView(props: {
   // One array per file, kept while that file's notes are the same objects, so an untouched file is not redrawn.
   const perFile = useRef(new Map<string, ReviewNote[]>());
   const notesOf = (path: string): ReviewNote[] => {
-    const next = store.notes.filter((n) => n.file === path);
+    const next = [...store.notes.filter((n) => n.file === path), ...ai.notes.filter((n) => n.file === path)];
     const old = perFile.current.get(path);
     if (old && old.length === next.length && old.every((n, i) => n === next[i])) return old;
     perFile.current.set(path, next);
@@ -208,6 +213,13 @@ export function ReviewView(props: {
       before = now;
     });
   }, [api, worktree, sessions]);
+
+  // Review automatically: once when the screen has a diff it has not reviewed yet; `run` skips a hash it knows.
+  const baseId = data?.base.id;
+  const changed = (data?.files.length ?? 0) > 0;
+  useEffect(() => {
+    if (auto && baseId && changed) void ai.run(baseId, { auto: true });
+  }, [auto, baseId, changed, worktree]);
 
   const files = data?.files ?? [];
   const needle = filter.trim().toLowerCase();
@@ -334,6 +346,20 @@ export function ReviewView(props: {
             </div>
           )}
         </div>
+        <button type="button" className="rv-base-button" data-act="ai-review" disabled={ai.busy || !data || files.length === 0} onClick={() => data && void ai.run(data.base.id)}>
+          {t("review.ai.run")}
+        </button>
+        <label className="rv-check">
+          <input
+            type="checkbox"
+            checked={auto}
+            onChange={() => {
+              writeAuto(storage(), !auto);
+              setAuto(!auto);
+            }}
+          />
+          <span>{t("review.ai.auto")}</span>
+        </label>
         <SendNotesMenu sessions={sessions} worktree={worktree} branch={data?.branch ?? null} notes={store.notes} markSent={store.markSent} />
         {store.removed && (
           <span className="rv-undo" role="status">
@@ -345,6 +371,7 @@ export function ReviewView(props: {
         )}
         <span className="rv-count">{t("review.files", { count: files.length })}</span>
       </div>
+      <AiStatus state={ai} onCancel={ai.cancel} />
       {problem && <ProblemNote problem={problem} />}
       {store.problem && <ProblemNote problem={store.problem} />}
       {data && files.length === 0 && <p className="ws-empty">{t("review.empty")}</p>}
@@ -439,6 +466,11 @@ export function ReviewView(props: {
                   add: (range, body) => void store.add(f.path, range.startLine, range.line, range.anchor, body),
                   edit: (id, body) => void store.edit(id, body),
                   remove: (id) => void store.remove(id),
+                  dismissAi: (id) => void ai.dismiss(id),
+                  convertAi: (id, range) => {
+                    const found = ai.dismiss(id);
+                    if (found) void store.add(f.path, range.startLine, range.line, range.anchor, found.body);
+                  },
                   post: postToPr,
                   postBlock: props.onPostToPr ? undefined : (note) => postBlock(note, data, prHead),
                 }}
