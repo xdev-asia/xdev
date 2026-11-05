@@ -172,11 +172,14 @@ export class FileTabs {
 
   /**
    * The person keeps their edits over what is on disk. The disk hash becomes the base, so the next
-   * save writes over it on purpose instead of meeting the same conflict.
+   * save writes over it on purpose instead of meeting the same conflict. A file that is gone (`null`,
+   * or the conflict hash "") has no base: the next save creates it. Left out, the base stays.
    */
-  keepMine(worktree: string, rel: string, diskHash?: string): void {
+  keepMine(worktree: string, rel: string, diskHash?: string | null): void {
     const old = this.get(worktree, rel);
-    if (old) this.put({ ...old, external: null, conflict: null, hash: diskHash ?? old.hash });
+    if (!old) return;
+    const hash = diskHash === undefined ? old.hash : diskHash === "" ? null : diskHash;
+    this.put({ ...old, external: null, conflict: null, hash });
   }
 
   /** Puts a snapshot back (Undo of a reload) and clears the marks. */

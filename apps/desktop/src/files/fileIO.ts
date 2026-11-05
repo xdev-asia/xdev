@@ -42,16 +42,18 @@ export async function reloadWithUndo(io: FileIo, worktree: string, rel: string):
 
 /**
  * Keeps the edits over what is on disk. The hash found there becomes the base, so the next save is
- * on purpose. A file that cannot be read keeps its base: the next save meets the conflict again.
+ * on purpose; a file that is gone has none, so the next save creates it. A file that cannot be read
+ * for another reason keeps its base: the next save meets the conflict again.
  */
 export async function keepMineFile({ api, store }: FileIo, worktree: string, rel: string): Promise<void> {
   const entry = store.get(worktree, rel);
   if (!entry) return;
-  if (entry.conflict) return store.keepMine(worktree, rel, entry.conflict);
+  // A conflict hash of "" means the save found the file gone.
+  if (entry.conflict !== null) return store.keepMine(worktree, rel, entry.conflict);
   try {
     store.keepMine(worktree, rel, (await api.fileRead(worktree, rel)).hash ?? undefined);
-  } catch {
-    store.keepMine(worktree, rel);
+  } catch (e) {
+    store.keepMine(worktree, rel, toApiError(e).code === "not_found" ? null : undefined);
   }
 }
 

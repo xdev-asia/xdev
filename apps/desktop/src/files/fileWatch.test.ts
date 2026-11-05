@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { createMockApi, type FileText, type FsEvent } from "@/api";
 import { DELETE_SETTLE_MS, RELOAD_DEBOUNCE_MS, reconcile, resetWatchState } from "./fileWatch";
 import { FileTabs } from "./fileTabs";
-import { reloadWithUndo } from "./fileIO";
+import { keepMineFile, reloadWithUndo, saveFile } from "./fileIO";
 import { getToasts } from "@/workspace/toastStore";
 import { fakeTimers, tick } from "./testClock";
 
@@ -273,4 +273,39 @@ it("an update of an open image or media file reloads its view; an overflow leave
   feed(ev("overflow", "", null));
   await clock.advance(RELOAD_DEBOUNCE_MS);
   expect(store.get(W, "a.png")!.version).toBe(1);
+});
+
+it("keep my edits on a file a save found gone makes the next save create it", async () => {
+  const { api, store, open, io } = setup({});
+  open("a.ts");
+  store.edit(W, "a.ts", "mine");
+  // A save met no file: the conflict hash "" stands for "gone".
+  store.conflict(W, "a.ts", "");
+  await keepMineFile(io, W, "a.ts");
+  expect(store.get(W, "a.ts")).toMatchObject({ hash: null, conflict: null, external: null });
+  const write = vi.spyOn(api, "fileWrite").mockResolvedValue({ type: "saved", hash: "h9" });
+  expect(await saveFile(io, W, "a.ts")).toBe("saved");
+  expect(write).toHaveBeenCalledWith(W, "a.ts", "mine", "lf", null);
+});
+
+it("keep my edits on a file the watcher saw deleted makes the next save create it", async () => {
+  const { api, store, clock, open, feed, io } = setup({});
+  open("a.ts");
+  store.edit(W, "a.ts", "mine");
+  feed(ev("delete", "a.ts", null));
+  await clock.advance(DELETE_SETTLE_MS);
+  await keepMineFile(io, W, "a.ts");
+  expect(store.get(W, "a.ts")).toMatchObject({ hash: null, external: null });
+  const write = vi.spyOn(api, "fileWrite").mockResolvedValue({ type: "saved", hash: "h9" });
+  await saveFile(io, W, "a.ts");
+  expect(write).toHaveBeenCalledWith(W, "a.ts", "mine", "lf", null);
+});
+
+it("keep my edits when the file cannot be read for another reason keeps the base", async () => {
+  const { api, store, open, io } = setup({});
+  open("a.ts");
+  store.edit(W, "a.ts", "mine");
+  vi.spyOn(api, "fileRead").mockRejectedValue({ code: "io" });
+  await keepMineFile(io, W, "a.ts");
+  expect(store.get(W, "a.ts")!.hash).toBe("h1");
 });
