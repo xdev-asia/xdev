@@ -1,0 +1,51 @@
+/* Launch options dialog: the first-prompt box with its completion list, and the version check line. */
+.agent-launch-fields {
+  min-width: 0;
+}
+
+.agent-launch-composer {
+  position: relative;
+  min-width: 0;
+}
+
+.agent-launch-complete {
+  max-height: 200px;
+  margin-top: var(--x-space-1);
+  padding: var(--x-space-1);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--bg-2);
+}
+
+.agent-launch-complete ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-launch-complete li {
+  min-width: 0;
+}
+
+.agent-launch-complete-status {
+  margin: 0;
+  padding: var(--x-space-1) var(--x-space-2);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.agent-launch-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.agent-launch-check > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

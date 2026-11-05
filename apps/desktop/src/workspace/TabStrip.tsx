@@ -115,6 +115,10 @@ export function TabStrip(props: {
   /** The terminal tab menu's Close all: every unpinned terminal and file tab of the worktree. */
   onCloseAll?: () => void;
   onLaunch: (profile: PtyProfile) => void;
+  /** Shift+click on an agent of the `+` menu opens its launch options instead of launching; absent, Shift does nothing special. */
+  onLaunchOptions?: (profile: PtyProfile) => void;
+  /** Opens the picker in a mode that ends in the launch options; absent, the menu has no such item. */
+  onLaunchOptionsPicker?: () => void;
   /** Opens the agent picker of this pane; absent, the menu has no "Agent…" item. */
   onAgentPicker?: () => void;
   /** The open agent picker of this pane, drawn under the `+` button. */
@@ -469,11 +473,17 @@ export function TabStrip(props: {
                     {g.label}
                   </div>
                   {g.ids.map((p) => (
-                    <button key={p} type="button" role="menuitem" onClick={() => props.onLaunch(p)}>
+                    <button
+                      key={p}
+                      type="button"
+                      role="menuitem"
+                      onClick={(e) => (e?.shiftKey && props.onLaunchOptions && g.picker ? props.onLaunchOptions(p) : props.onLaunch(p))}
+                    >
                       {profileName(view, p, t)}
                     </button>
                   ))}
                   {g.picker && props.onAgentPicker && menuItem("agent-picker", t("workspace.tabs.agentPicker"), props.onAgentPicker)}
+                  {g.picker && props.onLaunchOptionsPicker && menuItem("launch-options", t("workspace.tabs.launchOptions"), props.onLaunchOptionsPicker)}
                 </div>
               ))}
               <div className="ws-menu-group" role="group">

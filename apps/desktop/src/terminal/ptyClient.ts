@@ -1,4 +1,4 @@
-import type { Api, ApiError, PtyAttached, PtyInfo, PtyProfile } from "@/api";
+import type { Api, ApiError, PtyAttached, PtyInfo, PtyProfile, LaunchOverrides } from "@/api";
 import { pastePrompt, whenQuiet } from "@/workspace/agentPrompt";
 import { noteBytes, takePrime } from "./restorePrime";
 
@@ -58,6 +58,8 @@ export class PtyClient {
     private prompt?: string,
     /** Extra agent arguments from an automation; the backend checks them again. A restart drops them. */
     private readonly extraArgs?: string[],
+    /** This launch's model, effort and arguments over the profile's; the backend clamps them. */
+    private readonly overrides?: LaunchOverrides,
   ) {}
 
   /**
@@ -191,7 +193,7 @@ export class PtyClient {
         watch?.output();
         // Acked once the terminal has drawn it, so a slow view pauses the pty.
         write(bytes, () => this.rendered(bytes.length));
-      }, this.resume, this.fork, prompt, this.extraArgs);
+      }, this.resume, this.fork, prompt, this.extraArgs, this.overrides);
     } catch (e) {
       watch?.cancel();
       // Nothing started, so a retry (say, after approval) still sends it.

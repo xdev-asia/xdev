@@ -4,6 +4,7 @@ import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type PtyProfile } from "@/api";
 import { COMPACT } from "@/components/ChangesPanel";
 import { useI18n } from "@/i18n";
+import { SpawnFailure } from "./SpawnFailure";
 import { Terminal } from "./Terminal";
 import { useApprovedStart } from "./useApprovedStart";
 
@@ -21,6 +22,8 @@ export function TerminalView({ api }: { api: Api }): JSX.Element {
   const [cwd, setCwd] = useState<string | null>(null);
   const [profile, setProfile] = useState<PtyProfile>("shell");
   const [run, setRun] = useState<Run | null>(null);
+  // The profile of the start that failed, for the words of the failure.
+  const [failedProfile, setFailedProfile] = useState<PtyProfile | null>(null);
   const [exit, setExit] = useState<{ id: string; code: number | null } | null>(null);
   const { ask, error, setError, dialog } = useApprovedStart(api);
 
@@ -42,6 +45,7 @@ export function TerminalView({ api }: { api: Api }): JSX.Element {
 
   const failed = (failedRun: Run, e: ApiError) => {
     setRun(null);
+    setFailedProfile(failedRun.profile);
     ask(failedRun.profile, e, failedRun.approved, () => start({ ...failedRun, id: nextId(), approved: true }));
   };
 
@@ -91,10 +95,7 @@ export function TerminalView({ api }: { api: Api }): JSX.Element {
       </div>
       {error && (
         <div className="banner banner-warn" role="alert">
-          <div className="banner-text">
-            <span>{t(`error.${error.code}`)}</span>
-            {error.detail && <pre className="commands">{error.detail}</pre>}
-          </div>
+          <SpawnFailure api={api} error={error} profile={failedProfile} />
         </div>
       )}
       {run ? (

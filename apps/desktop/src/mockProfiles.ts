@@ -1,5 +1,5 @@
 import { pickAgent } from "./workspace/agentPick";
-import type { Api, ApiError, CustomShell, Profile, ProfilesView, ProfileView, ShellView } from "./api";
+import type { Api, ApiError, CustomShell, LaunchVerdict, Profile, ProfilesView, ProfileView, ShellView } from "./api";
 
 type ProfilesApi = Pick<
   Api,
@@ -10,6 +10,7 @@ type ProfilesApi = Pick<
   | "profilesDefaults"
   | "agentsRefresh"
   | "agentDocsOpen"
+  | "agentProbe"
   | "shellPut"
   | "shellRemove"
 >;
@@ -20,6 +21,7 @@ type Mode = ProfileView["permissions"];
 interface Spec {
   name: string;
   efforts: string[];
+  models: string[];
   modes: Mode[];
   /** The first prompt is typed after the agent starts. */
   after: boolean;
@@ -28,19 +30,19 @@ interface Spec {
 
 // Mirrors the table in `crates/xdev-agent/src/catalog.rs`, in `Cli::ALL` order.
 const SPECS: Record<Cli, Spec> = {
-  claude: { name: "Claude Code", efforts: ["low", "medium", "high", "xhigh", "max"], modes: ["ask", "accept-edits", "auto", "skip"], after: false, docs: "https://code.claude.com/docs" },
-  codex: { name: "Codex", efforts: ["low", "medium", "high"], modes: ["ask", "accept-edits", "auto", "skip"], after: false, docs: "https://github.com/openai/codex" },
-  gemini: { name: "Gemini CLI", efforts: [], modes: ["ask", "accept-edits", "skip"], after: false, docs: "https://github.com/google-gemini/gemini-cli" },
-  cursor: { name: "Cursor", efforts: [], modes: ["ask", "skip"], after: false, docs: "https://cursor.com/cli" },
-  copilot: { name: "GitHub Copilot", efforts: [], modes: ["ask", "skip"], after: false, docs: "https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli" },
-  opencode: { name: "OpenCode", efforts: [], modes: ["ask"], after: false, docs: "https://opencode.ai/docs/cli/" },
-  amp: { name: "Amp", efforts: [], modes: ["ask", "skip"], after: true, docs: "https://ampcode.com/manual#install" },
-  droid: { name: "Droid", efforts: [], modes: ["ask", "skip"], after: false, docs: "https://docs.factory.ai/cli/getting-started/quickstart" },
-  "qwen-code": { name: "Qwen Code", efforts: [], modes: ["ask", "skip"], after: true, docs: "https://github.com/QwenLM/qwen-code" },
-  kimi: { name: "Kimi", efforts: [], modes: ["ask", "skip"], after: true, docs: "https://www.kimi.com/code/docs/en/kimi-code-cli/getting-started.html" },
-  devin: { name: "Devin", efforts: [], modes: ["ask", "skip"], after: false, docs: "https://devin.ai/cli" },
-  aider: { name: "Aider", efforts: [], modes: ["ask", "skip"], after: true, docs: "https://aider.chat/docs/" },
-  goose: { name: "Goose", efforts: [], modes: ["ask", "skip"], after: true, docs: "https://goose-docs.ai/docs/quickstart/" },
+  claude: { name: "Claude Code", efforts: ["low", "medium", "high", "xhigh", "max"], models: ["opus", "sonnet", "haiku"], modes: ["ask", "accept-edits", "auto", "skip"], after: false, docs: "https://code.claude.com/docs" },
+  codex: { name: "Codex", efforts: ["low", "medium", "high"], models: [], modes: ["ask", "accept-edits", "auto", "skip"], after: false, docs: "https://github.com/openai/codex" },
+  gemini: { name: "Gemini CLI", efforts: [], models: ["gemini-2.5-pro", "gemini-2.5-flash"], modes: ["ask", "accept-edits", "skip"], after: false, docs: "https://github.com/google-gemini/gemini-cli" },
+  cursor: { name: "Cursor", efforts: [], models: [], modes: ["ask", "skip"], after: false, docs: "https://cursor.com/cli" },
+  copilot: { name: "GitHub Copilot", efforts: [], models: [], modes: ["ask", "skip"], after: false, docs: "https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli" },
+  opencode: { name: "OpenCode", efforts: [], models: [], modes: ["ask"], after: false, docs: "https://opencode.ai/docs/cli/" },
+  amp: { name: "Amp", efforts: [], models: [], modes: ["ask", "skip"], after: true, docs: "https://ampcode.com/manual#install" },
+  droid: { name: "Droid", efforts: [], models: [], modes: ["ask", "skip"], after: false, docs: "https://docs.factory.ai/cli/getting-started/quickstart" },
+  "qwen-code": { name: "Qwen Code", efforts: [], models: [], modes: ["ask", "skip"], after: true, docs: "https://github.com/QwenLM/qwen-code" },
+  kimi: { name: "Kimi", efforts: [], models: [], modes: ["ask", "skip"], after: true, docs: "https://www.kimi.com/code/docs/en/kimi-code-cli/getting-started.html" },
+  devin: { name: "Devin", efforts: [], models: [], modes: ["ask", "skip"], after: false, docs: "https://devin.ai/cli" },
+  aider: { name: "Aider", efforts: [], models: [], modes: ["ask", "skip"], after: true, docs: "https://aider.chat/docs/" },
+  goose: { name: "Goose", efforts: [], models: [], modes: ["ask", "skip"], after: true, docs: "https://goose-docs.ai/docs/quickstart/" },
 };
 const CLIS = Object.keys(SPECS) as Cli[];
 const isCli = (id: string): id is Cli => id in SPECS;
@@ -106,6 +108,8 @@ export interface MockProfiles extends ProfilesApi {
   __installed: string[];
   /** The ids `agentDocsOpen` was called with, in order. */
   __docsOpened: string[];
+  /** What `agentProbe` says for an id; an installed agent is `ok` and a missing one `notInstalled` unless set here. */
+  __verdicts: Record<string, LaunchVerdict>;
   /** Whether the agent's first prompt is typed after start rather than passed as an argument. */
   __promptAfter(id: string): boolean;
 }
@@ -122,7 +126,7 @@ export function createMockProfiles(): MockProfiles {
   // Stored without the prefix; unknown means the first shell on offer.
   let defaultShell: string | null = null;
   let profiles: Profile[] = CLIS.map(builtin);
-  const state = { installed: ["claude", "codex", "aider"], docsOpened: [] as string[] };
+  const state = { installed: ["claude", "codex", "aider"], docsOpened: [] as string[], verdicts: {} as Record<string, LaunchVerdict> };
   let custom: CustomShell[] = [];
 
   const shellViews = (): ShellView[] => [
@@ -145,6 +149,7 @@ export function createMockProfiles(): MockProfiles {
     permissions: effective(profile),
     followsApprovals: follows(profile),
     efforts: profile.cli ? SPECS[profile.cli].efforts : [],
+    models: profile.cli ? SPECS[profile.cli].models : [],
     customArgs: profile.cli !== null && profile.args.some((a) => heads(profile.cli!).some((h) => a === h || a.startsWith(`${h}=`))),
     modes: profile.cli ? SPECS[profile.cli].modes : [],
     modeFlags: profile.cli ? SPECS[profile.cli].modes.map((mode) => ({ mode, flags: FLAGS[profile.cli!][mode] ?? [] })) : [],
@@ -198,6 +203,11 @@ export function createMockProfiles(): MockProfiles {
     async agentsRefresh() {
       return view();
     },
+    async agentProbe(id) {
+      const found = profiles.find((p) => p.id === id);
+      if (!found?.cli) return reject("unknown_profile");
+      return state.verdicts[id] ?? (viewOf(found).installed ? { kind: "ok", version: "1.0.0" } : { kind: "notInstalled" });
+    },
     async agentDocsOpen(id) {
       if (!isCli(id)) return reject("unknown_profile");
       state.docsOpened.push(id);
@@ -230,6 +240,9 @@ export function createMockProfiles(): MockProfiles {
     },
     set __installed(ids) {
       state.installed = [...ids];
+    },
+    get __verdicts() {
+      return state.verdicts;
     },
     get __docsOpened() {
       return state.docsOpened;
