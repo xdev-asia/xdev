@@ -1906,6 +1906,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
                   quickSeq={path === current?.path ? quickSeq : undefined}
                   onManageQuickCommands={() => openSettings("qcmd")}
+                  onManageAgents={() => openSettings("agents")}
                   worktrees={all.map((w) => ({ path: w.path, label: worktreeName(all, w.path) }))}
                   onJump={jumpTo}
                 />

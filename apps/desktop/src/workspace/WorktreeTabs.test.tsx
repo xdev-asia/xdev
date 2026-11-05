@@ -13,6 +13,7 @@ import { useKeymap } from "@/keys/keymap";
 import { Terminal, type TerminalHandle } from "@/terminal/Terminal";
 import { ContextMenu } from "@/ui/ContextMenu";
 import { AgentIcon } from "./AgentIcon";
+import { AgentPicker } from "./AgentPicker";
 import { CloseTabsDialog } from "./CloseTabsDialog";
 import { CommitView } from "./CommitView";
 import { Sessions } from "./sessions";
@@ -757,7 +758,7 @@ it("plus_menu_lists_agents_and_shells", async () => {
   const live = (sessions = new Sessions(api));
   const view = harness(api, live);
   openMenu(view, live);
-  expect(items(group(view, en("workspace.tabs.agents")))).toEqual([en("terminal.profile.claude"), "Aider"]);
+  expect(items(group(view, en("workspace.tabs.agents")))).toEqual([en("terminal.profile.claude"), "Aider", en("workspace.tabs.agentPicker")]);
   expect(items(group(view, en("workspace.tabs.shells")))).toEqual(["PowerShell", "CMD", "WSL Ubuntu"]);
   // Each group says what it holds.
   expect(view.html()).toContain(`>${en("workspace.tabs.agents")}<`);
@@ -1640,4 +1641,57 @@ it("a sleeping tab shows a Wake overlay in place of its terminal, and Wake start
   expect(woken.id).not.toBe(slept.id);
   expect(view.terminals().map((n) => n.props.id)).toEqual([woken.id]);
   expect(view.html()).not.toContain(en("sleep.tab.title"));
+});
+
+describe("agent picker", () => {
+  const pickerIn = (view: ReturnType<typeof harness>) => view.find((n) => n.type === AgentPicker);
+
+  it("agent_new_opens_the_picker_in_the_focused_pane_and_again_starts_the_default", async () => {
+    const api = createMockApi({});
+    store.view = await api.profilesDefaults("ask", "codex", null);
+    const live = (sessions = new Sessions(api));
+    const { one } = threePanes(live);
+    live.setLayout(A, selectTab(live.layout(A)!, one.id));
+    const view = harness(api, live);
+    const before = live.tabs(A).length;
+    handlers(view)["agent.new"]!();
+    const strips = view.all().filter((n) => n.type === TabStrip);
+    const focused = strips.find((s) => s.props.pane === live.layout(A)!.focused)!;
+    expect(focused.props.agentPicker).toBeTruthy();
+    expect(strips.filter((s) => s.props.agentPicker)).toHaveLength(1);
+    expect(live.tabs(A)).toHaveLength(before);
+    // A second press while it is open starts the default agent.
+    handlers(view)["agent.new"]!();
+    expect(live.tabs(A).at(-1)!.profileId).toBe("codex");
+    expect(pickerIn(view)).toBeUndefined();
+  });
+
+  it("the_plus_menu_has_an_agent_item_that_opens_the_picker_and_at_most_five_agents", async () => {
+    const api = createMockApi({});
+    api.__installed = ["claude", "codex", "gemini", "cursor", "copilot", "aider", "goose"];
+    store.view = await api.agentsRefresh();
+    const live = (sessions = new Sessions(api));
+    live.open(A, "shell");
+    const view = harness(api, live);
+    const strip = view.all().find((n) => n.type === TabStrip)!;
+    expect(strip.props.groups[0].ids).toHaveLength(5);
+    strip.props.onAgentPicker();
+    expect(pickerIn(view)).toBeDefined();
+  });
+
+  it("a_blank_pick_opens_the_default_shell_and_manage_opens_settings", async () => {
+    const api = createMockApi({});
+    store.view = await api.profiles();
+    const manage = vi.fn();
+    const live = (sessions = new Sessions(api));
+    live.open(A, "claude");
+    const view = harness(api, live, A, true, { onManageAgents: manage });
+    handlers(view)["agent.new"]!();
+    const picker = pickerIn(view)!;
+    picker.props.onManage();
+    expect(manage).toHaveBeenCalledOnce();
+    picker.props.onPick(null);
+    expect(live.tabs(A).at(-1)!.profileId).toBe(store.view.defaultShell);
+    expect(pickerIn(view)).toBeUndefined();
+  });
 });
