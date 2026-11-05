@@ -221,18 +221,18 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         None => LaunchError::NotFound(profile.program.clone().unwrap_or_default()),
     })?;
 
-    let permissions = ctx.profiles.effective(profile);
+    // Permission flags of the person's own args replace xDev's, so xDev
+    // adds no mode and the gate has none to approve.
+    let permissions = match profile.cli {
+        Some(cli) if has_permission_args(cli, &profile.args) => Permissions::Ask,
+        _ => ctx.profiles.effective(profile),
+    };
     let mut args = match profile.cli {
-        // Permission flags of the person's own args replace xDev's.
         Some(cli) => flags(
             cli,
             profile.model.as_deref(),
             profile.effort.as_deref(),
-            if has_permission_args(cli, &profile.args) {
-                Permissions::Ask
-            } else {
-                permissions
-            },
+            permissions,
         ),
         None => Vec::new(),
     };
@@ -256,9 +256,7 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         .iter()
         .map(|e| (e.name.clone(), OsString::from(&e.value)))
         .collect();
-    if let Some(cli) = profile.cli
-        && !has_permission_args(cli, &profile.args)
-    {
+    if let Some(cli) = profile.cli {
         for (name, value) in permission_env(cli, permissions) {
             if !env.iter().any(|(key, _)| key == name) {
                 env.push(((*name).to_owned(), OsString::from(value)));
@@ -582,6 +580,17 @@ mod tests {
         assert!(l.agent);
         assert_eq!(l.profile, "claude");
         // Args opt out of the global switch, so no mode flag.
+        assert_eq!(l.permissions, Permissions::Ask);
+    }
+
+    #[test]
+    fn own_permission_args_launch_as_ask() {
+        let mut c = builtin(Cli::Claude);
+        c.permissions = Some(Permissions::Skip);
+        c.args = vec!["--permission-mode".into(), "plan".into()];
+        let l = run(&with(c), "claude", None, &found).unwrap();
+        assert_eq!(l.args, ["--permission-mode", "plan"]);
+        // xDev adds no mode, so the gate has none to approve.
         assert_eq!(l.permissions, Permissions::Ask);
     }
 
