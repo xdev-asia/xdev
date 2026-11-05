@@ -635,9 +635,19 @@ impl AutomationService {
             }
         };
         let mut store = self.store();
-        let open = store
-            .run(&run_id)
-            .is_some_and(|r| matches!(r.status, RunStatus::Pending | RunStatus::Dispatching));
+        // A launched run can still fail on one report: its agent never started working.
+        let never_started = matches!(
+            &result,
+            DispatchResult::Failed {
+                code: FailureCode::AgentNeverStarted,
+                ..
+            }
+        );
+        let open = store.run(&run_id).is_some_and(|r| match r.status {
+            RunStatus::Pending | RunStatus::Dispatching => true,
+            RunStatus::Dispatched => never_started,
+            _ => false,
+        });
         if !open {
             return None;
         }
@@ -1434,13 +1444,33 @@ mod tests {
         assert!(
             r.service
                 .dispatch_result(DispatchResult::Failed {
+                    run_id: run_id.clone(),
+                    code: FailureCode::NeedsApproval,
+                    detail: None,
+                })
+                .is_none()
+        );
+        assert_eq!(r.runs(&a.id)[0].status, RunStatus::Dispatched);
+        // But a launched run fails when its agent never started working.
+        r.service.dispatch_result(DispatchResult::Failed {
+            run_id: run_id.clone(),
+            code: FailureCode::AgentNeverStarted,
+            detail: None,
+        });
+        let run = &r.runs(&a.id)[0];
+        assert_eq!(run.status, RunStatus::DispatchFailed);
+        assert_eq!(run.error_code, Some(FailureCode::AgentNeverStarted));
+        assert!(run.tab_id.is_some());
+        // Once it is final, nothing more is taken.
+        assert!(
+            r.service
+                .dispatch_result(DispatchResult::Failed {
                     run_id,
                     code: FailureCode::AgentNeverStarted,
                     detail: None,
                 })
                 .is_none()
         );
-        assert_eq!(r.runs(&a.id)[0].status, RunStatus::Dispatched);
     }
 
     #[test]
