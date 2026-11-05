@@ -145,3 +145,15 @@ it("the image and diagram effects wake up when the preview is shown", () => {
   expect(hiddenDeps).toHaveLength(3);
   expect(hooks.deps.filter((d) => d.includes(false))).toHaveLength(3);
 });
+
+it("a link inside the expanded diagram never navigates the WebView", () => {
+  const full = run(() => nodes(MermaidDialog({ svg: "<svg><a href='https://x'></a></svg>", onClose() {} }))).find((n) => n.props.className === "md-mermaid-full")!;
+  for (const handler of ["onClick", "onAuxClick"]) {
+    const onLink = vi.fn();
+    full.props[handler]({ target: { closest: (sel: string) => (sel === "a" ? {} : null) }, preventDefault: onLink });
+    expect(onLink).toHaveBeenCalledTimes(1);
+    const onText = vi.fn();
+    full.props[handler]({ target: { closest: () => null }, preventDefault: onText });
+    expect(onText).not.toHaveBeenCalled();
+  }
+});
