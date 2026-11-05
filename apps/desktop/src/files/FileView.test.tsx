@@ -8,6 +8,7 @@ import { EditorView } from "@codemirror/view";
 import { conflictChange, conflictDecorations } from "./conflictDecorations";
 import { parseConflicts } from "./conflictMarkers";
 import { FileView } from "./FileView";
+import { LoadError } from "./LoadError";
 import { fileTabs, isDirty } from "./fileTabs";
 
 const hooks = vi.hoisted(() => ({ active: false, effects: [] as (() => void)[] }));
@@ -32,10 +33,10 @@ const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve();
 const en = (key: string) => translate("en", key);
 const W = "C:/wt/a";
 
-const draw = (api: ReturnType<typeof createMockApi>) => {
+const draw = (api: ReturnType<typeof createMockApi>, rel = "a.ts") => {
   hooks.active = true;
   hooks.effects = [];
-  try { return nodes(FileView({ api, worktree: W, rel: "a.ts" })); } finally { hooks.active = false; }
+  try { return nodes(FileView({ api, worktree: W, rel })); } finally { hooks.active = false; }
 };
 const ready = (over: Partial<Parameters<typeof fileTabs.loaded>[2]> = {}) => {
   fileTabs.open(W, "a.ts");
@@ -145,4 +146,58 @@ it("accepting a side edits the buffer and marks the tab dirty, without writing",
   expect(write).not.toHaveBeenCalled();
   // The conflict is settled: the next draw has no bar.
   expect(bars(draw(api).find((n) => n.type === CodeEditor)!)).toBe(0);
+});
+
+it("does not read an image or media file as text", () => {
+  for (const rel of ["pic.png", "clip.mp4", "song.mp3"]) {
+    const api = createMockApi({});
+    const read = vi.spyOn(api, "fileRead");
+    fileTabs.open(W, rel);
+    const all = draw(api, rel);
+    expect(all.find((n) => n.type === CodeEditor)).toBeUndefined();
+    hooks.effects.forEach((e) => e());
+    expect(read).not.toHaveBeenCalled();
+  }
+});
+
+it("reads an svg as text first, then routes it by what the read found", () => {
+  const api = createMockApi({});
+  const read = vi.spyOn(api, "fileRead");
+  fileTabs.open(W, "logo.svg");
+  draw(api, "logo.svg");
+  hooks.effects.forEach((e) => e());
+  expect(read).toHaveBeenCalledWith(W, "logo.svg");
+});
+
+it("a failed read shows the title, the reason and Retry; Retry reads again and recovers", async () => {
+  const api = createMockApi({});
+  fileTabs.open(W, "a.ts");
+  fileTabs.failed(W, "a.ts", "io");
+  const error = draw(api).find((n) => n.type === LoadError)!;
+  expect(error.props.code).toBe("io");
+  const read = vi.spyOn(api, "fileRead").mockResolvedValue({ text: "back", kind: "text", hash: "h", eol: "lf", size: 4 } as never);
+  error.props.onRetry();
+  await tick();
+  expect(read).toHaveBeenCalledWith(W, "a.ts");
+  expect(fileTabs.get(W, "a.ts")).toMatchObject({ status: "ready", text: "back" });
+});
+
+it("the load error says what failed and has one primary button, Retry, and a Reveal", () => {
+  hooks.active = true;
+  try {
+    const all = nodes(LoadError({ code: "io", onRetry() {}, onReveal() {} }));
+    expect(all.some((n) => n.props.children === en("files.loadError.title"))).toBe(true);
+    expect(all.some((n) => n.props.children === en("error.io"))).toBe(true);
+    expect(all.some((n) => n.props.children === en("files.retry"))).toBe(true);
+    const reveal = all.find((n) => n.type === "button" && n.props.children === en("files.menu.reveal"))!;
+    expect(reveal.props.className).toBe("btn-secondary");
+  } finally { hooks.active = false; }
+});
+
+it("a read refused as too large keeps the too large note", () => {
+  fileTabs.open(W, "a.ts");
+  fileTabs.failed(W, "a.ts", "too_large");
+  const all = draw(createMockApi({}));
+  expect(all.find((n) => n.type === LoadError)).toBeUndefined();
+  expect(all.some((n) => n.props.children === en("files.tooLarge"))).toBe(true);
 });

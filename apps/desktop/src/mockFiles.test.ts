@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMockApi, type SearchEvent, type SearchQuery } from "./api";
+import { MOCK_IMAGE_MAX } from "./mockFiles";
 import { createMockWorkspace } from "./mockWorkspace";
 
 const WT = "/demo/wt/xdev-oak";
@@ -121,5 +122,40 @@ describe("mock search", () => {
     await api.filesSearchCancel("s2");
     await pending;
     expect(events).toEqual([]);
+  });
+
+  it("returns bytes for images and media, and refuses other files", async () => {
+    const api = createMockWorkspace();
+    api.__editFile(WT, "pic.png", "x");
+    api.__editFile(WT, "clip.mp4", "x");
+    const png = await api.fileBytes(WT, "pic.png");
+    expect([...png.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+    expect((await api.fileBytes(WT, "clip.mp4")).length).toBeGreaterThan(0);
+    await expect(api.fileBytes(WT, "README.md")).rejects.toMatchObject({ code: "bad_name" });
+    await expect(api.fileBytes(WT, "gone.png")).rejects.toMatchObject({ code: "not_found" });
+    await expect(api.fileBytes(WT, "../x.png")).rejects.toMatchObject({ code: "bad_path" });
+  });
+
+  it("rejects an image over the cap as too large", async () => {
+    const api = createMockWorkspace();
+    api.__editFile(WT, "big.png", "x".repeat(MOCK_IMAGE_MAX + 1));
+    await expect(api.fileBytes(WT, "big.png")).rejects.toMatchObject({ code: "too_large" });
+  });
+
+  it("fails the next bytes call on demand, then recovers", async () => {
+    const api = createMockWorkspace();
+    api.__editFile(WT, "pic.png", "x");
+    api.__failBytes("pic.png", "not_found");
+    await expect(api.fileBytes(WT, "pic.png")).rejects.toMatchObject({ code: "not_found" });
+    expect((await api.fileBytes(WT, "pic.png")).length).toBeGreaterThan(0);
+  });
+
+  it("records the files opened in the default app and refuses other files", async () => {
+    const api = createMockWorkspace();
+    api.__editFile(WT, "pic.png", "x");
+    await api.fileOpenDefault(WT, "pic.png");
+    expect(api.__fileOpens).toEqual([`${WT}:pic.png`]);
+    await expect(api.fileOpenDefault(WT, "run.sh")).rejects.toMatchObject({ code: "bad_name" });
+    expect(api.__fileOpens).toHaveLength(1);
   });
 });

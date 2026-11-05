@@ -106,6 +106,7 @@ export type { LogRef } from "./LogRef";
 export type { LoginStart } from "./LoginStart";
 export type { MacOptionAsAlt } from "./MacOptionAsAlt";
 export type { MadeBy } from "./MadeBy";
+export type { MediaKind } from "./MediaKind";
 export type { MemoryFile } from "./MemoryFile";
 export type { MemoryIssue } from "./MemoryIssue";
 export type { MemoryKind } from "./MemoryKind";

@@ -26,6 +26,8 @@ import "./styles/ports.css";
 import "./styles/settings.css";
 import "./styles/usageStats.css";
 import "./styles/quickCommands.css";
+import "katex/dist/katex.min.css";
+import "./styles/preview-files.css";
 import { startEditorSettingsSync } from "./files/editorSettings";
 import { startNavigationSettingsSync } from "./settings/navigationSettings";
 import { startUsageSync } from "./settings/usageSettings";

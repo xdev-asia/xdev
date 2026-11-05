@@ -161,6 +161,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     ReviewNote::export_all(cfg)?;
     xdev_workspace::DirListing::export_all(cfg)?;
     xdev_workspace::FileText::export_all(cfg)?;
+    xdev_workspace::MediaKind::export_all(cfg)?;
     xdev_workspace::WriteOutcome::export_all(cfg)?;
     xdev_workspace::FileList::export_all(cfg)?;
     xdev_workspace::SearchQuery::export_all(cfg)?;
