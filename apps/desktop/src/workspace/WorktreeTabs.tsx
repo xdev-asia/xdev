@@ -22,7 +22,7 @@ import { copyContext, copyText } from "@/terminal/terminalActions";
 import { terminalMenuItems } from "@/terminal/terminalMenu";
 import { registerTerminal } from "@/terminal/terminalRegistry";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
-import { ContextMenu } from "@/ui/ContextMenu";
+import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import {
   addTab,
   equalize,
@@ -95,6 +95,8 @@ export function WorktreeTabs(props: {
   onPanes?: (ids: string[]) => void;
   /** A new value puts keyboard focus in the terminal in front. */
   focusSeq?: number;
+  /** The menu's "Terminal link settings" row opens Settings at the link rows. */
+  onLinkSettings?: () => void;
   /** Shows a session in the session history panel. */
   onShowHistory?: (sessionId: string) => void;
   /** Holds agent launches while this worktree's setup tab runs. */
@@ -118,6 +120,8 @@ export function WorktreeTabs(props: {
   // The tab whose title dialog is open, and the terminal menu (tab, pointer, that terminal's handle).
   const [titling, setTitling] = useState<string | null>(null);
   const [termMenu, setTermMenu] = useState<{ id: string; at: { x: number; y: number }; handle: TerminalHandle } | null>(null);
+  // The action menu of a terminal link (a plain click on a path or a URL).
+  const [linkMenu, setLinkMenu] = useState<{ at: { x: number; y: number }; items: MenuItem[]; title: string } | null>(null);
   // Bumped when a key moves focus, so the terminal in front takes the keyboard.
   const [kick, setKick] = useState(0);
   // Views started per tab; a retry after approval mounts a fresh view on the same pty id.
@@ -577,6 +581,9 @@ export function WorktreeTabs(props: {
                 client={tab.client}
                 id={tab.id}
                 cwd={worktree}
+                worktree={worktree}
+                onLinkMenu={(at, items, title) => setLinkMenu({ at, items, title })}
+                onLinkSettings={props.onLinkSettings}
                 profile={tab.profileId}
                 account={ownAccount(tab)}
                 onStarted={(info) => sessions.noteStarted(tab.id, info)}
@@ -644,6 +651,7 @@ export function WorktreeTabs(props: {
       {termMenu && byId.get(termMenu.id) && (
         <ContextMenu at={termMenu.at} items={termMenuItems(byId.get(termMenu.id)!, termMenu.handle)} onClose={() => setTermMenu(null)} />
       )}
+      {linkMenu && <ContextMenu at={linkMenu.at} items={linkMenu.items} title={linkMenu.title} onClose={() => setLinkMenu(null)} />}
       {titling && byId.get(titling) && (
         <TabTitleDialog
           title={byId.get(titling)!.title ?? profileName(view, byId.get(titling)!.profileId, t)}

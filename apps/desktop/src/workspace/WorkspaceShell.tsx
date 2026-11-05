@@ -1591,6 +1591,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
                   quickSeq={path === current?.path ? quickSeq : undefined}
                   onManageQuickCommands={() => openSettings("qcmd")}
+                  onLinkSettings={() => openSettings("terminal", undefined, "terminal.linkClick")}
                 />
               ))}
             {current && cardFor(current.path) && (
