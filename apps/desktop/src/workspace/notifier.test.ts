@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createMockApi, type StatusSettings } from "@/api";
 import { translate } from "@/i18n";
 import { STATUS_DEFAULTS } from "@/status/statusSettings";
-import { BADGE_DEBOUNCE_MS, COOLDOWN_MS, FOCUS_JUMP_MS, createNotifier } from "./notifier";
+import { BADGE_DEBOUNCE_MS, COOLDOWN_MS, FOCUS_JUMP_MS, createNotifier, noticeText } from "./notifier";
 import type { Tab } from "./sessions";
 
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
@@ -31,7 +31,7 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 it("notifies, sounds and counts when channels are on", async () => {
   const s = setup();
   await s.notifier.attention(tab("a"), "needs-you", names);
-  expect(s.notify).toHaveBeenCalledWith("oak · Claude · Needs you", "", "a");
+  expect(s.notify).toHaveBeenCalledWith("oak · Claude · Needs you", "Waiting for you.", "a");
   expect(s.play).toHaveBeenCalledTimes(1);
   expect(s.notifier.lastNotified()).toEqual({ ptyId: "a", at: s.now() });
   s.notifier.badge(1);
@@ -42,25 +42,47 @@ it("notifies, sounds and counts when channels are on", async () => {
 
 it("the title names worktree, tab and state; the body is what the hook said", async () => {
   const s = setup();
-  const said = { toolName: "Bash", message: "Run rm -rf build?", isInterrupt: false, error: null };
+  const said = { toolName: "Bash", message: "Run rm -rf build?", isInterrupt: false, error: null, toolInput: null };
   await s.notifier.attention(tab("a"), "needs-you", names, said);
-  // No message: the tool name. No detail at all: an empty body.
+  // No message: the tool name. No detail at all: a line for the state.
   await s.notifier.attention(tab("b"), "needs-you", names, { ...said, message: null });
   await s.notifier.attention(tab("c"), "done", { worktree: "oak", tab: "Codex" });
-  await s.notifier.attention(tab("d"), "failed", names, { toolName: null, message: null, isInterrupt: false, error: "rate limit" });
+  await s.notifier.attention(tab("d"), "failed", names, { toolName: null, message: null, isInterrupt: false, error: "rate limit", toolInput: null });
   expect(s.api.__notifications.map((n) => [n.title, n.body])).toEqual([
     ["oak · Claude · Needs you", "Run rm -rf build?"],
-    ["oak · Claude · Needs you", "Bash"],
-    ["oak · Codex · Done", ""],
+    ["oak · Claude · Needs you", "Using Bash"],
+    ["oak · Codex · Done", "Finished its turn."],
     ["oak · Claude · Failed", "rate limit"],
   ]);
   expect(translate("vi", "status.word.done")).toBe("Đã xong");
 });
 
+it("body prefers message, then error on failure, then using tool with input, then using tool, then state line", () => {
+  const d = { toolName: "Bash", message: null, isInterrupt: false, error: "boom", toolInput: "git status\n--short" };
+  const body = (status: "needs-you" | "done" | "failed" | "bell", over: object | null) => noticeText(names, status, over === null ? null : { ...d, ...over }, en).body;
+  expect(body("done", { message: "All green." })).toBe("All green.");
+  expect(body("failed", {})).toBe("boom");
+  expect(body("needs-you", {})).toBe("Using Bash: git status --short");
+  expect(body("needs-you", { toolInput: null })).toBe("Using Bash");
+  expect(body("needs-you", { toolName: null })).toBe("Waiting for you.");
+  expect(body("done", null)).toBe("Finished its turn.");
+  expect(body("failed", { error: null, toolName: null })).toBe("The turn failed.");
+  expect(body("bell", null)).toBe("");
+});
+
+it("cut keeps surrogate pairs", () => {
+  const message = "\u{1F600}".repeat(200);
+  const { body } = noticeText(names, "done", { toolName: null, message, isInterrupt: false, error: null, toolInput: null }, en);
+  const chars = Array.from(body);
+  expect(chars.length).toBe(180);
+  expect(chars.slice(0, 179).every((c) => c === "\u{1F600}")).toBe(true);
+  expect(chars[179]).toBe("…");
+});
+
 it("title and body are cut at 40, 80 and 180 and never hold more than the hook gave", async () => {
   const s = setup();
   const long = "x".repeat(300);
-  await s.notifier.attention(tab("a"), "needs-you", { worktree: "w".repeat(100), tab: "T".repeat(100) }, { toolName: null, message: `${long} second`, isInterrupt: false, error: null });
+  await s.notifier.attention(tab("a"), "needs-you", { worktree: "w".repeat(100), tab: "T".repeat(100) }, { toolName: null, message: `${long} second`, isInterrupt: false, error: null, toolInput: null });
   const sent = s.api.__notifications[0];
   expect(sent.title.length).toBeLessThanOrEqual(80);
   expect(sent.title.startsWith(`${"w".repeat(39)}…`)).toBe(true);
@@ -68,7 +90,7 @@ it("title and body are cut at 40, 80 and 180 and never hold more than the hook g
   expect(sent.body.endsWith("…")).toBe(true);
   expect(sent.body).not.toContain(" second");
   // Line breaks and runs of spaces fold into single spaces.
-  await s.notifier.attention(tab("b"), "done", names, { toolName: null, message: "one\ntwo  \r\n three", isInterrupt: false, error: null });
+  await s.notifier.attention(tab("b"), "done", names, { toolName: null, message: "one\ntwo  \r\n three", isInterrupt: false, error: null, toolInput: null });
   expect(s.api.__notifications[1].body).toBe("one two three");
 });
 
@@ -207,4 +229,25 @@ it("a failing tray call never stops the OS notification", async () => {
   vi.spyOn(s.api, "trayAttention").mockRejectedValue(new Error("no tray"));
   await s.notifier.attention(tab("a"), "needs-you", names);
   expect(s.notify).toHaveBeenCalledTimes(1);
+});
+
+it("dismiss sent when notified tab leaves unread, once", async () => {
+  const s = setup();
+  const dismiss = vi.spyOn(s.api, "statusDismiss");
+  await s.notifier.attention(tab("a"), "needs-you", names);
+  s.notifier.unread(["a"]);
+  expect(dismiss).not.toHaveBeenCalled();
+  s.notifier.unread([]);
+  s.notifier.unread([]);
+  expect(dismiss).toHaveBeenCalledTimes(1);
+  expect(dismiss).toHaveBeenCalledWith("a");
+});
+
+it("no dismiss for tabs never notified", async () => {
+  const s = setup({ os: false });
+  const dismiss = vi.spyOn(s.api, "statusDismiss");
+  await s.notifier.attention(tab("a"), "needs-you", names);
+  s.notifier.unread(["a"]);
+  s.notifier.unread([]);
+  expect(dismiss).not.toHaveBeenCalled();
 });

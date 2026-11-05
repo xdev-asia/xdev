@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type ApiError, type StatusSettings } from "@/api";
+import { Banner, Button, Select } from "@xdev-asia/ui";
+import { toApiError, type ApiError, type NotificationPermission, type SoundName, type StatusSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import { SettingGroup, SettingRow, settingShown } from "@/settings/SettingRow";
 import type { SettingsSectionProps } from "@/settings/sections";
-import { playStatusSound } from "@/status/sound";
+import { SOUND_NAMES, playStatusSound } from "@/status/sound";
 import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
 
 // The channel switches, in the order the page lists them.
@@ -18,6 +19,8 @@ const EVENT_IDS = ["notifications.enabled", ...EVENTS.map((e) => `notifications.
 export function clampVolume(value: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
 }
+
+const SOUND_CHOICES: readonly SoundName[] = [...SOUND_NAMES, "file"];
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
@@ -36,8 +39,22 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
   // Set when the test notification could not be sent (the OS refused it or the app has no permission).
   const [testFailed, setTestFailed] = useState(false);
 
+  // What the OS says about notifications for this app; "unknown" off macOS, where the card never shows.
+  const [permission, setPermission] = useState<NotificationPermission>("unknown");
+
   useEffect(() => {
     api.statusSettings().then(setSettings, (e) => setError(toApiError(e).code));
+  }, [api]);
+
+  const readPermission = () => api.statusPermission().then(setPermission, () => setPermission("unknown"));
+  // Read on open and again when the window is focused: the person may have flipped it in System Settings.
+  useEffect(() => {
+    void readPermission();
+    if (typeof window === "undefined") return;
+    const onFocus = () => void readPermission();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
   const title = (
@@ -97,6 +114,7 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
       await api.statusNotify(t("settings.notifications.testTitle"), t("settings.notifications.testBody"), "");
     } catch {
       setTestFailed(true);
+      void readPermission();
     }
   }
 
@@ -217,22 +235,38 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
           />
         </label>
       </div>
-      <p className="settings-empty" data-field="sound-file">
-        {current.soundFile
-          ? t("settings.notifications.soundOwn", { name: fileName(current.soundFile) })
-          : t("settings.notifications.soundBeep")}
-      </p>
+      <label className="ws-field">
+        <span>{t("settings.notifications.soundChoice")}</span>
+        <Select
+          data-field="sound-name"
+          value={current.soundName}
+          disabled={busy}
+          options={SOUND_CHOICES.map((name) => ({ value: name, label: t(`settings.notifications.sound.${name}`) }))}
+          onChange={(e) => {
+            const name = e.target.value as SoundName;
+            // "Own file" needs a file: choosing it with none opens the picker, and a cancel changes nothing.
+            if (name === "file" && !current.soundFile) void pickSound();
+            else void put({ soundName: name });
+          }}
+        />
+      </label>
+      {current.soundName === "file" && (
+        <p className="settings-empty" data-field="sound-file">
+          {t("settings.notifications.soundOwn", { name: fileName(current.soundFile ?? "") })}
+        </p>
+      )}
       <div className="settings-actions settings-actions-start">
-        <button type="button" className="btn-secondary" disabled={busy} onClick={() => void pickSound()}>
-          {t("settings.notifications.pickSound")}
-        </button>
+        {current.soundName === "file" && (
+          <button type="button" className="btn-secondary" disabled={busy} onClick={() => void pickSound()}>
+            {t("settings.notifications.pickSound")}
+          </button>
+        )}
         <button
           type="button"
           className="btn-secondary"
-          disabled={busy || current.soundFile === null}
-          onClick={() => void save(() => api.statusSoundSet(null), setSoundError)}
+          onClick={() => void playStatusSound(api, { ...current, volume: shownVolume }, Date.now(), true)}
         >
-          {t("settings.notifications.useBeep")}
+          {t("settings.notifications.preview")}
         </button>
         <button
           type="button"
@@ -242,6 +276,20 @@ export function NotificationsPage(props: SettingsSectionProps & { onSaved?(setti
           {t("settings.notifications.test")}
         </button>
       </div>
+      {permission === "denied" && (
+        <div data-field="permission">
+          <Banner
+            title={t("settings.notifications.permissionTitle")}
+            action={
+              <Button variant="secondary" onClick={() => void api.statusOpenSettings().catch(() => {})}>
+                {t("settings.notifications.openSystemSettings")}
+              </Button>
+            }
+          >
+            {t("settings.notifications.permissionBody")}
+          </Banner>
+        </div>
+      )}
       {testFailed && (
         <p className="error-text" role="alert" data-field="test-failed">
           {t("settings.notifications.testFailed")}

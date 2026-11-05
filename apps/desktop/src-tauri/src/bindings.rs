@@ -102,6 +102,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     PtydStatus::export_all(cfg)?;
     xdev_pty::proto::SessionInfo::export_all(cfg)?;
     StatusSettings::export_all(cfg)?;
+    crate::status::NotificationPermission::export_all(cfg)?;
     TerminalSettings::export_all(cfg)?;
     TerminalLinkClick::export_all(cfg)?;
     MacOptionAsAlt::export_all(cfg)?;

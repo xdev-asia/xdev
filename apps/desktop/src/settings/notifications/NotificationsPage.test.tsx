@@ -36,8 +36,7 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; sound.play.mockClear(); });
 
-async function page(withOnSaved = true) {
-  const api = createMockApi({});
+async function page(withOnSaved = true, api = createMockApi({})) {
   const onSaved = vi.fn();
   const draw = () => {
     hooks.cursor = 0;
@@ -133,36 +132,103 @@ it("a bad sound shows the error", async () => {
   const p = await page();
   vi.spyOn(p.api, "pickSoundFile").mockResolvedValue("C:/x/beep.exe");
   const set = vi.spyOn(p.api, "statusSoundSet");
-  p.button(en("settings.notifications.pickSound")).props.onClick();
+  pick(p).props.onChange({ target: { value: "file" } });
   await tick();
   expect(set).toHaveBeenCalledWith("C:/x/beep.exe");
   expect(p.alert()!.props.children).toBe(en("error.bad_sound"));
 });
 
-it("own sound is used, then the default beep again", async () => {
-  const p = await page();
-  vi.spyOn(p.api, "pickSoundFile").mockResolvedValue("C:/x/ding.ogg");
-  const set = vi.spyOn(p.api, "statusSoundSet");
-  const file = () => p.all().find((n) => n.props["data-field"] === "sound-file")!.props.children;
-  expect(file()).toBe(en("settings.notifications.soundBeep"));
-  expect(p.button(en("settings.notifications.useBeep")).props.disabled).toBe(true);
-  p.button(en("settings.notifications.pickSound")).props.onClick();
-  await tick();
-  expect(file()).toBe(en("settings.notifications.soundOwn", { name: "custom.ogg" }));
-  expect(p.alert()).toBeUndefined();
+const pick = (p: Awaited<ReturnType<typeof page>>) => p.all().find((n) => n.props["data-field"] === "sound-name")!;
+const own = (p: Awaited<ReturnType<typeof page>>) => p.all().find((n) => n.props["data-field"] === "sound-file");
 
-  p.button(en("settings.notifications.useBeep")).props.onClick();
+it("choosing a sound saves its name; the file row shows only for the own file", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "statusSettingsPut");
+  expect(pick(p).props.value).toBe("two-tone");
+  expect(pick(p).props.options.map((o: { value: string }) => o.value)).toEqual(["two-tone", "chime", "ding", "blip", "pop", "knock", "file"]);
+  expect(pick(p).props.options[1].label).toBe(en("settings.notifications.sound.chime"));
+  expect(own(p)).toBeUndefined();
+  expect(p.button(en("settings.notifications.pickSound"))).toBeUndefined();
+  pick(p).props.onChange({ target: { value: "chime" } });
   await tick();
-  expect(set).toHaveBeenLastCalledWith(null);
-  expect(file()).toBe(en("settings.notifications.soundBeep"));
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ soundName: "chime" }));
+  expect(pick(p).props.value).toBe("chime");
+  expect(own(p)).toBeUndefined();
+});
+
+it("choosing the own file with none stored opens the picker; the file then shows", async () => {
+  const p = await page();
+  const pickFile = vi.spyOn(p.api, "pickSoundFile").mockResolvedValue("C:/x/ding.ogg");
+  const set = vi.spyOn(p.api, "statusSoundSet");
+  pick(p).props.onChange({ target: { value: "file" } });
+  await tick();
+  expect(pickFile).toHaveBeenCalledTimes(1);
+  expect(set).toHaveBeenCalledWith("C:/x/ding.ogg");
+  expect(pick(p).props.value).toBe("file");
+  expect(own(p)!.props.children).toBe(en("settings.notifications.soundOwn", { name: "custom.ogg" }));
+  expect(p.button(en("settings.notifications.pickSound"))).toBeDefined();
+  expect(p.alert()).toBeUndefined();
+});
+
+it("play sound forces playback of the chosen sound", async () => {
+  const p = await page();
+  p.sw("sound").props.onClick();
+  await tick();
+  pick(p).props.onChange({ target: { value: "knock" } });
+  await tick();
+  p.button(en("settings.notifications.preview")).props.onClick();
+  const [api, settings, , force] = sound.play.mock.calls[0] as unknown as [unknown, { soundName: string }, number, boolean];
+  expect(api).toBe(p.api);
+  expect(settings.soundName).toBe("knock");
+  expect(force).toBe(true);
+});
+
+const card = (p: Awaited<ReturnType<typeof page>>) => p.all().find((n) => n.props["data-field"] === "permission");
+
+it("denied permission shows the card with one button that opens System Settings", async () => {
+  expect(card(await page())).toBeUndefined();
+  const api = createMockApi({});
+  api.__setPermission("denied");
+  const again = await page(true, api);
+  const banner = nodes(card(again)).find((n) => typeof n.type === "function")!;
+  expect(banner.props.title).toBe(en("settings.notifications.permissionTitle"));
+  const action = banner.props.action as Node;
+  expect(action.props.variant).toBe("secondary");
+  action.props.onClick();
+  expect(again.api.__openedSettings()).toBe(1);
+});
+
+it("unknown, authorized and undetermined show no card", async () => {
+  for (const state of ["unknown", "authorized", "not-determined"] as const) {
+    hooks.values = [];
+    const api = createMockApi({});
+    api.__setPermission(state);
+    const draw = () => { hooks.cursor = 0; hooks.active = true; try { return nodes(NotificationsPage({ api, onChanged: vi.fn() })); } finally { hooks.active = false; } };
+    draw();
+    hooks.effects.splice(0).forEach((e) => e());
+    await tick();
+    expect(draw().some((n) => n.props["data-field"] === "permission")).toBe(false);
+  }
+});
+
+it("a failed test re-reads the permission", async () => {
+  const p = await page();
+  const read = vi.spyOn(p.api, "statusPermission");
+  vi.spyOn(p.api, "statusNotify").mockRejectedValue({ code: "io" });
+  p.api.__setPermission("denied");
+  p.button(en("settings.notifications.test")).props.onClick();
+  await tick();
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(card(p)).toBeDefined();
 });
 
 it("a cancelled pick changes nothing", async () => {
   const p = await page();
   const set = vi.spyOn(p.api, "statusSoundSet");
-  p.button(en("settings.notifications.pickSound")).props.onClick();
+  pick(p).props.onChange({ target: { value: "file" } });
   await tick();
   expect(set).not.toHaveBeenCalled();
+  expect(pick(p).props.value).toBe("two-tone");
 });
 
 it("the master switch and each event switch save, bell off by default", async () => {

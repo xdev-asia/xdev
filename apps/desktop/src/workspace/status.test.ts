@@ -263,7 +263,7 @@ describe("tab status", () => {
 
   it("a turn-done with the interrupt flag is not done", () => {
     const working = step(start(capsFor(CLAUDE)), { kind: "hook", event: "prompt", at: 1 });
-    const detail = { toolName: null, message: null, isInterrupt: true, error: null };
+    const detail = { toolName: null, message: null, isInterrupt: true, error: null, toolInput: null };
     expect(step(working, { kind: "hook", event: "turn-done", at: 2, detail })).toMatchObject({ status: "idle", cancelled: true });
   });
 

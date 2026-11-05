@@ -1,6 +1,9 @@
 //! How agent status reaches the person outside the panes: its settings, OS
 //! notifications, the taskbar or dock badge and the person's own sound.
 
+#[cfg(target_os = "macos")]
+mod macos;
+
 use crate::applog;
 use std::collections::VecDeque;
 use std::fs;
@@ -15,11 +18,11 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::commands::{AppState, CmdError};
-use crate::settings::{SettingsSection, StatusSettings};
+use crate::settings::{SettingsSection, SoundName, StatusSettings};
 use crate::settings_store::{self, SettingsStore};
 
 /// The largest own sound the app copies and plays.
-const MAX_SOUND: u64 = 1024 * 1024;
+const MAX_SOUND: u64 = 5 * 1024 * 1024;
 const SOUND_EXTS: [&str; 3] = ["wav", "mp3", "ogg"];
 const SOUNDS_DIR: &str = "sounds";
 pub const CLICK_EVENT: &str = "status://notification-click";
@@ -49,6 +52,22 @@ impl Shown {
         }
         recent.push_back((id, pty_id.to_owned()));
         id
+    }
+
+    /// The ids of the notifications still remembered for one pane.
+    fn ids_of(&self, pty_id: &str) -> Vec<i32> {
+        let recent = self.recent.lock().unwrap_or_else(PoisonError::into_inner);
+        recent
+            .iter()
+            .filter(|(_, p)| p == pty_id)
+            .map(|(n, _)| *n)
+            .collect()
+    }
+
+    /// Drops what is remembered for one pane.
+    fn forget(&self, pty_id: &str) {
+        let mut recent = self.recent.lock().unwrap_or_else(PoisonError::into_inner);
+        recent.retain(|(_, p)| p != pty_id);
     }
 
     fn pty_of(&self, id: i32) -> Option<String> {
@@ -111,9 +130,16 @@ fn store_of(app: &AppHandle) -> Result<&SettingsStore, CmdError> {
 /// Stores `next`, except the sound file, which only `status_sound_set` sets.
 fn put(store: &SettingsStore, next: StatusSettings) -> io::Result<StatusSettings> {
     let saved = store.update(|s| {
+        let sound_file = s.status.sound_file.take();
+        // `file` needs a file to play.
+        let sound_name = match next.sound_name {
+            SoundName::File if sound_file.is_none() => SoundName::TwoTone,
+            name => name,
+        };
         s.status = StatusSettings {
             volume: next.volume.min(100),
-            sound_file: s.status.sound_file.take(),
+            sound_file,
+            sound_name,
             ..next
         };
     })?;
@@ -142,7 +168,15 @@ fn set_sound(
         Some(src) => Some(copy_sound(data_dir, src)?),
     };
     let saved = store
-        .update(|s| s.status.sound_file = stored.map(|p| p.display().to_string()))
+        .update(|s| {
+            // An own file is chosen when picked; clearing it goes back to the two-tone beep.
+            s.status.sound_name = if stored.is_some() {
+                SoundName::File
+            } else {
+                SoundName::TwoTone
+            };
+            s.status.sound_file = stored.map(|p| p.display().to_string());
+        })
         .map_err(io_error)?;
     Ok(saved.status)
 }
@@ -251,6 +285,73 @@ pub fn status_notify(
         .extra("ptyId", &pty_id)
         .show();
     shown_or_error(result)
+}
+
+/// Removes the OS notifications still shown for one pane, once the person
+/// has read it. Never fails. Linux closes them; macOS and Windows keep them,
+/// because the notification plugin cannot remove a shown one there.
+#[tauri::command(async)]
+pub fn status_dismiss(app: AppHandle, shown: State<'_, Shown>, pty_id: String) {
+    let ids = shown.ids_of(&pty_id);
+    if ids.is_empty() {
+        return;
+    }
+    if let Err(e) = app.notification().remove_active(ids) {
+        applog::warn("status dismiss", &e.to_string());
+    }
+    shown.forget(&pty_id);
+}
+
+/// What the OS says about notifications from this app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+// Only the macOS query builds the other states.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum NotificationPermission {
+    Authorized,
+    Denied,
+    NotDetermined,
+    /// Not macOS, an unbundled dev build, or the OS did not answer.
+    Unknown,
+}
+
+/// macOS only; `unknown` everywhere else.
+#[tauri::command(async)]
+pub fn status_permission() -> NotificationPermission {
+    #[cfg(target_os = "macos")]
+    return macos::authorization();
+    #[cfg(not(target_os = "macos"))]
+    NotificationPermission::Unknown
+}
+
+/// Opens the macOS pane where the person allows this app's notifications.
+/// `unsupported` on other systems.
+#[tauri::command(async)]
+pub fn status_open_settings(app: AppHandle) -> Result<(), CmdError> {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_plugin_opener::OpenerExt;
+        let mut url = "x-apple.systempreferences:com.apple.preference.notifications".to_owned();
+        if let Some(id) = macos::bundle_id() {
+            url.push_str("?id=");
+            url.push_str(&id);
+        }
+        app.opener()
+            .open_url(url, None::<&str>)
+            .map_err(|e| CmdError {
+                code: "open_failed",
+                detail: Some(e.to_string()),
+            })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Err(CmdError {
+            code: "unsupported",
+            detail: None,
+        })
+    }
 }
 
 /// `0` clears the badge. Never fails; an OS without badges shows nothing.
@@ -461,5 +562,93 @@ mod tests {
             shown.add("c");
         }
         assert_eq!(shown.pty_of(first), None);
+    }
+
+    #[test]
+    fn shown_ids_of_pty_after_wrap() {
+        let shown = Shown::default();
+        let a1 = shown.add("a");
+        let b1 = shown.add("b");
+        let a2 = shown.add("a");
+        assert_eq!(shown.ids_of("a"), vec![a1, a2]);
+        assert_eq!(shown.ids_of("b"), vec![b1]);
+        assert!(shown.ids_of("none").is_empty());
+        // Past the keep limit the oldest ids are gone from the list too.
+        for _ in 0..KEEP_SHOWN {
+            shown.add("c");
+        }
+        assert!(shown.ids_of("a").is_empty());
+        assert_eq!(shown.ids_of("c").len(), KEEP_SHOWN);
+    }
+
+    #[test]
+    fn forget_drops_ids() {
+        let shown = Shown::default();
+        shown.add("a");
+        let b = shown.add("b");
+        shown.forget("a");
+        assert!(shown.ids_of("a").is_empty());
+        assert_eq!(shown.ids_of("b"), vec![b]);
+        assert_eq!(shown.pty_of(b).as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn sound_set_accepts_5mb_refuses_more() {
+        assert_eq!(MAX_SOUND, 5 * 1024 * 1024);
+        let d = dirs();
+        let ok = d.src.join("five.wav");
+        fs::write(&ok, vec![0u8; MAX_SOUND as usize]).unwrap();
+        assert!(set_sound(&d.store, &d.data, Some(&ok)).is_ok());
+        let big = d.src.join("six.wav");
+        fs::write(&big, vec![0u8; MAX_SOUND as usize + 1]).unwrap();
+        assert_eq!(
+            set_sound(&d.store, &d.data, Some(&big)).unwrap_err().code,
+            "bad_sound"
+        );
+    }
+
+    #[test]
+    fn clearing_file_resets_name() {
+        let d = dirs();
+        let wav = d.src.join("a.wav");
+        fs::write(&wav, b"RIFF....").unwrap();
+        let set = set_sound(&d.store, &d.data, Some(&wav)).unwrap();
+        assert_eq!(set.sound_name, SoundName::File);
+        let cleared = set_sound(&d.store, &d.data, None).unwrap();
+        assert_eq!(cleared.sound_name, SoundName::TwoTone);
+        assert_eq!(cleared.sound_file, None);
+    }
+
+    #[test]
+    fn put_keeps_file_name_only_with_a_file() {
+        let d = dirs();
+        let want_file = StatusSettings {
+            sound_name: SoundName::File,
+            ..StatusSettings::default()
+        };
+        assert_eq!(
+            put(&d.store, want_file.clone()).unwrap().sound_name,
+            SoundName::TwoTone
+        );
+        let wav = d.src.join("a.wav");
+        fs::write(&wav, b"RIFF....").unwrap();
+        set_sound(&d.store, &d.data, Some(&wav)).unwrap();
+        let chime = StatusSettings {
+            sound_name: SoundName::Chime,
+            ..StatusSettings::default()
+        };
+        let stored = put(&d.store, chime).unwrap();
+        assert_eq!(stored.sound_name, SoundName::Chime);
+        assert!(stored.sound_file.is_some());
+        assert_eq!(
+            put(&d.store, want_file).unwrap().sound_name,
+            SoundName::File
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn permission_is_unknown_off_macos() {
+        assert_eq!(status_permission(), NotificationPermission::Unknown);
     }
 }

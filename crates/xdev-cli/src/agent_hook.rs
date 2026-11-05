@@ -184,7 +184,30 @@ fn stdin_detail(event: Event, input: &serde_json::Map<String, Value>) -> HookDet
             .and_then(Value::as_bool)
             .unwrap_or(false),
         error: text(input, "error"),
+        tool_input: input
+            .get("tool_input")
+            .and_then(Value::as_object)
+            .and_then(tool_input_preview),
     }
+}
+
+/// What the tool works on, as one short line: the first line of `command`,
+/// else `file_path`, `path`, `pattern` or `url`. Never the whole input, so
+/// file bodies and edits stay out of the hook file.
+fn tool_input_preview(input: &serde_json::Map<String, Value>) -> Option<String> {
+    let command = text(input, "command").and_then(|c| {
+        c.lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .map(str::to_owned)
+    });
+    command.or_else(|| {
+        ["file_path", "path", "pattern", "url"]
+            .iter()
+            .filter_map(|key| text(input, key))
+            .map(|t| t.trim().to_owned())
+            .find(|t| !t.is_empty())
+    })
 }
 
 /// Codex `notify`: only `last-assistant-message`, never `input-messages`.
@@ -238,4 +261,46 @@ fn reported_turn(local: &Path, id: &str, payload: &serde_json::Map<String, Value
         return false;
     };
     text(payload, "turn-id").is_some_and(|turn| turn == done)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn map(v: Value) -> serde_json::Map<String, Value> {
+        v.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn preview_takes_first_command_line() {
+        let m = map(serde_json::json!({ "command": "
+  git status 
+rm x", "path": "p" }));
+        assert_eq!(tool_input_preview(&m).as_deref(), Some("git status"));
+    }
+
+    #[test]
+    fn preview_order_file_path_path_pattern_url() {
+        let m =
+            map(serde_json::json!({ "url": "u", "pattern": "pt", "path": "pa", "file_path": "f" }));
+        assert_eq!(tool_input_preview(&m).as_deref(), Some("f"));
+        let m = map(serde_json::json!({ "url": "u", "pattern": "pt", "path": "pa" }));
+        assert_eq!(tool_input_preview(&m).as_deref(), Some("pa"));
+        let m = map(serde_json::json!({ "url": "u", "pattern": "pt" }));
+        assert_eq!(tool_input_preview(&m).as_deref(), Some("pt"));
+        let m = map(serde_json::json!({ "url": "u" }));
+        assert_eq!(tool_input_preview(&m).as_deref(), Some("u"));
+    }
+
+    #[test]
+    fn prompt_is_never_kept() {
+        let m = map(serde_json::json!({
+            "tool_name": "Bash",
+            "prompt": "SECRET",
+            "tool_input": { "content": "SECRET", "new_string": "SECRET" },
+        }));
+        let d = stdin_detail(Event::Resume, &m);
+        assert_eq!(d.tool_input, None);
+        assert!(!format!("{d:?}").contains("SECRET"));
+    }
 }

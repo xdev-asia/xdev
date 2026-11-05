@@ -13,6 +13,7 @@ export const STATUS_DEFAULTS: StatusSettings = {
   os: true,
   sound: true,
   soundFile: null,
+  soundName: "two-tone",
   volume: 60,
   bell: true,
   badge: true,

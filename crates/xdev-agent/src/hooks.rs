@@ -118,6 +118,9 @@ pub struct HookDetail {
     pub message: Option<String>,
     pub is_interrupt: bool,
     pub error: Option<String>,
+    /// A short preview of what the tool works on (a command's first line, or
+    /// a path, pattern or url). Never the whole tool input.
+    pub tool_input: Option<String>,
 }
 
 /// The longest string a [`HookDetail`] field keeps, in chars.
@@ -183,7 +186,8 @@ pub const LINE_MAX: usize = 4096;
 
 /// `append_hook` with the stdin fields kept. Each string is cut at
 /// [`DETAIL_MAX`] chars and an empty detail is left out; if the line would
-/// still pass [`LINE_MAX`] bytes, the message and then the whole detail go.
+/// still pass [`LINE_MAX`] bytes, the tool input, then the message, then the
+/// whole detail go.
 /// `session` is kept only when [`valid_session_id`].
 ///
 /// A `needs-input` within [`REPEAT_MS`] of a `needs-input` that is the
@@ -221,6 +225,12 @@ pub fn append_hook_detail(
         session: session.filter(|s| valid_session_id(s)).map(str::to_owned),
     };
     let mut line = serde_json::to_string(&hook)?;
+    if line.len() >= LINE_MAX {
+        if let Some(d) = hook.detail.as_mut() {
+            d.tool_input = None;
+        }
+        line = serde_json::to_string(&hook)?;
+    }
     if line.len() >= LINE_MAX {
         if let Some(d) = hook.detail.as_mut() {
             d.message = None;
@@ -269,6 +279,7 @@ impl HookDetail {
             message: clip(self.message),
             is_interrupt: self.is_interrupt,
             error: clip(self.error),
+            tool_input: clip(self.tool_input),
         }
     }
 }
@@ -670,7 +681,7 @@ mod tests {
         let text = serde_json::to_string(&line).unwrap();
         assert_eq!(
             text,
-            r#"{"v":1,"event":"turn-failed","at":6,"detail":{"toolName":"Bash","message":null,"isInterrupt":false,"error":"model_not_found"}}"#
+            r#"{"v":1,"event":"turn-failed","at":6,"detail":{"toolName":"Bash","message":null,"isInterrupt":false,"error":"model_not_found","toolInput":null}}"#
         );
         assert_eq!(serde_json::from_str::<HookLine>(&text).unwrap(), line);
         for event in ["resume", "interrupt", "attention"] {
@@ -786,6 +797,7 @@ mod tests {
             message: Some(long),
             is_interrupt: false,
             error: Some("  ".into()),
+            tool_input: None,
         };
         append_hook_detail(dir.path(), ID, HookEvent::TurnDone, 1, Some(detail), None).unwrap();
         append_hook_detail(
@@ -808,6 +820,40 @@ mod tests {
     }
 
     #[test]
+    fn tool_input_is_clipped_and_dropped_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let detail = HookDetail {
+            tool_name: Some("Bash".into()),
+            tool_input: Some("x".repeat(DETAIL_MAX + 20)),
+            ..HookDetail::default()
+        };
+        append_hook_detail(dir.path(), ID, HookEvent::Prompt, 1, Some(detail), None).unwrap();
+        let wide = "\u{1}".repeat(DETAIL_MAX);
+        let detail = HookDetail {
+            tool_name: Some(wide.clone()),
+            message: Some(wide.clone()),
+            error: Some(wide.clone()),
+            tool_input: Some(wide.clone()),
+            ..HookDetail::default()
+        };
+        append_hook_detail(
+            dir.path(),
+            ID,
+            HookEvent::TurnFailed,
+            9000,
+            Some(detail),
+            None,
+        )
+        .unwrap();
+        let lines = read_lines(dir.path());
+        let d = lines[0].detail.as_ref().unwrap();
+        assert_eq!(d.tool_input.as_ref().unwrap().chars().count(), DETAIL_MAX);
+        let d = lines[1].detail.as_ref().unwrap();
+        assert_eq!(d.tool_input, None);
+        assert!(d.message.is_some());
+    }
+
+    #[test]
     fn a_line_never_passes_the_reader_cap() {
         let dir = tempfile::tempdir().unwrap();
         // Control chars escape to six bytes each in JSON.
@@ -817,6 +863,7 @@ mod tests {
             message: Some(wide.clone()),
             is_interrupt: true,
             error: Some(wide.clone()),
+            tool_input: Some(wide.clone()),
         };
         append_hook_detail(dir.path(), ID, HookEvent::TurnFailed, 1, Some(detail), None).unwrap();
         let text = fs::read_to_string(hook_file(dir.path(), ID).unwrap()).unwrap();

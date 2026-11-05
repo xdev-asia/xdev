@@ -927,7 +927,7 @@ describe("Sessions", () => {
       expect(heard).not.toHaveBeenCalled();
       // A turn end that says it was an interrupt is no news either.
       api.__hook(tab.id, "prompt");
-      api.__hook(tab.id, "turn-done", { toolName: null, message: null, isInterrupt: true, error: null });
+      api.__hook(tab.id, "turn-done", { toolName: null, message: null, isInterrupt: true, error: null, toolInput: null });
       vi.advanceTimersByTime(DONE_QUIET_MS);
       expect(live.tabs(A)[0].status).toBe("idle");
       expect(heard).not.toHaveBeenCalled();
@@ -935,19 +935,19 @@ describe("Sessions", () => {
 
     it("hook detail reaches the listener; resume works after needs-input", () => {
       const { api, live, tab, heard } = agent();
-      const detail = { toolName: "Bash", message: "Run rm?", isInterrupt: false, error: null };
+      const detail = { toolName: "Bash", message: "Run rm?", isInterrupt: false, error: null, toolInput: null };
       api.__hook(tab.id, "needs-input", detail);
       expect(heard).toHaveBeenLastCalledWith(expect.objectContaining({ id: tab.id }), "needs-you", detail);
       expect(live.tabs(A)[0]).toMatchObject({ unread: true, unreadReason: "needs-you" });
       api.__hook(tab.id, "resume");
       expect(live.tabs(A)[0].status).toBe("working");
-      api.__hook(tab.id, "attention", { toolName: null, message: "Come back", isInterrupt: false, error: null });
+      api.__hook(tab.id, "attention", { toolName: null, message: "Come back", isInterrupt: false, error: null, toolInput: null });
       expect(heard).toHaveBeenLastCalledWith(expect.anything(), "needs-you", expect.objectContaining({ message: "Come back" }));
     });
 
     it("turn-failed notifies as failed and the pane lives on", () => {
       const { api, live, tab, heard } = agent();
-      const detail = { toolName: null, message: null, isInterrupt: false, error: "rate limit" };
+      const detail = { toolName: null, message: null, isInterrupt: false, error: "rate limit", toolInput: null };
       api.__hook(tab.id, "prompt");
       api.__hook(tab.id, "turn-failed", detail);
       expect(heard).toHaveBeenLastCalledWith(expect.anything(), "failed", detail);

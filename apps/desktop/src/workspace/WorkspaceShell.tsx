@@ -708,6 +708,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => {
     live.notifier?.badge(unreadCount);
   }, [sessions, unreadCount, statusSettings.badge]);
+  // A notified tab that is read has its OS notification taken down.
+  const unreadKey = unreadTabs.map((tab) => tab.id).join(",");
+  useEffect(() => {
+    live.notifier?.unread(unreadKey ? unreadKey.split(",") : []);
+  }, [sessions, unreadKey]);
   const bellRows: BellRow[] = unreadTabs.map((tab) => ({
     tab,
     worktree: worktreeName(all, tab.worktree),
