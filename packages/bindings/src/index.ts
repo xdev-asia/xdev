@@ -31,6 +31,7 @@ export type { CheckBucket } from "./CheckBucket";
 export type { Cli } from "./Cli";
 export type { CliAsk } from "./CliAsk";
 export type { CliOpenTab } from "./CliOpenTab";
+export type { CliStatus } from "./CliStatus";
 export type { CloneProgress } from "./CloneProgress";
 export type { CloseIntent } from "./CloseIntent";
 export type { CloseRequest } from "./CloseRequest";

@@ -1,8 +1,9 @@
-import type { Api, CliAsk, CliOpenTab, ReadTab, SkillStatus, TabReport, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome } from "./api";
+import type { Api, CliAsk, CliStatus, CliOpenTab, ReadTab, SkillStatus, TabReport, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome } from "./api";
 
 type CliApi = Pick<
   Api,
   | "cliTabsReport" | "cliApprove" | "onWorkspaceChanged" | "onCliOpenTab" | "onCliAsk"
+  | "cliStatus" | "cliInstall" | "cliRemove" | "cliRepair" | "cliReveal"
   | "orchestrationSkillStatus"
   | "orchestrationSkillInstall"
   | "orchestrationWorkerLifetime"
@@ -33,7 +34,12 @@ export type MockCli = CliApi & {
   __orchReads(): { request: number; text: string }[];
   __orchSetLifetime(tab: string, v: WorkerLifetime | null): void;
   __orchInstalls(): boolean[];
+  // The xdev-on-PATH state the page reads, and the calls it made (status excluded), oldest first.
+  __cliSetStatus(s: Partial<CliStatus>): void;
+  __cliInstallCalls(): string[];
 };
+
+const CLI_DEFAULT: CliStatus = { installed: false, targetPath: "/Applications/xDev/xdev", linkPath: "/home/me/.local/bin/xdev", onPath: true, stale: false };
 
 const SKILL_DEFAULT: SkillStatus = { installed: false, edited: false, canonical: "~/.agents/skills/xdev-orchestration", agents: [], installCommand: "xdev skills install" };
 
@@ -53,6 +59,8 @@ export function createMockCli(): MockCli {
   const installs: boolean[] = [];
   const lifetimes = new Map<string, WorkerLifetime>();
   let skill: SkillStatus = { ...SKILL_DEFAULT };
+  let cli: CliStatus = { ...CLI_DEFAULT };
+  const cliCalls: string[] = [];
   const on = <T>(set: Set<T>, cb: T) => {
     set.add(cb);
     return () => void set.delete(cb);
@@ -72,6 +80,33 @@ export function createMockCli(): MockCli {
     },
     async onCliAsk(cb) {
       return on(asks, cb);
+    },
+    async cliStatus() {
+      return { ...cli };
+    },
+    async cliInstall() {
+      cliCalls.push("install");
+      cli = { ...cli, installed: true, stale: false };
+      return { ...cli };
+    },
+    async cliRemove() {
+      cliCalls.push("remove");
+      cli = { ...cli, installed: false, stale: false };
+      return { ...cli };
+    },
+    async cliRepair() {
+      cliCalls.push("repair");
+      cli = { ...cli, installed: true, stale: false };
+      return { ...cli };
+    },
+    async cliReveal() {
+      cliCalls.push("reveal");
+    },
+    __cliSetStatus(s) {
+      cli = { ...cli, ...s };
+    },
+    __cliInstallCalls() {
+      return [...cliCalls];
     },
     async orchestrationSkillStatus() {
       return structuredClone(skill);
