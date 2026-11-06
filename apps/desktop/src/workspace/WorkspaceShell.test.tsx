@@ -29,6 +29,7 @@ import { ActivityPanel } from "@/activity/ActivityPanel";
 import { Sessions } from "./sessions";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { AccountSwitchDialog } from "./AccountSwitchDialog";
+import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { requestTabJump } from "./tabJump";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -154,6 +155,8 @@ it("header has repo, branch, search, bell and settings", async () => {
   const named = (label: string) => inHeader.find(n => n.type === "button" && n.props["aria-label"] === label);
   expect(named(en("workspace.header.notifications"))).toBeDefined();
   expect(named(en("workspace.header.settings"))).toBeDefined();
+  // The language lives in Settings and the setup wizard, not in the title bar.
+  expect(inHeader.filter(n => n.type === LanguageSwitch)).toHaveLength(0);
   // The search opens the docs app, the only search there is for now.
   expect(view.of(DocsApp)).toHaveLength(0);
   vi.useFakeTimers();
