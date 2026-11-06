@@ -349,6 +349,12 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::foreign_terms::ForeignScan::export_all(cfg)?;
     crate::notch::NotchTab::export_all(cfg)?;
     crate::notch::NotchState::export_all(cfg)?;
+    crate::attribution::AttributionEvent::export_all(cfg)?;
+    crate::attribution::AttributionSource::export_all(cfg)?;
+    crate::attribution::AttributionChanged::export_all(cfg)?;
+    crate::attribution::FileAttribution::export_all(cfg)?;
+    crate::attribution::Toucher::export_all(cfg)?;
+    crate::attribution::FileVersion::export_all(cfg)?;
     Ok(())
 }
 

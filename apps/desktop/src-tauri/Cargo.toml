@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 arboard = { version = "3", features = ["wayland-data-control"] }
 blake3.workspace = true
+ignore.workspace = true
 dunce = "1.0.5"
 regex.workspace = true
 notify-debouncer-full.workspace = true

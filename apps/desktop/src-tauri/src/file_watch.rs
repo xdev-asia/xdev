@@ -673,6 +673,11 @@ impl FileWatches {
         result
     }
 
+    /// True when subscription `id` is live.
+    pub(crate) fn has(&self, id: &str) -> bool {
+        lock(&self.0).ids.contains_key(id)
+    }
+
     /// Ends the subscription `id`; the last one on a root stops its watcher.
     pub(crate) fn unwatch(&self, id: &str) {
         let stopped = lock(&self.0).unsubscribe(id);

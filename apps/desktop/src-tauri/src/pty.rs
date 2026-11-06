@@ -188,6 +188,8 @@ pub struct Ptys {
     quit_choice: Mutex<Option<bool>>,
     /// The folder each PTY started in, so the app CLI knows its caller's worktree.
     cwds: Mutex<HashMap<String, PathBuf>>,
+    /// The profile of each agent PTY, so a file change can be attributed to its agent.
+    agents: Mutex<HashMap<String, String>>,
 }
 
 impl Default for Ptys {
@@ -227,6 +229,7 @@ impl Ptys {
             host_set: Condvar::new(),
             quit_choice: Mutex::new(None),
             cwds: Mutex::default(),
+            agents: Mutex::default(),
         }
     }
 
@@ -338,6 +341,15 @@ impl Ptys {
         self.cwds().get(id).cloned()
     }
 
+    /// The agent profile PTY `id` runs; none for a shell or an unknown id.
+    pub(crate) fn agent_of(&self, id: &str) -> Option<String> {
+        self.agents
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(id)
+            .cloned()
+    }
+
     fn passes(&self) -> MutexGuard<'_, HashSet<String>> {
         self.passes.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -389,6 +401,10 @@ impl Ptys {
             handle
         };
         self.cwds().remove(id);
+        self.agents
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(id);
         handle
     }
 
@@ -859,6 +875,12 @@ pub(crate) fn spawn_launch_trusted(
         "info": info,
     });
     ptys.cwds().insert(id.clone(), cwd.clone());
+    if launch.agent {
+        ptys.agents
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id.clone(), info.profile.clone());
+    }
     let spec = SpawnSpec {
         program,
         args,
@@ -1348,6 +1370,15 @@ pub fn pty_attach(
     let (handle, attached) = host.attach(&id, from_seq, sink)?;
     if let Some(cwd) = session.meta["worktree"].as_str() {
         ptys.cwds().insert(id.clone(), PathBuf::from(cwd));
+    }
+    // A terminal the service kept across a restart still names its agent.
+    if session.meta["info"]["agent"].as_bool() == Some(true)
+        && let Some(profile) = session.meta["info"]["profile"].as_str()
+    {
+        ptys.agents
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id.clone(), profile.to_owned());
     }
     claim.fill(handle).inspect_err(|_| {
         ptys.cwds().remove(&id);

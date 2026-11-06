@@ -47,6 +47,7 @@ import { createMockKeybindings, type MockKeybindings } from "./mockKeybindings";
 import { createMockXdevId, type MockXdevId } from "./mockXdevId";
 import { createMockMcp } from "./mockMcp";
 import { createMockPorts } from "./mockPorts";
+import { createMockAttribution, type MockAttribution } from "./mockAttribution";
 import { createMockSsh, type MockSsh } from "./mockSsh";
 import { createMockComposer } from "./mockComposer";
 import { createMockPromptQueue } from "./mockPromptQueue";
@@ -386,6 +387,7 @@ function snippet(text: string, terms: string[]): string | null {
 export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSsh, "__sshConfig"> & MockPtyd & Omit<MockCli, keyof Api> & Omit<MockAutomations, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge" | "__dismissed" | "__setPermission" | "__openedSettings"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockXdevId, "__xdevIdExpire" | "__xdevIdDeepLink" | "__xdevIdManages" | "__xdevIdReopens"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockCrash, "__crash" | "__startupFail" | "__exports" | "__relaunches" | "__logReveals"> & Pick<MockTermLinks, "__openedUrls" | "__defaultOpens"> & Pick<MockFiles, "__editFile" | "__fileReveals" | "__watchers" | "__overflow" | "__fileOpens" | "__failBytes"> & Pick<MockProfiles, "__installed" | "__docsOpened"> & Pick<MockThemes, "__paths"> & Pick<MockKit, "__shareLog"> & Pick<MockShell, "__menu" | "__quitMode" | "__attention" | "__opened" | "__labels" | "__windowCalls" | "__closeIntent"> & {
   // Changes a file the way another program would (`null` deletes it); xDev did not write it.
   __editOutside(path: string, content: string | null): void;
+  __attributionTouch: MockAttribution["__attributionTouch"];
   // Writes a file the way `propose_update` does over MCP; throws an ApiError like the real tool.
   __propose(path: string, content: string, note: string | null): void;
 } & Pick<MockAccountRouting, "__quotaAlert"> & Pick<ReturnType<typeof createMockWorkspace>, "__addChange"> & {
@@ -619,6 +621,10 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       return repo ? (repo.env ?? []) : null;
     },
   });
+  const attribution = createMockAttribution({
+    write: (worktree, rel, text) => workspace.__editFile(worktree, rel, text),
+    read: (worktree, rel) => workspace.fileRead(worktree, rel).then((f) => f.text, () => null),
+  });
   const api: MockApi = {
     ...createMockTasks({
       defaultRepo: repo ? DEMO_ROOT : null,
@@ -641,6 +647,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...power,
     ...createMockAppStats(),
     ...createMockPorts(DEMO_ROOT),
+    ...attribution,
     ...createMockMcp(),
     ...createMockSsh(),
     ...createMockShell(settingsHub.emit, options.update ?? null),
