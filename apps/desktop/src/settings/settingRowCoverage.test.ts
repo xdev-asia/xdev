@@ -23,6 +23,7 @@ const PAGES: Record<string, string[]> = {
   vaults: ["VaultsSettings.tsx"],
   keys: ["shortcuts/ShortcutsPage.tsx"],
   qcmd: ["quickCommands/QuickCommandsPage.tsx"],
+  capture: ["capture/CaptureSettings.tsx"],
   diagnostics: ["DiagnosticsPage.tsx"],
 };
 const here = dirname(fileURLToPath(import.meta.url));

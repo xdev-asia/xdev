@@ -118,6 +118,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SshAuthPrompts } from "@/components/SshAuthDialog";
 import { runMenuAction } from "@/shell/menuActions";
 import { useShellLabels } from "@/shell/shellLabels";
+import { startCapture, useCaptureFailures } from "@/capture/useCaptureFailures";
 import { askQuit, guardClose, installCloseGuard, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
 import { eventInTerminal, FONT_STEP, stepTerminalFont } from "@/terminal/terminalZoom";
@@ -980,6 +981,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }, [api, view]);
   useEffect(() => startQuickCommands(api), [api]);
   useShellLabels(api);
+  useCaptureFailures(api);
   // Native menu and tray items; the latest handlers run through a ref so the listener binds once.
   const menuRun = useRef<(action: MenuAction) => void>(() => {});
   menuRun.current = (action) =>
@@ -2482,6 +2484,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               );
           },
           newQuickCommand: () => openSettings("qcmd", "new"),
+          captureScreen: () => startCapture(api, t),
         }}
       />
       {trusting && (

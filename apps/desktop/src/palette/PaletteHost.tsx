@@ -48,6 +48,8 @@ export interface PaletteActions {
   runQuickCommand?(cmd: QuickCommand): void;
   /** Opens the new quick command dialog. */
   newQuickCommand?(): void;
+  /** Starts a screen capture; the image arrives as `capture://ready`. */
+  captureScreen?(): void;
 }
 
 export interface PaletteHostProps {
@@ -140,6 +142,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       searchDocs: () => actions.searchDocs(),
       toggleSidebar: () => actions.toggleSidebar(),
       showDocs: () => actions.showDocs(),
+      captureScreen: actions.captureScreen ? () => actions.captureScreen?.() : undefined,
       stageAll: current && actions.stageAllChanges ? () => actions.stageAllChanges?.() : undefined,
       resumeSession: actions.openSessions ? () => actions.openSessions?.() : undefined,
       discardAll: current && actions.discardAllChanges ? () => actions.discardAllChanges?.() : undefined,

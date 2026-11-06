@@ -212,6 +212,10 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   // Shortcuts and quick commands: the page keeps its own list search, so one entry each.
   e("keys.page", "keys.title", ["shortcut", "keybinding", "hotkey", "chord", "phím tắt", "phim tat"]),
   e("qcmd.page", "qcmd.title", ["quick", "command", "script", "alias", "lệnh nhanh", "lenh nhanh"]),
+  // Screenshots
+  e("capture.enabled", "settings.capture.enabled", ["screenshot", "capture", "screen", "global", "shortcut", "region", "ảnh chụp", "anh chup", "chụp màn hình", "chup man hinh"], "settings.capture.enabledHint"),
+  e("capture.shortcut", "settings.capture.shortcut", ["screenshot", "capture", "shortcut", "hotkey", "chord", "key", "chụp màn hình", "chup man hinh", "phím tắt", "phim tat"]),
+  e("capture.annotatePaste", "settings.capture.annotatePaste", ["screenshot", "annotate", "paste", "image", "draw", "markup", "ảnh", "anh", "dán", "dan", "chú thích", "chu thich"], "settings.capture.annotatePasteHint"),
   // Command line
   e("cli.status", "settings.cli.command", ["cli", "xdev", "command", "path", "terminal", "install", "dòng lệnh", "dong lenh", "lệnh", "lenh"], "settings.cli.lead"),
   e("cli.skill", "settings.orchestration.skill.title", ["cli", "skill", "agent", "xdev", "kỹ năng", "ky nang"]),

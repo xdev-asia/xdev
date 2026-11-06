@@ -5,6 +5,7 @@ import { AccountPage } from "./account/AccountPage";
 import { AgentsPage } from "./agents/AgentsPage";
 import { AppearancePage } from "./AppearancePage";
 import { AutomationsSettingsPage } from "./AutomationsSettingsPage";
+import { CaptureSettings } from "./capture/CaptureSettings";
 import { CodeIntelPage } from "./CodeIntelPage";
 import { CliPage } from "./cli/CliPage";
 import { DiagnosticsPage } from "./DiagnosticsPage";
@@ -83,6 +84,7 @@ export const SECTIONS: SettingsSection[] = [
   { id: "notifications", group: "interface", labelKey: "settings.notifications.title", Component: NotificationsPage },
   { id: "keys", group: "interface", labelKey: "keys.title", Component: ShortcutsPage },
   { id: "qcmd", group: "interface", labelKey: "qcmd.title", Component: QuickCommandsPage },
+  { id: "capture", group: "interface", labelKey: "settings.capture.title", Component: CaptureSettings },
   { id: "account", group: "integrations", labelKey: "account.title", Component: AccountPage },
   { id: "vaults", group: "integrations", labelKey: "settings.vaults.title", Component: VaultsSettings },
   { id: "ssh", group: "integrations", labelKey: "ssh.title", Component: SshPage },
