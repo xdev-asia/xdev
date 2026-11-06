@@ -5,6 +5,10 @@
 //! reported an edit or write tool on that path within a short window;
 //! otherwise the only agent tab working in that worktree; otherwise unknown.
 //! Events and snapshots live in the app data dir, never in the repo.
+//!
+//! A change nobody can be named for, made while no agent tab works in the
+//! worktree, to a file that already has an agent version, is kept as a hidden
+//! outside snapshot: the line replay gives its lines to the person.
 
 use std::collections::{HashMap, VecDeque};
 use std::fs;
@@ -672,7 +676,8 @@ impl Attribution {
     }
 
     /// Takes the changes of one watcher batch: attributes each file, snapshots
-    /// what an agent wrote, and logs it. Returns true when the log changed.
+    /// what an agent wrote (or, with no agent working, keeps it outside), and
+    /// logs it. Returns true when the log changed.
     pub fn changed(
         &self,
         data: &Path,
@@ -730,11 +735,15 @@ impl Attribution {
             if Self::log_of(&mut s, data, worktree).push(event).is_ok() {
                 any = true;
             }
-            if tab_id.is_some()
-                && let Some(b) = bytes
-            {
+            if let Some(b) = bytes {
                 let snaps = Snapshots::new(folder_of(data, worktree).join("snaps"));
-                let _ = snaps.record(&e.rel, &b, now, tab_id, agent);
+                if tab_id.is_some() {
+                    let _ = snaps.record(&e.rel, &b, now, tab_id, agent);
+                } else if working.is_empty() {
+                    // No agent works here: the person or a non-agent tool wrote it.
+                    // With several working tabs the writer is unknown; keep nothing.
+                    let _ = snaps.record_outside(&e.rel, &b, now);
+                }
             }
         }
         any
@@ -1519,6 +1528,135 @@ mod tests {
         assert!(fixed);
         assert_eq!(hub.recent(&data, &wt, 1)[0].tab_id.as_deref(), Some("t2"));
         let snaps = Snapshots::new(folder_of(&data, &wt).join("snaps"));
-        assert_eq!(snaps.versions("a.ts")[0].tab_id.as_deref(), Some("t2"));
+        let versions = snaps.versions("a.ts");
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].tab_id.as_deref(), Some("t2"));
+        assert!(snaps.outside("a.ts").is_empty());
+    }
+
+    /// A worktree with `a.ts` on disk and a hub; `agent` keeps an agent
+    /// version of `a.ts` first.
+    struct Hub {
+        _dir: tempfile::TempDir,
+        data: PathBuf,
+        root: PathBuf,
+        wt: String,
+        hub: Attribution,
+        snaps: Snapshots,
+    }
+
+    fn hub_with(agent: bool) -> Hub {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        let root = dir.path().join("wt");
+        fs::create_dir_all(&root).unwrap();
+        let wt = root.to_string_lossy().into_owned();
+        let snaps = Snapshots::new(folder_of(&data, &wt).join("snaps"));
+        if agent {
+            snaps
+                .record(
+                    "a.ts",
+                    b"agent",
+                    1_000,
+                    Some("t1".into()),
+                    Some("claude".into()),
+                )
+                .unwrap()
+                .unwrap();
+        }
+        fs::write(root.join("a.ts"), "hand").unwrap();
+        Hub {
+            _dir: dir,
+            data,
+            root,
+            wt,
+            hub: Attribution::default(),
+            snaps,
+        }
+    }
+
+    impl Hub {
+        fn change(&self, at: i64) -> bool {
+            self.hub
+                .changed(&self.data, &self.root, &self.wt, &changed_batch("a.ts"), at)
+        }
+
+        fn hook(&self, tab: &str, event: HookEvent, tool: Option<&str>, at: i64) -> bool {
+            let input = tool.map(|_| "a.ts");
+            self.hub
+                .hook(&self.data, &hook_in(tab, &self.wt, event, tool, input, at))
+        }
+    }
+
+    #[test]
+    fn with_no_working_tab_a_change_is_kept_outside() {
+        let h = hub_with(true);
+        assert!(h.change(5_000));
+        let outside = h.snaps.outside("a.ts");
+        assert_eq!(outside.len(), 1);
+        assert_eq!(
+            h.snaps.read_outside("a.ts", &outside[0].id).as_deref(),
+            Some("hand")
+        );
+        assert_eq!(h.snaps.versions("a.ts").len(), 1);
+        let recent = h.hub.recent(&h.data, &h.wt, 10);
+        assert_eq!(recent.len(), 1);
+        assert_eq!(
+            (recent[0].tab_id.as_deref(), recent[0].source),
+            (None, AttributionSource::Unknown)
+        );
+    }
+
+    #[test]
+    fn with_two_working_tabs_and_no_hook_nothing_is_kept() {
+        let h = hub_with(true);
+        h.hook("t1", HookEvent::Prompt, None, 1_000);
+        h.hook("t2", HookEvent::Prompt, None, 1_000);
+        assert!(h.change(5_000));
+        assert!(h.snaps.outside("a.ts").is_empty());
+        assert_eq!(h.snaps.versions("a.ts").len(), 1);
+    }
+
+    #[test]
+    fn with_one_working_tab_the_agent_keeps_the_version() {
+        let h = hub_with(true);
+        h.hook("t2", HookEvent::Prompt, None, 1_000);
+        assert!(h.change(5_000));
+        assert!(h.snaps.outside("a.ts").is_empty());
+        let versions = h.snaps.versions("a.ts");
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].tab_id.as_deref(), Some("t2"));
+    }
+
+    #[test]
+    fn a_file_no_agent_wrote_keeps_nothing() {
+        let h = hub_with(false);
+        assert!(h.change(5_000));
+        assert!(h.snaps.outside("a.ts").is_empty());
+        assert!(h.snaps.versions("a.ts").is_empty());
+        assert!(!h.snaps.folder("a.ts").exists());
+    }
+
+    #[test]
+    fn the_own_restore_is_not_kept_outside() {
+        let h = hub_with(true);
+        h.hub.restored(&h.wt, "a.ts", "hand");
+        assert!(!h.change(5_000));
+        assert!(h.snaps.outside("a.ts").is_empty());
+    }
+
+    #[test]
+    fn a_late_hook_turns_an_outside_change_into_the_agents() {
+        let h = hub_with(true);
+        assert!(h.change(5_000));
+        assert_eq!(h.snaps.outside("a.ts").len(), 1);
+        assert!(h.hook("t2", HookEvent::Resume, Some("Write"), 5_100));
+        assert!(h.snaps.outside("a.ts").is_empty());
+        let versions = h.snaps.versions("a.ts");
+        assert_eq!(versions[0].tab_id.as_deref(), Some("t2"));
+        assert_eq!(
+            h.snaps.read("a.ts", &versions[0].id).as_deref(),
+            Some("hand")
+        );
     }
 }
