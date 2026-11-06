@@ -33,6 +33,7 @@ import { shellKindFor, type ShellKind } from "./pathPaste";
 import { effectiveOptionAsAlt, getDetectedLayout, subscribeDetectedLayout } from "./optionAsAlt";
 import { createOptionSideTracker, resolveTerminalKey } from "./terminalKeys";
 import { getBrowserSettings } from "@/browser/browserSettings";
+import { askLinksTarget } from "@/browser/linksChoice";
 
 /** What a menu, the palette or a shortcut can do to one terminal. Acts on the xterm; nothing goes to the pty unless said. */
 export interface TerminalHandle {
@@ -199,6 +200,7 @@ export function Terminal(props: {
           else void handlers.current.api.openUrl(url).catch(() => {});
         },
         linksTarget: () => getBrowserSettings().openLinksIn,
+        askTarget: () => (handlers.current.onOpenInBrowser ? askLinksTarget(handlers.current.api) : Promise.resolve({ kind: "skip" })),
         focusTerminal: () => xterm.current?.focus(),
       },
       showMenu: (at, menu) => {

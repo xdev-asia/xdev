@@ -12,6 +12,7 @@ import { schedulePreview } from "./namePreview";
 import { addPreset, presetText } from "./sparsePresets";
 import { BaseRefField } from "./BaseRefField";
 import { parseItem } from "./workItemInput";
+import { FeatureTour } from "@/onboarding/FeatureTour";
 
 /** What the dialog adds to the name and base: the title, the agent, the parent and the work item. */
 export type CreateExtra = { title: string | null; agent: string | null; setDefault: boolean; parent: string | null; item: WorkItem | null; /** Becomes the comment of the worktree. */ note?: string | null; /** Typed into the agent that opens, once it has started. */ prompt?: string };
@@ -262,6 +263,7 @@ export function CreateWorktreeDialog(props: {
           {t("workspace.create.title")}
         </h2>
         <p className="dialog-body">{t("workspace.create.body")}</p>
+        <FeatureTour tour="worktree" />
         <div className="ws-fields">
           <label className="ws-field">
             <span>{t("workspace.create.repo")}</span>
@@ -330,7 +332,7 @@ export function CreateWorktreeDialog(props: {
                 ))}
             </div>
           )}
-          <label className="ws-field">
+          <label className="ws-field" data-tour="worktree-name">
             <span>{t("workspace.create.name")}</span>
             <input
               type="text"
@@ -355,12 +357,12 @@ export function CreateWorktreeDialog(props: {
             )}
           </label>
           {pickedBranch === "" && mode !== "existing" && (
-            <div className="ws-field">
+            <div className="ws-field" data-tour="worktree-base">
               <span>{t("workspace.create.base.label")}</span>
               <BaseRefField value={from} baseRef={repo?.baseRef ?? null} branches={branches ? loaded : []} failed={listFailed === repo?.id} onChange={setFrom} />
             </div>
           )}
-          <label className="ws-field">
+          <label className="ws-field" data-tour="worktree-agent">
             <span>{t("workspace.create.agent")}</span>
             <select value={agent} onChange={(e) => setAgent(e.target.value)}>
               <option value="">{t("workspace.create.noAgent")}</option>

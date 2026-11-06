@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type BrowserSettings, type LinksTarget } from "@/api";
+import { saveLinksAsked } from "@/browser/linksChoice";
 import { loadBrowserSettings, setBrowserSettings, useBrowserSettings } from "@/browser/browserSettings";
 import { useI18n } from "@/i18n";
 import { SettingRow } from "./SettingRow";
@@ -63,7 +64,7 @@ export function BrowserPage({ api, filter }: SettingsSectionProps): JSX.Element 
                     checked={current.openLinksIn === m}
                     disabled={busy}
                     data-links-target={m}
-                    onChange={() => void save({ ...current, openLinksIn: m })}
+                    onChange={() => void save({ ...current, openLinksIn: m }).then((ok) => ok && saveLinksAsked())}
                   />
                   {t(`settings.browser.openLinksIn.${m}`)}
                 </label>

@@ -8,6 +8,7 @@ import { setNavigationSettings } from "./navigationSettings";
 import { RestoreSetting } from "./RestoreSetting";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import { UpdatesSetting } from "./UpdatesSetting";
+import { TipsSetting } from "@/tips/TipsSetting";
 import type { SettingsSectionProps } from "./sections";
 
 export const TAB_ORDERS: NavigationSettings["tabOrder"][] = ["mru", "sequential"];
@@ -18,8 +19,8 @@ export const DIFF_SWITCHES = ["ignoreWhitespace", "collapseUnchanged", "wordWrap
 // Catalog ids of the page, per group; a switch adds its key (`general.nav.confirmClosePinned`).
 const NAVIGATION_IDS = ["general.tabOrder", ...NAVIGATION_SWITCHES.map((k) => `general.nav.${k}`)];
 const LOCALES: LocalePreference[] = ["system", "en", "vi"];
-const WORKSPACE_IDS = ["general.language", "general.zoom", "general.restore", "general.openIn"];
-const UPDATE_IDS = ["general.updates", "general.updateChannel"];
+const WORKSPACE_IDS = ["general.language", "general.zoom", "general.restore", "general.tips", "general.openIn"];
+const UPDATE_IDS = ["general.updates", "general.updateChannel", "general.updateRemind"];
 const DIFF_IDS = ["general.diffView", ...DIFF_SWITCHES.map((k) => `general.diff.${k}`)];
 export const ZOOM_LEVELS: number[] = Array.from({ length: Math.round((ZOOM_MAX - ZOOM_MIN) / ZOOM_STEP) + 1 }, (_, i) => clampZoom(ZOOM_MIN + i * ZOOM_STEP));
 
@@ -171,6 +172,9 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
       </SettingRow>
       <SettingRow id="general.restore" filter={filter}>
         <RestoreSetting api={api} />
+      </SettingRow>
+      <SettingRow id="general.tips" filter={filter}>
+        <TipsSetting />
       </SettingRow>
       {openSection && (
         <SettingRow id="general.openIn" filter={filter}>

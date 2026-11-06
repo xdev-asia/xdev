@@ -4,16 +4,20 @@ import { Icon, Menu, Popover } from "@xdev-asia/ui";
 import type { MenuEntry } from "@xdev-asia/ui";
 import type { Api, HelpLink } from "@/api";
 import { useI18n } from "@/i18n";
+import { openFeatureWall, useWallHasNew } from "@/featureWall/featureWallStore";
+import { replayFeatureTours } from "@/onboarding/featureTourStore";
 import { replayTour } from "@/onboarding/tourStore";
 
-export type HelpPick = "shortcuts" | "replay-tour" | HelpLink | "check-updates" | "reload" | "devtools" | "about" | "restart";
+export type HelpPick = "shortcuts" | "replay-tour" | "replay-feature-tours" | "whats-new" | HelpLink | "check-updates" | "reload" | "devtools" | "about" | "restart";
 
 type HelpItem = { id: HelpPick; key: string } | { id: "separator" };
 
 /** The Help menu, top to bottom. */
 export const HELP_ITEMS: HelpItem[] = [
   { id: "shortcuts", key: "shortcuts" },
+  { id: "whats-new", key: "whatsNew" },
   { id: "replay-tour", key: "replayTour" },
+  { id: "replay-feature-tours", key: "replayFeatureTours" },
   { id: "separator" },
   { id: "docs", key: "docs" },
   { id: "getting-started", key: "gettingStarted" },
@@ -38,13 +42,18 @@ export function checkForUpdates(h: { openSettings(page: "general"): void; api: P
 /** What a Help menu pick does: the pages of the app it opens, and the shell calls it makes. */
 export function runHelpPick(
   pick: HelpPick,
-  h: { openSettings(page: "keys" | "general"): void; openUpdates(): void; openAbout(): void; api: Pick<Api, "shellQuit" | "helpOpen" | "windowReload" | "windowDevtoolsToggle"> },
+  h: { openSettings(page: "keys" | "general"): void; openUpdates(): void; openAbout(): void; toast?(key: string): void; api: Pick<Api, "shellQuit" | "helpOpen" | "windowReload" | "windowDevtoolsToggle"> },
 ): void {
   switch (pick) {
     case "shortcuts":
       return h.openSettings("keys");
     case "replay-tour":
       return replayTour();
+    case "replay-feature-tours":
+      replayFeatureTours();
+      return h.toast?.("tour.featuresReset");
+    case "whats-new":
+      return openFeatureWall();
     case "check-updates":
       return h.openUpdates();
     case "about":
@@ -72,6 +81,7 @@ export function HelpMenu(props: { onPick(pick: HelpPick): void }): JSX.Element {
 export function HelpButton(props: { onPick(pick: HelpPick): void }): JSX.Element {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const hasNew = useWallHasNew();
   return (
     <Popover
       open={open}
@@ -82,12 +92,13 @@ export function HelpButton(props: { onPick(pick: HelpPick): void }): JSX.Element
         <button
           type="button"
           className="ws-icon-btn ws-header-btn"
-          aria-label={t("shell.help.label")}
+          aria-label={hasNew ? `${t("shell.help.label")}, ${t("wall.newDot")}` : t("shell.help.label")}
           title={t("shell.help.label")}
           {...triggerProps}
           onClick={() => setOpen(!open)}
         >
           <Icon name="help" size={16} />
+          {hasNew && <span className="ws-help-dot" aria-hidden="true" />}
         </button>
       )}
     >

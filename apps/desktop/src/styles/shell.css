@@ -560,29 +560,21 @@
   }
 }
 
-/* The CLI skill tip: bottom right above the footer, under the toasts, and never wider than the window. */
-.cli-tip {
-  position: fixed;
-  right: var(--x-space-3);
-  bottom: calc(var(--h-footer) + var(--x-space-3));
-  z-index: 20;
-  width: min(360px, calc(100vw - 2 * var(--x-space-3)));
-}
-
-.cli-tip-eyebrow {
+/* The tips modal: the eyebrow, the text, one example line and the two quiet buttons. */
+.tip-eyebrow {
   margin: 0 0 var(--x-space-1);
   color: var(--text-3);
   font-size: 11px;
   text-transform: uppercase;
 }
 
-.cli-tip-text {
+.tip-text {
   margin: 0 0 var(--x-space-2);
   color: var(--text-2);
   font-size: 13px;
 }
 
-.cli-tip-example {
+.tip-example {
   margin: 0 0 var(--x-space-3);
   padding: var(--x-space-2);
   border: 1px solid var(--line);
@@ -592,6 +584,27 @@
   font-size: 12px;
 }
 
-.cli-tip-actions {
+.tip-actions {
   flex-wrap: wrap;
+}
+
+/* The feature wall: a release heading, then its cards. */
+.wall-release {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  margin-bottom: var(--x-space-3);
+}
+
+.wall-version {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.wall-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
 }

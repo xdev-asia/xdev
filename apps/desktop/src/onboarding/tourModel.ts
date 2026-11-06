@@ -4,7 +4,7 @@ import type { Api } from "@/api";
 import type { CoachmarkPlacement } from "@xdev-asia/ui";
 
 export interface TourStep {
-  id: "split" | "agent";
+  id: string;
   /** CSS selector of the part the card points at. */
   anchor: string;
   placement: CoachmarkPlacement;
