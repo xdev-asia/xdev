@@ -1,0 +1,7 @@
+Done. Here is what changed:
+
+1. Read `src/lib/format.ts`
+2. Changed the pattern
+3. Ran the tests
+
+All tests pass.

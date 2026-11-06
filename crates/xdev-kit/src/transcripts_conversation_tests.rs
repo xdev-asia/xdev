@@ -308,3 +308,138 @@ fn tail_turns_is_unchanged_by_tool_steps() {
         ]
     );
 }
+
+const TASK_LOG: &str = include_str!("../tests/fixtures/subagents/claude-task.jsonl");
+const AGENT_MAIN: &str = include_str!("../tests/fixtures/subagents/claude-agent-main.jsonl");
+const AGENT_SIDE: &str = include_str!("../tests/fixtures/subagents/agent-x42.jsonl");
+
+#[test]
+fn task_calls_group_their_side_chains() {
+    let page = conversation_of_text(Agent::Claude, TASK_LOG, None, None);
+    // The main items are as before: side chains are not in them.
+    assert_eq!(
+        kinds(&page),
+        vec!["user", "assistant", "tool", "tool", "assistant"]
+    );
+    assert_eq!(page.items[2].subagent.as_deref(), Some("task-a"));
+    assert_eq!(page.items[3].subagent.as_deref(), Some("task-b"));
+    assert_eq!(page.items[1].subagent, None);
+    assert_eq!(page.subagents.len(), 2);
+
+    let a = &page.subagents[0];
+    assert_eq!(a.id, "task-a");
+    assert_eq!(a.index, 2);
+    assert_eq!(a.description, "Find parser bugs");
+    assert_eq!(a.agent_type.as_deref(), Some("Explore"));
+    assert_eq!(a.prompt, "Read src/parser.rs and list every bug you find.");
+    assert_eq!(a.status, ToolStatus::Ok);
+    assert_eq!(a.result, "One bug: parse_expr is a stub. token=•••");
+    let steps: Vec<&str> = a.steps.iter().map(|s| s.kind.as_str()).collect();
+    assert_eq!(steps, vec!["assistant", "tool", "assistant"]);
+    assert_eq!(a.steps_total, 3);
+    let read = a.steps[1].tool.as_ref().unwrap();
+    assert_eq!((read.name.as_str(), read.status), ("Read", ToolStatus::Ok));
+    assert_eq!(read.output, "fn parse_expr() { todo!() }");
+    assert_eq!(a.steps[2].text, "parse_expr is a stub.");
+
+    let b = &page.subagents[1];
+    assert_eq!(b.description, "Check the docs");
+    assert_eq!(b.agent_type, None);
+    assert_eq!(b.status, ToolStatus::Error);
+    assert_eq!(b.steps.len(), 1);
+    assert_eq!(b.steps[0].tool.as_ref().unwrap().status, ToolStatus::Error);
+
+    // A side chain no call started (a warm-up) stays dropped.
+    let all = format!("{page:?}");
+    assert!(!all.contains("WARMUP-REPLY"), "{all}");
+}
+
+#[test]
+fn a_page_lists_every_run_whatever_its_range() {
+    let page = conversation_of_text(Agent::Claude, TASK_LOG, Some(4), Some(1));
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.subagents.len(), 2);
+}
+
+#[test]
+fn a_running_task_takes_an_unmatched_side_chain() {
+    // The prompt differs (the CLI may add to it), but the call has no result yet.
+    let log = TASK_LOG
+        .lines()
+        .take(7)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .replace(
+            r#""content":"Read src/parser.rs and list every bug you find."}}"#,
+            r#""content":"Context first. Read src/parser.rs"}}"#,
+        );
+    let page = conversation_of_text(Agent::Claude, &log, None, None);
+    let a = &page.subagents[0];
+    assert_eq!(a.status, ToolStatus::Pending);
+    assert!(a.result.is_empty());
+    assert_eq!(a.steps.len(), 2);
+    assert_eq!(
+        a.steps[1].tool.as_ref().unwrap().status,
+        ToolStatus::Pending
+    );
+    // The other call still finds its own chain by its prompt.
+    assert_eq!(page.subagents[1].steps.len(), 0);
+}
+
+#[test]
+fn side_files_join_their_run_by_agent_id() {
+    let page = conversation_of_texts(Agent::Claude, AGENT_MAIN, &[AGENT_SIDE], None, None);
+    assert_eq!(page.subagents.len(), 1);
+    let run = &page.subagents[0];
+    assert_eq!(run.description, "Review routes");
+    assert_eq!(run.agent_type.as_deref(), Some("reviewer"));
+    assert_eq!(run.result, "Two routes miss auth.");
+    assert_eq!(run.steps.len(), 2);
+    assert_eq!(run.steps[0].tool.as_ref().unwrap().name, "Glob");
+    assert_eq!(run.steps[1].text, "users.rs has no auth check.");
+}
+
+#[test]
+fn side_files_are_read_from_beside_the_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("s8.jsonl");
+    fs::write(&log, AGENT_MAIN).unwrap();
+    let side = dir.path().join("s8").join("subagents");
+    fs::create_dir_all(&side).unwrap();
+    fs::write(side.join("agent-x42.jsonl"), AGENT_SIDE).unwrap();
+    fs::write(side.join("notes.txt"), "not a log").unwrap();
+    let home = Home {
+        id: "own-claude".into(),
+        agent: Agent::Claude,
+        path: dir.path().to_path_buf(),
+        source: HomeSource::Own,
+    };
+    let page = conversation(&home, &log, None, None).unwrap();
+    assert_eq!(page.subagents[0].steps.len(), 2);
+    let codex = Home {
+        agent: Agent::Codex,
+        ..home
+    };
+    let page = conversation(&codex, &log, None, None).unwrap();
+    assert!(page.subagents.is_empty());
+}
+
+#[test]
+fn run_steps_are_capped_but_counted() {
+    let mut lines = vec![
+        r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t","name":"Task","input":{"prompt":"Go\nfar","description":""}}]}}"#.to_string(),
+        r#"{"type":"user","isSidechain":true,"uuid":"s0","parentUuid":null,"message":{"content":"Go\nfar"}}"#.to_string(),
+    ];
+    for i in 1..=(SUBAGENT_STEPS_MAX + 5) {
+        lines.push(format!(
+            r#"{{"type":"assistant","isSidechain":true,"uuid":"s{i}","parentUuid":"s{}","message":{{"content":[{{"type":"text","text":"step {i}"}}]}}}}"#,
+            i - 1
+        ));
+    }
+    let page = conversation_of_text(Agent::Claude, &lines.join("\n"), None, None);
+    let run = &page.subagents[0];
+    // No description: the prompt's first line stands in.
+    assert_eq!(run.description, "Go");
+    assert_eq!(run.steps.len(), SUBAGENT_STEPS_MAX);
+    assert_eq!(run.steps_total, SUBAGENT_STEPS_MAX + 5);
+}

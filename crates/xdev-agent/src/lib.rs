@@ -40,9 +40,9 @@ pub use detect::{find_builtin, find_builtin_in, find_program, path_override, set
 pub use flags::{efforts, flags};
 pub use flow::RunOptions;
 pub use hooks::{
-    DETAIL_MAX, HOOKS_DIR, HOOKS_OFF, HookDetail, HookEvent, HookLine, LINE_MAX, REPEAT_MS,
-    SESSION_MAX, append_hook, append_hook_detail, hook_args, hook_file, hooks_off, set_hooks_off,
-    valid_pty_id, valid_session_id,
+    DETAIL_MAX, HOOKS_DIR, HOOKS_OFF, HookDetail, HookEvent, HookLine, HookQuestion, LINE_MAX,
+    QuestionKind, QuestionOption, REPEAT_MS, SESSION_MAX, append_hook, append_hook_detail,
+    hook_args, hook_file, hooks_off, question_of, set_hooks_off, valid_pty_id, valid_session_id,
 };
 pub use launch::{AccountSource, Context, Launch, LaunchError, LaunchOverrides, resolve};
 pub use profiles::{

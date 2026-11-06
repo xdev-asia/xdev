@@ -53,6 +53,8 @@ export type MockPtyd = {
   __spawnExtraArgs(id: string): string[] | null;
   // The launch overrides `ptySpawn` was given for a pty; null for none.
   __spawnOverrides(id: string): LaunchOverrides | null;
+  // Everything `ptyWrite` was given for a pty, decoded and joined; empty when nothing.
+  __ptyWritten(id: string): string;
 };
 
 const PROMPT = "$ ";
@@ -123,6 +125,7 @@ export function createMockPty(
   });
   const spawnArgs = new Map<string, string[] | null>();
   const spawnOverrides = new Map<string, LaunchOverrides>();
+  const written = new Map<string, string>();
   const end = (id: string) => {
     held.delete(id);
     const pty = ptys.get(id);
@@ -227,6 +230,7 @@ export function createMockPty(
     async ptyWrite(id, data) {
       const pty = ptys.get(id);
       if (!pty) return reject("pty_unknown");
+      written.set(id, (written.get(id) ?? "") + new TextDecoder().decode(data));
       if (pty.exited) return;
       // Each "\r" ends a line; the last piece is still being typed.
       const [first, ...rest] = new TextDecoder().decode(data).split("\r");
@@ -363,5 +367,6 @@ export function createMockPty(
     __prompts: () => ({ ...prompts }),
     __spawnExtraArgs: (id) => spawnArgs.get(id) ?? null,
     __spawnOverrides: (id) => spawnOverrides.get(id) ?? null,
+    __ptyWritten: (id) => written.get(id) ?? "",
   };
 }

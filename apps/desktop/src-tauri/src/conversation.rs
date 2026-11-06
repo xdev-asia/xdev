@@ -4,7 +4,9 @@
 
 use serde::Serialize;
 use tauri::State;
-use xdev_kit::{Agent, ConversationItem, ConversationPage, Home, SessionIndex, conversation};
+use xdev_kit::{
+    Agent, ConversationItem, ConversationPage, Home, SessionIndex, SubagentRun, conversation,
+};
 
 use crate::agent_session_log::session_log;
 use crate::agent_sessions::index_copy;
@@ -43,6 +45,41 @@ pub struct ConversationEntry {
     pub tool: Option<ConversationTool>,
     /// `compact`, `resume` or `model` for a marker.
     pub marker: Option<String>,
+    /// For the tool step that started a sub-agent: the run's id in
+    /// `Conversation::subagents`. Left out otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub subagent: Option<String>,
+}
+
+/// One sub-agent run of the session: the call that started it, its own steps
+/// and its result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationSubagent {
+    /// The call id of the tool step that started it.
+    pub id: String,
+    /// Index of that tool step in the whole conversation.
+    pub index: u32,
+    pub description: String,
+    /// The kind of sub-agent the call asked for, when it names one.
+    pub agent_type: Option<String>,
+    /// The prompt on one line, at most 300 chars.
+    pub prompt: String,
+    /// `ok`, `error` or `pending` (no result logged yet).
+    pub status: String,
+    /// What it gave back, at most 4000 chars.
+    pub result: String,
+    /// The result was cut.
+    pub cut: bool,
+    /// Its texts (`assistant`) and tool steps (`tool`), the first 200;
+    /// `index` counts within the run.
+    pub steps: Vec<ConversationEntry>,
+    /// Steps it took in all.
+    pub steps_total: u32,
+    /// Unix ms of the call; 0 when it has no time.
+    pub at: i64,
 }
 
 /// One page of a conversation and what holds for the whole session.
@@ -64,6 +101,8 @@ pub struct Conversation {
     pub items: Vec<ConversationEntry>,
     /// The session's markers (the last 50), whatever the page.
     pub markers: Vec<ConversationEntry>,
+    /// The session's sub-agent runs (the last 100), whatever the page.
+    pub subagents: Vec<ConversationSubagent>,
 }
 
 fn n(v: usize) -> u32 {
@@ -84,6 +123,23 @@ fn entry(item: ConversationItem) -> ConversationEntry {
             cut: t.cut,
         }),
         marker: item.marker.map(|m| m.as_str().to_owned()),
+        subagent: item.subagent,
+    }
+}
+
+fn subagent(run: SubagentRun) -> ConversationSubagent {
+    ConversationSubagent {
+        id: run.id,
+        index: n(run.index),
+        description: run.description,
+        agent_type: run.agent_type,
+        prompt: run.prompt,
+        status: run.status.as_str().to_owned(),
+        result: run.result,
+        cut: run.cut,
+        steps: run.steps.into_iter().map(entry).collect(),
+        steps_total: n(run.steps_total),
+        at: run.at,
     }
 }
 
@@ -101,6 +157,7 @@ fn view(key: String, home: &Home, page: ConversationPage) -> Conversation {
         turns: n(page.turns),
         items: page.items.into_iter().map(entry).collect(),
         markers: page.markers.into_iter().map(entry).collect(),
+        subagents: page.subagents.into_iter().map(subagent).collect(),
     }
 }
 
@@ -215,6 +272,48 @@ mod tests {
         let past = read_conversation(&index, homes, "s-1", Some(9), None).unwrap();
         assert!(past.items.is_empty());
         assert_eq!(past.total, 4);
+    }
+
+    #[test]
+    fn sub_agent_runs_come_with_every_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let proj = dir.path().join("projects").join("-work-demo");
+        fs::create_dir_all(&proj).unwrap();
+        let log =
+            include_str!("../../../../crates/xdev-kit/tests/fixtures/subagents/claude-task.jsonl");
+        fs::write(proj.join("s9.jsonl"), log).unwrap();
+        let home = Home {
+            id: "own-claude".into(),
+            agent: Agent::Claude,
+            path: fs::canonicalize(dir.path()).unwrap(),
+            source: HomeSource::Own,
+        };
+        let mut index = SessionIndex::default();
+        index.refresh(std::slice::from_ref(&home));
+        let c = read_conversation(&index, &[home], "s9", Some(4), Some(1)).unwrap();
+        assert_eq!(c.items.len(), 1);
+        assert_eq!(c.subagents.len(), 2);
+        let a = &c.subagents[0];
+        assert_eq!(
+            (a.id.as_str(), a.index, a.status.as_str()),
+            ("task-a", 2, "ok")
+        );
+        assert_eq!(a.steps.len(), 3);
+        assert_eq!(a.steps[1].kind, "tool");
+        assert_eq!(a.steps_total, 3);
+        let json = serde_json::to_value(&c.subagents[1]).unwrap();
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["agentType"], serde_json::Value::Null);
+        assert!(json["steps"][0].get("subagent").is_none());
+    }
+
+    #[test]
+    fn the_call_step_names_its_run_and_others_leave_it_out() {
+        let (_d, home, index, _f) = fixture();
+        let c = read_conversation(&index, &[home], "s-1", None, None).unwrap();
+        let json = serde_json::to_value(&c).unwrap();
+        assert!(json["items"][2].get("subagent").is_none());
+        assert_eq!(json["subagents"], serde_json::json!([]));
     }
 
     #[test]

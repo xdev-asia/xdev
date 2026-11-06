@@ -11,6 +11,7 @@ import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import type { Tab, TabColor } from "./sessions";
 import { fileTabMenuItems, tabColorVar, tabMenuItems, type FileCloseKind, type MoveDir } from "./tabMenu";
 import type { TabStatus } from "./status";
+import { QuestionBadge } from "@/conversation/QuestionCard";
 import type { DropZone } from "./sessions";
 import { beforeOf, insertAt, pastThreshold, zoneFor } from "./tabDrag";
 import { TabIndicator } from "./TabIndicator";
@@ -440,6 +441,7 @@ export function TabStrip(props: {
                       )}
                       {/* Plain shells are not agents: no status mark. */}
                       {TabIndicator({ status: tab.agent ? tab.status : null, label: statusLabel(tab.status) })}
+                      {tab.agent && <QuestionBadge tab={tab} />}
                       {cache && cache.timers.has(tab.id) && <CacheBadge left={cacheLeftMs(cache.timers.get(tab.id)!, stripNow, cache.ttlMs)} />}
                       {props.noteTabs?.has(tab.id) && <span className="ws-tab-note" role="img" aria-label={t("notes.tab.dot")} title={t("notes.tab.dot")} />}
                     </>

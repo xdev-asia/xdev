@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ConversationEntry } from "@/api";
-import { createMockConversation, fixtureConversation } from "./mockConversation";
-import { atBottom, DEFAULT_PREFS, failedSteps, firstIndex, foldRows, hasOlder, mergePage, olderPage, readPrefs, stepSize, writePrefs, type Loaded } from "./model";
+import { createMockConversation, fixtureConversation, fixtureSubagentConversation } from "./mockConversation";
+import { atBottom, DEFAULT_PREFS, failedSteps, firstIndex, foldRows, followUpText, hasOlder, lastAssistantText, mergePage, olderPage, readPrefs, runOf, stepSize, writePrefs, type Loaded } from "./model";
 import { conversationItems, canShowConversation, closeConversation, isConversationOpen, openConversation } from "./conversationStore";
 
 const NOW = Date.parse("2026-11-05T12:00:00Z");
@@ -48,7 +48,7 @@ it("pages through the mock from the end back to the start without gaps or repeat
 });
 
 it("a refresh replaces items it holds again and adds new ones; a gap starts over", () => {
-  const facts = { key: "k", agent: "claude", model: "m", turns: 1, markers: [] };
+  const facts = { key: "k", agent: "claude", model: "m", turns: 1, markers: [], subagents: [] };
   const base = mergePage(null, { ...facts, from: 0, total: 3, items: [entry(0, "user"), entry(1, "tool", { tool: { name: "Bash", summary: "x", status: "pending", output: "", cut: false } }), entry(2, "assistant")] });
   const ended = entry(1, "tool", { tool: { name: "Bash", summary: "x", status: "ok", output: "done", cut: false } });
   const next = mergePage(base, { ...facts, from: 1, total: 4, items: [ended, entry(2, "assistant"), entry(3, "user")] });
@@ -131,4 +131,40 @@ it("opens and closes per tab, and offers the palette item only for an agent tab 
   openConversation("tab-2");
   expect(isConversationOpen("tab-1")).toBe(false);
   closeConversation("tab-2");
+});
+
+describe("sub-agents and the last question", () => {
+  it("gives each call that started a sub-agent a row of its own", () => {
+    const { items } = fixtureSubagentConversation(0);
+    const rows = foldRows(items);
+    expect(rows.map((r) => r.kind)).toEqual(["user", "assistant", "subagent", "subagent", "assistant"]);
+    // A plain step after a call starts a new run of steps.
+    const mixed = foldRows([...items.slice(0, 3), { index: 5, kind: "tool", text: "", at: 0, tool: items[2]!.tool, marker: null }]);
+    expect(mixed.map((r) => r.kind)).toEqual(["user", "assistant", "subagent", "tools"]);
+  });
+
+  it("finds a row's run and keeps the runs across pages", () => {
+    const { items, subagents } = fixtureSubagentConversation(0);
+    const page = { key: "k", agent: "claude", model: "m", turns: 1, markers: [], from: 0, total: items.length, items, subagents };
+    const loaded = mergePage(null, page);
+    expect(loaded.subagents).toHaveLength(2);
+    expect(runOf(loaded, items[3]!)?.description).toBe("Check the docs");
+    expect(runOf(loaded, items[1]!)).toBeNull();
+    expect(runOf({ subagents: [] }, items[2]!)).toBeNull();
+  });
+
+  it("writes a follow-up that names the run and a short result", () => {
+    const run = { description: "Find bugs", result: "a\n\nb   c" + "x".repeat(400) };
+    const text = followUpText(run, (v) => `About ${v.description}: ${v.result}`, 20);
+    expect(text).toBe(`About Find bugs: a b c${"x".repeat(14)}…`);
+  });
+
+  it("reads the last turn only when the agent spoke last", () => {
+    const { items } = fixtureSubagentConversation(0);
+    expect(lastAssistantText({ items, total: items.length })).toContain("Which fix should I make first?");
+    // More items follow the loaded ones.
+    expect(lastAssistantText({ items, total: items.length + 1 })).toBeNull();
+    expect(lastAssistantText({ items: items.slice(0, 1), total: 1 })).toBeNull();
+    expect(lastAssistantText({ items: [], total: 0 })).toBeNull();
+  });
 });

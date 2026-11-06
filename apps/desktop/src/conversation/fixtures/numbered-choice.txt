@@ -1,0 +1,7 @@
+I looked at the cache layer. There are three ways to go:
+
+1. **Redis** – fast, but it needs a running server
+2. **SQLite** – a file next to the app
+3. In memory – lost on restart
+
+Which one should I use?

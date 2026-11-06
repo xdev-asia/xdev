@@ -1,0 +1,1 @@
+The date format now uses ISO 8601, and the README says so. What a nice result?! No more work is needed.

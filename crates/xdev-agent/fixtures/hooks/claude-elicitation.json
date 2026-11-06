@@ -1,0 +1,1 @@
+{"session_id":"5f1c2a9e-0d4b-4c3a-9e71-2b8f6d1a7c40","hook_event_name":"Elicitation","mcp_server_name":"tickets","message":"Which project should the ticket go to?","requested_schema":{"type":"object","properties":{"project":{"type":"string"}}}}

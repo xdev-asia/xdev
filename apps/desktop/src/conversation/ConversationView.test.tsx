@@ -2,9 +2,9 @@ import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactElement } from "react";
 import { translate } from "@/i18n";
-import { ConversationContent, SessionStrip } from "./ConversationView";
+import { ConversationContent, RunsHistory, RunsToggle, SessionStrip, SubagentGroup } from "./ConversationView";
 import { chipKind, Markdown, MarkdownContext, pathCandidates, type MarkdownEnv } from "./Markdown";
-import { fixtureConversation } from "./mockConversation";
+import { fixtureConversation, fixtureSubagentConversation } from "./mockConversation";
 import { foldRows, mergePage } from "./model";
 
 vi.mock("@/i18n", async (original) => ({
@@ -104,7 +104,7 @@ it("the reader shows user turns as headings and hides tool steps until the toggl
 });
 
 it("the session strip names the agent, the model, the turns and the markers", () => {
-  const page = { key: "k", agent: "claude", model: "claude-opus-5-5", from: 0, total: 3, turns: 2, items: [], markers: [{ index: 4, kind: "marker", text: "claude-sonnet-5-5", at: 0, tool: null, marker: "model" }] };
+  const page = { key: "k", agent: "claude", model: "claude-opus-5-5", from: 0, total: 3, turns: 2, items: [], markers: [{ index: 4, kind: "marker", text: "claude-sonnet-5-5", at: 0, tool: null, marker: "model" }], subagents: [] };
   const out = html(<SessionStrip data={mergePage(null, page)} agentName="Claude Code" />);
   expect(out).toContain('aria-label="Session"');
   expect(out).toContain("Claude Code");
@@ -118,4 +118,53 @@ it("the pane header offers the conversation only when the tab has one", async ()
   const base = { agent: true, prefs: { quota: false, context: false, timer: false }, quota: null, usage: null, clock: undefined, narrow: false, hasNote: false, onNote: () => {}, open: false, onOpen: () => {}, said: "" };
   expect(renderToStaticMarkup(PaneChipsView({ ...base, onConversation: () => {} }))).toContain('aria-label="Conversation"');
   expect(renderToStaticMarkup(PaneChipsView(base))).not.toContain('aria-label="Conversation"');
+});
+
+it("folds each sub-agent run under its call and counts the runs in the header", () => {
+  const { items, subagents } = fixtureSubagentConversation(NOW);
+  const rows = foldRows(items);
+  const content = (open: Set<string>) =>
+    html(<ConversationContent rows={rows} view="chat" agentName="Claude Code" open={open} onToggle={() => {}} showTools={false} runs={subagents} onReply={() => {}} />);
+  const closed = content(new Set());
+  expect(closed.match(/data-testid="subagent-group"/g)).toHaveLength(2);
+  expect(closed).toContain("Sub-agent: Find parser bugs");
+  expect(closed).toContain("Sub-agent: Check the docs");
+  expect(closed).toContain("3 steps");
+  expect(closed).toContain("1 step");
+  expect(closed.match(/aria-expanded="false"/g)).toHaveLength(2);
+  expect(closed).not.toContain("cv-sub-body");
+  expect(closed).not.toContain("parse_expr is a stub.");
+
+  const opened = content(new Set(["s2"]));
+  expect(opened.match(/aria-expanded="true"/g)).toHaveLength(1);
+  expect(opened).toContain("Read src/parser.rs and list every bug you find.");
+  expect(opened).toContain("Reading the parser.");
+  expect(opened.match(/class="cv-step"/g)).toHaveLength(1);
+  expect(opened).toContain("Follow up on result");
+  expect(opened).toContain('data-run="task-a"');
+
+  // The reader shows the same groups, whatever the tool switch says.
+  const reader = html(<ConversationContent rows={rows} view="reader" agentName="Claude Code" open={new Set(["s3"])} onToggle={() => {}} showTools={false} runs={subagents} />);
+  expect(reader.match(/data-testid="subagent-group"/g)).toHaveLength(2);
+  expect(reader).toContain("The helper stopped:");
+  expect(reader).toContain("no matches");
+  // No reply handler, no reply button.
+  expect(reader).not.toContain("Follow up on result");
+
+  const toggle = html(<RunsToggle count={subagents.length} open={false} controls="runs" onToggle={() => {}} />);
+  expect(toggle).toContain("Sub-agents");
+  expect(toggle).toMatch(/>2<\/span>/);
+  expect(toggle).toContain('aria-expanded="false"');
+  const history = html(<RunsHistory id="runs" runs={subagents} onShow={() => {}} />);
+  expect(history).toContain('aria-label="Sub-agent runs"');
+  expect(history.match(/<li>/g)).toHaveLength(2);
+  expect(history).toContain("Explore");
+});
+
+it("a call whose run is not listed still folds, with the step's own output", () => {
+  const { items } = fixtureSubagentConversation(NOW);
+  const out = html(<SubagentGroup item={items[2]!} run={null} open onToggle={() => {}} />);
+  expect(out).toContain("Sub-agent: Find parser bugs");
+  expect(out).toContain("One bug: parse_expr is a stub.");
+  expect(out).toContain("0 steps");
 });

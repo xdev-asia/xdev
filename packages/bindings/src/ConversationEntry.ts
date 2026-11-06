@@ -25,4 +25,9 @@ at: number, tool: ConversationTool | null,
 /**
  * `compact`, `resume` or `model` for a marker.
  */
-marker: string | null, };
+marker: string | null, 
+/**
+ * For the tool step that started a sub-agent: the run's id in
+ * `Conversation::subagents`. Left out otherwise.
+ */
+subagent?: string, };

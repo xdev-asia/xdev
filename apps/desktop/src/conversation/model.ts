@@ -1,5 +1,5 @@
 // The pure side of the conversation view: rows from items, pages merged, the reader preferences.
-import type { Conversation, ConversationEntry } from "@/api";
+import type { Conversation, ConversationEntry, ConversationSubagent } from "@/api";
 
 /** Items one page asks for, as the Rust default. */
 export const PAGE = 200;
@@ -8,19 +8,26 @@ export const PAGE = 200;
 export type Row =
   | { kind: "user" | "assistant"; key: string; item: ConversationEntry }
   | { kind: "marker"; key: string; item: ConversationEntry }
-  | { kind: "tools"; key: string; items: ConversationEntry[] };
+  | { kind: "tools"; key: string; items: ConversationEntry[] }
+  /** The tool step that started a sub-agent: its own row, folded, with the run's steps and result. */
+  | { kind: "subagent"; key: string; item: ConversationEntry };
 
 const KNOWN = new Set(["user", "assistant", "tool", "marker"]);
 
 /**
  * The rows of `items`: each run of tool steps next to each other becomes one row. A kind this view does not know
- * (a later one) is skipped, and does not split a run.
+ * (a later one) is skipped, and does not split a run. A step that started a sub-agent is a row of its own.
  */
 export function foldRows(items: readonly ConversationEntry[]): Row[] {
   const rows: Row[] = [];
   let run: ConversationEntry[] | null = null;
   for (const item of items) {
     if (!KNOWN.has(item.kind)) continue;
+    if (item.kind === "tool" && item.subagent) {
+      run = null;
+      rows.push({ kind: "subagent", key: `s${item.index}`, item });
+      continue;
+    }
     if (item.kind === "tool") {
       if (run) run.push(item);
       else {
@@ -44,6 +51,8 @@ export interface Loaded {
   agent: string;
   model: string | null;
   markers: ConversationEntry[];
+  /** The session's sub-agent runs, whatever the page. */
+  subagents: ConversationSubagent[];
 }
 
 /** Index of the first loaded item; `total` when none is loaded. */
@@ -68,7 +77,7 @@ export function olderPage(l: Loaded, size = PAGE): { from: number; limit: number
  * that does not touch the loaded run (more came in than one page holds) replaces it.
  */
 export function mergePage(prev: Loaded | null, page: Conversation): Loaded {
-  const facts = { total: page.total, turns: page.turns, agent: page.agent, model: page.model, markers: page.markers };
+  const facts = { total: page.total, turns: page.turns, agent: page.agent, model: page.model, markers: page.markers, subagents: page.subagents ?? [] };
   const fresh = page.items.filter((i) => i.index < page.total);
   if (!prev || prev.items.length === 0) return { ...facts, items: fresh };
   const first = firstIndex(prev);
@@ -144,3 +153,27 @@ export function atBottom(el: { scrollTop: number; scrollHeight: number; clientHe
 
 /** Pane width from which the view sits beside the terminal instead of over it. */
 export const SPLIT_MIN_PX = 900;
+
+/** The run a sub-agent row stands for, by the call id its step names. */
+export function runOf(l: Pick<Loaded, "subagents">, item: Pick<ConversationEntry, "subagent">): ConversationSubagent | null {
+  return item.subagent ? (l.subagents.find((r) => r.id === item.subagent) ?? null) : null;
+}
+
+/**
+ * The text a follow-up about a sub-agent's result starts with, for the composer. The CLI cannot send to a
+ * sub-agent that ended, so the follow-up goes to the main agent and names the run.
+ */
+export function followUpText(run: Pick<ConversationSubagent, "description" | "result">, template: (vars: { description: string; result: string }) => string, max = 280): string {
+  const flat = run.result.replace(/\s+/g, " ").trim();
+  const result = flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+  return template({ description: run.description, result });
+}
+
+/**
+ * The question in the conversation's last turn, when the agent ended its turn on one: the last loaded item
+ * is an assistant message and it is the conversation's last item.
+ */
+export function lastAssistantText(l: Pick<Loaded, "items" | "total">): string | null {
+  const last = l.items[l.items.length - 1];
+  return last && last.kind === "assistant" && last.index === l.total - 1 ? last.text : null;
+}

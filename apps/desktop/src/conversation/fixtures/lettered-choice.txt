@@ -1,0 +1,4 @@
+The migration can run in two ways. Which do you prefer?
+
+(a) Online, table by table
+(b) Offline, all at once

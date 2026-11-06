@@ -1,14 +1,18 @@
-import { Button, EmptyState, IconButton, Segmented, Spinner, Switch, Tag } from "@xdev-asia/ui";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Badge, Button, EmptyState, IconButton, Segmented, Spinner, Switch, Tag } from "@xdev-asia/ui";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
-import type { Api, ConversationEntry } from "@/api";
+import type { Api, ConversationEntry, ConversationSubagent } from "@/api";
 import { openFile } from "@/files/openFile";
 import { useI18n } from "@/i18n";
 import { copyText } from "@/ui/clipboard";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import type { TabStatus } from "@/workspace/status";
 import { Markdown, MarkdownContext, pathCandidates, type MarkdownEnv } from "./Markdown";
-import { atBottom, failedSteps, foldRows, hasOlder, mergePage, olderPage, readPrefs, stepSize, TEXT_SIZES, writePrefs, type ConversationPrefs, type Loaded, type Row } from "./model";
+import { atBottom, failedSteps, firstIndex, foldRows, followUpText, hasOlder, lastAssistantText, mergePage, olderPage, readPrefs, runOf, stepSize, TEXT_SIZES, writePrefs, type ConversationPrefs, type Loaded, type Row } from "./model";
+import { sendFollowUp } from "./followUp";
+import { QuestionCard } from "./QuestionCard";
+import { hookQuestion, parseQuestionText, transcriptQuestion, type QuestionCli } from "./questions";
+import { clearQuestion, feedQuestions, noteTranscriptQuestion, useQuestion } from "./questionStore";
 import "./conversation.css";
 
 /** The most paths one resolve call takes, as `links_open.rs`. */
@@ -21,10 +25,12 @@ export interface ConversationTab {
   agentSession: string | null;
   status: TabStatus;
   worktree: string;
+  /** The CLI the tab runs; picks how a question is answered. */
+  cli?: QuestionCli;
 }
 
 export interface ConversationViewProps {
-  api: Pick<Api, "agentConversation" | "fileLinksResolve" | "openUrl">;
+  api: Pick<Api, "agentConversation" | "fileLinksResolve" | "openUrl"> & Partial<Pick<Api, "ptyWrite" | "composerDraftPut" | "onPtyHook">>;
   tab: ConversationTab;
   /** The agent's name, as the tab shows it. */
   agentName: string;
@@ -33,6 +39,8 @@ export interface ConversationViewProps {
   onBack: () => void;
   /** A new value asks the view to take keyboard focus. */
   focusSeq?: number;
+  /** Gives the keyboard to the tab's terminal, for a prompt answered there; `onBack` when absent. */
+  onOpenTerminal?: () => void;
 }
 
 type Load = { state: "loading" } | { state: "error" } | { state: "ready"; data: Loaded };
@@ -54,6 +62,14 @@ export function ConversationView(props: ConversationViewProps): JSX.Element {
   const [menu, setMenu] = useState<{ at: { x: number; y: number }; url: string } | null>(null);
   const [resolved, setResolved] = useState<Map<string, string | null>>(() => new Map());
   const [older, setOlder] = useState(false);
+  // A question card is up; set below, read by the refresh that follows a turn.
+  const asking = useRef(false);
+  const [showRuns, setShowRuns] = useState(false);
+  const runsId = useId();
+  // The transcript question the person hid: its text.
+  const [hidden, setHidden] = useState<string | null>(null);
+  // The status the tab had when the person answered: no card until it moves on or a new question comes.
+  const [answeredIn, setAnsweredIn] = useState<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
   // The link a menu opened from, focused again when the menu closes.
   const menuFrom = useRef<HTMLElement | null>(null);
@@ -96,7 +112,8 @@ export function ConversationView(props: ConversationViewProps): JSX.Element {
       first.current = false;
       return;
     }
-    if (settled) void refresh(false).then((ok) => ok && setSaid(t("conversation.updated")));
+    // A question on screen stays the news: its line is not replaced by the refresh.
+    if (settled) void refresh(false).then((ok) => ok && !asking.current && setSaid(t("conversation.updated")));
   }, [settled, tab.status]);
 
   const data = load.state === "ready" ? load.data : null;
@@ -217,6 +234,64 @@ export function ConversationView(props: ConversationViewProps): JSX.Element {
 
   const rows = useMemo(() => (data ? foldRows(data.items) : []), [data]);
 
+  // The question the agent waits on: from its hook, else from the last turn while it rests at its prompt.
+  useEffect(() => {
+    if (api.onPtyHook) feedQuestions(api as Pick<Api, "onPtyHook">);
+  }, [api]);
+  const pending = useQuestion(tab.id);
+  const cli = tab.cli ?? null;
+  const lastText = data ? lastAssistantText(data) : null;
+  const atPrompt = tab.status === "done" || tab.status === "idle";
+  const asked = atPrompt && lastText !== null && lastText !== hidden && parseQuestionText(lastText) !== null ? lastText : null;
+  useEffect(() => noteTranscriptQuestion(tab.id, asked), [tab.id, asked]);
+  useEffect(() => {
+    if (answeredIn !== null && answeredIn !== tab.status) setAnsweredIn(null);
+  }, [tab.status, answeredIn]);
+  const question = useMemo(() => {
+    if (answeredIn === tab.status && !pending) return null;
+    if (tab.status === "needs-you") return hookQuestion(pending?.source === "hook" ? pending.detail : null, cli);
+    return asked ? transcriptQuestion(asked, cli) : null;
+  }, [tab.status, pending, cli, asked, answeredIn]);
+  const questionKey = question ? `${tab.status}:${pending?.seq ?? 0}:${asked ?? ""}` : "";
+  asking.current = question !== null;
+  useEffect(() => {
+    if (question) setSaid(t("conversation.question.said", { name: props.agentName }));
+  }, [questionKey]);
+
+  const answer = async (keys: string): Promise<boolean> => {
+    if (!api.ptyWrite) return false;
+    try {
+      await api.ptyWrite(tab.id, new TextEncoder().encode(keys));
+    } catch {
+      return false;
+    }
+    clearQuestion(tab.id);
+    setAnsweredIn(tab.status);
+    if (question?.source === "transcript" && lastText) setHidden(lastText);
+    setSaid(t("conversation.question.sent"));
+    return true;
+  };
+
+  const runs = data?.subagents ?? [];
+  // A run of the history list: its group opens and takes the focus, when its step is loaded.
+  const showRun = (run: ConversationSubagent) => {
+    if (!data || run.index < firstIndex(data)) {
+      setSaid(t("conversation.subagent.notLoaded"));
+      return;
+    }
+    setOpen((s) => new Set(s).add(`s${run.index}`));
+    setTimeout(() => {
+      const head = root.current?.querySelector<HTMLElement>(`[data-run="${CSS.escape(run.id)}"] .cv-sub-head`);
+      head?.scrollIntoView({ block: "nearest" });
+      head?.focus();
+    }, 0);
+  };
+  const reply = async (run: ConversationSubagent) => {
+    const text = followUpText(run, (v) => t("conversation.subagent.followUp", v));
+    const ok = api.composerDraftPut ? await sendFollowUp({ composerDraftPut: api.composerDraftPut }, tab.id, text) : false;
+    setSaid(t(ok ? "conversation.subagent.followUp.said" : "conversation.subagent.followUp.failed"));
+  };
+
   return (
     <section ref={root} className="cv" tabIndex={-1} data-mode={mode} data-view={prefs.mode} data-size={prefs.size} aria-label={t("conversation.region", { name: props.agentName })} onKeyDown={onKeyDown}>
       <header className="cv-head">
@@ -234,8 +309,10 @@ export function ConversationView(props: ConversationViewProps): JSX.Element {
           />
           <IconButton icon="minus" label={t("conversation.size.smaller")} disabled={sizeIndex <= 0} onClick={() => resize(-1)} />
           <IconButton icon="plus" label={t("conversation.size.larger")} disabled={sizeIndex >= TEXT_SIZES.length - 1} onClick={() => resize(1)} />
+          {runs.length > 0 && <RunsToggle count={runs.length} open={showRuns} controls={runsId} onToggle={() => setShowRuns((v) => !v)} />}
         </div>
       </header>
+      {showRuns && runs.length > 0 && <RunsHistory id={runsId} runs={runs} onShow={showRun} />}
       {data && <SessionStrip data={data} agentName={props.agentName} />}
       {prefs.mode === "reader" && data && rows.some((r) => r.kind === "tools") && (
         <div className="cv-reader-bar">
@@ -267,8 +344,29 @@ export function ConversationView(props: ConversationViewProps): JSX.Element {
               </Button>
             </div>
           )}
-          {data && <ConversationContent rows={rows} view={prefs.mode} agentName={props.agentName} open={open} onToggle={(key) => setOpen((s) => toggled(s, key))} showTools={showTools} />}
+          {data && (
+            <ConversationContent
+              rows={rows}
+              view={prefs.mode}
+              agentName={props.agentName}
+              open={open}
+              onToggle={(key) => setOpen((s) => toggled(s, key))}
+              showTools={showTools}
+              runs={runs}
+              onReply={(run) => void reply(run)}
+            />
+          )}
         </div>
+        {question && (
+          <QuestionCard
+            key={questionKey}
+            question={question}
+            agentName={props.agentName}
+            onSend={answer}
+            onOpenTerminal={props.onOpenTerminal ?? onBack}
+            {...(question.source === "transcript" ? { onDismiss: () => setHidden(lastText) } : {})}
+          />
+        )}
       </MarkdownContext.Provider>
       <span className="x-sr-only" role="status">
         {said}
@@ -279,23 +377,150 @@ export function ConversationView(props: ConversationViewProps): JSX.Element {
 }
 
 /** The loaded rows as a chat list or as one reader document. */
-export function ConversationContent(props: { rows: Row[]; view: ConversationPrefs["mode"]; agentName: string; open: ReadonlySet<string>; onToggle: (key: string) => void; showTools: boolean }): JSX.Element {
+export function ConversationContent(props: {
+  rows: Row[];
+  view: ConversationPrefs["mode"];
+  agentName: string;
+  open: ReadonlySet<string>;
+  onToggle: (key: string) => void;
+  showTools: boolean;
+  /** The session's sub-agent runs, for the rows that started one. */
+  runs?: readonly ConversationSubagent[];
+  onReply?: (run: ConversationSubagent) => void;
+}): JSX.Element {
   const { rows } = props;
+  const runs = { subagents: [...(props.runs ?? [])] };
+  const group = (row: Row & { kind: "subagent" }) => (
+    <SubagentGroup item={row.item} run={runOf(runs, row.item)} open={props.open.has(row.key)} onToggle={() => props.onToggle(row.key)} onReply={props.onReply} />
+  );
   if (props.view === "reader") {
     return (
       <article className="cv-doc">
-        {rows.map((row) => (
-          <ReaderRow key={row.key} row={row} showTools={props.showTools} />
-        ))}
+        {rows.map((row) =>
+          row.kind === "subagent" ? (
+            <div key={row.key} className="cv-doc-sub">
+              {group(row)}
+            </div>
+          ) : (
+            <ReaderRow key={row.key} row={row} showTools={props.showTools} />
+          ),
+        )}
       </article>
     );
   }
   return (
     <ol className="cv-chat">
-      {rows.map((row) => (
-        <ChatRow key={row.key} row={row} agentName={props.agentName} open={props.open.has(row.key)} onToggle={() => props.onToggle(row.key)} />
-      ))}
+      {rows.map((row) =>
+        row.kind === "subagent" ? (
+          <li key={row.key} className="cv-row cv-row-tools">
+            {group(row)}
+          </li>
+        ) : (
+          <ChatRow key={row.key} row={row} agentName={props.agentName} open={props.open.has(row.key)} onToggle={() => props.onToggle(row.key)} />
+        ),
+      )}
     </ol>
+  );
+}
+
+/** The header's sub-agent count: a button that opens the history of runs. */
+export function RunsToggle(props: { count: number; open: boolean; controls: string; onToggle: () => void }): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <button type="button" className="cv-runs-toggle" aria-expanded={props.open} aria-controls={props.controls} onClick={props.onToggle} data-testid="subagent-badge">
+      <span>{t("conversation.subagents")}</span>
+      <Badge status="neutral">{props.count}</Badge>
+    </button>
+  );
+}
+
+/** Every sub-agent run of the session, oldest first; picking one opens its group. */
+export function RunsHistory(props: { id: string; runs: readonly ConversationSubagent[]; onShow: (run: ConversationSubagent) => void }): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <nav className="cv-runs" id={props.id} aria-label={t("conversation.subagents.history")}>
+      <ol>
+        {props.runs.map((run) => (
+          <li key={run.id}>
+            <button type="button" className="cv-run" onClick={() => props.onShow(run)}>
+              <span className="cv-step-dot" data-status={run.status} aria-hidden="true" />
+              <span className="cv-run-title">{run.description || run.prompt}</span>
+              {run.agentType && <Tag>{run.agentType}</Tag>}
+              <span className="cv-run-meta">
+                {t("conversation.subagent.steps", { count: run.stepsTotal })} · {statusText(run.status, t)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+function statusText(status: string, t: (k: string) => string): string {
+  return t(`conversation.tool.${status === "error" ? "error" : status === "ok" ? "ok" : "pending"}`);
+}
+
+/** One sub-agent run, folded under its call: its prompt, its own steps and its result. */
+export function SubagentGroup(props: { item: ConversationEntry; run: ConversationSubagent | null; open: boolean; onToggle: () => void; onReply?: ((run: ConversationSubagent) => void) | undefined }): JSX.Element {
+  const { t } = useI18n();
+  const { item, run } = props;
+  const status = run?.status ?? item.tool?.status ?? "pending";
+  const description = run?.description || item.tool?.summary || item.tool?.name || "";
+  const total = run?.stepsTotal ?? 0;
+  const steps = run?.steps ?? [];
+  const tools = steps.filter((s) => s.kind === "tool");
+  const result = run?.result ?? item.tool?.output ?? "";
+  return (
+    <div className="cv-sub" data-status={status} data-run={item.subagent ?? undefined} data-testid="subagent-group">
+      <button type="button" className="cv-tools cv-sub-head" aria-expanded={props.open} onClick={props.onToggle}>
+        <span className="cv-chevron" aria-hidden="true" />
+        <span className="cv-step-dot" data-status={status} aria-hidden="true" />
+        <span className="cv-sub-title">{t("conversation.subagent.title", { description })}</span>
+        {run?.agentType && <Tag>{run.agentType}</Tag>}
+        <span className="cv-sub-meta">
+          {t("conversation.subagent.steps", { count: total })} · {statusText(status, t)}
+        </span>
+      </button>
+      {props.open && (
+        <div className="cv-sub-body">
+          {run?.prompt && (
+            <p className="cv-sub-prompt">
+              <span className="cv-sub-label">{t("conversation.subagent.prompt")}</span> {run.prompt}
+            </p>
+          )}
+          {steps.length > 0 && (
+            <ol className="cv-sub-steps">
+              {steps.map((step) =>
+                step.kind === "tool" ? (
+                  <li key={step.index} className="cv-sub-step">
+                    <ToolSteps items={[step]} />
+                  </li>
+                ) : step.kind === "assistant" ? (
+                  <li key={step.index} className="cv-sub-step cv-sub-text">
+                    <Markdown text={step.text} />
+                  </li>
+                ) : null,
+              )}
+            </ol>
+          )}
+          {tools.length > 0 && failedSteps(tools) > 0 && <p className="cv-tools-failed">{t("conversation.tools.failed", { count: failedSteps(tools) })}</p>}
+          {total > steps.length && <p className="cv-step-cut">{t("conversation.subagent.more", { count: total - steps.length })}</p>}
+          <div className="cv-sub-result">
+            <h4 className="cv-sub-label">{t("conversation.subagent.result")}</h4>
+            {result ? <Markdown text={result} /> : <p className="cv-step-cut">{t("conversation.subagent.noResult")}</p>}
+            {run?.cut && <p className="cv-step-cut">{t("conversation.subagent.cut")}</p>}
+          </div>
+          {run && result && props.onReply && (
+            <div className="cv-sub-actions">
+              <Button type="button" variant="secondary" onClick={() => props.onReply?.(run)}>
+                {t("conversation.subagent.reply")}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -382,6 +607,7 @@ function ChatRow({ row, agentName, open, onToggle }: { row: Row; agentName: stri
       </li>
     );
   }
+  if (row.kind === "subagent") return <></>;
   if (row.kind === "marker") {
     return (
       <li className="cv-row cv-marker" data-marker={row.item.marker ?? undefined}>
@@ -408,6 +634,8 @@ function ChatRow({ row, agentName, open, onToggle }: { row: Row; agentName: stri
 function ReaderRow({ row, showTools }: { row: Row; showTools: boolean }): JSX.Element | null {
   const { t } = useI18n();
   switch (row.kind) {
+    case "subagent":
+      return null;
     case "user":
       return <h3 className="cv-doc-turn">{row.item.text}</h3>;
     case "assistant":
