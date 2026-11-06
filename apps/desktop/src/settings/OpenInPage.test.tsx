@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
+import { Select } from "@xdev-asia/ui";
 import { createMockApi, type OpenInApp } from "@/api";
 import { translate } from "@/i18n";
 import { DEFAULT_APPS, foundByCommand, MAX_APPS, move, nextId, OPEN_AS_CHOICES, OpenInPage } from "./OpenInPage";
@@ -192,9 +193,9 @@ it("foundByCommand keys apps by their command and presets by theirs", () => {
 
 it("Open agents as starts at a new tab and stores the choice without touching other Agents settings", async () => {
   const v = await view();
-  const select = () => v.all().find((n) => n.type === "select" && n.props.name === "openAs")!;
+  const select = () => v.all().find((n) => n.type === Select && n.props.name === "openAs")!;
   expect(select().props.value).toBe("tab");
-  expect(nodes(select()).filter((n) => n.type === "option").map((n) => n.props.value)).toEqual(OPEN_AS_CHOICES);
+  expect((select().props.options as { value: string }[]).map((o) => o.value)).toEqual(OPEN_AS_CHOICES);
   await v.api.agentsSettingsPut({ ...(await v.api.agentsSettings()), sleepAfterMin: 5 });
   select().props.onChange({ target: { value: "splitRight" } });
   await tick();

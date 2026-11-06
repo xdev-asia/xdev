@@ -1,4 +1,4 @@
-import { Badge, Button } from "@xdev-asia/ui";
+import { Badge, Button, Select } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type ApiError, type OpenAs, type OpenInApp, type OpenInView } from "@/api";
@@ -261,13 +261,7 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
         <p className="settings-hint">{t("openIn.openAs.hint")}</p>
         <label className="ws-field">
           <span>{t("openIn.openAs")}</span>
-          <select name="openAs" value={openAs} onChange={(e) => void saveOpenAs(e.target.value as OpenAs)}>
-            {OPEN_AS_CHOICES.map((c) => (
-              <option key={c} value={c}>
-                {t(`openIn.openAs.${c}`)}
-              </option>
-            ))}
-          </select>
+          <Select name="openAs" value={openAs} options={OPEN_AS_CHOICES.map((c) => ({ value: c, label: t(`openIn.openAs.${c}`) }))} onChange={(e) => void saveOpenAs(e.target.value as OpenAs)} />
         </label>
       </section>
       <section className="openin-presets" aria-label={t("openIn.presets")}>
