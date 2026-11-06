@@ -1765,6 +1765,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     show("docs");
   }
 
+  // The Tasks app on the Board tab with the split-a-goal dialog open.
+  function openDecompose(): void {
+    setAppRequest((r) => ({ app: "tasks", tab: "board", decompose: true, seq: (r?.seq ?? 0) + 1 }));
+    show("docs");
+  }
+
   function openAccounts(): void {
     setAppRequest((r) => ({ app: "accounts", seq: (r?.seq ?? 0) + 1 }));
     show("docs");
@@ -2523,6 +2529,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         actions={{
           openTask,
           openTaskBoard,
+          openDecompose,
           selectWorktree: (wt) => {
             select(wt);
             show("workspace");

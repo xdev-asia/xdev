@@ -2,7 +2,7 @@ import type { Api, ApiError, BoardList, BoardTask, TaskPriority, TaskDraft, Task
 
 type BoardApi = Pick<
   Api,
-  "boardList" | "boardGet" | "boardCreate" | "boardUpdate" | "boardDelete" | "boardCreateMany" | "boardLinks" | "boardLinkSet"
+  "boardList" | "boardGet" | "boardCreate" | "boardUpdate" | "boardDelete" | "boardCreateMany" | "boardLinks" | "boardLinkSet" | "boardDecompose"
 >;
 
 export type MockBoard = BoardApi & {
@@ -209,6 +209,16 @@ export function createMockBoard(): MockBoard {
       const b = of(repo);
       if (link) b.links.set(id, { ...link, id });
       else b.links.delete(id);
+    },
+    async boardDecompose(_repo, goal) {
+      await new Promise((r) => setTimeout(r, 300));
+      if (goal.includes("!bad")) return reject("board_decompose_bad");
+      if (goal.includes("!empty")) return reject("board_decompose_empty");
+      return [
+        { title: "Write the data model", body: "Define the types and their checks.", priority: "p1", labels: ["core"] },
+        { title: "Build the screen", body: "Lay out the view and wire it to the data.", priority: "p2", labels: ["ui"] },
+        { title: "Cover it with tests", body: "Unit tests for the logic, one end to end run.", priority: "p2", labels: ["test"] },
+      ].map((d) => ({ ...d, status: "todo" as const, priority: d.priority as TaskPriority }));
     },
     __boardEditOutside(repo, id, patch) {
       const e = of(repo).tasks.get(id);

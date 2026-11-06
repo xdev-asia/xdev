@@ -59,7 +59,7 @@ function folderName(path: string): string {
 }
 
 /** Docs & SDLC: the vault, its docs and the agents that work on them. */
-export type AppRequest = { app: AppId; seq: number; task?: string; /** Tasks: the tab to show. */ tab?: BoardTab; /** Tasks: a file task to open in the editor. */ boardTask?: string };
+export type AppRequest = { app: AppId; seq: number; task?: string; /** Tasks: the tab to show. */ tab?: BoardTab; /** Tasks: a file task to open in the editor. */ boardTask?: string; /** Tasks: open the split-a-goal dialog. */ decompose?: boolean };
 
 export function DocsApp(props: { kit?: KitHost; appRequest?: AppRequest | null; board?: BoardWiring }) {
   const { t } = useI18n();
@@ -185,7 +185,7 @@ export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: App
   const [taskFocus, setTaskFocusState] = useState<{ id: string; seq: number } | null>(null);
   const setTaskFocus = (id: string) => setTaskFocusState((f) => ({ id, seq: (f?.seq ?? 0) + 1 }));
   // The tab or file task a request asked Tasks to show; `seq` remounts Tasks on each one.
-  const [boardFocus, setBoardFocus] = useState<{ tab?: BoardTab; task?: string; seq: number } | null>(null);
+  const [boardFocus, setBoardFocus] = useState<{ tab?: BoardTab; task?: string; decompose?: boolean; seq: number } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [rejecting, setRejecting] = useState<Change[] | null>(null);
@@ -384,7 +384,7 @@ export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: App
     if (props.appRequest.task) setTaskFocus(props.appRequest.task);
     else if (props.appRequest.app === "tasks") {
       setTaskFocusState(null);
-      setBoardFocus({ tab: props.appRequest.tab, task: props.appRequest.boardTask, seq: props.appRequest.seq });
+      setBoardFocus({ tab: props.appRequest.tab, task: props.appRequest.boardTask, decompose: props.appRequest.decompose, seq: props.appRequest.seq });
     }
     openApp(props.appRequest.app);
     // Only a new request runs this; `openApp` just sets state.
@@ -563,6 +563,7 @@ export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: App
             initialTab={taskFocus ? "runs" : boardFocus?.tab}
             initialRun={taskFocus?.id}
             initialTask={taskFocus ? undefined : boardFocus?.task}
+            initialDecompose={taskFocus ? undefined : boardFocus?.decompose}
           />
         )}
         {app === "squads" && (

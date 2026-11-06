@@ -10,6 +10,7 @@ import type { Sessions } from "@/workspace/sessions";
 import { applyFilters, loadFilters, NO_FILTERS, saveFilters, type BoardFilters } from "./boardFilters";
 import { moveTask, startTask, type StartRequest, type StartWhere } from "./boardModel";
 import { BoardView, UnreadableBanner } from "./BoardView";
+import { DecomposeDialog } from "./DecomposeDialog";
 import { FilterBar } from "./FilterBar";
 import { StartTaskDialog } from "./StartTaskDialog";
 import { TaskEditor } from "./TaskEditor";
@@ -31,6 +32,8 @@ export interface BoardHostProps {
   initialRun?: string;
   /** A file task to open in the editor at once. */
   initialTask?: string;
+  /** Open the split-a-goal dialog at once. */
+  initialDecompose?: boolean;
   sessions?: Sessions | null;
   /** The worktree on screen, for "Current worktree". */
   current?: { path: string; branch: string | null } | null;
@@ -107,6 +110,7 @@ function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "lis
   const [filters, setFilters] = useState<BoardFilters>(() => loadFilters(repo.path));
   const [editing, setEditing] = useState<Editing | null>(null);
   const [starting, setStarting] = useState<BoardTask | null>(null);
+  const [deciding, setDeciding] = useState(!!props.initialDecompose);
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [, setTick] = useState(0);
@@ -217,7 +221,7 @@ function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "lis
           onMove={(x, to) => void move(x, to)}
           onOpenTab={(l) => props.onOpenTab?.(l)}
           onClearFilters={clear}
-          onDecompose={props.onDecompose}
+          onDecompose={props.onDecompose ?? (() => setDeciding(true))}
         />
       ) : (
         <>
@@ -236,6 +240,18 @@ function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "lis
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
+            pushToast({ id: "board-saved", text: t("board.saved") });
+            void board.reload();
+          }}
+        />
+      ) : null}
+      {deciding ? (
+        <DecomposeDialog
+          api={api}
+          repo={repo.path}
+          onClose={() => setDeciding(false)}
+          onWritten={() => {
+            setDeciding(false);
             pushToast({ id: "board-saved", text: t("board.saved") });
             void board.reload();
           }}

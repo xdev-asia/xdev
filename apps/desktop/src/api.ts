@@ -853,6 +853,8 @@ export type ErrorCode =
   | "board_conflict"
   | "board_bad_id"
   | "board_too_large"
+  | "board_decompose_empty"
+  | "board_decompose_bad"
   | "license_keychain"
   | "license_unavailable"
   | "license_device_revoked"
@@ -1994,6 +1996,8 @@ export interface Api {
   boardLinks(repo: string): Promise<TaskLink[]>;
   /** Sets, or with `null` clears, the tab working on task `id`. */
   boardLinkSet(repo: string, id: string, link: TaskLink | null): Promise<void>;
+  /** Asks the default agent to split `goal` into task drafts; nothing is written. Rejects `bad_arg` for an empty or over-long goal, `board_decompose_empty` when no task came back and `board_decompose_bad` when the answer was not a task list. */
+  boardDecompose(repo: string, goal: string): Promise<TaskDraft[]>;
   /** The license as this device sees it now, checked offline from the cached token. */
   licenseState(): Promise<LicenseState>;
   /** Asks the service for a fresh token. Offline, resolves with the cached state. */
@@ -2277,6 +2281,8 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "board_conflict",
   "board_bad_id",
   "board_too_large",
+  "board_decompose_empty",
+  "board_decompose_bad",
   "license_keychain",
   "license_unavailable",
   "license_device_revoked",
@@ -2928,6 +2934,7 @@ const tauriApi: Api = {
   boardCreateMany: (repo, drafts) => call("board_create_many", { repo, drafts }),
   boardLinks: (repo) => call("board_links", { repo }),
   boardLinkSet: (repo, id, link) => call("board_link_set", { repo, id, link }),
+  boardDecompose: (repo, goal) => call("board_decompose", { repo, goal }),
   licenseState: () => call("license_state"),
   licenseRefresh: () => call("license_refresh"),
   licenseActivate: (grant) => call("license_activate", { grant: grant ?? null }),

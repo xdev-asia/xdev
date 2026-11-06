@@ -54,6 +54,8 @@ export interface PaletteActions {
   openTask?(id: string): void;
   /** Opens Tasks on the Board tab, and the editor on a file task when one is named. */
   openTaskBoard?(taskId?: string): void;
+  /** Opens the Tasks board with the split-a-goal dialog. */
+  openDecompose?(): void;
   /** Runs a saved quick command in the current worktree. */
   runQuickCommand?(cmd: QuickCommand): void;
   /** Opens the new quick command dialog. */
@@ -207,6 +209,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       activatePro: () => void api.licenseActivate().catch(() => actions.openSettings("account")),
       refreshLicense: () => void api.licenseRefresh().catch(() => undefined),
       openTaskBoard: actions.openTaskBoard ? () => actions.openTaskBoard?.() : undefined,
+      decomposeGoal: actions.openDecompose && current ? () => actions.openDecompose?.() : undefined,
     };
     // The tab in front, when it is a terminal: the same calls as the tab and terminal menus.
     const front = sessions && current && shownTab ? sessions.tabs(current.path).find((x) => x.id === shownTab) : undefined;
