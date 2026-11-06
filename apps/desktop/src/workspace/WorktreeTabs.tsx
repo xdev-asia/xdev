@@ -92,6 +92,7 @@ import { toTabStatus } from "@/terminal/programStatus";
 import { titleCliOf, titleStatus } from "./titles";
 import { PtydBanner } from "@/terminal/PtydBanner";
 import { WorkerStrip } from "./WorkerStrip";
+import { shellTitle } from "./shellTitle";
 import { TerminalSetsDialog } from "@/terminalSets/TerminalSetsDialog";
 import { useTerminalSets } from "@/terminalSets/useTerminalSets";
 import { useBatchLaunch } from "@/terminalSets/useBatchLaunch";
@@ -1286,7 +1287,7 @@ export function WorktreeTabs(props: {
                 }}
                 onProgress={(p) => sessions.noteProgress(tab.id, p)}
                 onTitle={(title) => {
-                  sessions.noteTitle(tab.id, title);
+                  sessions.noteTitle(tab.id, shellTitle(title, profileName(view, tab.profileId, t)));
                   const status = titleStatus(titleCliOf(tab.cli, tab.profileId), title);
                   if (status) sessions.noteTitleStatus(tab.id, status);
                 }}
