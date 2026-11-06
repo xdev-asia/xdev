@@ -1005,6 +1005,58 @@ mod tests {
         assert!(allowed.iter().any(|p| p == "dialog:allow-open"));
     }
 
+    /// The command names of the `generate_handler!` list, read as `build.rs` reads them.
+    fn handler_commands() -> std::collections::BTreeSet<String> {
+        let src = include_str!("lib.rs");
+        let start = src.find("generate_handler![").unwrap() + "generate_handler![".len();
+        let body = &src[start..];
+        body[..body.find(']').unwrap()]
+            .split(',')
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(|p| p.rsplit("::").next().unwrap().to_owned())
+            .collect()
+    }
+
+    /// The app command names a capability file grants (`allow-<command>`, no plugin prefix).
+    fn granted_commands(capability: &str) -> std::collections::BTreeSet<String> {
+        let caps: serde_json::Value = serde_json::from_str(capability).unwrap();
+        caps["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p.as_str())
+            .filter(|p| !p.contains(':'))
+            .map(|p| p.strip_prefix("allow-").unwrap().replace('-', "_"))
+            .collect()
+    }
+
+    #[test]
+    fn main_webview_is_granted_every_app_command() {
+        let handler = handler_commands();
+        assert!(handler.len() > 100, "{}", handler.len());
+        let granted = granted_commands(include_str!("../capabilities/default.json"));
+        let missing: Vec<_> = handler.difference(&granted).collect();
+        let unknown: Vec<_> = granted.difference(&handler).collect();
+        assert!(missing.is_empty(), "not granted to main: {missing:?}");
+        assert!(unknown.is_empty(), "granted but not a command: {unknown:?}");
+    }
+
+    #[test]
+    fn only_the_main_webview_and_the_notch_get_app_commands() {
+        let main: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert_eq!(main["webviews"], serde_json::json!(["main"]));
+        assert!(main.get("windows").is_none());
+        let notch: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/notch.json")).unwrap();
+        assert_eq!(notch["windows"], serde_json::json!(["notch"]));
+        let granted = granted_commands(include_str!("../capabilities/notch.json"));
+        let want: std::collections::BTreeSet<String> =
+            ["notch_state", "notch_open"].map(String::from).into();
+        assert_eq!(granted, want);
+    }
+
     #[test]
     fn identifier_matches_core_app_id() {
         let conf: serde_json::Value =

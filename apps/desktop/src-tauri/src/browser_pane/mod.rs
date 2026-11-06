@@ -1,8 +1,10 @@
 //! Browser tabs: one child webview per live tab, placed over the tab's body by the front end.
 //!
-//! Safety: the webview label starts with `browser-`, which no capability names, and a page may
-//! load only `http`/`https` away from the app's own origins (`address::navigation_allowed`), so a
-//! page never reaches an app or plugin command. Popups become new tabs of the front end.
+//! Safety: app commands are declared in `build.rs`, so a webview may call one only when a
+//! capability grants it; the capabilities name the `main` webview and the `notch` window, never a
+//! `browser-` label, so a page gets no app or plugin command whatever origin it loads. A page may
+//! also load only `http`/`https` away from the app's own origins (`address::navigation_allowed`).
+//! Popups become new tabs of the front end.
 
 pub mod address;
 pub mod pool;

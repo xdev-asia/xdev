@@ -1,7 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "notch",
-  "description": "Permissions for the status strip at the notch: it only listens for its state",
-  "windows": ["notch"],
-  "permissions": ["core:event:default"]
+  "description": "The status strip at the notch: it listens for its state, reads it and opens the terminal it names",
+  "windows": [
+    "notch"
+  ],
+  "permissions": [
+    "core:event:default",
+    "allow-notch-state",
+    "allow-notch-open"
+  ]
 }

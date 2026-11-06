@@ -63,7 +63,8 @@ pub fn clamp_bounds(b: Bounds) -> Option<Bounds> {
 }
 
 /// The webview label of a tab: `browser-` and the id with anything but letters, digits, `-` and
-/// `_` turned into `_`. No capability names this prefix, so the page gets no app command.
+/// `_` turned into `_`. No capability names a webview with this prefix, so the page gets no
+/// app or plugin command.
 pub fn label_of(tab: &str) -> String {
     let id: String = tab
         .chars()
