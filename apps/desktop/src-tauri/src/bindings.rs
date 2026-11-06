@@ -366,6 +366,24 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_orch::ChartProblem::export_all(cfg)?;
     xdev_orch::ChartRun::export_all(cfg)?;
     xdev_orch::SeatTab::export_all(cfg)?;
+    xdev_link::PeerRole::export_all(cfg)?;
+    xdev_link::PeerKind::export_all(cfg)?;
+    xdev_link::LinkBind::export_all(cfg)?;
+    xdev_link::PeersState::export_all(cfg)?;
+    xdev_link::PeerView::export_all(cfg)?;
+    xdev_link::NearbyHost::export_all(cfg)?;
+    xdev_link::PairOfferView::export_all(cfg)?;
+    xdev_link::JoinTarget::export_all(cfg)?;
+    xdev_link::PairPending::export_all(cfg)?;
+    xdev_link::PeerProject::export_all(cfg)?;
+    xdev_link::PeerTermState::export_all(cfg)?;
+    xdev_link::PeerTerm::export_all(cfg)?;
+    xdev_link::PeerTermAttached::export_all(cfg)?;
+    xdev_link::PeerPairRequest::export_all(cfg)?;
+    xdev_link::PeerPairResult::export_all(cfg)?;
+    xdev_link::PeerActivity::export_all(cfg)?;
+    xdev_link::PeerConfirm::export_all(cfg)?;
+    xdev_link::PeerTermClosed::export_all(cfg)?;
     Ok(())
 }
 

@@ -5048,5 +5048,12 @@
   "files.view.tooltip": "Khung xem thứ hai của {rel}",
   "keys.action.file.splitRight": "Tách trình soạn thảo sang phải",
   "keys.action.file.splitDown": "Tách trình soạn thảo xuống dưới",
-  "search.quickOpen.sideHint": "{key}+Enter mở sang bên"
+  "search.quickOpen.sideHint": "{key}+Enter mở sang bên",
+  "error.peer_offline": "Máy tính đó đang ngoại tuyến.",
+  "error.peer_role": "Máy tính đó chưa cấp cho bạn quyền làm việc này.",
+  "error.pair_code": "Mã sai hoặc đã hết hạn.",
+  "error.pair_rejected": "Máy tính kia không xác nhận việc ghép đôi.",
+  "error.pair_busy": "Máy tính đó đang ghép đôi với người khác. Hãy thử lại sau một phút.",
+  "error.peer_denied": "Máy tính kia đã từ chối yêu cầu.",
+  "error.link_port": "Không còn cổng trống từ 47821 đến 47836."
 }
