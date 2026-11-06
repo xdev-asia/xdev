@@ -422,6 +422,17 @@ pub fn routing_set(state: State<'_, AppState>, routing: Routing) -> Result<(), C
     Ok(())
 }
 
+/// Which row of `routing`'s match table takes this work, for the editor's
+/// test box; the rows are the editor's, saved or not.
+#[tauri::command(async)]
+pub fn routing_match(
+    routing: Routing,
+    sentence: String,
+    label: Option<String>,
+) -> xdev_agent::Matched {
+    routing.route(&sentence, label.as_deref())
+}
+
 /// The models each CLI offers, for the routing picker. A CLI that is missing
 /// or fails gives an empty list; the person can still type a name.
 #[derive(Serialize)]

@@ -1643,6 +1643,7 @@ pub struct SwarmSpawn {
 
 /// A worker the spawner started.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SwarmWorker {
     pub dispatch: String,
@@ -1651,6 +1652,7 @@ pub struct SwarmWorker {
 
 /// A worker that did not start.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SwarmFailure {
     pub index: u32,
@@ -1659,6 +1661,7 @@ pub struct SwarmFailure {
 
 /// How a swarm start went; one worker failing does not stop the others.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SwarmStarted {
     pub size: u32,
@@ -1668,6 +1671,7 @@ pub struct SwarmStarted {
 
 /// How a stop-all went.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SwarmStopped {
     pub stopped: Vec<String>,

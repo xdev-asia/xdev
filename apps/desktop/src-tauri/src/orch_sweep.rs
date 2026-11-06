@@ -478,6 +478,7 @@ fn act(
             setup: "skip".to_owned(),
             ready_timeout_ms: READY_DEFAULT_MS,
             account,
+            hidden: None,
         },
         event,
         close_old: reason == FailReason::Stuck,

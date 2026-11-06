@@ -76,8 +76,10 @@ mod ship;
 mod squads;
 mod ssh;
 mod ssh_connect;
+mod stages;
 mod startup;
 mod status;
+mod swarm;
 mod tasks;
 mod term_config_import;
 mod term_tail;
@@ -768,6 +770,17 @@ pub fn run() {
             notch::notch_report,
             notch::notch_state,
             notch::notch_open,
+            accounts::routing_match,
+            stages::pipelines_list,
+            stages::pipeline_new,
+            stages::pipeline_hand_off,
+            stages::pipeline_retry,
+            stages::pipeline_decide,
+            stages::pipeline_remove,
+            swarm::swarm_start_workers,
+            swarm::swarm_workers,
+            swarm::swarm_stop_all,
+            swarm::swarm_open_tab,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
