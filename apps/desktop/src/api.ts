@@ -329,6 +329,8 @@ import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 import type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView } from "@xdev/bindings";
 import type { GateKind, Matched, MatchRow, Pipeline, RevealTab, RouteTarget, StageRun, StageSpec, StageStatus, SwarmRow, SwarmStart, SwarmStopped } from "@xdev/bindings";
+import type { RemoteConnState, RemoteDir, RemoteDirListing, RemoteHostView, RemoteProject, RemoteProjectView, RemoteTarget } from "@xdev/bindings";
+export type { RemoteConnState, RemoteDir, RemoteDirListing, RemoteHostView, RemoteProject, RemoteProjectView, RemoteTarget };
 
 export { createMockApi };
 /** The kinds of `HookKind` that are scripts; the others are lists. */
@@ -818,7 +820,15 @@ export type ErrorCode =
   | "config_too_large"
   | "orchestration"
   | "no_cli"
-  | "single_account";
+  | "single_account"
+  | "remote_offline"
+  | "remote_auth"
+  | "remote_no_sftp"
+  | "remote_no_git"
+  | "remote_path"
+  | "remote_too_large"
+  | "remote_denied"
+  | "remote_unsupported";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1086,7 +1096,8 @@ export interface Api {
   // A terminal per tab. Output arrives on `onData` until the tab calls `ptyKill`; an agent profile
   // rejects with `needs_approval` / `denied` until `ptyApprove` records it in the policy.
   // `resume` is an agent session id (A-Z, a-z, 0-9, `_`, `-`): the CLI continues that session.
-  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string, fork?: boolean, prompt?: string, extraArgs?: string[], overrides?: LaunchOverrides): Promise<PtyInfo>;
+  // `remoteHost` (a saved SSH host id) runs the launch on that host, in the project's remote target.
+  ptySpawn(id: string, cwd: string, profileId: PtyProfile, account: string | null, cols: number, rows: number, onData: (bytes: Uint8Array) => void, resume?: string, fork?: boolean, prompt?: string, extraArgs?: string[], overrides?: LaunchOverrides, remoteHost?: string): Promise<PtyInfo>;
   // Approves the launch `ptySpawn` was refused for; pass the same `resume` and `fork`, as they are part of the launch line.
   ptyApprove(profileId: PtyProfile, account: string | null, resume?: string, fork?: boolean, extraArgs?: string[], overrides?: LaunchOverrides): Promise<void>;
   // Agent profiles and the shells of the `+` menu; each write returns the whole view.
@@ -1840,6 +1851,24 @@ export interface Api {
   chartsSaveSquad(id: string): Promise<Chart>;
   /** Records the tabs opened for a run of chart `id` (one per seat) and links them along its edges. */
   chartsRunBind(id: string, tabs: SeatTab[]): Promise<ChartRun>;
+  /** Remote projects: folders on saved SSH hosts. Their `worktree` (`ssh://<host id><path>`) goes to the `file*`, `filesList` and `worktreeChanges` calls like a local one. */
+  remoteProjectsList(): Promise<RemoteProjectView[]>;
+  /** Resolves `path` on the host and checks it is a folder. Rejects `not_found` (host), `remote_path`, `remote_offline`, `remote_auth`, `remote_no_sftp`. */
+  remoteProjectAdd(hostId: string, path: string, name?: string): Promise<RemoteProjectView>;
+  /** Forgets the project; files on the host are not touched. */
+  remoteProjectRemove(id: string): Promise<void>;
+  /** The subfolders of `path` on the host; its home folder when `path` is left out. */
+  remoteBrowse(hostId: string, path?: string): Promise<RemoteDirListing>;
+  /** Opens the host's SFTP session and exec channel; a no-op while connecting or connected. */
+  remoteConnect(hostId: string): Promise<RemoteHostView>;
+  remoteDisconnect(hostId: string): Promise<void>;
+  remoteHostsState(): Promise<RemoteHostView[]>;
+  /** Where "run on host" starts agents for a local project; null when none is set. */
+  remoteTargetGet(repoId: string): Promise<RemoteTarget | null>;
+  /** null clears it. */
+  remoteTargetSet(repoId: string, target: RemoteTarget | null): Promise<void>;
+  /** `remote://state`: a host's connection moved. */
+  onRemoteState(cb: (view: RemoteHostView) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2034,6 +2063,14 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "orchestration",
   "no_cli",
   "single_account",
+  "remote_offline",
+  "remote_auth",
+  "remote_no_sftp",
+  "remote_no_git",
+  "remote_path",
+  "remote_too_large",
+  "remote_denied",
+  "remote_unsupported",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2199,11 +2236,11 @@ const tauriApi: Api = {
   exportWrite: (expected) => call("export_write", { expected }),
   docFreshness: (path) => call("doc_freshness", { path }),
   staleDocs: () => call("stale_docs"),
-  ptySpawn(id, cwd, profileId, account, cols, rows, onData, resume, fork, prompt, extraArgs, overrides) {
+  ptySpawn(id, cwd, profileId, account, cols, rows, onData, resume, fork, prompt, extraArgs, overrides, remoteHost) {
     // Rust sends raw bytes, which arrive as an ArrayBuffer.
     const out = new Channel<ArrayBuffer | number[]>();
     out.onmessage = (msg) => onData(toBytes(msg));
-    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null, fork: fork ?? null, prompt: prompt ?? null, extraArgs: extraArgs ?? null, ...(overrides ? { overrides } : {}) });
+    return call("pty_spawn", { id, cwd, profileId, account, cols, rows, out, resume: resume ?? null, fork: fork ?? null, prompt: prompt ?? null, extraArgs: extraArgs ?? null, ...(overrides ? { overrides } : {}), ...(remoteHost ? { remoteHost } : {}) });
   },
   ptyApprove: (profileId, account, resume, fork, extraArgs, overrides) => call("pty_approve", { profileId, account, resume: resume ?? null, fork: fork ?? null, extraArgs: extraArgs ?? null, ...(overrides ? { overrides } : {}) }),
   profiles: () => call("profiles_list"),
@@ -2592,6 +2629,16 @@ const tauriApi: Api = {
   chartsDuplicate: (id, name) => call("charts_duplicate", { id, name }),
   chartsSaveSquad: (id) => call("charts_save_squad", { id }),
   chartsRunBind: (id, tabs) => call("charts_run_bind", { id, tabs }),
+  remoteProjectsList: () => call("remote_projects_list"),
+  remoteProjectAdd: (hostId, path, name) => call("remote_project_add", { hostId, path, name: name ?? null }),
+  remoteProjectRemove: (id) => call("remote_project_remove", { id }),
+  remoteBrowse: (hostId, path) => call("remote_browse", { hostId, path: path ?? null }),
+  remoteConnect: (hostId) => call("remote_connect", { hostId }),
+  remoteDisconnect: (hostId) => call("remote_disconnect", { hostId }),
+  remoteHostsState: () => call("remote_hosts_state"),
+  remoteTargetGet: (repoId) => call("remote_target_get", { repoId }),
+  remoteTargetSet: (repoId, target) => call("remote_target_set", { repoId, target }),
+  onRemoteState: (cb) => listen<RemoteHostView>("remote://state", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {
