@@ -289,10 +289,10 @@ mod tests {
         write(&dir.path().join("outside/big"), 5000);
         write(&wt.join("a"), 3);
         std::os::unix::fs::symlink(dir.path().join("outside"), wt.join("node_modules")).unwrap();
-        let rows = disk_usage(&[wt.clone()], &no_cancel()).unwrap();
+        let rows = disk_usage(std::slice::from_ref(&wt), &no_cancel()).unwrap();
         assert_eq!(rows[0].total, 3);
         assert!(rows[0].heavy.is_empty());
-        let err = remove_heavy(&[wt.clone()], &[wt.join("node_modules")]).unwrap_err();
+        let err = remove_heavy(std::slice::from_ref(&wt), &[wt.join("node_modules")]).unwrap_err();
         assert_eq!(err.code(), "bad_path");
         assert!(dir.path().join("outside/big").exists());
     }
