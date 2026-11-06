@@ -180,6 +180,10 @@ pub enum OrchVerb {
     },
     /// What an earlier `--retry-request` answered.
     RequestShow { id: String },
+    /// Paired computers: online or not, the role they gave this one, and
+    /// their tabs when that role is at least viewer. Hand off to one with
+    /// `send --type handoff --to <computer>/<tab>`.
+    Peers,
 }
 
 #[derive(Args)]
@@ -521,6 +525,7 @@ pub fn request(
             )
         }
         OrchVerb::RequestShow { id } => ("orchestration.request-show", json!({ "id": id })),
+        OrchVerb::Peers => ("orchestration.peers", json!({})),
     };
     if let Value::Object(map) = &mut params {
         put(map, "run", &args.common.run);
@@ -709,6 +714,28 @@ pub fn plain(method: &str, result: &Value) -> Option<String> {
             cell(&result["method"]),
             result["answer"]
         ),
+        "peers" => {
+            let mut out = String::new();
+            for p in result.as_array().into_iter().flatten() {
+                let online = if p["online"].as_bool().unwrap_or(false) {
+                    "online"
+                } else {
+                    "offline"
+                };
+                out.push_str(&format!(
+                    "{}\t{online}\t{}\n",
+                    cell(&p["name"]),
+                    cell(&p["theirRole"])
+                ));
+                for t in p["tabs"].as_array().into_iter().flatten() {
+                    out.push_str(&format!("tab\t{}\n", row(t, &["id", "state", "title"])));
+                }
+            }
+            if out.is_empty() {
+                out.push_str("no paired computers\n");
+            }
+            out
+        }
         _ => format!("{result}\n"),
     })
 }
@@ -741,6 +768,23 @@ b"], "remaining": 0, "next": "End your turn." });
             "no new messages
 "
         ));
+    }
+
+    #[test]
+    fn peers_lists_each_computer_then_its_tabs() {
+        let r = json!([
+            { "name": "studio", "online": true, "theirRole": "viewer",
+              "tabs": [{ "id": "t1", "title": "review", "state": "idle" }] },
+            { "name": "laptop", "online": false, "theirRole": null },
+        ]);
+        assert_eq!(
+            plain("orchestration.peers", &r).unwrap(),
+            "studio\tonline\tviewer\ntab\tt1\tidle\treview\nlaptop\toffline\t-\n"
+        );
+        assert_eq!(
+            plain("orchestration.peers", &json!([])).unwrap(),
+            "no paired computers\n"
+        );
     }
 
     #[test]

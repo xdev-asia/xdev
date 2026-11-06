@@ -576,6 +576,7 @@ const READ_ONLY: &[&str] = &[
     "read",
     "request-show",
     "links",
+    "peers",
 ];
 
 /// `orchestration.<verb>`; a verb that is not built answers `unsupported`.
@@ -1120,6 +1121,11 @@ fn handle_verb(
                 .ok_or_else(|| AppError::new("bad_request", "handoff needs --to <tab>"))?;
             let body = text_param(req, "body").unwrap_or_default();
             let (tabs, _) = ctx.board.tabs();
+            if let crate::peers::mail::Route::Peer { peer_id, tab } =
+                crate::peers::mail::route(&to, crate::peers::resolve)
+            {
+                return hand_off_to_peer(&tabs, &from, &peer_id, &tab, &body);
+            }
             let target = tab_named(&tabs, &to)?;
             let h = Handoff {
                 from: &from,
@@ -1129,6 +1135,7 @@ fn handle_verb(
             let msg = hand_off(ctx.orch, ctx.data, &tabs, h, ctx.write_pty, ctx.now_ms)?;
             to_value(&msg)
         }
+        "peers" => to_value(&crate::peers::report()),
         "links" => {
             let tab = acting.tab.clone();
             let links = ctx.orch.with_store(ctx.data, |s| s.link_list())?;
@@ -1640,6 +1647,154 @@ pub(crate) fn hand_off(
     let title = sender.title.clone().unwrap_or_else(|| sender.id.clone());
     type_into(write, &target.id, &xdev_orch::handoff_text(&title, body))?;
     Ok(hub.with_store(data, |s| s.handoff(from, &target.id, body.trim(), now))?)
+}
+
+/// Hands `body` from tab `from` here to tab `tab` on paired computer
+/// `peer_id`. The answer is the other side's message, `to` naming the peer.
+fn hand_off_to_peer(
+    tabs: &[crate::cli_verbs::TabReport],
+    from: &str,
+    peer_id: &str,
+    tab: &str,
+    body: &str,
+) -> Result<Value, AppError> {
+    if body.trim().is_empty() {
+        return Err(AppError::new("bad_request", "nothing to hand off"));
+    }
+    let core = crate::peers::current()
+        .ok_or_else(|| AppError::new("peer_offline", "paired computers are off"))?;
+    let title = tabs
+        .iter()
+        .find(|t| t.id == from)
+        .and_then(|t| t.title.clone())
+        .unwrap_or_else(|| from.to_owned());
+    crate::peers::mail::send(&core, peer_id, tab, &title, body).map_err(|e| {
+        let code = crate::peers::cmd::code_of(&e.code);
+        AppError::new(code, format!("the paired computer answered {code}"))
+    })
+}
+
+/// A hand-off from tab `from_title` on paired computer `from_host` to the
+/// agent in tab `to` here: typed in with a header naming the sender, kept as
+/// mail from `peer:<from_host>`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn hand_off_external(
+    hub: &OrchHub,
+    data: &std::path::Path,
+    tabs: &[crate::cli_verbs::TabReport],
+    from_host: &str,
+    to: &str,
+    from_title: &str,
+    body: &str,
+    write: &dyn Fn(&str, &[u8]) -> bool,
+    now: i64,
+) -> Result<xdev_orch::Message, AppError> {
+    if body.trim().is_empty() {
+        return Err(AppError::new("bad_request", "nothing to hand off"));
+    }
+    if body.len() > crate::cli_terminal::SEND_MAX_BYTES {
+        return Err(AppError::new(
+            "bad_request",
+            format!(
+                "a hand-off is at most {} bytes",
+                crate::cli_terminal::SEND_MAX_BYTES
+            ),
+        ));
+    }
+    let named = tab_named(tabs, to)?;
+    let target = agent_tab(tabs, &named.id)?;
+    type_into(
+        write,
+        &target.id,
+        &xdev_orch::handoff_text(from_title, body),
+    )?;
+    Ok(hub.with_store(data, |s| {
+        s.tab_note(
+            &format!("peer:{from_host}"),
+            &target.id,
+            xdev_orch::MessageType::Handoff,
+            xdev_orch::links::HANDOFF_SUBJECT,
+            body.trim(),
+            now,
+        )
+    })?)
+}
+
+/// `hand_off_external` for the app: the live board, the PTYs, the store.
+pub(crate) fn hand_off_from_peer(
+    app: &AppHandle,
+    from_host: &str,
+    to: &str,
+    from_title: &str,
+    body: &str,
+) -> Result<Value, &'static str> {
+    use tauri::Manager;
+    let state = app.state::<AppState>();
+    let data = data_dir(&state).map_err(|e| e.code)?;
+    let tabs = board_tabs(app);
+    let write = pty_writer(app);
+    let hub = app.state::<OrchHub>();
+    let msg = hand_off_external(
+        &hub,
+        data,
+        &tabs,
+        from_host,
+        to,
+        from_title,
+        body,
+        &write,
+        now_ms(),
+    )
+    .map_err(|e| match e.code {
+        "not_found" | "closed" | "ambiguous" | "terminal_not_agent" => "no_term",
+        _ => "bad_request",
+    })?;
+    to_value(&msg).map_err(|_| "bad_request")
+}
+
+/// Opens a tab in `worktree` for a paired computer and waits for the UI.
+/// Answers the new tab's id.
+pub(crate) fn open_for_peer(
+    app: &AppHandle,
+    worktree: &str,
+    profile: &str,
+    prompt: Option<String>,
+    title: &str,
+) -> Result<String, &'static str> {
+    use tauri::{Emitter, Manager};
+    const READY_MS: u64 = 30_000;
+    let state = app.state::<AppState>();
+    let data = data_dir(&state).map_err(|e| e.code)?;
+    let hub = app.state::<OrchHub>();
+    let tab = hub
+        .with_store(data, |s| Ok(s.next_id("tab")))
+        .map_err(|_| "bad_request")?;
+    let dispatch = format!("peer-{}", uuid::Uuid::new_v4().simple());
+    let open = WorkerOpen {
+        dispatch: dispatch.clone(),
+        tab: tab.clone(),
+        title: title.to_owned(),
+        worktree: worktree.to_owned(),
+        profile: profile.to_owned(),
+        prompt: prompt.unwrap_or_default(),
+        setup: "skip".into(),
+        ready_timeout_ms: READY_MS,
+        account: None,
+        hidden: None,
+    };
+    let wait = Duration::from_millis(READY_MS) + hub.waits.open_slack;
+    let answer = hub.opens.ask(
+        dispatch,
+        || {
+            let _ = app.emit("orchestration://open-worker", &open);
+        },
+        wait,
+    );
+    match answer {
+        Some(WorkerOpenOutcome::Ok) => Ok(tab),
+        Some(WorkerOpenOutcome::Failed { .. }) => Err("bad_request"),
+        None => Err("peer_offline"),
+    }
 }
 
 /// Types the nudge text into tab `to` and keeps it as mail.
@@ -2836,6 +2991,53 @@ line", "title": "A"}),
         child.title = Some("Reviewer".to_owned());
         let shell = tab("p-other", &f.other, false, "idle");
         f.board.replace(vec![lead, child, shell], None);
+    }
+
+    #[test]
+    fn a_hand_off_from_a_paired_computer_names_its_tab_and_host() {
+        let f = crate::cli_verbs::tests::fixture();
+        board(&f);
+        let (tabs, _) = f.board.tabs();
+        let typed: Mutex<Vec<(String, Vec<u8>)>> = Mutex::default();
+        let write = |tab: &str, b: &[u8]| {
+            typed.lock().unwrap().push((tab.to_owned(), b.to_vec()));
+            true
+        };
+        let h = |to: &str, body: &str| {
+            hand_off_external(
+                &f.orch, &f.data, &tabs, "hostA", to, "Lead", body, &write, 9,
+            )
+        };
+        let msg = h("Reviewer", "check the diff").unwrap();
+        assert_eq!(msg.from, "peer:hostA");
+        assert_eq!(msg.to, "tab:p-child");
+        assert_eq!(msg.subject, "handoff");
+        let typed = typed.lock().unwrap().clone();
+        assert_eq!(typed[0].0, "p-child");
+        let text = String::from_utf8_lossy(&typed[0].1).into_owned();
+        assert!(text.contains(
+            "[Handoff from Lead]
+check the diff"
+        ));
+        assert_eq!(h("p-other", "x").unwrap_err().code, "terminal_not_agent");
+        assert_eq!(h("nobody", "x").unwrap_err().code, "not_found");
+        assert_eq!(h("Reviewer", "  ").unwrap_err().code, "bad_request");
+    }
+
+    #[test]
+    fn a_handoff_to_an_unknown_computer_stays_local_and_peers_is_empty_while_off() {
+        let f = crate::cli_verbs::tests::fixture();
+        board(&f);
+        let got = f.call(
+            Some("p-lead"),
+            "orchestration.handoff",
+            json!({"to": "A-laptop/review", "body": "x"}),
+        );
+        // No paired computer is called A-laptop: it is a local tab name.
+        assert_eq!(got.unwrap_err().code, "not_found");
+        assert!(f.pty_writes.lock().unwrap().is_empty());
+        let peers = f.call(None, "orchestration.peers", json!({})).unwrap();
+        assert_eq!(peers, json!([]));
     }
 
     #[test]

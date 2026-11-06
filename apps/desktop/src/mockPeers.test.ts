@@ -106,3 +106,28 @@ test("activity and confirm hooks emit their events", async () => {
   await peers.peerConfirmReply(id, true);
   await expect(peers.peerConfirmReply(id, true)).rejects.toEqual({ code: "not_found" });
 });
+
+test("a viewer cannot type into a paired computer's terminal; an operator can", async () => {
+  const peers = createMockPeers();
+  const data = new TextEncoder().encode("ls\r");
+  peers.__peersSetTheirRole("viewer");
+  await expect(peers.peerTermWrite("studio-mac", "review", data)).rejects.toEqual({ code: "peer_role" });
+  // A viewer still sees the tabs.
+  expect((await peers.peerTerms("studio-mac")).map((t) => t.id)).toEqual(["review", "shell"]);
+  peers.__peersSetTheirRole("operator");
+  await expect(peers.peerTermWrite("studio-mac", "review", data)).resolves.toBeUndefined();
+});
+
+test("a paired computer whose person says no answers peer_denied until that stops", async () => {
+  const peers = createMockPeers();
+  const data = new TextEncoder().encode("ls\r");
+  peers.__peersConfirmDeny();
+  await expect(peers.peerTermWrite("studio-mac", "review", data)).rejects.toEqual({ code: "peer_denied" });
+  await expect(peers.peerAgentStart("studio-mac", "app", "claude", null)).rejects.toEqual({ code: "peer_denied" });
+  // The role check comes first.
+  peers.__peersSetTheirRole("viewer");
+  await expect(peers.peerTermWrite("studio-mac", "review", data)).rejects.toEqual({ code: "peer_role" });
+  peers.__peersSetTheirRole("operator");
+  peers.__peersConfirmDeny(false);
+  await expect(peers.peerTermWrite("studio-mac", "review", data)).resolves.toBeUndefined();
+});

@@ -184,6 +184,7 @@ export type { LaunchVerdict } from "./LaunchVerdict";
 export type { LineCount } from "./LineCount";
 export type { LineHit } from "./LineHit";
 export type { LinkBind } from "./LinkBind";
+export type { LinkSettings } from "./LinkSettings";
 export type { Linked } from "./Linked";
 export type { LocalForward } from "./LocalForward";
 export type { LogCommit } from "./LogCommit";

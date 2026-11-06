@@ -53,6 +53,10 @@ export type MockPeers = PeersApi & {
   __peersActivity(ev?: Partial<PeerActivity>): void;
   /** A paired computer asks before acting here: emits `peers://confirm` and resolves with its request id. */
   __peersConfirm(ev?: Partial<Omit<PeerConfirm, "requestId">>): Promise<string>;
+  /** `peerId` (default `studio-mac`) now gives this computer `role`: emits `peers://changed`. */
+  __peersSetTheirRole(role: PeerRole, peerId?: string): void;
+  /** Every paired computer asks its person before an action and the answer is no (`on = false` undoes it). */
+  __peersConfirmDeny(on?: boolean): void;
 };
 
 /** The code `build-box` shows; joining it with this code pairs. */
@@ -121,6 +125,8 @@ export function createMockPeers(): MockPeers {
   const confirms = new Set<string>();
   const streams = new Map<string, { timer: ReturnType<typeof setInterval>; onData: (b: Uint8Array) => void }>();
   let offer: PairOfferView | null = null;
+  // The other side asks before every action and its person says no.
+  let denied = false;
 
   const changed: Listeners<PeersState> = new Set();
   const nearbyCbs: Listeners<NearbyHost[]> = new Set();
@@ -305,6 +311,7 @@ export function createMockPeers(): MockPeers {
     async peerTermWrite(peerId, termId, data) {
       const p = reach(peerId, "operator");
       if (typeof p === "string") return reject(p);
+      if (denied) return reject("peer_denied");
       if (!terms[peerId]?.some((t) => t.id === termId)) return reject("not_found");
       // The remote terminal echoes what was typed.
       streams.get(key(peerId, termId))?.onData(new Uint8Array(data));
@@ -313,6 +320,7 @@ export function createMockPeers(): MockPeers {
     async peerAgentStart(peerId, projectId, profileId, prompt) {
       const p = reach(peerId, "operator");
       if (typeof p === "string") return reject(p);
+      if (denied) return reject("peer_denied");
       if (!projects[peerId]?.some((x) => x.id === projectId)) return reject("not_found");
       const term: PeerTerm = { id: next("term"), title: prompt ? prompt.slice(0, 32) : profileId, agent: profileId, state: "running", projectId };
       (terms[peerId] ??= []).push(term);
@@ -351,6 +359,15 @@ export function createMockPeers(): MockPeers {
       confirms.add(req.requestId);
       emitTo(confirm, req);
       return req.requestId;
+    },
+    __peersSetTheirRole(role, peerId = "studio-mac") {
+      const p = find(peerId);
+      if (!p) return;
+      p.theirRole = role;
+      emitChanged();
+    },
+    __peersConfirmDeny(on = true) {
+      denied = on;
     },
   };
 }

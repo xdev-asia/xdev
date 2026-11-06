@@ -393,6 +393,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_link::PeerActivity::export_all(cfg)?;
     xdev_link::PeerConfirm::export_all(cfg)?;
     xdev_link::PeerTermClosed::export_all(cfg)?;
+    crate::settings::LinkSettings::export_all(cfg)?;
     crate::lsp::LspSettings::export_all(cfg)?;
     crate::lsp::LspServerInfo::export_all(cfg)?;
     crate::lsp::LspEvent::export_all(cfg)?;
