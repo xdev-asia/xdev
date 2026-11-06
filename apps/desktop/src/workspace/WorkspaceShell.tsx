@@ -124,6 +124,8 @@ import { SshAuthPrompts } from "@/components/SshAuthDialog";
 import { PeersHost } from "@/peers/PeersHost";
 import { runMenuAction } from "@/shell/menuActions";
 import { useShellLabels } from "@/shell/shellLabels";
+import { annotateClipboard } from "@/capture/annotateBridge";
+import { CaptureHost } from "@/capture/CaptureHost";
 import { startCapture, useCaptureFailures } from "@/capture/useCaptureFailures";
 import { askQuit, guardClose, installCloseGuard, type QuitAsk, type QuitChoice } from "./quitGuard";
 import { getTerminalSettings } from "@/terminal/terminalSettings";
@@ -2510,6 +2512,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         request={composerAsk}
       />
       <TaskEditorHost api={api} repos={repos} current={current} />
+      <CaptureHost api={api} sessions={() => sessions} current={() => current?.path ?? null} shownTab={() => (current ? (shownTab[current.path] ?? null) : null)} />
       <PaletteHost
         open={jumpOpen}
         onClose={() => setJumpOpen(false)}
@@ -2568,6 +2571,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           },
           newQuickCommand: () => openSettings("qcmd", "new"),
           captureScreen: () => startCapture(api, t),
+          annotateClipboard: () => void annotateClipboard(api, t),
         }}
       />
       {trusting && (

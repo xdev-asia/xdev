@@ -33,6 +33,8 @@ export interface HandleDeps {
   shell?(): ShellKind;
   /** How a paste ended, for the toast. */
   pasted?(result: PasteResult): void;
+  /** Opens a pasted image for notes first; see `pasteClipboard`. */
+  annotate?(path: string): Promise<string | null>;
 }
 
 /** A handle that reads its xterm on every call, so it stays valid across remounts. */
@@ -58,6 +60,7 @@ export function createTerminalHandle(deps: HandleDeps): TerminalHandle {
         },
         shell: () => deps.shell?.() ?? "unknown",
         bracketedMode: () => deps.term()?.modes.bracketedPasteMode ?? false,
+        annotate: deps.annotate,
       });
       deps.pasted?.(result);
     },

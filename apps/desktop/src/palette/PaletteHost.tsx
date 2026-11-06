@@ -60,6 +60,8 @@ export interface PaletteActions {
   newQuickCommand?(): void;
   /** Starts a screen capture; the image arrives as `capture://ready`. */
   captureScreen?(): void;
+  /** Opens the clipboard image in the annotate dialog. */
+  annotateClipboard?(): void;
 }
 
 export interface PaletteHostProps {
@@ -194,6 +196,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       toggleSidebar: () => actions.toggleSidebar(),
       showDocs: () => actions.showDocs(),
       captureScreen: actions.captureScreen ? () => actions.captureScreen?.() : undefined,
+      annotateClipboard: actions.annotateClipboard ? () => actions.annotateClipboard?.() : undefined,
       stageAll: current && actions.stageAllChanges ? () => actions.stageAllChanges?.() : undefined,
       resumeSession: actions.openSessions ? () => actions.openSessions?.() : undefined,
       discardAll: current && actions.discardAllChanges ? () => actions.discardAllChanges?.() : undefined,

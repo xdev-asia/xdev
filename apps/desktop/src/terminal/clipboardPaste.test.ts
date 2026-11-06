@@ -69,4 +69,24 @@ describe("pasteClipboard", () => {
     });
     expect(await pasteClipboard(d)).toBe("failed");
   });
+
+  it("with annotate set, an image path is awaited through it and the returned path is written", async () => {
+    const annotate = vi.fn(async (path: string) => `${path}.annotated.png`);
+    const d = deps({ saveImage: vi.fn(async () => "/tmp/a.png"), annotate });
+    expect(await pasteClipboard(d)).toBe("image");
+    expect(annotate).toHaveBeenCalledWith("/tmp/a.png");
+    expect(d.writeRaw).toHaveBeenCalledWith("\x1b[200~/tmp/a.png.annotated.png\x1b[201~");
+  });
+
+  it("a null from annotate is a discard: nothing is written", async () => {
+    const d = deps({ saveImage: vi.fn(async () => "/tmp/a.png"), annotate: vi.fn(async () => null) });
+    expect(await pasteClipboard(d)).toBe("discarded");
+    expect(d.writeRaw).not.toHaveBeenCalled();
+  });
+
+  it("annotate is not called for text", async () => {
+    const annotate = vi.fn(async (path: string) => path);
+    await pasteClipboard(deps({ readText: vi.fn(async () => "hello"), annotate }));
+    expect(annotate).not.toHaveBeenCalled();
+  });
 });
