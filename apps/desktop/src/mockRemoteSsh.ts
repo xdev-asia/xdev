@@ -335,7 +335,7 @@ export function createMockRemoteSsh(local: RemoteRouted, hosts: () => Promise<Ss
   };
 }
 
-/** The `worktree_*` calls the desktop refuses on an `ssh://` worktree with `remote_unsupported`, like `local_only`. */
+/** The `worktree_*` and `file_reveal` calls the desktop refuses on an `ssh://` worktree with `remote_unsupported`, like `local_only`. */
 export const REMOTE_UNSUPPORTED = {
   worktreeArchiveRun: "worktree_archive_run",
   worktreeAdopt: "worktree_adopt",
@@ -350,6 +350,50 @@ export const REMOTE_UNSUPPORTED = {
   worktreeCreate: "worktree_create",
   worktreeNamePreview: "worktree_name_preview",
   worktreeRestore: "worktree_restore",
+  worktreeFileHead: "worktree_file_head",
+  worktreeFileHeadBytes: "worktree_file_head_bytes",
+  worktreeShip: "worktree_ship",
+  worktreePush: "worktree_push",
+  worktreePull: "worktree_pull",
+  worktreeFastForward: "worktree_fast_forward",
+  worktreeRebaseFromBase: "worktree_rebase_from_base",
+  worktreeLog: "worktree_log",
+  worktreeCommitFiles: "worktree_commit_files",
+  worktreeCommitFile: "worktree_commit_file",
+  worktreeOpenCommit: "worktree_open_commit",
+  worktreeOpenFileOnHost: "worktree_open_file_on_host",
+  worktreeSync: "worktree_sync",
+  worktreeFetch: "worktree_fetch",
+  worktreeForcePush: "worktree_force_push",
+  worktreeSyncFork: "worktree_sync_fork",
+  worktreeAmend: "worktree_amend",
+  worktreePr: "worktree_pr",
+  worktreePrCreate: "worktree_pr_create",
+  worktreePrChecks: "worktree_pr_checks",
+  worktreePrComments: "worktree_pr_comments",
+  worktreePrCommentPost: "worktree_pr_comment_post",
+  worktreePrHead: "worktree_pr_head",
+  worktreePrThreadResolve: "worktree_pr_thread_resolve",
+  worktreePrReaction: "worktree_pr_reaction",
+  worktreePrChecksRerun: "worktree_pr_checks_rerun",
+  worktreePrMergeInfo: "worktree_pr_merge_info",
+  worktreePrMerge: "worktree_pr_merge",
+  worktreePrOpen: "worktree_pr_open",
+  worktreeCheckLog: "worktree_check_log",
+  worktreeDraftCommit: "worktree_draft_commit",
+  worktreeDraftPr: "worktree_draft_pr",
+  worktreeReview: "worktree_review",
+  worktreeReviewFile: "worktree_review_file",
+  worktreeStage: "worktree_stage",
+  worktreeBranches: "worktree_branches",
+  worktreeStageState: "worktree_stage_state",
+  worktreeDiscard: "worktree_discard",
+  worktreeSuggestBranch: "worktree_suggest_branch",
+  worktreeConflicts: "worktree_conflicts",
+  worktreeConflictContinue: "worktree_conflict_continue",
+  worktreeConflictAbort: "worktree_conflict_abort",
+  worktreeConflictResolve: "worktree_conflict_resolve",
+  fileReveal: "file_reveal",
 } as const;
 
 export type RemoteGuarded = Pick<Api, keyof typeof REMOTE_UNSUPPORTED | "worktreeStat">;
@@ -359,13 +403,15 @@ export function guardRemote(local: RemoteGuarded, remote: Pick<Api, "worktreeCha
   const out: Record<string, (first: string, ...rest: unknown[]) => Promise<unknown>> = {};
   for (const [name, command] of Object.entries(REMOTE_UNSUPPORTED)) {
     const fn = local[name as keyof typeof REMOTE_UNSUPPORTED] as (first: string, ...rest: unknown[]) => Promise<unknown>;
-    out[name] = async (first, ...rest) => (first.startsWith("ssh://") ? fail("remote_unsupported", command) : fn(first, ...rest));
+    out[name] = async (first, ...rest) => (first.startsWith("ssh://") ? fail("remote_unsupported", command) : fn.call(local, first, ...rest));
   }
   const guarded = out as unknown as RemoteGuarded;
+  // Taken now: `local` may be the object these calls replace.
+  const stat = local.worktreeStat.bind(local);
   return {
     ...guarded,
     async worktreeStat(path) {
-      if (!parseRemote(path)) return local.worktreeStat(path);
+      if (!parseRemote(path)) return stat(path);
       return { files: (await remote.worktreeChanges(path)).length, added: 0, removed: 0 };
     },
   };

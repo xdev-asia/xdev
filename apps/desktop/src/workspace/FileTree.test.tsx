@@ -10,6 +10,7 @@ import { ContextMenu } from "@/ui/ContextMenu";
 import { FileTree } from "./FileTree";
 import type { WatchHealth } from "./worktreeWatch";
 import { emptyQueue, enqueue, type WatchQueue } from "@/files/treeRefresh";
+import { DEMO_SEED } from "@/mockApi";
 
 const toasts = vi.hoisted(() => ({ pushed: [] as { id: string; text: string }[] }));
 vi.mock("./toastStore", () => ({ pushToast: (toast: { id: string; text: string }) => void toasts.pushed.push(toast) }));
@@ -86,15 +87,15 @@ function mount(render: (changes: WorktreeChange[]) => unknown, first: WorktreeCh
   return { all: () => nodes(draw(current)), html: () => renderToStaticMarkup(draw(current) as ReactElement), again: run };
 }
 
-function tree(api: Api, changes: WorktreeChange[] = CHANGES) {
+function tree(api: Api, changes: WorktreeChange[] = CHANGES, worktree = OAK) {
   const onOpen = vi.fn();
   const feed: { queue: WatchQueue; health?: WatchHealth; push(events: FsEvent[]): void } = {
-    queue: emptyQueue(OAK),
+    queue: emptyQueue(worktree),
     push(events) {
       feed.queue = enqueue(feed.queue, events);
     },
   };
-  const view = mount((list) => FileTree({ api, worktree: OAK, changes: list, onOpen, queue: feed.queue, watchHealth: feed.health }), changes);
+  const view = mount((list) => FileTree({ api, worktree, changes: list, onOpen, queue: feed.queue, watchHealth: feed.health }), changes);
   const rows = () => view.all().filter((n) => n.props.role === "treeitem");
   const label = (r: Node) => nodes(r).find((n) => n.props.className === "ws-tree-name")?.props.children;
   const row = (name: string) => rows().find((r) => label(r) === name)!;
@@ -495,4 +496,43 @@ it("says when live updates stopped at the system watch limit", async () => {
   const html = view.html();
   expect(html).toContain(en("files.watch.limit.title"));
   expect(html).toContain("fs.inotify.max_user_watches");
+});
+
+const REMOTE = "ssh://devbox/home/dev/app";
+
+it("a remote worktree's tree comes from its file list, read once per refresh", async () => {
+  const api = createMockApi(DEMO_SEED);
+  await api.remoteProjectAdd("devbox", "/home/dev/app");
+  const dirs = vi.spyOn(api, "worktreeListDir");
+  const files = vi.spyOn(api, "filesList");
+  // The host reports the file changed; its diff is not read over SSH yet.
+  const view = tree(api, [{ path: "src/main.ts", kind: "modified" }], REMOTE);
+  await tick();
+  expect(view.rows().map(view.label)).toEqual(["src", "README.md"]);
+  view.row("src").props.onClick();
+  await tick();
+  expect(view.row("main.ts").props["aria-level"]).toBe(2);
+  expect(dirs).not.toHaveBeenCalled();
+  expect(files).toHaveBeenCalledTimes(2);
+  // A file opens on the host like a local one.
+  const opened: OpenFileRequest[] = [];
+  const stop = onOpenFile((r) => opened.push(r));
+  view.row("main.ts").props.onClick();
+  stop();
+  expect(opened).toEqual([{ worktree: REMOTE, rel: "src/main.ts" }]);
+  expect(view.onOpen).not.toHaveBeenCalled();
+});
+
+it("a remote worktree's local-only actions say they are not available yet", async () => {
+  const api = createMockApi(DEMO_SEED);
+  await api.remoteProjectAdd("devbox", "/home/dev/app");
+  const view = tree(api, [], REMOTE);
+  await tick();
+  for (const id of ["reveal", "openOnHost"]) {
+    rightClick(view, "README.md");
+    menuOf(view)!.items.find((i: { id: string }) => i.id === id).run();
+    await tick();
+    expect(toasts.pushed.at(-1)!.text).toBe(en("remote.unsupported"));
+    toasts.pushed.length = 0;
+  }
 });

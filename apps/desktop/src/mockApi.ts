@@ -1034,7 +1034,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     __spawnRemoteHosts: () => ({ ...remoteHosts }),
   };
   // The `worktree_*` calls the desktop guards: refused on an `ssh://` worktree, `worktreeStat` from the remote changes.
-  Object.assign(api, guardRemote(workspace, api));
+  Object.assign(api, guardRemote(api, api));
   // `ptySpawn` takes the host a launch runs on as its last argument; the mock keeps it for the tests.
   const spawn = api.ptySpawn.bind(api);
   api.ptySpawn = (...args: Parameters<Api["ptySpawn"]>) => {

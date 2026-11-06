@@ -28,7 +28,7 @@ async function addDevbox(page: Page): Promise<void> {
 test("add devbox, open README.md, edit and save", async ({ page, openApp }) => {
   await openApp();
   await addDevbox(page);
-  // The folder tree lists through `worktree_list_dir`, which a remote worktree refuses; the name filter lists through `files_list`.
+  // The name filter lists through `files_list`.
   await page.getByRole("button", { name: "Filter by name" }).click();
   await page.getByRole("searchbox").first().fill("README");
   await page.getByRole("treeitem", { name: "README.md" }).dblclick();
@@ -41,6 +41,17 @@ test("add devbox, open README.md, edit and save", async ({ page, openApp }) => {
   await expect
     .poll(() => page.evaluate(async () => (await (window as unknown as { xdevMock: Mock }).xdevMock.fileRead("ssh://devbox/home/dev/app", "README.md")).text), { timeout: 5000 })
     .toContain("edited over ssh");
+});
+
+test("the folder tree of a remote project opens a file", async ({ page, openApp }) => {
+  await openApp();
+  await addDevbox(page);
+  // The tree is built from `files_list`; `worktree_list_dir` refuses an ssh:// worktree.
+  await page.getByRole("treeitem", { name: "src" }).click();
+  await page.getByRole("treeitem", { name: "main.ts" }).click();
+  const editor = page.getByRole("textbox", { name: "Document editor" });
+  await expect(editor).toBeVisible();
+  await expect(editor).toContainText("hello from devbox");
 });
 
 test("a dropped connection shows the reconnecting banner, then it goes away", async ({ page, openApp }) => {
