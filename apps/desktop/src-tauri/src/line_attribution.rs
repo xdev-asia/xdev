@@ -1,15 +1,18 @@
 //! Who wrote each changed line of a review file, computed on demand from
 //! what attribution already keeps: the diff's base text, the kept agent
-//! versions of the file (oldest first) and the file on disk.
+//! versions and hidden outside versions of the file (merged oldest first)
+//! and the file on disk.
 //!
 //! Each version is line-diffed against the one before it; lines it inserts
-//! or replaces go to that version's author. The final step to the text on
-//! disk gives the remaining changes to "outside" (the person, or any tool
-//! that is not an agent). Lines equal to the base carry nothing.
+//! or replaces go to that version's author. Outside versions and the final
+//! step to the text on disk give their changes to "outside" (the person, or
+//! any tool that is not an agent). Lines equal to the base carry nothing.
 //!
-//! Known gap: a person's edit made between two agent versions is folded into
-//! the next agent version, because changes that are not an agent's are not
-//! snapshotted.
+//! Known gaps, where a person's edit is folded into the next agent version:
+//! (a) edits made while exactly one agent tab works (that tab gets them),
+//! (b) edits made before the file's first agent version, (c) edits made while
+//! two or more agent tabs work and no hook names the writer, (d) outside
+//! versions dropped by the cap of five per file.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -31,7 +34,7 @@ const DIFF_DEADLINE: Duration = Duration::from_millis(150);
 pub enum LineAuthorKind {
     /// An agent tab whose kept version wrote the line.
     Agent,
-    /// Changed after the last agent version, by the person or another tool.
+    /// Changed by the person or a tool that is not an agent.
     Outside,
 }
 
@@ -164,11 +167,14 @@ pub fn to_runs(owners: &[Option<u32>]) -> Vec<LineRun> {
     runs
 }
 
-/// The per-line authors of `current` against `base`, from kept versions in
-/// any order; only authors that own a line are listed, outside last.
+/// The per-line authors of `current` against `base`, from kept agent
+/// versions and outside versions in any order. Both are replayed by time; on
+/// equal times the outside version goes first. Only authors that own a line
+/// are listed, outside last and at most once.
 pub fn line_attribution(
     base: &str,
     versions: &[(FileVersion, String)],
+    outside_versions: &[(FileVersion, String)],
     current: Option<&str>,
 ) -> LineAttribution {
     let Some(current) = current else {
@@ -176,12 +182,20 @@ pub fn line_attribution(
     };
     let mut ordered: Vec<&(FileVersion, String)> = versions.iter().collect();
     ordered.sort_by_key(|(v, _)| v.at);
-    let replay: Vec<(&str, u32)> = ordered
+    let outside = ordered.len() as u32;
+    // (time, is agent, text, author); the stable sort keeps agent order.
+    let mut steps: Vec<(i64, bool, &str, u32)> = ordered
         .iter()
         .enumerate()
-        .map(|(i, (_, text))| (text.as_str(), i as u32))
+        .map(|(i, (v, text))| (v.at, true, text.as_str(), i as u32))
+        .chain(
+            outside_versions
+                .iter()
+                .map(|(v, text)| (v.at, false, text.as_str(), outside)),
+        )
         .collect();
-    let outside = ordered.len() as u32;
+    steps.sort_by_key(|(at, agent, _, _)| (*at, *agent));
+    let replay: Vec<(&str, u32)> = steps.iter().map(|(_, _, t, a)| (*t, *a)).collect();
     let owners = line_owners(base, &replay, current, outside);
 
     // Version index → author index, in version order, outside last.
@@ -232,9 +246,15 @@ fn lines_of(
         .into_iter()
         .filter_map(|v| snaps.read(path, &v.id).map(|text| (v, text)))
         .collect();
+    let outside: Vec<(FileVersion, String)> = snaps
+        .outside(path)
+        .into_iter()
+        .filter_map(|v| snaps.read_outside(path, &v.id).map(|text| (v, text)))
+        .collect();
     Ok(line_attribution(
         file.old.as_deref().unwrap_or(""),
         &versions,
+        &outside,
         file.new.as_deref(),
     ))
 }
@@ -333,12 +353,112 @@ mod tests {
     }
 
     #[test]
-    fn accepted_gap_a_person_edit_before_a_snapshot_goes_to_the_agent() {
+    fn without_an_outside_snapshot_a_person_edit_goes_to_the_next_agent() {
         // `H` stands for the person's edit made before A's snapshot.
         let v = [("a\nX\nH", A)];
         assert_eq!(
             line_owners("a", &v, "a\nX\nH", OUT),
             [None, Some(A), Some(A)]
+        );
+    }
+
+    fn outside_version(at: i64) -> FileVersion {
+        FileVersion {
+            id: format!("o{at}"),
+            at,
+            size: 0,
+            tab_id: None,
+            agent: None,
+        }
+    }
+
+    /// Each line's owner: the tab id, "out" for outside, or None.
+    fn owners_of(attr: &LineAttribution) -> Vec<Option<String>> {
+        let mut out = vec![None; attr.lines as usize];
+        for r in &attr.runs {
+            let a = &attr.authors[r.author as usize];
+            let name = match a.kind {
+                LineAuthorKind::Agent => a.tab_id.clone().unwrap(),
+                LineAuthorKind::Outside => "out".to_owned(),
+            };
+            for line in r.from..=r.to {
+                out[line as usize - 1] = Some(name.clone());
+            }
+        }
+        out
+    }
+
+    fn names(list: &[Option<&str>]) -> Vec<Option<String>> {
+        list.iter().map(|n| n.map(str::to_owned)).collect()
+    }
+
+    #[test]
+    fn an_outside_snapshot_between_agents_goes_to_the_person() {
+        let versions = vec![
+            (version(10, "A", "claude"), "a\nX".to_owned()),
+            (version(30, "B", "codex"), "a\nX\nH\nZ".to_owned()),
+        ];
+        let outside = vec![(outside_version(20), "a\nX\nH".to_owned())];
+        let attr = line_attribution("a", &versions, &outside, Some("a\nX\nH\nZ"));
+        assert_eq!(
+            owners_of(&attr),
+            names(&[None, Some("A"), Some("out"), Some("B")])
+        );
+    }
+
+    #[test]
+    fn an_agent_rewrite_after_an_outside_snapshot_goes_to_the_agent() {
+        let versions = vec![(version(20, "A", "claude"), "a\nH2".to_owned())];
+        let outside = vec![(outside_version(10), "a\nH".to_owned())];
+        let attr = line_attribution("a", &versions, &outside, Some("a\nH2"));
+        assert_eq!(owners_of(&attr), names(&[None, Some("A")]));
+    }
+
+    #[test]
+    fn on_equal_times_the_outside_snapshot_goes_first() {
+        // The agent adds to the outside text at the same time: its line is the
+        // agent's, the rest stays outside. Agent first would give the reverse.
+        // (Equal content never reaches the replay: the store drops the outside
+        // entry when an agent records the same content.)
+        let outside = vec![(outside_version(20), "a\nX".to_owned())];
+        let versions = vec![(version(20, "A", "claude"), "a\nX\nY".to_owned())];
+        let attr = line_attribution("a", &versions, &outside, Some("a\nX\nY"));
+        assert_eq!(owners_of(&attr), names(&[None, Some("out"), Some("A")]));
+    }
+
+    #[test]
+    fn several_outside_snapshots_are_one_outside_author_listed_last() {
+        let versions = vec![
+            (version(10, "t1", "claude"), "a\nX".to_owned()),
+            (version(30, "t2", "codex"), "a\nX\nH\nY".to_owned()),
+        ];
+        let outside = vec![
+            (outside_version(40), "a\nX\nH\nY\nK".to_owned()),
+            (outside_version(20), "a\nX\nH".to_owned()),
+        ];
+        let attr = line_attribution("a", &versions, &outside, Some("a\nX\nH\nY\nK\nL"));
+        let kinds: Vec<_> = attr.authors.iter().map(|a| a.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                LineAuthorKind::Agent,
+                LineAuthorKind::Agent,
+                LineAuthorKind::Outside
+            ]
+        );
+        assert_eq!(attr.authors[0].tab_id.as_deref(), Some("t1"));
+        assert_eq!(attr.authors[1].tab_id.as_deref(), Some("t2"));
+        assert_eq!(attr.authors[2].at, None);
+        assert_eq!(
+            owners_of(&attr),
+            names(&[
+                None,
+                Some("t1"),
+                Some("out"),
+                Some("t2"),
+                Some("out"),
+                Some("out")
+            ])
         );
     }
 
@@ -369,7 +489,7 @@ mod tests {
             (version(10, "t1", "claude"), "a\nQ\nb".to_owned()),
             (version(20, "t1", "claude"), "a\nX\nb".to_owned()),
         ];
-        let attr = line_attribution("a\nb", &versions, Some("a\nX\nb\nY\nZ"));
+        let attr = line_attribution("a\nb", &versions, &[], Some("a\nX\nb\nY\nZ"));
         assert_eq!(attr.lines, 5);
         assert_eq!(
             attr.authors,
@@ -419,7 +539,7 @@ mod tests {
     #[test]
     fn no_outside_author_when_unused() {
         let versions = vec![(version(1, "t1", "claude"), "a\nX".to_owned())];
-        let attr = line_attribution("a", &versions, Some("a\nX"));
+        let attr = line_attribution("a", &versions, &[], Some("a\nX"));
         assert_eq!(attr.authors.len(), 1);
         assert_eq!(attr.authors[0].kind, LineAuthorKind::Agent);
         assert_eq!(attr.lines, split_lines("a\nX").len() as u32);
@@ -429,7 +549,7 @@ mod tests {
     fn no_current_text_is_empty() {
         let versions = vec![(version(1, "t1", "claude"), "a\nX".to_owned())];
         assert_eq!(
-            line_attribution("a", &versions, None),
+            line_attribution("a", &versions, &[], None),
             LineAttribution {
                 lines: 0,
                 authors: vec![],
@@ -456,7 +576,7 @@ mod tests {
             })
             .collect();
         let current = versions[19].1.clone();
-        let attr = line_attribution(&base, &versions, Some(&current));
+        let attr = line_attribution(&base, &versions, &[], Some(&current));
         assert_eq!(attr.lines, 5_001);
         assert!(!attr.runs.is_empty());
     }
