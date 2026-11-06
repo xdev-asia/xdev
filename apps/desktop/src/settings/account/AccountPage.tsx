@@ -8,6 +8,7 @@ import { SettingRow } from "../SettingRow";
 import type { SettingsSectionProps } from "../sections";
 import { ServerRow } from "./ServerRow";
 import { RoutingSection } from "./RoutingSection";
+import { LicensePanel } from "../license/LicensePanel";
 
 /**
  * Settings → Account: the person's xDev ID, and how agent tabs pick among the CLI accounts.
@@ -174,6 +175,7 @@ export function AccountPage(props: SettingsSectionProps): JSX.Element {
           )}
         </div>
       </SettingRow>
+      <LicensePanel api={api} filter={filter} signedIn={state.state === "signedIn"} />
       <ServerRow api={api} filter={filter} signedIn={state.state === "signedIn"} />
       <RoutingSection api={api} filter={filter} />
     </div>

@@ -51,7 +51,7 @@ function view(initial?: string) {
 
 it("opens General first and switches to Vaults", () => {
   const v = view();
-  expect(SECTIONS.map((s) => s.id)).toEqual(["general", "repos", "git", "terminal", "editor", "code", "openIn", "agents", "orchestration", "automations", "usage", "appearance", "notifications", "keys", "qcmd", "account", "vaults", "ssh", "peers", "mcp", "cli", "advanced", "diagnostics", "experimental"]);
+  expect(SECTIONS.map((s) => s.id)).toEqual(["general", "repos", "git", "terminal", "editor", "code", "openIn", "agents", "orchestration", "automations", "usage", "appearance", "notifications", "keys", "qcmd", "account", "vaults", "ssh", "peers", "mcp", "cloud", "cli", "advanced", "diagnostics", "experimental"]);
   expect(v.items().map((n) => n.props.children)).toEqual([
     en("settings.general.title"),
     en("settings.repos.title"),
@@ -73,18 +73,19 @@ it("opens General first and switches to Vaults", () => {
     en("ssh.title"),
     en("peers.title"),
     en("settings.mcp.title"),
+    en("cloud.title"),
     en("settings.cli.title"),
     en("settings.advanced.title"),
     en("settings.diagnostics.title"),
     en("settings.experimental.title"),
   ]);
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(23).fill(undefined)]);
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(24).fill(undefined)]);
   expect(v.shown().type).toBe(GeneralPage);
   expect(v.shown().props.api).toBe(v.api);
   expect(v.shown().props.onChanged).toBe(v.onChanged);
 
   v.items()[16].props.onClick();
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual([...Array(16).fill(undefined), "page", ...Array(7).fill(undefined)]);
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual([...Array(16).fill(undefined), "page", ...Array(8).fill(undefined)]);
   expect(v.shown().type).toBe(VaultsSettings);
   expect(v.body().props["aria-label"]).toBe(en("settings.vaults.title"));
 });

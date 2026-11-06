@@ -328,7 +328,7 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 import type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView } from "@xdev/bindings";
-import type { DeviceRow, LicenseState } from "@xdev/bindings";
+import type { CloudSettings, DeviceRow, LicenseState } from "@xdev/bindings";
 import type { GateKind, Matched, MatchRow, Pipeline, RevealTab, RouteTarget, StageRun, StageSpec, StageStatus, SwarmRow, SwarmStart, SwarmStopped } from "@xdev/bindings";
 
 export { createMockApi };
@@ -851,7 +851,12 @@ export type ErrorCode =
   | "license_no_seat"
   | "license_transfer_limit"
   | "license_server_key"
-  | "license_wrong_device";
+  | "license_wrong_device"
+  | "license_checkout_timeout"
+  | "license_bad_product"
+  | "cloud_bad_url"
+  | "cloud_bad_root"
+  | "cloud_need_root";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1988,6 +1993,13 @@ export interface Api {
   licenseAllows(feature: string): Promise<boolean>;
   /** `license://changed`, with the full state, after every change. */
   onLicenseChanged(cb: (s: LicenseState) => void): Promise<() => void>;
+  /** The server and trusted keys the license and xDev ID talk to. */
+  cloudSettings(): Promise<CloudSettings>;
+  /**
+   * Saves them. A changed server signs out of xDev ID and drops the cached license. Rejects
+   * `cloud_bad_url`, `cloud_bad_root` or `cloud_need_root`; resolves with what was stored.
+   */
+  cloudSettingsPut(settings: CloudSettings): Promise<CloudSettings>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2206,6 +2218,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "license_transfer_limit",
   "license_server_key",
   "license_wrong_device",
+  "license_checkout_timeout",
+  "license_bad_product",
+  "cloud_bad_url",
+  "cloud_bad_root",
+  "cloud_need_root",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2841,6 +2858,8 @@ const tauriApi: Api = {
   licenseBuyCancel: () => call("license_buy_cancel"),
   licenseAllows: (feature) => call("license_allows", { feature }),
   onLicenseChanged: (cb) => listen<LicenseState>("license://changed", (e) => cb(e.payload)),
+  cloudSettings: () => call("cloud_settings_get"),
+  cloudSettingsPut: (settings) => call("cloud_settings_put", { settings }),
 };
 
 const DEMO_CRASH: CrashReport = {

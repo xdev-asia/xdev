@@ -47,7 +47,7 @@ function freeState(notice: string | null = null): LicenseState {
   return { state: "free", notice };
 }
 
-function proState(freshness: Extract<LicenseState, { state: "active" }>["freshness"], active = 1): LicenseState {
+function proState(freshness: Extract<LicenseState, { state: "active" }>["freshness"], active = 1, max = 2): LicenseState {
   return {
     state: "active",
     plan: ["pro"],
@@ -56,7 +56,7 @@ function proState(freshness: Extract<LicenseState, { state: "active" }>["freshne
     pro: { grant: MOCK_GRANT, perpetual: true, updatesUntil: UPDATES_UNTIL },
     syncUntil: null,
     team: null,
-    device: { fingerprint: MOCK_FINGERPRINT, max: 2, active },
+    device: { fingerprint: MOCK_FINGERPRINT, max, active },
   };
 }
 
@@ -130,7 +130,8 @@ export function createMockLicense(
     licenseRefresh: () => Promise.resolve(structuredClone(state)),
     licenseActivate() {
       if (state.state === "active") return Promise.resolve(structuredClone(state));
-      if (mode === "noseat") return reject("license_no_seat");
+      // The one seat is on another device until that device is moved off.
+      if (mode === "noseat" && seatsInUse() >= 1) return reject("license_no_seat");
       // No grant to activate: the crate maps the service's no_grant to unavailable.
       if (!devices.some((d) => d.proGrant !== null)) return reject("license_unavailable");
       setGrant(MOCK_DEVICE_ID, MOCK_GRANT);
@@ -164,7 +165,8 @@ export function createMockLicense(
     },
     __licenseCheckoutComplete() {
       setGrant(MOCK_DEVICE_ID, MOCK_GRANT);
-      set(proState({ kind: "fresh" }, seatsInUse()));
+      // A purchase buys one seat.
+      set(proState({ kind: "fresh" }, seatsInUse(), 1));
       checkout?.resolve();
       checkout = null;
     },

@@ -24,6 +24,7 @@ import { SshPage } from "./SshPage";
 import { TerminalPage } from "./TerminalPage";
 import { UsagePage } from "./UsagePage";
 import { VaultsSettings } from "./VaultsSettings";
+import { CloudPage } from "./cloud/CloudPage";
 
 export interface SettingsSectionProps {
   api: Api;
@@ -89,6 +90,7 @@ export const SECTIONS: SettingsSection[] = [
   { id: "ssh", group: "integrations", labelKey: "ssh.title", Component: SshPage },
   { id: "peers", group: "integrations", labelKey: "peers.title", Component: PeersPage },
   { id: "mcp", group: "integrations", labelKey: "settings.mcp.title", Component: McpPage },
+  { id: "cloud", group: "integrations", labelKey: "cloud.title", Component: CloudPage },
   { id: "cli", group: "advanced", labelKey: "settings.cli.title", Component: CliPage },
   { id: "advanced", group: "advanced", labelKey: "settings.advanced.title", Component: AdvancedPage },
   { id: "diagnostics", group: "advanced", labelKey: "settings.diagnostics.title", Component: DiagnosticsPage },
