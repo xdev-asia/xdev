@@ -32,7 +32,12 @@ use serde_json::json;
 use crate::profiles::Cli;
 use crate::version::CliVersion;
 
+mod install;
 mod question;
+pub use install::{
+    HookInstall, HookSupport, Unsupported, hook_install_state, hook_support, hooks_root,
+    hooks_settings, install_hooks, managed_events, uninstall_hooks,
+};
 #[cfg(test)]
 use question::QUESTION_MAX;
 pub use question::{HookQuestion, QuestionKind, QuestionOption, question_of};

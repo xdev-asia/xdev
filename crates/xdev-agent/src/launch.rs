@@ -10,7 +10,10 @@ use xdev_ai::{AiError, Provider, Registry, codex_home};
 use crate::catalog::{PromptMode, has_permission_args, permission_env, prompt_args, spec};
 use crate::codex_home::{codex_hook_events, prepare_codex_home};
 use crate::flags::{efforts, flags};
-use crate::hooks::{HookEvent, hook_args, hook_events};
+use crate::hooks::{
+    HookEvent, HookInstall, HookSupport, hook_args, hook_events, hook_install_state, hook_support,
+    hooks_root, managed_events,
+};
 use crate::profiles::{Cli, Permissions, Profile, ProfileError, Profiles};
 use crate::shells::{ShellEntry, default_shell_id};
 use crate::version::{CliVersion, cli_version};
@@ -49,7 +52,8 @@ pub struct Launch {
     /// The built-in CLI the profile runs; `None` for shells and custom
     /// programs.
     pub cli: Option<Cli>,
-    /// Whether `args` carry the status hook flags (`add_hooks`).
+    /// Whether the launch reports status hooks (`add_hooks`): flags in
+    /// `args`, or managed hooks installed in the CLI's own settings.
     pub hooks: bool,
     /// The hook events the launch reports, each once; empty without hooks.
     /// A codex on its private home reports more than on `notify` alone.
@@ -75,10 +79,41 @@ impl Launch {
     /// it gets only the hook events it knows. A codex new enough also gets
     /// its private home under `data_dir` (`CODEX_HOME`, see `codex_home`).
     pub fn add_hooks(&mut self, xdev: &Path, data_dir: &Path) {
+        self.add_managed_hooks(xdev, |key| env::var_os(key));
         let asks = matches!(self.cli, Some(Cli::Claude | Cli::Codex));
         if asks && self.agent && !self.hooks {
             let version = cli_version(&self.program);
             self.add_hooks_with(xdev, Some(data_dir), version);
+        }
+    }
+
+    /// A CLI with managed hooks (`install_hooks`) reports them when they are
+    /// installed, for this `xdev`, in the settings the launch will read: its
+    /// root from the launch's env, else from `var` (the app's env). Nothing
+    /// is added to `args`.
+    pub fn add_managed_hooks(&mut self, xdev: &Path, var: impl Fn(&str) -> Option<OsString>) {
+        let Some(cli) = self.cli.filter(|_| self.agent && !self.hooks) else {
+            return;
+        };
+        if hook_support(cli) != HookSupport::Managed {
+            return;
+        }
+        let own = |key: &str| {
+            self.env
+                .iter()
+                .rev()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+        };
+        let Some(root) = hooks_root(cli, |key| own(key).or_else(|| var(key))) else {
+            return;
+        };
+        if matches!(
+            hook_install_state(cli, &root, xdev),
+            Ok(HookInstall::Installed)
+        ) {
+            self.hooks = true;
+            self.hook_events = managed_events(cli);
         }
     }
 
@@ -1386,7 +1421,11 @@ mod tests {
     fn add_hooks_leaves_others_alone() {
         let xdev = Path::new("/opt/xdev");
         let p = Profiles::default();
+        let root = tempfile::tempdir().unwrap();
         let mut gemini = run(&p, "gemini", None, &found).unwrap();
+        gemini
+            .env
+            .push(("GEMINI_CLI_HOME".into(), root.path().into()));
         let before = gemini.args.clone();
         gemini.add_hooks(xdev, Path::new("/no/data"));
         assert_eq!((gemini.args, gemini.hooks), (before, false));
@@ -1400,6 +1439,39 @@ mod tests {
         shell.cli = Some(Cli::Claude);
         shell.add_hooks(xdev, Path::new("/no/data"));
         assert!(!shell.hooks && shell.args.is_empty());
+    }
+
+    #[test]
+    fn installed_gemini_hooks_are_reported_without_args() {
+        let xdev = Path::new("/opt/xdev");
+        let p = Profiles::default();
+        let home = tempfile::tempdir().unwrap();
+        let var = |key: &str| (key == "HOME" || key == "USERPROFILE").then(|| home.path().into());
+        let mut missing = run(&p, "gemini", None, &found).unwrap();
+        missing.add_managed_hooks(xdev, var);
+        assert!(!missing.hooks && missing.hook_events.is_empty());
+
+        crate::hooks::install_hooks(Cli::Gemini, home.path(), xdev).unwrap();
+        let mut l = run(&p, "gemini", None, &found).unwrap();
+        let before = l.args.clone();
+        l.add_managed_hooks(xdev, var);
+        assert!(l.hooks);
+        assert_eq!(l.args, before);
+        assert_eq!(l.hook_events, managed_events(Cli::Gemini));
+
+        // Another `xdev` is not this one's hooks.
+        let mut moved = run(&p, "gemini", None, &found).unwrap();
+        moved.add_managed_hooks(Path::new("/elsewhere/xdev"), var);
+        assert!(!moved.hooks);
+
+        // An account's `GEMINI_CLI_HOME` is the root it reads.
+        let account = tempfile::tempdir().unwrap();
+        let mut other = run(&p, "gemini", None, &found).unwrap();
+        other
+            .env
+            .push(("GEMINI_CLI_HOME".into(), account.path().into()));
+        other.add_managed_hooks(xdev, var);
+        assert!(!other.hooks);
     }
 
     /// A codex launch whose own home is a fake one in `root`.

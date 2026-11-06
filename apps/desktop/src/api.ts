@@ -397,6 +397,8 @@ import type { Grant as LinkGrant, Message as OrchMessage, MissionSettings, Missi
 export type { LinkGrant, MissionSettings, MissionTab, MissionView, OrchMessage, OrchWorker, TabLink, TabWorker };
 import type { Conversation, ConversationEntry, ConversationTool } from "@xdev/bindings";
 export type { Conversation, ConversationEntry, ConversationTool };
+import type { Cli, CliHooks, HookInstall, HookSupport } from "@xdev/bindings";
+export type { CliHooks, HookInstall, HookSupport };
 import type { ConversationSubagent, HookQuestion, QuestionKind as HookQuestionKind, QuestionOption } from "@xdev/bindings";
 export type { ConversationSubagent, HookQuestion, HookQuestionKind, QuestionOption };
 export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
@@ -927,7 +929,12 @@ export type ErrorCode =
   | "browser_blocked"
   | "browser_unavailable"
   | "browser_template"
-  | "shortcut_taken";
+  | "shortcut_taken"
+  | "hooks-unsupported"
+  | "hooks-no-home"
+  | "hooks-no-cli"
+  | "hooks-unreadable"
+  | "hooks-conflict";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1275,6 +1282,13 @@ export interface Api {
   statusSound(): Promise<Uint8Array | null>;
   // Picks a sound file to pass to `statusSoundSet`; null when cancelled.
   pickSoundFile(): Promise<string | null>;
+  // How each catalogue CLI gets status hooks, in menu order; a managed one also says whether xDev's
+  // hooks are in its own config (`error`: `hooks-unreadable`, `hooks-conflict`, `hooks-no-home`, `io`).
+  hookInstalls(): Promise<CliHooks[]>;
+  // Writes (or takes out) xDev's hooks in a managed CLI's config and returns its new row. Rejects with
+  // `hooks-unsupported`, `hooks-no-home`, `hooks-no-cli`, `hooks-unreadable`, `hooks-conflict` or `io`.
+  hookInstall(cli: Cli): Promise<CliHooks>;
+  hookUninstall(cli: Cli): Promise<CliHooks>;
   // Every repo the workspace knows, each with its primary checkout first; a repo whose folder is
   // gone stays in the list as `missing`.
   workspaceList(): Promise<RepoView[]>;
@@ -2431,6 +2445,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "browser_unavailable",
   "browser_template",
   "shortcut_taken",
+  "hooks-unsupported",
+  "hooks-no-home",
+  "hooks-no-cli",
+  "hooks-unreadable",
+  "hooks-conflict",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2659,6 +2678,9 @@ const tauriApi: Api = {
     const picked = await open({ multiple: false, directory: false, filters: [{ name: "Sound", extensions: ["wav", "mp3", "ogg"] }] });
     return typeof picked === "string" ? picked : null;
   },
+  hookInstalls: () => call("hook_installs"),
+  hookInstall: (cli) => call("hook_install", { cli }),
+  hookUninstall: (cli) => call("hook_uninstall", { cli }),
   workspaceList: () => call("workspace_list"),
   repoAdd: (path) => call("repo_add", { path }),
   repoForget: (id) => call("repo_forget", { id }),

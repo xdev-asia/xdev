@@ -1,4 +1,4 @@
-import type { Api, ApiError, HookDetail, HookEvent, NotificationPermission, PtyHook, StatusSettings } from "./api";
+import type { Api, ApiError, Cli, CliHooks, HookDetail, HookEvent, NotificationPermission, PtyHook, StatusSettings } from "./api";
 import type { SettingsEmit } from "./mockSettings";
 
 type StatusApi = Pick<
@@ -15,6 +15,9 @@ type StatusApi = Pick<
   | "statusSoundSet"
   | "statusSound"
   | "pickSoundFile"
+  | "hookInstalls"
+  | "hookInstall"
+  | "hookUninstall"
 >;
 
 export type MockStatus = StatusApi & {
@@ -52,6 +55,27 @@ export const DEFAULT_STATUS: StatusSettings = {
 
 const SOUND = /\.(wav|mp3|ogg)$/i;
 
+/** Where the demo's managed CLIs keep xDev's hooks, as on macOS. */
+const HOOK_FILES: Partial<Record<Cli, string>> = {
+  gemini: "/home/me/.gemini/settings.json",
+  copilot: "/home/me/.copilot/hooks/xdev-status.json",
+  opencode: "/home/me/.config/opencode/plugin/xdev-status.js",
+  kilo: "/home/me/.config/kilo/plugin/xdev-status.js",
+  antigravity: "/home/me/.gemini/config/hooks.json",
+};
+
+const HOOK_CLIS: readonly Cli[] = ["claude", "codex", "gemini", "cursor", "copilot", "opencode", "amp", "droid", "qwen-code", "kimi", "devin", "aider", "goose", "grok", "kiro", "kilo", "cline", "antigravity", "pi", "command-code"];
+
+/** Every catalogue CLI as the backend reads it on a machine where nothing is installed yet. */
+function hookRows(): CliHooks[] {
+  return HOOK_CLIS.map((cli) => {
+    const settings = HOOK_FILES[cli] ?? null;
+    if (cli === "claude" || cli === "codex") return { cli, support: { kind: "launch" }, state: null, settings: null, error: null };
+    if (settings) return { cli, support: { kind: "managed" }, state: "missing", settings, error: null };
+    return { cli, support: { kind: "unsupported", reason: "not-checked" }, state: null, settings: null, error: null };
+  });
+}
+
 /** Status channels in memory: hooks are fired by hand, the OS sees nothing. */
 export function createMockStatus(emit: SettingsEmit = () => {}): MockStatus {
   let settings = { ...DEFAULT_STATUS };
@@ -62,6 +86,14 @@ export function createMockStatus(emit: SettingsEmit = () => {}): MockStatus {
   const dismissed: string[] = [];
   let permission: NotificationPermission = "unknown";
   let opened = 0;
+  let hookInstalls = hookRows();
+  const hookRow = (cli: Cli, state: "installed" | "missing"): CliHooks => {
+    const row = hookInstalls.find((r) => r.cli === cli);
+    if (!row || row.support.kind !== "managed") throw { code: "hooks-unsupported" } satisfies ApiError;
+    const next = { ...row, state };
+    hookInstalls = hookInstalls.map((r) => (r.cli === cli ? next : r));
+    return next;
+  };
 
   return {
     async onPtyHook(cb) {
@@ -111,6 +143,15 @@ export function createMockStatus(emit: SettingsEmit = () => {}): MockStatus {
     },
     async pickSoundFile() {
       return null;
+    },
+    async hookInstalls() {
+      return hookInstalls.map((r) => ({ ...r }));
+    },
+    async hookInstall(cli) {
+      return hookRow(cli, "installed");
+    },
+    async hookUninstall(cli) {
+      return hookRow(cli, "missing");
     },
     __hook(id, event, detail, session) {
       for (const cb of hooks) cb({ id, event, at: Date.now(), detail: detail ?? null, session: session ?? null });

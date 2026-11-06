@@ -213,6 +213,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;
+    crate::hook_install::CliHooks::export_all(cfg)?;
     xdev_workspace::RepoView::export_all(cfg)?;
     crate::visibility::NestedRepo::export_all(cfg)?;
     crate::visibility::NestedScanResult::export_all(cfg)?;

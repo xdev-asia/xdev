@@ -26,6 +26,7 @@ import { ago } from "@/workspace/ago";
 import { freeId } from "./agentForm";
 
 import { ProfileEditor } from "./ProfileEditor";
+import { HookInstallSection } from "./HookInstallSection";
 import { PathSection } from "./PathSection";
 import { ShellsSection } from "./ShellsSection";
 
@@ -588,6 +589,7 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         </li>
       </ul>
       <p className="settings-empty">{t("settings.agents.statusHooks.hint")}</p>
+      <HookInstallSection api={api} nameOf={(cli) => current.profiles.find((p) => p.builtin && p.profile.cli === cli)?.profile.name ?? cli} />
       </SettingRow>
 
       <ConfirmDialog
