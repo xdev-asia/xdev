@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import type { RepoView, SidebarItem, SidebarPrefs, WorkItem, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { NO_DETAILS } from "./worktreeDetails";
+import { groupWorktrees } from "./groups";
 import { activeProjects, filterByProject, flattenRepos, itemLabel, moveTarget, nestRows, pinnedEntries, projectListRepeatsCards, sectionHeadless, topIds, visibleEntries, type WtEntry } from "./sidebarModel";
 
 const OFF: SidebarPrefs = SIDEBAR_PREFS_DEFAULTS;
@@ -180,9 +181,12 @@ it("the project list repeats the card of a lone project with nothing archived", 
 });
 
 it("a lone Other section has no heading; named sections and pinned rows keep theirs", () => {
-  expect(sectionHeadless({ mode: "activity", id: "other" }, 1, 0)).toBe(true);
-  expect(sectionHeadless({ mode: "activity", id: "other" }, 2, 0)).toBe(false);
-  expect(sectionHeadless({ mode: "activity", id: "other" }, 1, 1)).toBe(false);
+  expect(sectionHeadless({ mode: "activity", id: "rest" }, 1, 0)).toBe(true);
+  // The id the activity grouping really gives an idle worktree.
+  const [idle] = groupWorktrees([{ path: "/a" }], () => null);
+  expect(sectionHeadless({ mode: "activity", id: idle!.group }, 1, 0)).toBe(true);
+  expect(sectionHeadless({ mode: "activity", id: "rest" }, 2, 0)).toBe(false);
+  expect(sectionHeadless({ mode: "activity", id: "rest" }, 1, 1)).toBe(false);
   expect(sectionHeadless({ mode: "activity", id: "working" }, 1, 0)).toBe(false);
   expect(sectionHeadless({ mode: "status", id: "none" }, 1, 0)).toBe(false);
 });

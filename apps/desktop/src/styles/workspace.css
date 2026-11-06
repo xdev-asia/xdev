@@ -1418,6 +1418,19 @@
   margin-top: 10px;
 }
 
+/* Add project: one choice per line, spaced, each as wide as the dialog. */
+.ws-add-choices {
+  display: grid;
+  gap: var(--x-space-2);
+  margin: var(--x-space-3) 0;
+}
+
+.ws-add-choices > button {
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+}
+
 .ws-panel[hidden] {
   display: none;
 }
@@ -1425,6 +1438,8 @@
 .ws-panel {
   display: flex;
   flex: 0 0 var(--w-panel);
+  /* Without it a long search hit or file name widens the panel over the editor. */
+  min-width: 0;
   flex-direction: column;
   min-height: 0;
   border-left: 1px solid var(--line);

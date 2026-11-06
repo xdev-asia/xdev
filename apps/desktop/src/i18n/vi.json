@@ -2536,6 +2536,8 @@
   "search.files.more": "Còn kết quả khác trong tệp này chưa hiện",
   "search.files.collapseAll": "Thu gọn tất cả",
   "search.files.clear": "Xoá kết quả tìm",
+  "search.files.clearShort": "Xoá",
+  "search.files.filters": "Bộ lọc",
   "search.files.noWorktree": "Mở một worktree để tìm trong tệp của nó.",
   "search.files.copyMenu": "Sao chép kết quả",
   "search.files.copyPath": "Sao chép đường dẫn",

@@ -8,7 +8,7 @@ import { copyText } from "@/ui/clipboard";
 import { pushToast } from "@/workspace/toastStore";
 import { absolutePath, pathWithLine, relativePath } from "./resultCopy";
 import { consumeSearchPrefill, subscribeSearchPrefill } from "./searchPrefill";
-import { applyEvent, hitColumn, IDLE, STARTED, toQuery, unitRanges, type SearchForm, type SearchResult } from "./searchState";
+import { applyEvent, hitColumn, IDLE, lineStart, STARTED, toQuery, unitRanges, type SearchForm, type SearchResult } from "./searchState";
 import "./search.css";
 
 /** Typing stops this long before a search starts. */
@@ -30,8 +30,11 @@ let runSeq = 0;
 function Line(props: { text: string; ranges: [number, number][] }): JSX.Element {
   const { text } = props;
   const parts: JSX.Element[] = [];
-  let at = 0;
-  for (const [s, e] of unitRanges(text, props.ranges)) {
+  const units = unitRanges(text, props.ranges);
+  const indent = text.length - text.trimStart().length;
+  let at = lineStart(text, units[0]?.[0]);
+  if (at > indent) parts.push(<span key="clip">…</span>);
+  for (const [s, e] of units) {
     if (s > at) parts.push(<span key={`t${at}`}>{text.slice(at, s)}</span>);
     parts.push(
       <mark key={`h${s}`} className="sr-hit">
@@ -184,15 +187,15 @@ export function SearchPanel(props: SearchPanelProps): JSX.Element {
         {toggle("regex", "search.files.regex", ".*")}
       </div>
       <div className="sr-bar">
-        <button type="button" className="sr-link" aria-expanded={details} title={t("search.files.toggleDetails")} onClick={() => setDetails((d) => !d)}>
-          {t("search.files.toggleDetails")}
+        <button type="button" className="sr-link" aria-expanded={details} aria-label={t("search.files.toggleDetails")} title={t("search.files.toggleDetails")} onClick={() => setDetails((d) => !d)}>
+          {t("search.files.filters")}
         </button>
         <span className="sr-spacer" />
         <button type="button" className="sr-link" disabled={files.length === 0} onClick={() => setFolded(new Set(files.map((f) => f.rel)))}>
           {t("search.files.collapseAll")}
         </button>
-        <button type="button" className="sr-link" disabled={form.text === "" && files.length === 0} onClick={clear}>
-          {t("search.files.clear")}
+        <button type="button" className="sr-link" disabled={form.text === "" && files.length === 0} aria-label={t("search.files.clear")} title={t("search.files.clear")} onClick={clear}>
+          {t("search.files.clearShort")}
         </button>
       </div>
       {details && (

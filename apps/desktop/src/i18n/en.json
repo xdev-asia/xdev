@@ -2536,6 +2536,8 @@
   "search.files.more": "More matches in this file are not shown",
   "search.files.collapseAll": "Collapse all",
   "search.files.clear": "Clear search results",
+  "search.files.clearShort": "Clear",
+  "search.files.filters": "Filters",
   "search.files.noWorktree": "Open a worktree to search its files.",
   "search.files.copyMenu": "Copy result",
   "search.files.copyPath": "Copy path",

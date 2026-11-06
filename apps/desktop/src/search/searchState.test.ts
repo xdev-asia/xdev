@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { applyEvent, hitColumn, IDLE, splitGlobs, STARTED, unitRanges } from "./searchState";
+import { applyEvent, hitColumn, IDLE, lineStart, splitGlobs, STARTED, unitRanges } from "./searchState";
 
 const file = (rel: string, n: number) => ({ rel, more: false, hits: Array.from({ length: n }, (_, i) => ({ line: i + 1, text: "x", ranges: [[0, 1]] as [number, number][] })) });
 
@@ -29,4 +29,12 @@ it("the column is the first range, unless the line was clipped", () => {
   expect(hitColumn("abc foo", [[4, 7]])).toBe(5);
   expect(hitColumn("x".repeat(400), [[10, 11]])).toBeUndefined();
   expect(hitColumn("abc", [])).toBeUndefined();
+});
+
+it("a hit line drops its indent and starts near the first hit", () => {
+  expect(lineStart("        private ILogger x;", 16)).toBe(8);
+  expect(lineStart("    no hit", undefined)).toBe(4);
+  const long = `    <member name="P:${"A".repeat(60)}ILogger">`;
+  expect(lineStart(long, long.indexOf("ILogger"))).toBe(long.indexOf("ILogger") - 16);
+  expect(lineStart("  x", 0)).toBe(0);
 });

@@ -1,4 +1,5 @@
 import type { KeptView, RepoView, SidebarItem, SidebarPrefs, WorkItem, WorktreeView } from "@/api";
+import type { Group } from "./groups";
 import { isWorktreeVisible } from "./worktreeVisibility";
 
 /** A worktree with the repo it belongs to; `path` keys the grouping. */
@@ -205,5 +206,5 @@ export function projectListRepeatsCards(tree: readonly SidebarItem[], drawn: Rea
 
 /** True when a section needs no heading: it is the only one, nothing is pinned, and it is the catch-all "Other" of the activity grouping. */
 export function sectionHeadless(section: { mode: string; id: string }, sectionCount: number, pinnedCount: number): boolean {
-  return sectionCount === 1 && pinnedCount === 0 && section.mode === "activity" && section.id === "other";
+  return sectionCount === 1 && pinnedCount === 0 && section.mode === "activity" && section.id === ("rest" satisfies Group);
 }

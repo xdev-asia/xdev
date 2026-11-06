@@ -19,6 +19,7 @@ import { changeChunksOf, changeGutter, nextChangeLine, setChangeBase } from "./c
 import { editorFontStack } from "./editorFont";
 import { editorKeys } from "./editorKeys";
 import { pasteGuard } from "./pasteGuard";
+import { hiddenBom } from "./hiddenBom";
 
 // Marks a change pushed in from props: it is not an edit, and it stays out of the undo history.
 const remote = Annotation.define<boolean>();
@@ -91,6 +92,7 @@ export function CodeEditor(props: {
           Prec.high(keymap.of([{ key: "Mod-s", preventDefault: true, run: () => (latest.current.onSave(), true) }])),
           editorKeys({ onToggleWrap: () => latest.current.onToggleWrap?.(), onChange: (dir) => goChange(dir) }),
           basicSetup,
+          hiddenBom(),
           changeGutter(),
           pasteGuard(() => void pushToast({ text: tRef.current("editor.pasteTooLarge") })),
           syntaxHighlighting(highlight),

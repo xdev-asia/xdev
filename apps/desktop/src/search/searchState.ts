@@ -61,6 +61,23 @@ export function toQuery(f: SearchForm): SearchQuery {
 }
 
 /** `ranges` count code points (Rust chars); string slicing counts UTF-16 units. Converts the first to the second. */
+/**
+ * Where a hit line starts on screen: past its indent, and near enough to the first hit that the
+ * hit shows in a narrow panel. `first` is the first hit's start in UTF-16 units.
+ */
+export function lineStart(text: string, first: number | undefined): number {
+  const indent = text.length - text.trimStart().length;
+  if (first === undefined) return indent;
+  let start = Math.max(Math.min(indent, first), first - LINE_LEAD);
+  // Do not cut a surrogate pair in half.
+  const code = text.charCodeAt(start);
+  if (start > 0 && code >= 0xdc00 && code <= 0xdfff) start -= 1;
+  return start;
+}
+
+/** Characters kept before the first hit when the line is clipped. */
+const LINE_LEAD = 16;
+
 export function unitRanges(text: string, ranges: [number, number][]): Range[] {
   const starts: number[] = [];
   let at = 0;
