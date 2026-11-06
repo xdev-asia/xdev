@@ -15,7 +15,7 @@ it("passes the interaction options through", () => {
 });
 
 it("the default theme is the token look; a scheme id gives its colours", () => {
-  expect(xtermOptions(TERMINAL_DEFAULTS, "mono", token).theme).toEqual({ background: "#101010", foreground: "#eeeeee" });
+  expect(xtermOptions(TERMINAL_DEFAULTS, "mono", token).theme).toMatchObject({ background: "#101010", foreground: "#eeeeee" });
   const nord = xtermOptions({ ...TERMINAL_DEFAULTS, theme: "nord" }, "mono", token).theme;
   expect(nord?.background).toMatch(/^#[0-9a-f]{6}$/);
   expect(nord?.background).not.toBe("#101010");
@@ -58,4 +58,11 @@ it("withAlpha leaves a non-hex colour and full opacity alone, and expands #rgb",
   expect(withAlpha("#102030", 1)).toBe("#102030");
   expect(withAlpha("#abc", 0.5)).toBe("#aabbcc80");
   expect(withAlpha(undefined, 0.5)).toBeUndefined();
+});
+
+it("the app look takes the ANSI set of the painted mode", () => {
+  const dark = xtermOptions(TERMINAL_DEFAULTS, "mono", token, [], false).theme;
+  const light = xtermOptions(TERMINAL_DEFAULTS, "mono", token, [], true).theme;
+  expect(light.yellow).toBe(TERMINAL_SCHEMES.find((s) => s.id === "github-light")!.colors.yellow);
+  expect(dark.yellow).toBe(TERMINAL_SCHEMES.find((s) => s.id === "github-dark")!.colors.yellow);
 });

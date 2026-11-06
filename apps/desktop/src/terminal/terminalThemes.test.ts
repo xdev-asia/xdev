@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { TERMINAL_SCHEMES, terminalTheme, type TerminalPalette } from "./terminalThemes";
+import { APP_ANSI_SOURCE, TERMINAL_SCHEMES, terminalTheme, type TerminalPalette } from "./terminalThemes";
 
 const token = (name: string) => ({ "--x-color-surface": "#101010", "--x-color-ink": "#eeeeee" })[name];
 
@@ -35,11 +35,31 @@ it("has dark and light schemes, and every one names a permissive licence and a s
   }
 });
 
-it("app and an unknown id give only the token look", () => {
-  const look = { background: "#101010", foreground: "#eeeeee" };
-  expect(terminalTheme("app", token)).toEqual(look);
-  expect(terminalTheme("no-such-scheme", token)).toEqual(look);
-  expect(terminalTheme("app", () => undefined)).toEqual({ background: undefined, foreground: undefined });
+const ANSI_KEYS = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white", "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue", "brightMagenta", "brightCyan", "brightWhite"] as const;
+const scheme = (id: string) => TERMINAL_SCHEMES.find((s) => s.id === id)!;
+
+it("app and an unknown id take the token background and foreground with a readable ANSI set per mode", () => {
+  for (const [light, source] of [[false, APP_ANSI_SOURCE.dark], [true, APP_ANSI_SOURCE.light]] as const) {
+    const src = scheme(source);
+    expect(src.mode).toBe(light ? "light" : "dark");
+    for (const id of ["app", "no-such-scheme"]) {
+      const theme = terminalTheme(id, token, [], light);
+      expect(theme.background).toBe("#101010");
+      expect(theme.foreground).toBe("#eeeeee");
+      for (const key of ANSI_KEYS) expect(theme[key], `${id}.${key}`).toBe(src.colors[key]);
+      expect(theme.selectionBackground).toBe(src.colors.selectionBackground);
+    }
+  }
+  // Light and dark differ, so the light tokens never get the pale dark-mode yellow.
+  expect(terminalTheme("app", token, [], true).yellow).not.toBe(terminalTheme("app", token, [], false).yellow);
+  const bare = terminalTheme("app", () => undefined);
+  expect(bare.background).toBeUndefined();
+  expect(bare.foreground).toBeUndefined();
+  expect(bare.cursor).toBeUndefined();
+});
+
+it("the app look takes its cursor from the signal token", () => {
+  expect(terminalTheme("app", (n) => (n === "--x-color-signal" ? "#00aaff" : undefined)).cursor).toBe("#00aaff");
 });
 
 it("a scheme id gives its palette", () => {
@@ -53,7 +73,7 @@ it("a custom id resolves to its colours, and an unknown one still falls back to 
   const colors = { ...TERMINAL_SCHEMES[0].colors, background: "#123456" };
   const custom = [{ id: "custom-mine", name: "Mine", mode: "dark" as const, colors }];
   expect(terminalTheme("custom-mine", token, custom)).toEqual(colors);
-  expect(terminalTheme("custom-gone", token, custom)).toEqual({ background: "#101010", foreground: "#eeeeee" });
+  expect(terminalTheme("custom-gone", token, custom)).toEqual(terminalTheme("app", token));
   // The bundled schemes win over a custom one with the same id.
   expect(terminalTheme(TERMINAL_SCHEMES[0].id, token, [{ ...custom[0], id: TERMINAL_SCHEMES[0].id }])).toEqual(TERMINAL_SCHEMES[0].colors);
 });
