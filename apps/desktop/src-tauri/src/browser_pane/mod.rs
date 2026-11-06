@@ -11,9 +11,10 @@ pub mod address;
 pub mod pool;
 pub mod popup;
 
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 
+use tauri::async_runtime::Mutex as AsyncMutex;
 use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, State, Url, Webview,
@@ -24,7 +25,7 @@ use crate::commands::CmdError;
 use crate::settings;
 use crate::settings::SettingsSection;
 use crate::settings_store;
-use pool::{Bounds, Pool};
+use pool::{Bounds, Locks, Pool, ShowPlan};
 use popup::{Popup, PopupLimiter};
 
 /// A page's address, title or loading state changed.
@@ -41,7 +42,23 @@ const MAIN: &str = "main";
 #[derive(Default)]
 pub struct BrowserPanes {
     pool: Mutex<Pool>,
+    locks: Mutex<Locks>,
     popups: Mutex<PopupLimiter>,
+}
+
+impl BrowserPanes {
+    /// The pool, locked for one decision; never held across an `await`.
+    fn pool(&self) -> MutexGuard<'_, Pool> {
+        self.pool.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The async lock of `tab`'s webview label.
+    fn lock_of(&self, tab: &str) -> Arc<AsyncMutex<()>> {
+        self.locks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .of(&pool::label_of(tab))
+    }
 }
 
 /// The payload of `PAGE_EVENT`.
@@ -169,9 +186,15 @@ fn builder(app: &AppHandle, tab: &str, url: Url, dev: Option<Url>) -> WebviewBui
         })
 }
 
-/// Closes the webviews of `tabs` and tells the front end they sleep now.
-fn evict(app: &AppHandle, tabs: Vec<String>) {
+/// Closes the webviews of `tabs` and tells the front end they sleep now. Each runs under its tab's
+/// lock, and a tab shown again meanwhile keeps its webview.
+async fn evict(app: &AppHandle, state: &BrowserPanes, tabs: Vec<String>) {
     for tab in tabs {
+        let lock = state.lock_of(&tab);
+        let _turn = lock.lock().await;
+        if state.pool().is_live(&tab) {
+            continue;
+        }
         if let Some(view) = webview_of(app, &tab) {
             let url = view.url().map(|u| u.to_string()).unwrap_or_default();
             let _ = view.close();
@@ -180,10 +203,18 @@ fn evict(app: &AppHandle, tabs: Vec<String>) {
     }
 }
 
+fn hide_view(app: &AppHandle, tab: &str) -> Result<(), CmdError> {
+    match webview_of(app, tab) {
+        Some(view) => view.hide().map_err(|e| err("browser_unavailable", e)),
+        None => Ok(()),
+    }
+}
+
 /// Shows `tab`'s page over `bounds` (logical pixels in the window), making its webview when the
-/// tab has none, at `url`. Closes the least recently shown webview past the live limit.
-#[tauri::command(async)]
-pub fn browser_show(
+/// tab has none, at `url`. Closes the least recently shown webview past the live limit. A tab
+/// closed before or while this runs gets no webview.
+#[tauri::command]
+pub async fn browser_show(
     app: AppHandle,
     caller: Webview,
     state: State<'_, BrowserPanes>,
@@ -191,16 +222,21 @@ pub fn browser_show(
     url: String,
     bounds: Bounds,
 ) -> Result<(), CmdError> {
+    let lock = state.lock_of(&tab);
+    let turn = lock.lock().await;
     let Some(bounds) = pool::clamp_bounds(bounds) else {
-        return browser_hide(app, tab);
+        return hide_view(&app, &tab);
     };
-    let view = match webview_of(&app, &tab) {
-        Some(view) => view,
-        None => {
+    let existing = webview_of(&app, &tab);
+    let plan = state.pool().plan_show(&tab, existing.is_some());
+    let view = match (plan, existing) {
+        (ShowPlan::Skip, _) => return Ok(()),
+        (ShowPlan::Reuse, Some(view)) => view,
+        (ShowPlan::Reuse | ShowPlan::Create, _) => {
             let dev = dev_origin(&app);
             let start = safe_url(&url, dev.as_ref());
-            let window = caller.window();
-            window
+            caller
+                .window()
                 .add_child(
                     builder(&app, &tab, start, dev),
                     LogicalPosition::new(bounds.x, bounds.y),
@@ -212,18 +248,27 @@ pub fn browser_show(
     view.set_bounds(rect(bounds))
         .map_err(|e| err("browser_unavailable", e))?;
     view.show().map_err(|e| err("browser_unavailable", e))?;
-    let evicted = state
-        .pool
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .touch(&tab);
-    evict(&app, evicted);
+    let shown = state.pool().shown(&tab);
+    let Some(evicted) = shown else {
+        // Closed while the webview was being made.
+        let _ = view.close();
+        return Ok(());
+    };
+    drop(turn);
+    evict(&app, &state, evicted).await;
     Ok(())
 }
 
 /// Moves `tab`'s webview; an empty or broken rectangle hides it.
-#[tauri::command(async)]
-pub fn browser_set_bounds(app: AppHandle, tab: String, bounds: Bounds) -> Result<(), CmdError> {
+#[tauri::command]
+pub async fn browser_set_bounds(
+    app: AppHandle,
+    state: State<'_, BrowserPanes>,
+    tab: String,
+    bounds: Bounds,
+) -> Result<(), CmdError> {
+    let lock = state.lock_of(&tab);
+    let _turn = lock.lock().await;
     let Some(view) = webview_of(&app, &tab) else {
         return Ok(());
     };
@@ -236,31 +281,33 @@ pub fn browser_set_bounds(app: AppHandle, tab: String, bounds: Bounds) -> Result
 }
 
 /// Hides `tab`'s webview; the page keeps running and keeps its state.
-#[tauri::command(async)]
-pub fn browser_hide(app: AppHandle, tab: String) -> Result<(), CmdError> {
-    match webview_of(&app, &tab) {
-        Some(view) => view.hide().map_err(|e| err("browser_unavailable", e)),
-        None => Ok(()),
-    }
-}
-
-/// Closes `tab`'s webview for good.
-#[tauri::command(async)]
-pub fn browser_close(
+#[tauri::command]
+pub async fn browser_hide(
     app: AppHandle,
     state: State<'_, BrowserPanes>,
     tab: String,
 ) -> Result<(), CmdError> {
-    state
-        .pool
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .remove(&tab);
+    let lock = state.lock_of(&tab);
+    let _turn = lock.lock().await;
+    hide_view(&app, &tab)
+}
+
+/// Closes `tab`'s webview for good. The tab is marked closed before this waits for its lock, so a
+/// show that is making the webview right then closes it, and a later show makes none.
+#[tauri::command]
+pub async fn browser_close(
+    app: AppHandle,
+    state: State<'_, BrowserPanes>,
+    tab: String,
+) -> Result<(), CmdError> {
+    state.pool().close(&tab);
     state
         .popups
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .forget(&tab);
+    let lock = state.lock_of(&tab);
+    let _turn = lock.lock().await;
     match webview_of(&app, &tab) {
         Some(view) => view.close().map_err(|e| err("browser_unavailable", e)),
         None => Ok(()),

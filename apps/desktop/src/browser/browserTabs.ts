@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from "react";
 import { addTab, focusPane, paneOf, selectTab, single, splitPane, type PaneLayout } from "@/workspace/paneTree";
 
-// A browser tab of a worktree. Its id is `browser:<n>`, which no terminal, file, view, preview,
-// review, commit or peer id can be. The entries live here; the worktree's layout holds the ids, so
+// A browser tab of a worktree. Its id is `browser:<load>-<n>`, which no terminal, file, view,
+// preview, review, commit or peer id can be. `<load>` differs on each page load, so an id is never
+// used twice while the app runs: the backend skips a show of a tab it has closed. The entries live here; the worktree's layout holds the ids, so
 // a saved layout keeps each tab's URL and a restart opens it again (`restoreBrowserTab`).
 export const BROWSER_TAB = "browser:";
 export const BLANK = "about:blank";
@@ -31,6 +32,7 @@ export function isBrowserTab(id: string): boolean {
 let entries: readonly BrowserTabEntry[] = [];
 let counter = 0;
 let ids = 0;
+const LOAD = Date.now().toString(36);
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
@@ -53,7 +55,7 @@ export interface OpenBrowser {
 
 /** Opens a new browser tab in `worktree` and returns its id. */
 export function openBrowserTab(worktree: string, how: OpenBrowser = {}): string {
-  const id = `${BROWSER_TAB}${++ids}`;
+  const id = `${BROWSER_TAB}${LOAD}-${++ids}`;
   entries = [
     ...entries,
     { id, worktree, url: how.url ?? BLANK, title: null, loading: false, seq: ++counter, nav: 0, split: how.split ?? false, keepFocus: how.keepFocus ?? false },
@@ -64,7 +66,7 @@ export function openBrowserTab(worktree: string, how: OpenBrowser = {}): string 
 
 /** A tab of a saved layout: its URL loads when it is first shown; it does not come to the front. */
 export function restoreBrowserTab(worktree: string, url: string, title: string | null = null): string {
-  const id = `${BROWSER_TAB}${++ids}`;
+  const id = `${BROWSER_TAB}${LOAD}-${++ids}`;
   entries = [...entries, { id, worktree, url: url || BLANK, title, loading: false, seq: 0, nav: 0, split: false, keepFocus: false }];
   emit();
   return id;
