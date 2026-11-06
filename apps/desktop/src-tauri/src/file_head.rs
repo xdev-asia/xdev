@@ -60,6 +60,7 @@ pub fn worktree_file_head(
     path: std::path::PathBuf,
     file: String,
 ) -> Result<WorktreeFileDiff, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_file_head")?;
     head_diff(data_dir(&state)?, &path, &file)
 }
 
@@ -108,6 +109,7 @@ pub fn worktree_file_head_bytes(
     file: String,
     base: Option<String>,
 ) -> Result<tauri::ipc::Response, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_file_head_bytes")?;
     let bytes = head_bytes(data_dir(&state)?, &path, &file, base.as_deref())?;
     Ok(tauri::ipc::Response::new(
         tauri::ipc::InvokeResponseBody::Raw(bytes),

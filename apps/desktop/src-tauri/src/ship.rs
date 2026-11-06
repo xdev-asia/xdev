@@ -631,6 +631,7 @@ pub fn worktree_pr(
     stats: State<'_, crate::app_stats::AppStatsHub>,
     path: PathBuf,
 ) -> Result<Option<PrView>, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr")?;
     let data = data_dir(&state)?;
     let known = locate(data, &path)?;
     let pr = run_gh(&SystemGh, known.gh_account, |gh| pr_with(gh, &path))?;
@@ -647,6 +648,7 @@ pub fn worktree_pr_create(
     path: PathBuf,
     draft: PrDraft,
 ) -> Result<PrView, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_create")?;
     let data = data_dir(&state)?;
     let known = locate(data, &path)?;
     let repo = Repo::discover(&path)?;
@@ -663,6 +665,7 @@ pub fn worktree_pr_checks(
     path: PathBuf,
     number: u64,
 ) -> Result<Vec<Check>, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_checks")?;
     let known = locate(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, known.gh_account, |gh| {
         Ok(pr_checks(gh, &path, number)?)
@@ -677,6 +680,7 @@ pub fn worktree_check_log(
     path: PathBuf,
     link: String,
 ) -> Result<Option<String>, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_check_log")?;
     let known = locate(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, known.gh_account, |gh| {
         Ok(run_failed_log(gh, &path, &link)?)
@@ -689,6 +693,7 @@ pub fn worktree_pr_open(
     path: PathBuf,
     checks: bool,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_open")?;
     let known = locate(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, known.gh_account, |gh| {
         Ok(pr_open_web(gh, &path, checks)?)
@@ -708,6 +713,7 @@ pub fn worktree_draft_commit(
     path: PathBuf,
     files: Vec<String>,
 ) -> Result<String, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_draft_commit")?;
     let data = data_dir(&state)?;
     locate(data, &path)?;
     checked_files(&path, &files)?;
@@ -722,6 +728,7 @@ pub fn worktree_draft_pr(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<PrDraft, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_draft_pr")?;
     let data = data_dir(&state)?;
     let known = locate(data, &path)?;
     let repo = Repo::discover(&path)?;
@@ -802,6 +809,7 @@ pub fn worktree_suggest_branch(
     path: PathBuf,
     session: Option<String>,
 ) -> Result<String, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_suggest_branch")?;
     let data = data_dir(&state)?;
     locate(data, &path)?;
     let ctx = Ctx::of(&state)?;
@@ -825,6 +833,7 @@ pub fn worktree_ship(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<ShipView, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_ship")?;
     view(data_dir(&state)?, &path, against_upstream(&app))
 }
 
@@ -834,6 +843,7 @@ pub fn worktree_push(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<ShipView, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_push")?;
     push_with(data_dir(&state)?, &path, against_upstream(&app))
 }
 
@@ -841,6 +851,7 @@ pub fn worktree_push(
 /// is a `blocked` result, not an error.
 #[tauri::command(async)]
 pub fn worktree_sync_fork(state: State<'_, AppState>, path: PathBuf) -> Result<ForkSync, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_sync_fork")?;
     sync_fork_with(data_dir(&state)?, &path)
 }
 
@@ -850,6 +861,7 @@ pub fn worktree_pull(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<ShipView, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pull")?;
     pull_with(
         data_dir(&state)?,
         &path,
@@ -864,6 +876,7 @@ pub fn worktree_fast_forward(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<ShipView, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_fast_forward")?;
     fast_forward_with(data_dir(&state)?, &path, against_upstream(&app))
 }
 
@@ -873,6 +886,7 @@ pub fn worktree_rebase_from_base(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<ShipView, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_rebase_from_base")?;
     rebase_from_base_with(data_dir(&state)?, &path, against_upstream(&app))
 }
 
@@ -882,6 +896,7 @@ pub fn worktree_sync(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<ShipView, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_sync")?;
     sync_with(
         data_dir(&state)?,
         &path,
@@ -896,6 +911,7 @@ pub fn worktree_fetch(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<ShipView, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_fetch")?;
     fetch_with(data_dir(&state)?, &path, against_upstream(&app))
 }
 
@@ -907,6 +923,7 @@ pub fn worktree_force_push(
     expected: String,
     confirmed: bool,
 ) -> Result<ShipView, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_force_push")?;
     force_push_with(
         data_dir(&state)?,
         &path,
@@ -924,6 +941,7 @@ pub fn worktree_amend(
     message: String,
     confirmed: bool,
 ) -> Result<String, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_amend")?;
     amend_with(data_dir(&state)?, &path, &files, &message, confirmed)
 }
 

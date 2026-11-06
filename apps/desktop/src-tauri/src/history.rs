@@ -145,6 +145,7 @@ pub fn worktree_log(
     limit: usize,
     skip: usize,
 ) -> Result<RepoLog, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_log")?;
     log_with(data_dir(&state)?, &path, limit, skip)
 }
 
@@ -154,6 +155,7 @@ pub fn worktree_commit_files(
     path: PathBuf,
     id: String,
 ) -> Result<CommitFiles, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_commit_files")?;
     commit_files_with(data_dir(&state)?, &path, &id)
 }
 
@@ -164,6 +166,7 @@ pub fn worktree_commit_file(
     id: String,
     file: String,
 ) -> Result<WorktreeFileDiff, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_commit_file")?;
     commit_file_with(data_dir(&state)?, &path, &id, &file)
 }
 
@@ -174,6 +177,7 @@ pub fn worktree_open_commit(
     path: PathBuf,
     id: String,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_open_commit")?;
     open_commit_with(&PluginOpener(&app), data_dir(&state)?, &path, &id)
 }
 
@@ -186,6 +190,7 @@ pub fn worktree_open_file_on_host(
     line: Option<u32>,
     end_line: Option<u32>,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_open_file_on_host")?;
     open_file_with(
         &PluginOpener(&app),
         data_dir(&state)?,
