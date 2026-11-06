@@ -404,3 +404,27 @@ describe("restored accounts", () => {
     expect(restoredAccount({ account: "claude-2", accountSource: "tab" }, null)).toEqual({ account: "claude-2", gone: false });
   });
 });
+
+describe("Sessions.restore chat view", () => {
+  let sessions: Sessions | null = null;
+  afterEach(() => {
+    sessions?.dispose();
+    sessions = null;
+  });
+
+  it("keeps view chat on the live, asleep and attached paths for a claude tab", async () => {
+    const api = createMockApi({});
+    api.__ptydHold({ id: "live-2", output: "x\r\n", info: { agent: true, profile: "claude", cli: "claude" } });
+    const s = (sessions = new Sessions(api));
+    await s.restore(snap({ [A]: one({ t1: claude({ view: "chat" }), t2: claude({ view: "chat", asleep: true, agentSession: "abc" }), t3: claude({ view: "chat", ptyId: "live-2", seq: 0 }) }) }), "all", never);
+    const tabs = s.tabs(A);
+    expect(tabs).toHaveLength(3);
+    for (const t of tabs) expect(t.view).toBe("chat");
+  });
+
+  it("drops view when the tab has no chat-capable cli", async () => {
+    const s = (sessions = new Sessions(createMockApi({})));
+    await s.restore(snap({ [A]: one({ t1: shell({ view: "chat" }), t2: shell({ view: "chat", asleep: true }) }) }), "all", never);
+    for (const t of s.tabs(A)) expect(t.view).toBeUndefined();
+  });
+});

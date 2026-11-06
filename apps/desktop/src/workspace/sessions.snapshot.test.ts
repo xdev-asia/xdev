@@ -128,3 +128,16 @@ describe("Sessions.snapshot", () => {
     expect(s.snapshot().worktrees).toEqual({});
   });
 });
+
+describe("Sessions.snapshot chat view", () => {
+  it("writes view only for a chat tab", () => {
+    const s = new Sessions(createMockApi({}), () => 1000);
+    const a = s.open(A, "claude", null, "claude");
+    s.open(A, "claude", null, "claude");
+    s.setView(a.id, "chat");
+    const tabs = s.snapshot().worktrees[A].tabs;
+    expect(tabs.t1).toMatchObject({ view: "chat" });
+    expect("view" in tabs.t2).toBe(false);
+    s.dispose();
+  });
+});

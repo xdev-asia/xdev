@@ -1,4 +1,5 @@
 import { toApiError, type AccountSource, type AgentSubagent, type Api, type HookDetail, type LaunchOverrides, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
+import { chatCapable } from "@/conversation/chatOpen";
 import { PtyClient } from "@/terminal/ptyClient";
 import { setPrime, takePrime } from "@/terminal/restorePrime";
 import { translate } from "@/i18n";
@@ -84,6 +85,8 @@ export interface Tab {
   color: TabColor;
   /** Put to sleep: no pty runs, the slot stays, and waking resumes `agentSession`. */
   asleep?: true;
+  /** Shown as a chat over the terminal; absent for the terminal. Only claude and codex tabs carry it. */
+  view?: "chat";
   /** Set once the pty exited; `null` when it was killed or its code is unknown. */
   exitCode?: number | null;
   client: PtyClient;
@@ -155,6 +158,9 @@ export function stepBefore(tabs: readonly string[], id: string, step: -1 | 1): s
 }
 
 /** The CLI of a built-in profile id, for callers that have no profile view. */
+/** The chat view of a snapshot, kept only for a tab that can show one (an edited layout may carry it anywhere). */
+const viewOf = (snap: { view?: "chat" }, cli: TabCli): { view?: "chat" } => (snap.view === "chat" && chatCapable(cli) ? { view: "chat" } : {});
+
 export function cliOf(profileId: PtyProfile): TabCli {
   return profileId === "claude" || profileId === "codex" ? profileId : null;
 }
@@ -408,6 +414,7 @@ export class Sessions {
       autoTitled: snap.autoTitled === true && snap.renamed !== true,
       pinned: snap.pinned === true,
       color,
+      ...viewOf(snap, cli),
     };
     if (snap.autoTitled === true && snap.title) entry.autoTitle = snap.title;
     this.entries.set(id, entry);
@@ -430,7 +437,7 @@ export class Sessions {
     const id = snap.agent ? snap.agentSession : null;
     const tab = id ? this.resume(worktree, snap.profileId, account, id, snap.title, cli) : this.open(worktree, snap.profileId, account, cli, ...(snap.dir ? [{ dir: snap.dir }] : []));
     const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
-    this.update(this.entries.get(tab.id)!, { asleep: true, title: snap.title, renamed: snap.renamed === true, pinned: snap.pinned === true, color, openedAt: snap.openedAt, accountSource: snap.accountSource ?? null });
+    this.update(this.entries.get(tab.id)!, { asleep: true, title: snap.title, renamed: snap.renamed === true, pinned: snap.pinned === true, color, ...viewOf(snap, cli), openedAt: snap.openedAt, accountSource: snap.accountSource ?? null });
     report.asleep = (report.asleep ?? 0) + 1;
     return this.entries.get(tab.id)!.tab;
   }
@@ -462,7 +469,7 @@ export class Sessions {
     this.lazy.add(tab.id);
     const auto = snap.autoTitled === true && snap.renamed !== true && !!snap.title;
     if (snap.autoTitled === true && snap.title) entry.autoTitle = snap.title;
-    this.update(entry, { title: snap.title, renamed: snap.renamed === true, autoTitled: auto, pinned: snap.pinned === true, color });
+    this.update(entry, { title: snap.title, renamed: snap.renamed === true, autoTitled: auto, pinned: snap.pinned === true, color, ...viewOf(snap, cli) });
     await this.primeFromSnapshot(snap.ptyId, tab.id, note);
     // The saved account is gone: the tab runs on the default one, and its first line says so.
     if (gone) {
@@ -589,7 +596,7 @@ export class Sessions {
     const next = this.entry(old.tab.worktree, old.tab.profileId, account, old.tab.cli, resumeOf, old.tab.title);
     // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
     // A named account starts pinned, so the new pty reports it as the tab's own.
-    next.tab = { ...next.tab, accountSource: account !== null ? null : old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession, renamed: old.tab.renamed, autoTitled: old.tab.autoTitled && !old.tab.renamed };
+    next.tab = { ...next.tab, accountSource: account !== null ? null : old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, ...(old.tab.view ? { view: old.tab.view } : {}), agentSession, renamed: old.tab.renamed, autoTitled: old.tab.autoTitled && !old.tab.renamed };
     // A restart or a wake starts where the shell last was, inside the worktree.
     const dir = this.dirOf(id);
     if (dir) next.tab = { ...next.tab, dir };
@@ -901,6 +908,29 @@ export class Sessions {
     const entry = this.entries.get(id);
     if (!entry || !TAB_COLORS.includes(color) || entry.tab.color === color) return;
     this.update(entry, { color });
+  }
+
+  /** Shows a chat-capable agent tab as a chat over its terminal, or as the terminal. The pty is not touched. */
+  setView(id: string, view: "chat" | "terminal"): void {
+    const entry = this.entries.get(id);
+    if (!entry || !chatCapable(entry.tab.cli)) return;
+    if (view === "chat") {
+      if (entry.tab.view === "chat") return;
+      this.update(entry, { view: "chat" });
+    } else {
+      if (!entry.tab.view) return;
+      const { view: _gone, ...rest } = entry.tab;
+      entry.tab = rest;
+      this.cache.delete(entry.tab.worktree);
+      this.emit();
+    }
+  }
+
+  /** Sets the tab's agent session when it has none yet; the hooks' own report keeps priority. */
+  adoptSession(id: string, session: string): void {
+    const entry = this.entries.get(id);
+    if (!entry || entry.tab.agentSession !== null) return;
+    this.update(entry, { agentSession: session });
   }
 
   /** A title set by the person; null or blank gives back the program's last title. */
