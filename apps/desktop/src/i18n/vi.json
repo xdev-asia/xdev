@@ -1251,6 +1251,7 @@
   "workspace.tabs.status.needs-you": "Cần bạn",
   "workspace.tabs.status.done": "Xong",
   "workspace.tabs.status.exited": "Đã thoát",
+  "workspace.tabs.progress": "{status}, {percent}%",
   "workspace.tabs.unreadLabel": "{name}, {status}, chưa xem",
   "workspace.panel.changesCount": "Thay đổi, {count} tệp",
   "workspace.panel.changesCount.one": "Thay đổi, {count} tệp",

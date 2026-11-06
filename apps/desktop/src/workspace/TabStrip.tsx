@@ -15,7 +15,7 @@ import type { TabStatus } from "./status";
 import { QuestionBadge } from "@/conversation/QuestionCard";
 import type { DropZone } from "./sessions";
 import { beforeOf, insertAt, pastThreshold, zoneFor } from "./tabDrag";
-import { TabIndicator } from "./TabIndicator";
+import { TabIndicator, progressPercent } from "./TabIndicator";
 import { CardPortal, HOVER_DELAY_MS, TabHoverCard, useTabHover, useTabOutput } from "./TabHoverCard";
 import { cacheLeftMs, formatCacheLeft, useNow } from "./cacheTimer";
 import { PaneChips } from "@/terminal/chips/PaneChips";
@@ -469,7 +469,7 @@ export function TabStrip(props: {
                         </span>
                       )}
                       {/* Plain shells are not agents: no status mark. */}
-                      {TabIndicator({ status: tab.agent ? tab.status : null, label: statusLabel(tab.status) })}
+                      {TabIndicator({ status: tab.agent ? tab.status : null, label: statusLabel(tab.status), progress: tab.progress, progressLabel: t("workspace.tabs.progress", { status: statusLabel(tab.status), percent: progressPercent(tab.progress) ?? 0 }) })}
                       {tab.agent && <QuestionBadge tab={tab} />}
                       {cache && cache.timers.has(tab.id) && <CacheBadge left={cacheLeftMs(cache.timers.get(tab.id)!, stripNow, cache.ttlMs)} />}
                       {props.noteTabs?.has(tab.id) && <span className="ws-tab-note" role="img" aria-label={t("notes.tab.dot")} title={t("notes.tab.dot")} />}

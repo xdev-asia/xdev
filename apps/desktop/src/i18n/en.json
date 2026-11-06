@@ -1251,6 +1251,7 @@
   "workspace.tabs.status.needs-you": "Needs you",
   "workspace.tabs.status.done": "Done",
   "workspace.tabs.status.exited": "Exited",
+  "workspace.tabs.progress": "{status}, {percent}%",
   "workspace.tabs.unreadLabel": "{name}, {status}, unread",
   "workspace.panel.changesCount": "Changes, {count} files",
   "workspace.panel.changesCount.one": "Changes, {count} file",
