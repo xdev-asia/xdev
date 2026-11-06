@@ -649,6 +649,24 @@ it("a_profile_with_its_own_launch_arguments_shows_the_custom_hint_and_no_flag_ta
   expect(ed.draw().some((n) => n.type === Tag)).toBe(false);
 });
 
+// --- Opens as ---
+
+it("the_claude_editor_has_an_opens_as_select_with_terminal_and_chat", async () => {
+  const p = await page();
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  const ed = drawEditor(p.editor()!);
+  const options = nodes(ed.field("openAs").props.children).filter((n) => n.type === "option");
+  expect(options.map((o) => o.props.children)).toEqual([en("settings.agents.openAs.terminal"), en("settings.agents.openAs.chat")]);
+  expect(ed.field("openAsHint").props.children).toBe(en("settings.agents.openAs.hint"));
+});
+
+it("a_custom_editor_has_no_opens_as_select", async () => {
+  const p = await page();
+  p.button(p.all().find((n) => n.props.className === "settings-actions settings-actions-start")!, en("settings.agents.addProfile")).props.onClick();
+  const ed = drawEditor(p.editor()!);
+  expect(ed.field("openAs")).toBeUndefined();
+});
+
 // --- WSL ---
 
 // The claude editor, with these distros and optionally a saved distro.
