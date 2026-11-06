@@ -4,7 +4,7 @@ import type { Tab } from "@/workspace/sessions";
 import type { TerminalHandle } from "./Terminal";
 import { showsClearTitle, showsCopySessionId, showsPaneLayout, terminalMenuItems, type TerminalMenuContext } from "./terminalMenu";
 
-function setup(over: { selection?: boolean; paneId?: string | null; agent?: boolean; fork?: boolean; handOff?: boolean; session?: string | null; renamed?: boolean; extras?: boolean; expanded?: boolean } = {}) {
+function setup(over: { selection?: boolean; paneId?: string | null; agent?: boolean; fork?: boolean; handOff?: boolean; chat?: boolean; session?: string | null; renamed?: boolean; extras?: boolean; expanded?: boolean } = {}) {
   const calls: string[] = [];
   const handle: TerminalHandle = {
     copy: async () => { calls.push("copy"); return true; },
@@ -37,6 +37,7 @@ function setup(over: { selection?: boolean; paneId?: string | null; agent?: bool
         }
       : {}),
     ...(over.fork ? { forkSession: () => void calls.push("forkSession") } : {}),
+    ...(over.chat ? { showChat: () => void calls.push("showChat") } : {}),
     ...(over.handOff ? { handOff: () => void calls.push("handOff") } : {}),
   };
   const items = terminalMenuItems(ctx);
@@ -224,4 +225,13 @@ it("Create task from selection is hidden without a task editor, and disabled wit
   expect(some.disabled).toBe(false);
   some.run?.();
   expect(taken).toEqual(["npm test failed"]);
+});
+
+it("Show chat is listed only when the context has it, and runs it", () => {
+  expect(setup({ agent: true }).items.some((i) => i.id === "showChat")).toBe(false);
+  const on = setup({ agent: true, chat: true });
+  const item = on.find("showChat");
+  expect(item.labelKey).toBe("termMenu.showChat");
+  item.run!();
+  expect(on.calls).toContain("showChat");
 });

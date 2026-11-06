@@ -42,6 +42,7 @@ export function ProfileEditor(props: {
   const approveForMe = flags !== "" && draftMode(draft, props.view, props.approvals) === "auto";
   // A saved distro that is no longer found stays listed, so the field still reads true.
   const missing = draft.wsl !== "" && !props.distros.includes(draft.wsl);
+  const showOpenAs = base?.cli === "claude" || base?.cli === "codex";
   const showWsl = props.distros.length > 0 || draft.wsl !== "";
 
   const set = (key: keyof Draft) => (e: { target: { value: string } }) => {
@@ -89,6 +90,18 @@ export function ProfileEditor(props: {
                 {t("settings.agents.wslHint", { distro: draft.wsl })}
               </small>
             )}
+          </label>
+        )}
+        {showOpenAs && (
+          <label className="ws-field">
+            <span>{t("settings.agents.openAs")}</span>
+            <select value={draft.openAs || "terminal"} onChange={set("openAs")} data-field="openAs">
+              <option value="terminal">{t("settings.agents.openAs.terminal")}</option>
+              <option value="chat">{t("settings.agents.openAs.chat")}</option>
+            </select>
+            <small className="settings-hint" data-field="openAsHint">
+              {t("settings.agents.openAs.hint")}
+            </small>
           </label>
         )}
         <label className="ws-field">

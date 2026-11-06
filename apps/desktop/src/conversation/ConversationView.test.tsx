@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactElement } from "react";
 import { translate } from "@/i18n";
-import { ConversationContent, RunsHistory, RunsToggle, SessionStrip, SubagentGroup } from "./ConversationView";
+import { ConversationContent, ConversationView, readTranscript, RunsHistory, RunsToggle, SessionStrip, startPoll, SubagentGroup } from "./ConversationView";
 import { chipKind, Markdown, MarkdownContext, pathCandidates, type MarkdownEnv } from "./Markdown";
 import { fixtureConversation, fixtureSubagentConversation } from "./mockConversation";
 import { foldRows, mergePage } from "./model";
@@ -167,4 +167,71 @@ it("a call whose run is not listed still folds, with the step's own output", () 
   expect(out).toContain("Sub-agent: Find parser bugs");
   expect(out).toContain("One bug: parse_expr is a stub.");
   expect(out).toContain("0 steps");
+});
+
+const viewTab = { id: "t1", agentSession: "s1", status: "idle" as const, worktree: "/w" };
+const viewApi = { agentConversation: async () => fixtureConversation(NOW), fileLinksResolve: async () => [], openUrl: async () => {} } as never;
+
+it("tab mode has Show terminal and New conversation, no back or close, and no primary button", () => {
+  const out = renderToStaticMarkup(<ConversationView api={viewApi} tab={viewTab} agentName="Claude" mode="tab" onBack={() => {}} onNewConversation={() => {}} />);
+  expect(out).toContain('aria-label="Show terminal"');
+  expect(out).toContain('aria-label="New conversation"');
+  expect(out).not.toContain("Back to terminal");
+  expect(out).not.toContain("Close conversation");
+  expect(out).not.toContain('class="btn');
+  expect(out).toContain('data-mode="tab"');
+});
+
+it("startPoll ticks only while working and a pollMs is set", () => {
+  const tick = vi.fn();
+  let fire = () => {};
+  const stop = vi.fn();
+  const every = vi.fn((fn: () => void) => {
+    fire = fn;
+    return stop;
+  });
+  startPoll(2000, true, tick, every);
+  expect(every).toHaveBeenCalledWith(tick, 2000);
+  fire();
+  expect(tick).toHaveBeenCalledTimes(1);
+  startPoll(2000, false, tick, every);
+  startPoll(undefined, true, tick, every);
+  expect(every).toHaveBeenCalledTimes(1);
+});
+
+it("readTranscript runs onMissing once on not_found, then reads again once", async () => {
+  const missing = Object.assign(new Error("x"), { code: "not_found" });
+  const read = vi.fn().mockRejectedValueOnce(missing).mockResolvedValueOnce("page");
+  const onMissing = vi.fn(async () => {});
+  const tried = new Set<string>();
+  expect(await readTranscript(read, "s1", tried, onMissing)).toBe("page");
+  expect(onMissing).toHaveBeenCalledTimes(1);
+  expect(read).toHaveBeenCalledTimes(2);
+  // A second not_found for the same session is an error, with no third call.
+  const again = vi.fn().mockRejectedValue(missing);
+  await expect(readTranscript(again, "s1", tried, onMissing)).rejects.toBe(missing);
+  expect(again).toHaveBeenCalledTimes(1);
+  expect(onMissing).toHaveBeenCalledTimes(1);
+});
+
+it("readTranscript leaves other errors alone", async () => {
+  const boom = new Error("boom");
+  const onMissing = vi.fn();
+  await expect(readTranscript(vi.fn().mockRejectedValue(boom), "s1", new Set(), onMissing)).rejects.toBe(boom);
+  expect(onMissing).not.toHaveBeenCalled();
+});
+
+const linked = [{ index: 0, kind: "assistant", text: "See https://www.example.com/docs and http://x.test/a", at: 0, tool: null, marker: null }] as never;
+
+it("chat rows show a chip per link, local only; the reader shows none", () => {
+  const rows = foldRows(linked);
+  const chat = html(<ConversationContent rows={rows} view="chat" agentName="Claude" open={new Set()} onToggle={() => {}} showTools={false} />);
+  expect(chat).toContain('class="cv-linkchips"');
+  expect(chat.match(/class="cv-linkchip"/g)).toHaveLength(2);
+  expect(chat).toContain("example.com");
+  expect(chat).toContain('aria-label="Link to x.test"');
+  expect(chat).not.toContain("<img");
+  expect(chat).not.toContain("favicon");
+  const reader = html(<ConversationContent rows={rows} view="reader" agentName="Claude" open={new Set()} onToggle={() => {}} showTools={false} />);
+  expect(reader).not.toContain("cv-linkchip");
 });

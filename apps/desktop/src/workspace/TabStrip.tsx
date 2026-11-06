@@ -136,6 +136,8 @@ export function TabStrip(props: {
   onLaunchOptionsPicker?: () => void;
   /** Opens the agent picker of this pane; absent, the menu has no "Agent…" item. */
   onAgentPicker?: () => void;
+  /** Opens a chat tab with the default (or first chat-capable) agent. Absent hides New chat tab. */
+  onNewChat?: () => void;
   /** Extra block of the `+` menu, after the launch groups and before split (Run targets). */
   extra?: ReactNode;
   /** The open agent picker of this pane, drawn under the `+` button. */
@@ -571,6 +573,7 @@ export function TabStrip(props: {
                     </button>
                   ))}
                   {g.picker && props.onAgentPicker && menuItem("agent-picker", t("workspace.tabs.agentPicker"), props.onAgentPicker)}
+                  {g.picker && props.onNewChat && menuItem("new-chat", t("workspace.tabs.newChat"), props.onNewChat)}
                   {g.picker && props.onLaunchOptionsPicker && menuItem("launch-options", t("workspace.tabs.launchOptions"), props.onLaunchOptionsPicker)}
                 </div>
               ))}

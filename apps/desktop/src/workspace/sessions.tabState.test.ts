@@ -181,3 +181,53 @@ describe("Sessions tab state", () => {
     expect(heard).not.toHaveBeenCalled();
   });
 });
+
+describe("Sessions chat view", () => {
+  let sessions: Sessions | null = null;
+  const make = () => (sessions = new Sessions(createMockApi({})));
+  afterEach(() => {
+    sessions?.dispose();
+    sessions = null;
+  });
+
+  it("setView sets and clears the chat view, emitting only on change, and leaves a shell alone", () => {
+    const s = make();
+    const a = s.open(A, "claude", null, "claude");
+    const sh = s.open(A, "shell");
+    const seen = vi.fn();
+    s.subscribe(seen);
+    s.setView(a.id, "chat");
+    expect(s.tabs(A).find((t) => t.id === a.id)?.view).toBe("chat");
+    expect(seen).toHaveBeenCalledTimes(1);
+    s.setView(a.id, "chat");
+    expect(seen).toHaveBeenCalledTimes(1);
+    s.setView(a.id, "terminal");
+    expect("view" in s.tabs(A).find((t) => t.id === a.id)!).toBe(false);
+    s.setView(sh.id, "chat");
+    expect(s.tabs(A).find((t) => t.id === sh.id)?.view).toBeUndefined();
+  });
+
+  it("restart, restartAs fresh, and sleep then wake keep the chat view", async () => {
+    const s = make();
+    const a = s.open(A, "claude", null, "claude");
+    s.setView(a.id, "chat");
+    const r = s.restart(a.id)!;
+    expect(r.view).toBe("chat");
+    const f = s.restartAs(r.id, null, true)!;
+    expect(f.view).toBe("chat");
+    expect(f.agentSession).toBeNull();
+    s.adoptSession(f.id, "s1");
+    const slept = (await s.hibernate(f.id))!;
+    expect(slept.view).toBe("chat");
+    expect(s.wake(slept.id)!.view).toBe("chat");
+  });
+
+  it("adoptSession sets a missing session and never replaces one", () => {
+    const s = make();
+    const a = s.open(A, "claude", null, "claude");
+    s.adoptSession(a.id, "s9");
+    expect(s.tabs(A)[0].agentSession).toBe("s9");
+    s.adoptSession(a.id, "other");
+    expect(s.tabs(A)[0].agentSession).toBe("s9");
+  });
+});

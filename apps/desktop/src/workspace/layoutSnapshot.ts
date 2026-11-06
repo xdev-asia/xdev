@@ -47,6 +47,8 @@ export type TabSnapshot =
       autoTitled?: boolean;
       pinned: boolean;
       color: TabColor;
+      /** Shown as a chat over the terminal; written only when set. */
+      view?: "chat";
       agent: boolean;
       agentSession: string | null;
       /** When the tab was opened, in ms; the fallback looks for sessions that started after it. */
@@ -170,6 +172,7 @@ export function toSnapshot(
       ...(tab.autoTitled ? { autoTitled: true } : {}),
       pinned: tab.pinned,
       color: tab.color,
+      ...(tab.view ? { view: tab.view } : {}),
       agent: tab.agent,
       agentSession: tab.agentSession,
       openedAt: tab.openedAt,

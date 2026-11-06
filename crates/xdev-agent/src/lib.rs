@@ -52,7 +52,7 @@ pub use launch::{
 };
 pub use profiles::{
     Approvals, Cli, CustomShell, DefaultAgent, EnvVar, Permissions, Profile, ProfileError,
-    Profiles, builtin, valid_id,
+    ProfileOpenAs, Profiles, builtin, valid_id,
 };
 pub use route::{MatchRow, Matched, RouteRule, RouteTarget, Routing};
 pub use runner::{

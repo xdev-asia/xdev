@@ -85,6 +85,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   ...DIGITS.map((n) => def(`worktree.select.${n}`, "worktrees", [`Mod+${n}`])),
   // Agents.
   def("agent.new", "agents", ["Ctrl+Alt+T"]),
+  def("tab.toggleChat", "agents", []),
   // Terminal: only with a terminal focused.
   def("terminal.clear", "terminal", ["Mod+K"], { ...TERMINAL, ...TUI }),
   def("terminal.copy", "terminal", { all: ["Ctrl+Shift+C"], mac: ["Cmd+C"] }, TERMINAL),

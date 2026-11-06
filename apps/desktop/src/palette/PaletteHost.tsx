@@ -27,6 +27,7 @@ import { requestTargets } from "@/targets/targetsEvents";
 import { replayTour } from "@/onboarding/tourStore";
 import { toggleFloating } from "@/floating/floatingStore";
 import { conversationItems } from "@/conversation/conversationStore";
+import { chatCapable, chatTabItems, openAgentTab, openAsOf } from "@/conversation/chatOpen";
 import { readFileList } from "@/search/QuickOpenDialog";
 import { rankFiles } from "@/search/quickOpen";
 import { FILE_MIN_QUERY, fileItems } from "./items";
@@ -221,11 +222,23 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
     actions.frontTab(current.path, tab.id);
   }
 
+  // An agent opens through the chat logic (its profile may open as chat); a shell opens as before.
+  function openAgent(profile: string, viewOf?: "chat" | "terminal"): void {
+    if (!sessions || !current) return;
+    const own = view?.profiles.find((v) => v.profile.id === profile)?.profile.cli;
+    const cli = own === "claude" || own === "codex" ? own : null;
+    // A terminal needs no lookup: it opens at once, as a shell does.
+    if (!chatCapable(cli) || (viewOf ?? openAsOf(view ?? null, profile)) !== "chat") return openTab(profile);
+    actions.showWorkspace();
+    const path = current.path;
+    void openAgentTab({ api, sessions, profiles: view ?? null }, { worktree: path, profile, cli, ...(viewOf ? { view: viewOf } : {}) }).then((tab) => actions.frontTab(path, tab.id));
+  }
+
   let items: PaletteItem[] = [];
   if (open) {
     const handlers: Partial<Record<ActionName, () => void>> = {
       newWorktree: usable ? () => actions.newWorktree() : undefined,
-      newAgentTab: sessions && current ? () => openTab(view?.defaultAgent ?? FALLBACK_AGENT) : undefined,
+      newAgentTab: sessions && current ? () => openAgent(view?.defaultAgent ?? FALLBACK_AGENT) : undefined,
       newShellTab: sessions && current ? () => openTab(view?.shells[0]?.id ?? FALLBACK_SHELL) : undefined,
       newBrowserTab: current
         ? () => {
@@ -307,6 +320,15 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       ...lspItems(t, currentPath),
       ...resourceItems(t),
       ...conversationItems(t, front),
+      ...(sessions && current
+        ? chatTabItems(t, {
+            profiles: view ?? null,
+            front,
+            name: (id) => profileName(view, id, t),
+            open: (id, _cli, v) => openAgent(id, v),
+            toggle: (id) => sessions.setView(id, front?.view === "chat" ? "terminal" : "chat"),
+          })
+        : []),
       ...foreignTermsItems(t),
       ...prPanelItems(t),
       ...(sessions && current ? layoutItems(t) : []),

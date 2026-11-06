@@ -27,6 +27,21 @@ const claude: Profile = {
   enabled: true,
 };
 
+describe("openAs", () => {
+  it("drafts blank for no field and the stored value otherwise", () => {
+    expect(draftOf(claude).openAs).toBe("");
+    expect(draftOf(null).openAs).toBe("");
+    expect(draftOf({ ...claude, openAs: "chat" }).openAs).toBe("chat");
+  });
+
+  it("leaves the key out when blank and saves terminal or chat", () => {
+    const blank = profileOf({ ...draftOf(claude), openAs: "" }, claude, "claude")!;
+    expect("openAs" in blank).toBe(false);
+    expect(profileOf({ ...draftOf(claude), openAs: "chat" }, claude, "claude")!.openAs).toBe("chat");
+    expect(profileOf({ ...draftOf(claude), openAs: "terminal" }, claude, "claude")!.openAs).toBe("terminal");
+  });
+});
+
 describe("wsl", () => {
   it("drafts the distro, blank for Windows", () => {
     expect(draftOf({ ...claude, wsl: "Ubuntu" }).wsl).toBe("Ubuntu");

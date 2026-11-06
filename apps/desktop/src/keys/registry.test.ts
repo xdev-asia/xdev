@@ -25,7 +25,7 @@ const ALL: Record<ActionId, true> = {
   "terminal.clear": true, "terminal.copy": true, "terminal.paste": true, "terminal.selectAll": true, "terminal.find": true,
   "terminal.prevPrompt": true, "terminal.nextPrompt": true,
   "zoom.in": true, "zoom.out": true, "zoom.reset": true,
-  "tab.reopenClosed": true, "tab.nextSameKind": true, "tab.prevSameKind": true, "tab.moveLeft": true, "tab.moveRight": true, "file.closeAll": true, "tab.closeAll": true,
+  "tab.reopenClosed": true, "tab.nextSameKind": true, "tab.prevSameKind": true, "tab.moveLeft": true, "tab.moveRight": true, "file.closeAll": true, "tab.closeAll": true, "tab.toggleChat": true,
   "browser.new": true,
   "settings.open": true, "settings.shortcuts": true,
   "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true, "file.splitRight": true, "file.splitDown": true,

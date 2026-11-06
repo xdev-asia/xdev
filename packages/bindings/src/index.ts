@@ -339,6 +339,7 @@ export type { PresetSource } from "./PresetSource";
 export type { Priority } from "./Priority";
 export type { ProInfo } from "./ProInfo";
 export type { Profile } from "./Profile";
+export type { ProfileOpenAs } from "./ProfileOpenAs";
 export type { ProfileView } from "./ProfileView";
 export type { ProfilesView } from "./ProfilesView";
 export type { ProjectKind } from "./ProjectKind";

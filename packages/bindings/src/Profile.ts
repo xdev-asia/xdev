@@ -2,6 +2,7 @@
 import type { Cli } from "./Cli";
 import type { EnvVar } from "./EnvVar";
 import type { Permissions } from "./Permissions";
+import type { ProfileOpenAs } from "./ProfileOpenAs";
 
 /**
  * One way to start an agent. A built-in has a `cli`; a custom profile has
@@ -20,4 +21,8 @@ startup: Array<string>, enabled: boolean,
  * The WSL distro the agent runs in; `None` runs it on the host. Only
  * read on Windows.
  */
-wsl?: string, };
+wsl?: string, 
+/**
+ * How a new tab for this profile opens; `None` means a terminal.
+ */
+openAs?: ProfileOpenAs, };

@@ -1,4 +1,4 @@
-import type { Account, Approvals, Permissions, Profile, ProfileView, ShellView } from "@/api";
+import type { Account, Approvals, Permissions, Profile, ProfileOpenAs, ProfileView, ShellView } from "@/api";
 
 type EnvVar = Profile["env"][number];
 
@@ -16,6 +16,8 @@ export interface Draft {
   startup: string;
   /** The WSL distro the agent runs in; `""` runs it on Windows. */
   wsl: string;
+  /** `""` opens as the terminal, the default. */
+  openAs: "" | ProfileOpenAs;
 }
 
 /** Non-empty trimmed lines. */
@@ -51,6 +53,7 @@ export function draftOf(p: Profile | null): Draft {
     env: (p?.env ?? []).map((e) => `${e.name}=${e.value}`).join("\n"),
     startup: (p?.startup ?? []).join("\n"),
     wsl: p?.wsl ?? "",
+    openAs: p?.openAs ?? "",
   };
 }
 
@@ -80,6 +83,7 @@ export function profileOf(draft: Draft, base: Profile | null, id: string): Profi
     enabled: base?.enabled ?? true,
     // Windows is the default: the key is left out, as on disk.
     ...(wsl ? { wsl } : {}),
+    ...(draft.openAs ? { openAs: draft.openAs } : {}),
   };
 }
 

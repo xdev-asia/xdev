@@ -227,6 +227,19 @@ pub struct Profile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub wsl: Option<String>,
+    /// How a new tab for this profile opens; `None` means a terminal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub open_as: Option<ProfileOpenAs>,
+}
+
+/// The view a new agent tab starts in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum ProfileOpenAs {
+    Terminal,
+    Chat,
 }
 
 impl Profile {
@@ -330,6 +343,7 @@ pub fn builtin(cli: Cli) -> Profile {
         startup: Vec::new(),
         enabled: true,
         wsl: None,
+        open_as: None,
     }
 }
 
@@ -937,6 +951,26 @@ mod tests {
         assert_eq!(c.account.as_deref(), Some("work"));
         assert_eq!(c.startup, ["cd src"]);
         assert_eq!(code(p.reset("nope")), "unknown_profile");
+    }
+
+    #[test]
+    fn open_as_is_optional_on_disk() {
+        let json = r#"{"id":"mine","name":"Mine","program":"mine"}"#;
+        let p: Profile = serde_json::from_str(json).unwrap();
+        assert_eq!(p.open_as, None);
+        let v = serde_json::to_value(&p).unwrap();
+        assert!(v.get("openAs").is_none());
+        let back: Profile = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back, p);
+        let chat = r#"{"id":"mine","name":"Mine","program":"mine","openAs":"chat"}"#;
+        let p: Profile = serde_json::from_str(chat).unwrap();
+        assert_eq!(p.open_as, Some(ProfileOpenAs::Chat));
+        let term = chat.replace("chat", "terminal");
+        let p: Profile = serde_json::from_str(&term).unwrap();
+        assert_eq!(p.open_as, Some(ProfileOpenAs::Terminal));
+        let bad = chat.replace("chat", "window");
+        assert!(serde_json::from_str::<Profile>(&bad).is_err());
+        assert_eq!(builtin(Cli::Claude).open_as, None);
     }
 
     #[test]

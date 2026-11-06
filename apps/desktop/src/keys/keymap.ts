@@ -49,6 +49,8 @@ export type ActionId =
   | "tab.moveLeft" | "tab.moveRight"
   // Closes every terminal, agent and file tab of the worktree but the pinned ones; unsaved files ask first.
   | "tab.closeAll"
+  // Bound to nothing by default: switches the front agent tab between its chat and its terminal.
+  | "tab.toggleChat"
   // Opens a browser tab in the worktree.
   | "browser.new"
   // Bound to nothing by default: closes every file tab (not terminals), asking about unsaved ones.
