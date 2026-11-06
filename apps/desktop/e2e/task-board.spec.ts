@@ -29,8 +29,8 @@ async function openBoard(page: Page): Promise<Locator> {
   return board;
 }
 
-const column = (board: Locator, name: string): Locator => board.locator(".board-col").filter({ has: board.page().getByRole("heading", { name, exact: false }) });
-const card = (board: Locator, title: string): Locator => board.locator(".board-card").filter({ hasText: title });
+const column = (board: Locator, name: string): Locator => board.locator(".x-board-col").filter({ has: board.page().getByRole("heading", { name, exact: false }) });
+const card = (board: Locator, title: string): Locator => board.locator(".x-board-card").filter({ hasText: title });
 
 /** Drags the card by its title to the middle of a column. */
 async function dragTo(page: Page, from: Locator, to: Locator): Promise<void> {
@@ -47,8 +47,8 @@ test("the Tasks app shows five columns with the seeded cards in the right ones",
   await openApp();
   const board = await openBoard(page);
   const names = ["Backlog", "To do", "In progress", "In review", "Done"];
-  await expect(board.locator(".board-col")).toHaveCount(5);
-  for (const [i, name] of names.entries()) await expect(board.locator(".board-col").nth(i).locator(".kb-col-name")).toHaveText(name);
+  await expect(board.locator(".x-board-col")).toHaveCount(5);
+  for (const [i, name] of names.entries()) await expect(board.locator(".x-board-col").nth(i).getByRole("heading")).toHaveText(name);
   await expect(column(board, "Backlog")).toContainText("Plan the offline sync");
   await expect(column(board, "To do")).toContainText("Fix the login redirect loop");
   await expect(column(board, "In progress")).toContainText("Polish the settings page");
@@ -60,7 +60,7 @@ test("the Tasks app shows five columns with the seeded cards in the right ones",
 test("drag a card from To do to In review, and the file says so", async ({ page, openApp }) => {
   await openApp();
   const board = await openBoard(page);
-  await dragTo(page, card(board, "Fix the login redirect loop").locator(".ws-wt-main"), column(board, "In review"));
+  await dragTo(page, card(board, "Fix the login redirect loop"), column(board, "In review"));
   await expect(column(board, "In review")).toContainText("Fix the login redirect loop");
   await expect(column(board, "To do")).not.toContainText("Fix the login redirect loop");
   await expect.poll(async () => (await boardFiles(page)).find((f) => f.text.includes("title: Fix the login redirect loop"))?.text).toContain("status: in-review");
@@ -69,7 +69,7 @@ test("drag a card from To do to In review, and the file says so", async ({ page,
 test("a focused card moves with Alt+ArrowRight and the change is announced", async ({ page, openApp }) => {
   await openApp();
   const board = await openBoard(page);
-  await card(board, "Plan the offline sync").locator(".ws-wt-main").focus();
+  await card(board, "Plan the offline sync").focus();
   await page.keyboard.press("Alt+ArrowRight");
   await expect(column(board, "To do")).toContainText("Plan the offline sync");
   await expect(board.getByRole("status").filter({ hasText: "Moved Plan the offline sync to To do" })).toBeAttached();
@@ -79,11 +79,11 @@ test("filter by label auth, then Clear filters brings the rest back", async ({ p
   await openApp();
   const board = await openBoard(page);
   await board.getByRole("group", { name: "Label" }).getByRole("button", { name: "auth" }).click();
-  await expect(board.locator(".board-card")).toHaveCount(2);
-  await expect(board.locator(".board-card").filter({ hasText: "Rotate the signing key" })).toBeVisible();
-  await expect(board.locator(".board-card").filter({ hasText: "Plan the offline sync" })).toHaveCount(0);
+  await expect(board.locator(".x-board-card")).toHaveCount(2);
+  await expect(board.locator(".x-board-card").filter({ hasText: "Rotate the signing key" })).toBeVisible();
+  await expect(board.locator(".x-board-card").filter({ hasText: "Plan the offline sync" })).toHaveCount(0);
   await board.getByRole("button", { name: "Clear filters" }).click();
-  await expect(board.locator(".board-card")).toHaveCount(5);
+  await expect(board.locator(".x-board-card")).toHaveCount(5);
 });
 
 test("the List view sorts by priority", async ({ page, openApp }) => {
@@ -122,7 +122,7 @@ test("a repo with no tasks shows the empty state", async ({ page, openApp }) => 
   const board = await openBoard(page);
   await expect(board.getByText("No tasks in this repo yet")).toBeVisible();
   await expect(board.getByRole("button", { name: "New task" })).toBeVisible();
-  await expect(board.getByRole("button", { name: "Split a goal into tasks" })).toHaveCount(0);
+  await expect(board.getByRole("button", { name: "Split a goal into tasks" })).toBeVisible();
 });
 
 test("Board and List fit at 360px", async ({ page, openApp }) => {
@@ -132,10 +132,10 @@ test("Board and List fit at 360px", async ({ page, openApp }) => {
   // At 360px the workspace sidebar covers the apps until it is hidden.
   const sidebar = page.getByRole("button", { name: "Show or hide the sidebar" });
   if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
-  await expect(board.locator(".board-col")).toHaveCount(5);
+  await expect(board.locator(".x-board-col")).toHaveCount(5);
   expect(await fitsWidth(page)).toBe(true);
   // The columns scroll inside their own box.
-  expect(await board.locator(".board-cols").evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  expect(await board.locator(".x-board").evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
   await page.getByRole("tab", { name: "List" }).click();
   await expect(page.getByRole("tabpanel", { name: "List" }).getByRole("table")).toBeVisible();
   expect(await fitsWidth(page)).toBe(true);

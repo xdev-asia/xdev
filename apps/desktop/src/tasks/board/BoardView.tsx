@@ -1,4 +1,4 @@
-import { Badge, Banner, Button, Disclosure, EmptyState, IconButton, StatusDot, Tag } from "@xdev-asia/ui";
+import { Badge, Banner, Board, BoardCard, BoardColumn, Button, Disclosure, EmptyState, IconButton, StatusDot, Tag } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX, PointerEvent as ReactPointerEvent } from "react";
 import type { BoardTask, TaskLink, TaskStatus, Unreadable } from "@/api";
@@ -59,7 +59,7 @@ export function UnreadableBanner({ items }: { items: Unreadable[] }): JSX.Elemen
 /** Five columns of task cards; drag a card, press Alt+Left or Alt+Right on it, or use its menu to move it. */
 export function BoardView(props: BoardViewProps): JSX.Element {
   const { t } = useI18n();
-  const columns = useRef(new Map<TaskStatus, HTMLElement>());
+  const cols = useRef<HTMLDivElement>(null);
   const stop = useRef<(() => void) | null>(null);
   // A drag ends in a click on the card; that click must not open it.
   const dragged = useRef(false);
@@ -76,10 +76,11 @@ export function BoardView(props: BoardViewProps): JSX.Element {
     setAnnounce(t("board.moved", { title: task.title, status: t(statusKey(to)) }));
   };
 
+  // The columns are the Board's children in order, so index i is COLUMNS[i].
   const boxes = (): ColumnBox[] =>
-    [...columns.current].map(([id, el]) => {
+    [...(cols.current?.querySelectorAll<HTMLElement>(".x-board-col") ?? [])].map((el, i) => {
       const { left, right } = el.getBoundingClientRect();
-      return { id: id as ColumnId, left, right };
+      return { id: COLUMNS[i] as ColumnId, left, right };
     });
 
   // Pointer events, not HTML5 drag, as on the worktree board: the window's native drag-drop is on.
@@ -128,68 +129,65 @@ export function BoardView(props: BoardViewProps): JSX.Element {
   const card = (task: BoardTask): JSX.Element => {
     const l = link(task.id);
     const open = l ? props.tabOpen(l) : false;
+    const name = t("board.menu", { title: task.title });
+    // The wrapper only listens: a press starts a drag and Alt+Arrow moves, both bubbling from the card.
     return (
-      <li key={task.id} className="ws-wt kb-card board-card" data-task={task.id} data-dragging={drag?.id === task.id ? "true" : undefined}>
-        <button
-          type="button"
-          className="ws-wt-main"
-          onPointerDown={(e) => press(e, task)}
-          onClick={() => {
+      <div
+        key={task.id}
+        className="board-card-slot"
+        data-task={task.id}
+        role="presentation"
+        onPointerDown={(e) => {
+          if (!(e.target as HTMLElement).closest("button")) press(e, task);
+        }}
+        onKeyDown={(e) => {
+          const to = keyMove(e.key, e.altKey, task.status);
+          if (!to || e.target !== e.currentTarget.firstElementChild) return;
+          e.preventDefault();
+          move(task, to);
+        }}
+      >
+        <BoardCard
+          title={task.title}
+          dragging={drag?.id === task.id}
+          onOpen={() => {
             if (!dragged.current) props.onOpen(task);
           }}
-          onKeyDown={(e) => {
-            const to = keyMove(e.key, e.altKey, task.status);
-            if (!to) return;
-            e.preventDefault();
-            move(task, to);
-          }}
-        >
-          <span className="ws-wt-line">
-            <span className="ws-wt-name" title={task.title}>
-              {task.title}
-            </span>
-          </span>
-          <span className="board-card-meta">
-            <Badge>{t(`board.priority.${task.priority}`)}</Badge>
-            {task.assignee ? <span className="board-card-agent">{props.agentName(task.assignee)}</span> : null}
-          </span>
-          {task.labels.length > 0 ? (
-            <span className="board-card-meta">
-              {task.labels.map((x) => (
-                <Tag key={x}>{x}</Tag>
-              ))}
-            </span>
-          ) : null}
-        </button>
-        {l ? (
-          <div className="board-linked">
-            {open ? (
-              <>
-                <StatusDot tone="accent" label={t("board.linked", { tab: l.tabTitle })} />
-                <Button variant="secondary" onClick={() => props.onOpenTab(l)}>
-                  {t("board.linked.open")}
-                </Button>
-              </>
-            ) : (
-              <span className="board-linked-gone">{t("board.linked.gone")}</span>
-            )}
-          </div>
-        ) : null}
-        <button
-          type="button"
-          className="ws-wt-more board-more"
-          aria-label={t("board.menu", { title: task.title })}
-          title={t("board.menu", { title: task.title })}
-          aria-haspopup="menu"
-          aria-expanded={menu?.task.id === task.id}
-          onClick={(e) => {
-            const box = e.currentTarget.getBoundingClientRect();
-            setMenu({ task, at: { x: box.left, y: box.bottom } });
-          }}
-        >
-          ⋯
-        </button>
-      </li>
+          meta={
+            <>
+              <span className="board-card-meta">
+                <Badge>{t(`board.priority.${task.priority}`)}</Badge>
+                {task.assignee ? <span className="board-card-agent">{props.agentName(task.assignee)}</span> : null}
+              </span>
+              {l ? (
+                <span className="board-linked">
+                  {open ? (
+                    <>
+                      <StatusDot tone="accent" label={t("board.linked", { tab: l.tabTitle })} />
+                      <Button variant="secondary" onClick={() => props.onOpenTab(l)}>
+                        {t("board.linked.open")}
+                      </Button>
+                    </>
+                  ) : (
+                    <span className="board-linked-gone">{t("board.linked.gone")}</span>
+                  )}
+                </span>
+              ) : null}
+            </>
+          }
+          tags={task.labels.length > 0 ? task.labels.map((x) => <Tag key={x}>{x}</Tag>) : undefined}
+          menu={
+            <IconButton
+              icon="more"
+              label={name}
+              onClick={(e) => {
+                const box = e.currentTarget.getBoundingClientRect();
+                setMenu({ task, at: { x: box.left, y: box.bottom } });
+              }}
+            />
+          }
+        />
+      </div>
     );
   };
 
@@ -229,30 +227,24 @@ export function BoardView(props: BoardViewProps): JSX.Element {
     );
   } else {
     body = (
-      <div className="kb-board board-cols" data-dragging={drag ? "true" : undefined}>
-        {grouped.map((col) => {
-          const name = t(statusKey(col.status));
-          return (
-            <section
-              key={col.status}
-              className="kb-col board-col"
-              data-column={col.status}
-              data-over={drag?.over === col.status ? "true" : undefined}
-              aria-label={t("board.col.label", { status: name, count: col.tasks.length })}
-              ref={(el) => {
-                if (el) columns.current.set(col.status, el);
-                else columns.current.delete(col.status);
-              }}
-            >
-              <h3 className="kb-col-head">
-                <span className="kb-col-name">{name}</span>
-                <span className="ws-group-count">{col.tasks.length}</span>
-                <IconButton icon="plus" label={`${t("board.new")}: ${name}`} onClick={() => props.onNew(col.status)} />
-              </h3>
-              <ul className="ws-wts kb-cards">{col.tasks.map(card)}</ul>
-            </section>
-          );
-        })}
+      <div className="board-cols" ref={cols} data-dragging={drag ? "true" : undefined}>
+        <Board aria-label={t("tasks.title")}>
+          {grouped.map((col) => {
+            const name = t(statusKey(col.status));
+            return (
+              <BoardColumn
+                key={col.status}
+                title={name}
+                count={col.tasks.length}
+                dropTarget={drag?.over === col.status}
+                aria-label={t("board.col.label", { status: name, count: col.tasks.length })}
+                actions={<IconButton icon="plus" label={`${t("board.new")}: ${name}`} onClick={() => props.onNew(col.status)} />}
+              >
+                {col.tasks.map(card)}
+              </BoardColumn>
+            );
+          })}
+        </Board>
       </div>
     );
   }

@@ -6,7 +6,7 @@ import { MOCK_PAIR_CODE, MOCK_PAIR_SAS } from "@/mockPeers";
 import { HostCode, PairDialog } from "./PairDialog";
 import { errorText } from "./peersModel";
 import { SasCheck } from "./SasCheck";
-import { formatCode, normalizeCode } from "./standins/CodeInput";
+import { groupCode, normalizeCode } from "@xdev-asia/ui";
 
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
@@ -15,7 +15,8 @@ const host = (remainingMs: number) => renderToStaticMarkup(<HostCode t={en} code
 
 it("the code counts down in minutes and seconds", () => {
   const html = host(299_000);
-  expect(html).toContain("H3RW8-5MNTA");
+  expect(html).toContain('<span class="x-pairing-code-group">H3RW8</span><span class="x-pairing-code-group">5MNTA</span>');
+  expect(html).toContain("H3RW8 5MNTA");
   expect(html).toContain(en("peers.pair.expires", { time: "4:59" }));
   expect(html).not.toContain(en("peers.pair.newCode"));
 });
@@ -36,7 +37,7 @@ it("opens on Show a code with both tabs", () => {
 it("a join with the mock code gives the digits to compare, then the person is paired", async () => {
   const api = createMockApi({});
   // The dialog sends the code as shown, in two groups.
-  const sent = formatCode(normalizeCode("7k4qm 2xd9p", "crockford", 10), 5);
+  const sent = groupCode(normalizeCode("7k4qm 2xd9p"), 5).join("-");
   expect(sent).toBe(MOCK_PAIR_CODE);
   const pending = await api.peerPairJoin({ kind: "nearby", hostId: "build-box" }, sent, false);
   expect(pending.sas).toBe(MOCK_PAIR_SAS);

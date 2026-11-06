@@ -48,7 +48,7 @@ test("a goal becomes tasks: review, uncheck one, write the rest", async ({ page,
   await dialog.getByRole("button", { name: "Write 2 tasks" }).click();
   await expect(dialog).toBeHidden();
   await expect.poll(async () => (await boardFiles(page)).length).toBe(2);
-  await expect(board.locator(".board-card")).toHaveCount(2);
+  await expect(board.locator(".x-board-card")).toHaveCount(2);
 });
 
 test("an answer that is not a task list shows a banner and writes nothing", async ({ page, openApp }) => {

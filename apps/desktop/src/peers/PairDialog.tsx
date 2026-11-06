@@ -1,4 +1,4 @@
-import { Button, Checkbox, Dialog, EmptyState, Field, ListRow, Segmented, Tabs } from "@xdev-asia/ui";
+import { Button, Checkbox, CodeInput, Dialog, EmptyState, Field, ListRow, PairingCode, Segmented, Tabs, groupCode } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { Api, JoinTarget, LinkBind, NearbyHost, PairOfferView, PairPending } from "@/api";
@@ -6,8 +6,6 @@ import { useI18n } from "@/i18n";
 import { pushToast } from "@/workspace/toastStore";
 import { codeText, errorText, formatCountdown } from "./peersModel";
 import { SasCheck } from "./SasCheck";
-import { CodeInput, formatCode } from "./standins/CodeInput";
-import { PairingCode } from "./standins/PairingCode";
 
 const TICK_MS = 1000;
 const BINDS: LinkBind[] = ["localhost", "lan", "tailscale"];
@@ -140,7 +138,7 @@ export function PairDialog(props: { api: Api; onClose(): void; onPaired(): void 
     setError(undefined);
     try {
       // The code goes as it is shown, in two groups: `7K4QM-2XD9P`.
-      const pending = await api.peerPairJoin(to, formatCode(code, 5), grantBack);
+      const pending = await api.peerPairJoin(to, groupCode(code, 5).join("-"), grantBack);
       joinName.current = pending.name;
       setStep({ kind: "sas", pending, answered: false });
     } catch (e) {

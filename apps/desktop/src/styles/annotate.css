@@ -28,45 +28,6 @@
   align-items: center;
   gap: var(--x-space-1);
 }
-.annotate-colors.term-radios {
-  gap: var(--x-space-1);
-  flex-wrap: nowrap;
-}
-.annotate-colors .term-radio {
-  position: relative;
-  min-width: 24px;
-  min-height: 24px;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.annotate-colors .term-radio input {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-.annotate-colors .term-radio-text {
-  display: inline-flex;
-}
-.annotate-dot {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid var(--x-color-line);
-  box-sizing: content-box;
-}
-.annotate-dot[data-color="danger"] { background: var(--danger); }
-.annotate-dot[data-color="warning"] { background: var(--warn); }
-.annotate-dot[data-color="accent"] { background: var(--accent); }
-.annotate-dot[data-color="fg"] { background: var(--text-1); }
-.annotate-colors input:checked + .term-radio-text .annotate-dot { border-color: var(--x-color-ink); }
-.annotate-colors input:focus-visible + .term-radio-text .annotate-dot {
-  outline: 2px solid var(--x-color-signal);
-  outline-offset: 2px;
-}
 .annotate-stage {
   position: relative;
   align-self: center;
