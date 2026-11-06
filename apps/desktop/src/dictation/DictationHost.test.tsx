@@ -25,7 +25,7 @@ it("recording: one status region, a danger dot, the time, the hint and a cancel 
   expect(html).toContain("Press <kbd");
   expect(html).toContain("Ctrl+Shift+Space");
   expect(html).toMatch(/<button[^>]*aria-label="Cancel dictation"/);
-  expect(html).not.toContain("btn-primary");
+  expect(html).not.toMatch(/class="btn[" ]/);
 });
 
 it("hold mode hints at the release", () => {
@@ -43,7 +43,7 @@ it("transcribing: a spinner and the word, no dot", () => {
   expect(html).toContain("x-spinner");
   expect(html).toContain(t("dictation.transcribing"));
   expect(html).not.toContain("ws-dot");
-  expect(html).not.toContain("btn-primary");
+  expect(html).not.toMatch(/class="btn[" ]/);
 });
 
 it("starting shows the recording pill at 0:00", () => {

@@ -229,6 +229,13 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("capture.enabled", "settings.capture.enabled", ["screenshot", "capture", "screen", "global", "shortcut", "region", "ảnh chụp", "anh chup", "chụp màn hình", "chup man hinh"], "settings.capture.enabledHint"),
   e("capture.shortcut", "settings.capture.shortcut", ["screenshot", "capture", "shortcut", "hotkey", "chord", "key", "chụp màn hình", "chup man hinh", "phím tắt", "phim tat"]),
   e("capture.annotatePaste", "settings.capture.annotatePaste", ["screenshot", "annotate", "paste", "image", "draw", "markup", "ảnh", "anh", "dán", "dan", "chú thích", "chu thich"], "settings.capture.annotatePasteHint"),
+  // Voice
+  e("voice.mode", "settings.voice.mode", ["voice", "dictation", "dictate", "speech", "hold", "toggle", "giọng nói", "giong noi", "đọc chính tả", "doc chinh ta"]),
+  e("voice.mic", "settings.voice.mic", ["voice", "microphone", "mic", "input", "device", "micro", "thiết bị", "thiet bi"]),
+  e("voice.language", "settings.voice.language", ["voice", "dictation", "language", "speech", "ngôn ngữ", "ngon ngu", "giọng nói", "giong noi"]),
+  e("voice.model", "settings.voice.model", ["voice", "dictation", "model", "transcribe", "whisper", "openai", "mô hình", "mo hinh"]),
+  e("voice.permission", "settings.voice.permission", ["voice", "microphone", "mic", "permission", "privacy", "micro", "quyền", "quyen"]),
+  e("voice.key", "settings.voice.key", ["voice", "dictation", "openai", "api key", "key", "khóa", "khoa", "giọng nói", "giong noi"], "settings.voice.keyHint"),
   // Command line
   e("cli.status", "settings.cli.command", ["cli", "xdev", "command", "path", "terminal", "install", "dòng lệnh", "dong lenh", "lệnh", "lenh"], "settings.cli.lead"),
   e("cli.skill", "settings.orchestration.skill.title", ["cli", "skill", "agent", "xdev", "kỹ năng", "ky nang"]),

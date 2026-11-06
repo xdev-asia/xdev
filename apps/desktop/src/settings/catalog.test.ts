@@ -77,3 +77,13 @@ it("a mac-only entry is listed for mac and for no other platform", async () => {
   expect(entriesFor("win").some((x) => x.id === id)).toBe(false);
   expect(entriesFor("linux").some((x) => x.id === id)).toBe(false);
 });
+
+it("microphone, dictation, voice and micro find the voice section", async () => {
+  const { entriesFor } = await import("./catalog");
+  const { translate } = await import("@/i18n");
+  const all = entriesFor("win");
+  for (const [q, locale] of [["microphone", "en"], ["dictation", "en"], ["voice", "en"], ["micro", "vi"]] as const) {
+    const hits = searchSettings(q, all, (k) => translate(locale, k), (s) => s);
+    expect(hits.some((h) => h.entry.section === "voice"), q).toBe(true);
+  }
+});
