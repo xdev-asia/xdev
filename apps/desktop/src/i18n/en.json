@@ -1487,6 +1487,7 @@
   "error.theme_invalid": "This theme file is not valid.",
   "error.theme_too_large": "This theme file is larger than 64 KB.",
   "error.theme_name_taken": "A scheme with this name already exists.",
+  "error.name_taken": "A theme with this name already exists.",
   "error.not_installed": "That program is not installed.",
   "terminal.profile.gemini": "Gemini CLI",
   "apps.kit": "Agent kit",

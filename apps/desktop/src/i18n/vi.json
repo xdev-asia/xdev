@@ -1487,6 +1487,7 @@
   "error.theme_invalid": "Tệp giao diện này không hợp lệ.",
   "error.theme_too_large": "Tệp giao diện này lớn hơn 64 KB.",
   "error.theme_name_taken": "Đã có một bảng màu trùng tên này.",
+  "error.name_taken": "Đã có một chủ đề trùng tên này.",
   "error.not_installed": "Chương trình này chưa được cài.",
   "terminal.profile.gemini": "Gemini CLI",
   "apps.kit": "Bộ công cụ agent",

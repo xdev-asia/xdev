@@ -1,0 +1,27 @@
+{
+  "/home/demo/Dusk.xdev-theme.json": {
+    "format": "xdev-app-theme",
+    "version": 1,
+    "name": "Dusk",
+    "dark": {
+      "surface-0": "#14121f",
+      "surface-1": "#1b1829",
+      "surface-2": "#241f36",
+      "surface-3": "#2d2743",
+      "text-1": "#ece8f8",
+      "text-2": "#b9b2d3",
+      "accent": "#a78bfa"
+    },
+    "light": {
+      "surface-0": "#f6f4fc",
+      "surface-1": "#ece8f7",
+      "text-1": "#1d1830",
+      "accent": "#6d4fd8"
+    }
+  },
+  "/home/demo/broken.json": {
+    "format": "xdev-terminal-theme",
+    "version": 1,
+    "name": "Not an app theme"
+  }
+}

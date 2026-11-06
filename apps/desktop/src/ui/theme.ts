@@ -5,6 +5,7 @@ import { setTitlebar } from "./titlebar";
 import { setAppOrder, setHiddenApps } from "./hiddenApps";
 import { sidebarTintValue } from "./sidebarTint";
 import { setStatusBarItems } from "./statusBarItems";
+import { applyCachedAppTheme, selectAppTheme, setAppThemeSource } from "./appTheme";
 
 // The app side of appearance: light / dark / system, the UI font and the sidebar look live in `UiSettings`; the helpers are xdev-ui's.
 
@@ -113,7 +114,7 @@ export function setThemePreference(pref: ThemePreference): void {
  * first render.
  */
 export function applyAppearance(
-  ui: Pick<UiSettings, "theme" | "uiFont" | "sidebar" | "editorThemeLight" | "editorThemeDark"> & Partial<Pick<UiSettings, "statusBar" | "sidebarTint" | "sidebarTintOpacity" | "reduceEffects" | "hiddenApps" | "appOrder" | "titlebar" | "showTitlebarName">>,
+  ui: Pick<UiSettings, "theme" | "uiFont" | "sidebar" | "editorThemeLight" | "editorThemeDark"> & Partial<Pick<UiSettings, "statusBar" | "sidebarTint" | "sidebarTintOpacity" | "reduceEffects" | "hiddenApps" | "appOrder" | "titlebar" | "showTitlebarName" | "appTheme">>,
 ): void {
   setThemePreference(ui.theme);
   setEditorPrefs(ui);
@@ -132,6 +133,7 @@ export function applyAppearance(
   setHiddenApps(ui.hiddenApps ?? []);
   setAppOrder(ui.appOrder ?? []);
   setTitlebar(ui);
+  if (ui.appTheme !== undefined) selectAppTheme(ui.appTheme);
 }
 
 /**
@@ -143,16 +145,20 @@ export function applyCachedTheme(): void {
   if (cached) setThemePreference(cached);
   const font = readCachedFont();
   if (font) paintFont(font);
+  applyCachedAppTheme();
 }
 
 /** Reads the stored appearance and applies it; a failed read leaves what is shown. */
-export async function loadTheme(api: Pick<Api, "uiSettingsGet">): Promise<void> {
+export async function loadTheme(api: Pick<Api, "uiSettingsGet"> & Partial<Pick<Api, "appThemes" | "terminalSettings" | "terminalSettingsPut" | "terminalThemes">>): Promise<void> {
+  if (api.appThemes && api.terminalSettings && api.terminalSettingsPut && api.terminalThemes) {
+    setAppThemeSource({ appThemes: api.appThemes, terminalSettings: api.terminalSettings, terminalSettingsPut: api.terminalSettingsPut, terminalThemes: api.terminalThemes });
+  }
   const s = await api.uiSettingsGet().catch(() => null);
   if (s) applyAppearance(s);
 }
 
 /** Loads the setting, and again whenever `settings://changed` names `ui`. Returns the unsubscribe. */
-export function startThemeSync(api: Pick<Api, "uiSettingsGet" | "onSettingsChanged">): () => void {
+export function startThemeSync(api: Pick<Api, "uiSettingsGet" | "onSettingsChanged"> & Partial<Pick<Api, "appThemes" | "terminalSettings" | "terminalSettingsPut" | "terminalThemes">>): () => void {
   void loadTheme(api);
   return api.onSettingsChanged(({ sections }) => {
     if (sections.includes("ui")) void loadTheme(api);
