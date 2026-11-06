@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { loadTipsEnabled, saveTipsEnabled } from "./tipsModel";
+import { countLaunch, loadTipsEnabled, saveTipsEnabled } from "./tipsModel";
 
 // "Show feature tips": one copy for the window, written by Settings and by "Don't show tips".
 let enabled = loadTipsEnabled();
@@ -25,9 +25,17 @@ let shown = false;
 export const tipShownThisRun = (): boolean => shown;
 export const markTipShownThisRun = (): void => void (shown = true);
 
+let launch: number | null = null;
+/** The number of this launch, counted once per run. */
+export function launchNumber(): number {
+  launch ??= countLaunch();
+  return launch;
+}
+
 /** Tests only. */
 export function resetTipsForTests(): void {
   enabled = true;
   shown = false;
+  launch = null;
   listeners.clear();
 }

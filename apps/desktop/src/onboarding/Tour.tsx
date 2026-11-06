@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { Api } from "@/api";
 import { useI18n } from "@/i18n";
+import { getWallState, wallHasNew } from "@/featureWall/featureWallStore";
+import { calmWait, claimInterruption, lastInputAt } from "./interruptions";
 import { isFirstRun } from "./onboardingState";
 import { useOnboarding } from "./onboardingStore";
 import { loadSeen, markSeen, shouldStart, stepToShow, TOUR_STEPS } from "./tourModel";
@@ -25,6 +27,7 @@ export function Tour(props: { api: Pick<Api, "uiSettingsGet" | "uiSettingsPut"> 
   const [index, setIndex] = useState<number | null>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const handled = useRef(0);
+  const paneSince = useRef<number | null>(null);
 
   useEffect(() => {
     let stale = false;
@@ -40,17 +43,26 @@ export function Tour(props: { api: Pick<Api, "uiSettingsGet" | "uiSettingsPut"> 
   useEffect(() => {
     const wanted = replay !== handled.current;
     const tryStart = (): void => {
-      if (shouldStart({ seen, replay: wanted, onboarding: blocked, terminal: terminalOnScreen(), running: index !== null })) {
-        handled.current = replay;
-        setIndex(0);
-      }
+      const terminal = terminalOnScreen();
+      if (!terminal) paneSince.current = null;
+      else paneSince.current ??= Date.now();
+      const calm = calmWait({ now: Date.now(), lastInput: lastInputAt(), paneSince: paneSince.current }) === 0;
+      if (!shouldStart({ seen, replay: wanted, onboarding: blocked, terminal, running: index !== null, calm })) return;
+      // A replay is asked for; the first tour takes the launch's one slot, or waits for the next start.
+      if (!wanted && !claimInterruption("tour", wallHasNew(getWallState()) ? ["wall"] : [])) return;
+      handled.current = replay;
+      setIndex(0);
     };
     tryStart();
     if (index !== null || blocked || seen === null || (seen && !wanted)) return;
-    // The terminal may open later: look again while the DOM changes.
+    // The terminal may open later, and the person may stop typing: look again while the DOM changes and on a timer.
     const observer = new MutationObserver(tryStart);
     observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    const poll = setInterval(tryStart, 500);
+    return () => {
+      observer.disconnect();
+      clearInterval(poll);
+    };
   }, [seen, replay, blocked, index]);
 
   const finish = useCallback((): void => {

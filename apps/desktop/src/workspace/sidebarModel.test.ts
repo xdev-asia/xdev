@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import type { RepoView, SidebarItem, SidebarPrefs, WorkItem, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { NO_DETAILS } from "./worktreeDetails";
-import { activeProjects, filterByProject, flattenRepos, itemLabel, moveTarget, nestRows, pinnedEntries, topIds, visibleEntries, type WtEntry } from "./sidebarModel";
+import { activeProjects, filterByProject, flattenRepos, itemLabel, moveTarget, nestRows, pinnedEntries, projectListRepeatsCards, sectionHeadless, topIds, visibleEntries, type WtEntry } from "./sidebarModel";
 
 const OFF: SidebarPrefs = SIDEBAR_PREFS_DEFAULTS;
 
@@ -166,4 +166,23 @@ it("a worktree hidden from the sidebar is dropped without counting as filtered, 
   expect(out.entries.map((e) => e.wt.name)).toEqual(["main", "y"]);
   expect(out.hidden).toBe(0);
   expect(visibleEntries(entries(a), prefs, "/wt/x").entries.map((e) => e.wt.name)).toEqual(["main", "x", "y"]);
+});
+
+it("the project list repeats the card of a lone project with nothing archived", () => {
+  const r = repo("demo", [wt("main", { primary: true })]);
+  const drawn = new Set(r.worktrees.map((w) => w.path));
+  expect(projectListRepeatsCards([asRepo(r)], drawn)).toBe(true);
+  // Not when the card is not drawn, something is archived, the folder is gone or there is more than one project.
+  expect(projectListRepeatsCards([asRepo(r)], new Set())).toBe(false);
+  expect(projectListRepeatsCards([{ kind: "repo", repo: r, kept: [{ branch: "old" } as never] }], drawn)).toBe(false);
+  expect(projectListRepeatsCards([asRepo({ ...r, missing: true })], drawn)).toBe(false);
+  expect(projectListRepeatsCards([asRepo(r), asRepo(repo("other", [wt("o")]))], drawn)).toBe(false);
+});
+
+it("a lone Other section has no heading; named sections and pinned rows keep theirs", () => {
+  expect(sectionHeadless({ mode: "activity", id: "other" }, 1, 0)).toBe(true);
+  expect(sectionHeadless({ mode: "activity", id: "other" }, 2, 0)).toBe(false);
+  expect(sectionHeadless({ mode: "activity", id: "other" }, 1, 1)).toBe(false);
+  expect(sectionHeadless({ mode: "activity", id: "working" }, 1, 0)).toBe(false);
+  expect(sectionHeadless({ mode: "status", id: "none" }, 1, 0)).toBe(false);
 });

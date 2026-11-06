@@ -29,6 +29,7 @@ import { ActivityPanel } from "@/activity/ActivityPanel";
 import { Sessions } from "./sessions";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { AccountSwitchDialog } from "./AccountSwitchDialog";
+import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { requestTabJump } from "./tabJump";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -154,6 +155,8 @@ it("header has repo, branch, search, bell and settings", async () => {
   const named = (label: string) => inHeader.find(n => n.type === "button" && n.props["aria-label"] === label);
   expect(named(en("workspace.header.notifications"))).toBeDefined();
   expect(named(en("workspace.header.settings"))).toBeDefined();
+  // The language lives in Settings and the setup wizard, not in the title bar.
+  expect(inHeader.filter(n => n.type === LanguageSwitch)).toHaveLength(0);
   // The search opens the docs app, the only search there is for now.
   expect(view.of(DocsApp)).toHaveLength(0);
   vi.useFakeTimers();
@@ -1728,4 +1731,20 @@ it("tab jump request focuses the tab", async () => {
   expect(requestTabJump(tab.id)).toBe(true);
   expect(view.list().props.selected).toBe(OAK);
   expect(view.of(WorktreeTabs).find(n => n.props.worktree === OAK)!.props.front).toMatchObject({ id: tab.id });
+});
+
+it("with no repo the empty main area has one primary Add project button that opens the dialog", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "workspaceSidebar").mockResolvedValue([]);
+  vi.spyOn(api, "workspaceList").mockResolvedValue([]);
+  const view = await harness(api);
+  const empty = view.all().find(n => String(n.props.className ?? "") === "ws-center-empty")!;
+  expect(empty).toBeDefined();
+  const buttons = nodes(empty.props.children).filter(n => n.props["data-field"] === "add-project");
+  expect(buttons).toHaveLength(1);
+  expect(buttons[0].props.variant).toBe("primary");
+  expect(text(buttons[0])).toBe(en("workspace.center.add"));
+  expect(view.of(AddProjectDialog)).toHaveLength(0);
+  buttons[0].props.onClick();
+  expect(view.of(AddProjectDialog)).toHaveLength(1);
 });

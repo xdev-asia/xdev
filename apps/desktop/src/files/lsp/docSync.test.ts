@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { FileText } from "@/api";
 import { FileTabs } from "../fileTabs";
 import { DocSync } from "./docSync";
+import { ASK_AFTER_FILES, LspAskCounter } from "./lspAskModel";
 import { LspStatusStore } from "./lspStatus";
 
 const WT = "/wt/a";
@@ -10,17 +11,24 @@ const flush = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
 
-function setup(open = vi.fn().mockResolvedValue({ language: "typescript", state: "ready" })) {
+function setup(open = vi.fn().mockResolvedValue({ language: "typescript", state: "ready" }), ask = new LspAskCounter(null)) {
   const api = { lspOpen: open, lspChange: vi.fn().mockResolvedValue(undefined), lspClose: vi.fn().mockResolvedValue(undefined) };
   const store = new FileTabs();
   const status = new LspStatusStore();
-  const sync = new DocSync(api, store, status, 200);
+  const sync = new DocSync(api, store, status, 200, ask);
   return { api, store, status, sync };
 }
 const ready = (store: FileTabs, rel: string, text: string) => {
   store.open(WT, rel);
   store.loaded(WT, rel, file(text));
 };
+
+/** A counter that has seen enough other .ts files in the repo. */
+function enough(): LspAskCounter {
+  const ask = new LspAskCounter(null);
+  for (let i = 1; i < ASK_AFTER_FILES; i++) ask.note(WT, `seen${i}.ts`);
+  return ask;
+}
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
@@ -64,7 +72,7 @@ it("closes a document when its tab goes", async () => {
 
 it("asks for trust when the host refuses, and opens again on retry", async () => {
   const open = vi.fn().mockRejectedValueOnce({ code: "lsp_untrusted" }).mockResolvedValue({ language: "typescript", state: "ready" });
-  const { api, store, status, sync } = setup(open);
+  const { api, store, status, sync } = setup(open, enough());
   ready(store, "a.ts", "a");
   await flush();
   expect(status.doc(WT, "a.ts")).toBe("untrusted");
@@ -81,9 +89,32 @@ it("asks for trust when the host refuses, and opens again on retry", async () =>
 
 it("does not ask again after a no this session", async () => {
   const open = vi.fn().mockRejectedValue({ code: "lsp_untrusted", detail: "session" });
-  const { store, status } = setup(open);
+  const { store, status } = setup(open, enough());
   ready(store, "a.ts", "a");
   await flush();
   expect(status.doc(WT, "a.ts")).toBe("untrusted");
+  expect(status.asking(WT)).toBe(false);
+});
+
+it("does not ask at the first small file, only at the third file of a language", async () => {
+  const open = vi.fn().mockRejectedValue({ code: "lsp_untrusted" });
+  const { store, status } = setup(open);
+  ready(store, "a.ts", "a");
+  ready(store, "b.ts", "b");
+  await flush();
+  expect(status.doc(WT, "a.ts")).toBe("untrusted");
+  expect(status.asking(WT)).toBe(false);
+  ready(store, "c.ts", "c");
+  await flush();
+  expect(status.asking(WT)).toBe(true);
+});
+
+it("counts each language apart", async () => {
+  const open = vi.fn().mockRejectedValue({ code: "lsp_untrusted" });
+  const { store, status } = setup(open);
+  ready(store, "a.ts", "a");
+  ready(store, "b.rs", "b");
+  ready(store, "c.py", "c");
+  await flush();
   expect(status.asking(WT)).toBe(false);
 });

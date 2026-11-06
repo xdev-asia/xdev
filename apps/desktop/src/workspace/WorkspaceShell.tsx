@@ -8,7 +8,6 @@ import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Cr
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
-import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
 import { onTryFeature } from "@/featureWall/featureWallStore";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
@@ -67,7 +66,7 @@ import { admits } from "./attention";
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
 import { ActivityFeed } from "@/activity/feed";
-import { Icon } from "@xdev-asia/ui";
+import { Button, Icon } from "@xdev-asia/ui";
 import { ChecksPanel } from "./ChecksPanel";
 import { PortsItem } from "@/ports/PortsItem";
 import { PortsPanel } from "@/ports/PortsPanel";
@@ -1976,7 +1975,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
           </svg>
         </button>
-        <LanguageSwitch />
       </header>
 
       <div className="ws-body">
@@ -2268,6 +2266,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               {!current && repos && (
                 <div className="ws-center-empty">
                   <p>{t("workspace.center.none")}</p>
+                  <Button type="button" variant="primary" data-field="add-project" onClick={addRepo}>
+                    {t("workspace.center.add")}
+                  </Button>
                 </div>
               )}
               {fixNote && (

@@ -16,7 +16,7 @@ import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
 import { childrenOf, parentCandidates, parentOf } from "./lineage";
 import { folderMenuItems, groupMenuItems, projectMenuItems, worktreeMenuItems } from "./worktreeMenu";
-import { activeProjects, dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
+import { activeProjects, dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, projectListRepeatsCards, sectionHeadless, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
 import { RepoBadge } from "./RepoBadge";
 import { useKeymap } from "@/keys/keymap";
 import { SidebarFilters } from "./SidebarFilters";
@@ -405,9 +405,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
 
   const section = (s: Section<NestRow>) => {
     // No grouping: the rows stand alone, without a heading.
-    if (s.mode === "none") {
+    if (s.mode === "none" || sectionHeadless(s, sections.length, pinnedRows.length)) {
       return (
-        <li key={s.key} className="ws-group ws-group-bare" data-group="none">
+        <li key={s.key} className="ws-group ws-group-bare" data-group={s.mode === "none" ? "none" : s.key}>
           <ul className="ws-wts">{s.items.map((r) => row(r, false))}</ul>
         </li>
       );
@@ -688,7 +688,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       </li>,
     ];
   };
-  const hasProjects = (tree ?? []).some((i) => i.kind !== "repo" || !i.repo.missing);
+  // One project with nothing archived is already the card above: its own row would say the same again.
+  const hasProjects = (tree ?? []).some((i) => i.kind !== "repo" || !i.repo.missing) && !projectListRepeatsCards(tree ?? [], shownPaths);
 
   // The menu of the open row or repo; null when what it was opened on has gone from the list.
   const openMenuNode = () => {
@@ -713,6 +714,19 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         children: childrenOf(wt, repo.worktrees).length,
         onDeleteNested: props.onDeleteNested && (() => props.onDeleteNested?.(wt)),
       };
+    };
+    const projectItems = (repo: (typeof repoList)[number]) => {
+      const kept = keptOf(repo.id);
+      return projectMenuItems({
+        path: repo.path,
+        apps,
+        openIn: (target) => props.onOpenIn?.(repo.path, target),
+        copy,
+        repoSettings: () => props.onRepoSettings?.(repo),
+        remove: () => props.onRemoveRepo?.(repo),
+        review: kept.length > 0 && props.onReviewBranches ? { label: t("project.review", { count: kept.length }), run: () => props.onReviewBranches?.(repo.id) } : null,
+        ...groupMenu(repo.id),
+      });
     };
     if (menu.kind === "worktree") {
       const wt = entries.find((e) => e.path === menu.key)?.wt;
@@ -742,6 +756,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         nestedSleepable: [wt, ...childrenOf(wt, entries.find((e) => e.path === menu.key)!.repo.worktrees)].some((w) => props.sleepable?.[w.path] !== false),
         onWake: props.onWake && (() => props.onWake?.(wt)),
       });
+      // A lone project has no row of its own (see `hasProjects`), so its menu rides on the card.
+      const lone = !hasProjects ? repoList.find((r) => r.worktrees.some((w) => w.path === wt.path)) : undefined;
+      if (lone) items = [...items, { id: "projectSep", labelKey: "", kind: "separator" as const }, { id: "project", labelKey: "project.menu", children: projectItems(lone) }];
     } else if (menu.kind === "folder") {
       const folder = folderOf(menu.key);
       if (!folder) return null;
@@ -759,17 +776,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     } else {
       const repo = repoList.find((r) => r.id === menu.key);
       if (!repo) return null;
-      const kept = keptOf(repo.id);
-      items = projectMenuItems({
-        path: repo.path,
-        apps,
-        openIn: (target) => props.onOpenIn?.(repo.path, target),
-        copy,
-        repoSettings: () => props.onRepoSettings?.(repo),
-        remove: () => props.onRemoveRepo?.(repo),
-        review: kept.length > 0 && props.onReviewBranches ? { label: t("project.review", { count: kept.length }), run: () => props.onReviewBranches?.(repo.id) } : null,
-        ...groupMenu(repo.id),
-      });
+      items = projectItems(repo);
     }
     return <ContextMenu key={`${menu.kind}:${menu.key}`} at={menu.at} items={items} onClose={() => setMenu(null)} />;
   };
@@ -870,16 +877,22 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          {t("workspace.addRepo")}
+          <span className="ws-add-label">{t("workspace.addRepo")}</span>
         </button>
         {props.onAddFolder && (
-          <button type="button" className="ws-add-repo" onClick={() => props.onAddFolder?.()}>
-            {t("folder.add")}
+          <button type="button" className="ws-add-repo ws-add-secondary" title={t("folder.add")} aria-label={t("folder.add")} onClick={() => props.onAddFolder?.()}>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 7h6l2 2h10v10H3z" />
+            </svg>
+            <span className="ws-add-label">{t("folder.add")}</span>
           </button>
         )}
         {props.onNewGroup && (
-          <button type="button" className="ws-add-repo" onClick={() => props.onNewGroup?.()}>
-            {t("group.new")}
+          <button type="button" className="ws-add-repo ws-add-secondary" title={t("group.new")} aria-label={t("group.new")} onClick={() => props.onNewGroup?.()}>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 5h16M4 12h16M4 19h10" />
+            </svg>
+            <span className="ws-add-label">{t("group.new")}</span>
           </button>
         )}
         <SetupGuideEntry projects={props.items?.length} />

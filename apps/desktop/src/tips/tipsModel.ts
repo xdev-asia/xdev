@@ -42,9 +42,29 @@ export function nextTip(tips: readonly Tip[], seen: ReadonlySet<string>, ctx: Ti
   return tips.find((t) => !seen.has(t.id) && (t.when?.(ctx) ?? true)) ?? null;
 }
 
-/** Whether to open the tips modal now: tips are on, none showed this run, nothing else has the screen, and the start has settled. */
-export function tipsGate(input: { enabled: boolean; shownThisRun: boolean; suppressed: boolean; settled: boolean }): boolean {
-  return input.enabled && !input.shownThisRun && !input.suppressed && input.settled;
+/**
+ * Whether to open the tips modal now: tips are on, none showed this run or today, nothing else has the screen, the start
+ * has settled, this is not the first launch, and there is at least one project to tip about.
+ */
+export function tipsGate(input: {
+  enabled: boolean;
+  shownThisRun: boolean;
+  suppressed: boolean;
+  settled: boolean;
+  /** The launch number, counting from 1. */
+  launch: number;
+  /** The projects are read and there is at least one. */
+  hasProject: boolean;
+  /** A tip was shown earlier today. */
+  shownToday: boolean;
+}): boolean {
+  return input.enabled && !input.shownThisRun && !input.suppressed && input.settled && input.launch > 1 && input.hasProject && !input.shownToday;
+}
+
+/** The calendar day of `date` in local time, `YYYY-MM-DD`. */
+export function dayKey(date: Date): string {
+  const two = (n: number): string => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}`;
 }
 
 /** How long after the start the app is left alone before a tip appears. */
@@ -53,6 +73,10 @@ export const SETTLE_MS = 4000;
 // Storage. Injected so a test keeps its own copy.
 export const TIPS_SEEN_KEY = "xdev.tips.seen";
 export const TIPS_OFF_KEY = "xdev.tips.off";
+/** The day (`YYYY-MM-DD`) a tip was last shown: at most one tip a day. */
+export const TIPS_DAY_KEY = "xdev.tips.day";
+/** How many times the app was launched. */
+export const LAUNCHES_KEY = "xdev.launches";
 /** The key the one-off CLI skill card used: "dismissed" counts as that tip seen. */
 export const LEGACY_CLI_TIP_KEY = "xdev.tip.cliSkill";
 
@@ -85,6 +109,36 @@ export function markTipSeen(id: string, store: Store | null = defaultStore()): v
     store?.setItem(TIPS_SEEN_KEY, JSON.stringify([...seen]));
   } catch {
     // The tip may come back next run.
+  }
+}
+
+/** Whether a tip was shown on the same calendar day as `now`; false when storage cannot be read. */
+export function tipShownOn(now: Date, store: Store | null = defaultStore()): boolean {
+  try {
+    return store?.getItem(TIPS_DAY_KEY) === dayKey(now);
+  } catch {
+    return false;
+  }
+}
+
+export function markTipDay(now: Date, store: Store | null = defaultStore()): void {
+  try {
+    store?.setItem(TIPS_DAY_KEY, dayKey(now));
+  } catch {
+    // A second tip may show today.
+  }
+}
+
+/** Counts this launch and returns its number (1 on the first). Without storage every launch looks like a later one. */
+export function countLaunch(store: Store | null = defaultStore()): number {
+  try {
+    if (!store) return 2;
+    const n = Number.parseInt(store.getItem(LAUNCHES_KEY) ?? "0", 10);
+    const next = (Number.isFinite(n) && n > 0 ? n : 0) + 1;
+    store.setItem(LAUNCHES_KEY, String(next));
+    return next;
+  } catch {
+    return 2;
   }
 }
 

@@ -867,8 +867,9 @@
 
 .ws-add-repo {
   display: flex;
-  flex: 1;
+  flex: 0 1 auto;
   align-items: center;
+  white-space: nowrap;
   gap: 8px;
   height: 28px;
   padding: 0 8px;
@@ -882,6 +883,26 @@
 .ws-add-repo:hover {
   background: var(--bg-3);
   color: var(--text-1);
+}
+
+/* The actions stay on one line: below 300px the secondary ones keep their icon and lose the label (the name stays as title and aria-label). */
+.ws-sidebar-foot {
+  container-type: inline-size;
+}
+
+.ws-add-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@container (max-width: 300px) {
+  .ws-add-secondary {
+    padding: 0 7px;
+  }
+
+  .ws-add-secondary .ws-add-label {
+    display: none;
+  }
 }
 
 /* Stage: the center and the right panel */

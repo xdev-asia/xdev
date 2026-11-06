@@ -233,6 +233,26 @@ it("a repo row opens the project menu: Open in, Copy Path, Repo settings and Rem
   expect(log.at(-1)).toBe("remove repo-3-gone");
 });
 
+it("a lone project has no row of its own, so its menu sits on the worktree card", () => {
+  const log: string[] = [];
+  const view = harness({}, () => [structuredClone(notes)], {
+    onRepoSettings: (r) => void log.push(`settings ${r.id}`),
+    onRemoveRepo: (r) => void log.push(`remove ${r.id}`),
+  });
+  expect(view.all().some(n => n.props.className === "ws-repo")).toBe(false);
+  view.main("/code/notes").props.onContextMenu({ ...event, clientX: 1, clientY: 2 });
+  expect(view.item("project")!.labelKey).toBe("project.menu");
+  view.item("repoSettings")!.run!();
+  view.item("remove")!.run!();
+  expect(log).toEqual(["settings repo-2-notes", "remove repo-2-notes"]);
+});
+
+it("with a project row in the list, the card menu does not repeat the project menu", () => {
+  const view = harness();
+  view.main("/demo/wt/xdev-oak").props.onContextMenu({ ...event, clientX: 1, clientY: 2 });
+  expect(view.item("project")).toBeUndefined();
+});
+
 const names = (view: ReturnType<typeof harness>) =>
   view.all().filter(n => n.props.className === "ws-group-head").map(h => nodes(h.props.children).map(c => (typeof c.props.children === "string" || typeof c.props.children === "number" ? String(c.props.children) : "")).join(" ").trim());
 const head = (view: ReturnType<typeof harness>, group: string) => view.all().find(n => n.props.className === "ws-group-head" && n.props["data-group"] === group)!;

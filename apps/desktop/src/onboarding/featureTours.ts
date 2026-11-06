@@ -83,6 +83,6 @@ export function typingInTerminal(active: Element | null): boolean {
 }
 
 /** Whether a tour may start now. */
-export function tourMayStart(input: { seen: boolean; running: boolean; typing: boolean }): boolean {
-  return !input.seen && !input.running && !input.typing;
+export function tourMayStart(input: { seen: boolean; running: boolean; typing: boolean; calm?: boolean }): boolean {
+  return !input.seen && !input.running && !input.typing && (input.calm ?? true);
 }
