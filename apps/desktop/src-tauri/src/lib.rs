@@ -1,3 +1,4 @@
+mod account_login;
 mod accounts;
 mod agent_path;
 mod agent_session_log;
@@ -474,6 +475,7 @@ pub fn run() {
             accounts::account_login,
             accounts::account_remove,
             accounts::account_sync_config,
+            account_login::account_login_cancel,
             accounts::account_activate,
             accounts::account_carry_session,
             accounts::routing_get,

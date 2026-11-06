@@ -806,6 +806,8 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(session)) return reject("session_missing");
       return from !== to;
     },
+    async cancelAccountLogin() {},
+    async onAccountLogin() { return () => {}; },
     async onAccountsChanged(cb) {
       accountListeners.add(cb);
       return () => void accountListeners.delete(cb);

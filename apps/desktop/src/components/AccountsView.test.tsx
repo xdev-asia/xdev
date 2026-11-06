@@ -239,6 +239,37 @@ describe("active account", () => {
     expect(view.html()).not.toContain("accounts.configDrift");
     if (typeof cleanup === "function") cleanup();
   });
+  it("shows the sign-in page and code from the captured login, then closes when it is done", async () => {
+    const api = createMockApi({});
+    let emit: Parameters<typeof api.onAccountLogin>[0] = () => {};
+    vi.spyOn(api, "onAccountLogin").mockImplementation(async cb => { emit = cb; return () => {}; });
+    vi.spyOn(api, "loginAccount").mockResolvedValue({ opened: true, command: "claude auth login", captured: true });
+    const open = vi.spyOn(api, "openUrl").mockResolvedValue();
+    const cancel = vi.spyOn(api, "cancelAccountLogin");
+    const view = harness(api); view.draw();
+    const first = hooks.effects[0](); await tick();
+    await view.button("Log in").props.onClick(); await tick();
+    expect(view.html()).toContain(translate("en", "accounts.signIn.waiting"));
+    emit({ name: "claude-2", phase: "prompt", url: "https://auth.example.com/device", code: "WDJB-MJHT" }); await tick();
+    const html = view.html();
+    expect(html).toContain("Open sign-in page");
+    expect(html).toContain("Copy sign-in link instead");
+    expect(html).toContain("WDJB");
+    expect(html).not.toContain("claude auth login");
+    const dialog = nodes(view.draw()).find(n => n.props.onOpen && n.props.onCopyLink);
+    dialog!.props.onOpen();
+    expect(open).toHaveBeenCalledWith("https://auth.example.com/device");
+    dialog!.props.onCancel();
+    expect(cancel).toHaveBeenCalledWith("claude-2");
+    expect(view.html()).not.toContain("Open sign-in page");
+    emit({ name: "claude-2", phase: "failed", detail: "boom" }); await tick();
+    expect(view.html()).toContain("boom");
+    emit({ name: "claude-2", phase: "done" }); await tick();
+    expect(view.html()).not.toContain("boom");
+    emit({ name: "claude-2", phase: "console", opened: false, command: "claude auth login" }); await tick();
+    expect(view.html()).toContain("claude auth login");
+    if (typeof first === "function") first();
+  });
   it("Use this account activates it and reloads", async () => {
     const api = createMockApi({});
     const activate = vi.spyOn(api, "accountActivate");

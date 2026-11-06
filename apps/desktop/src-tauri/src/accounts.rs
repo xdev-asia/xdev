@@ -154,6 +154,11 @@ pub(crate) fn started(provider: Provider, name: &str) {
 pub struct LoginStart {
     opened: bool,
     command: String,
+    /// Set when the login runs captured: its page and code arrive as
+    /// `accounts://login` events instead of a console.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    captured: Option<bool>,
 }
 
 pub(crate) fn data_dir(state: &AppState) -> Result<&Path, CmdError> {
@@ -481,22 +486,37 @@ pub fn routing_models() -> Models {
 }
 
 #[tauri::command(async)]
-pub fn account_login(state: State<'_, AppState>, name: String) -> Result<LoginStart, CmdError> {
+pub fn account_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<LoginStart, CmdError> {
     let registry = Registry::load(data_dir(&state)?)?;
     let entry = registry.get(&name).ok_or(AiError::NotFound)?;
     // A single-account CLI is signed in on its own, outside xDev.
     let command = xdev_ai::login_command(entry.provider, &entry.dir, cfg!(windows))
         .ok_or(AiError::SingleAccount)?;
+    // A CLI whose login is its own start (no login arguments) needs a real
+    // terminal; the rest run captured, and their events carry the rest.
+    if entry.provider.login_args().is_empty() {
+        return Ok(LoginStart {
+            opened: open_login(entry)?,
+            command,
+            captured: None,
+        });
+    }
+    crate::account_login::begin(&app, entry, command.clone())?;
     Ok(LoginStart {
-        opened: open_login(entry)?,
+        opened: true,
         command,
+        captured: Some(true),
     })
 }
 
-/// The login flow is interactive (browser, then a code pasted back), so it
-/// needs a real console; the window stays open so the person sees the result.
+/// The console path: the login flow is interactive (browser, then a code
+/// pasted back), so here it gets a real console; the window stays open so the person sees the result.
 #[cfg(windows)]
-fn open_login(entry: &AccountEntry) -> Result<bool, CmdError> {
+pub(crate) fn open_login(entry: &AccountEntry) -> Result<bool, CmdError> {
     use std::os::windows::process::CommandExt;
     const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
 
@@ -515,7 +535,7 @@ fn open_login(entry: &AccountEntry) -> Result<bool, CmdError> {
 }
 
 #[cfg(not(windows))]
-fn open_login(_entry: &AccountEntry) -> Result<bool, CmdError> {
+pub(crate) fn open_login(_entry: &AccountEntry) -> Result<bool, CmdError> {
     Ok(false)
 }
 
@@ -577,10 +597,11 @@ mod tests {
         let login = LoginStart {
             opened: false,
             command: "c".into(),
+            captured: Some(true),
         };
         assert_eq!(
             serde_json::to_value(login).unwrap(),
-            serde_json::json!({ "opened": false, "command": "c" })
+            serde_json::json!({ "opened": false, "command": "c", "captured": true })
         );
     }
 

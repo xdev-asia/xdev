@@ -6,6 +6,7 @@ import { AgentIcon } from "@/workspace/AgentIcon";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
 import { loginAction, statusBadge } from "./accountStatus";
 import { RoutingRules } from "./RoutingRules";
+import { SignInPrompt } from "./SignInPrompt";
 
 type State = Quota["state"];
 type Filter = "all" | State;
@@ -42,6 +43,7 @@ export function AccountsView({ api }: { api: Api }) {
   const [folder, setFolder] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [command, setCommand] = useState<string>();
+  const [signIn, setSignIn] = useState<{ name: string; url?: string; code?: string; error?: string }>();
   const [copy, setCopy] = useState<"copied" | "copyFailed">();
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -73,10 +75,21 @@ export function AccountsView({ api }: { api: Api }) {
     const timer = setInterval(() => void load(), 300_000);
     // An account made active, added or removed elsewhere (the usage popover) shows here at once.
     const unlisten = api.onAccountsChanged(() => void load());
+    // A captured sign-in reports its page, code and end here.
+    const login = api.onAccountLogin(event => {
+      if (event.phase === "prompt") setSignIn(s => ({ ...s, name: event.name, url: event.url, code: event.code ?? s?.code }));
+      else if (event.phase === "failed") setSignIn(s => ({ ...s, name: event.name, error: event.detail ?? "" }));
+      else {
+        setSignIn(undefined);
+        if (event.phase === "done") setRevision(n => n + 1);
+        else if (!event.opened) { setCommand(event.command); setCopy(undefined); }
+      }
+    });
     return () => {
       disposed = true;
       clearInterval(timer);
       void unlisten.then(off => off(), () => {});
+      void login.then(off => off(), () => {});
     };
   }, [api, revision]);
 
@@ -110,6 +123,7 @@ export function AccountsView({ api }: { api: Api }) {
 
   async function login(name: string) {
     const result = await api.loginAccount(name);
+    setSignIn(result.captured ? { name } : undefined);
     setCommand(result.opened ? undefined : result.command);
     setCopy(undefined);
     setPolling(previous => ({ ...previous, [name]: Date.now() + 300_000 }));
@@ -399,6 +413,18 @@ export function AccountsView({ api }: { api: Api }) {
       <Button type="submit" style={COMPACT} disabled={busy}>{t(folder !== null ? "accounts.importSubmit" : isIsolated(provider) ? "accounts.addLogin" : "accounts.add")}</Button>
       <Button type="button" style={COMPACT} disabled={busy} onClick={closeForm}>{t("accounts.cancel")}</Button>
     </form>}
+    {signIn && <SignInPrompt
+      name={signIn.name}
+      url={signIn.url}
+      code={signIn.code}
+      error={signIn.error}
+      copy={copy}
+      onOpen={() => { if (signIn.url) void api.openUrl(signIn.url); }}
+      onCopyLink={async () => { try { await navigator.clipboard.writeText(signIn.url ?? ""); setCopy("copied"); } catch { setCopy("copyFailed"); } }}
+      onCopyCode={async () => { try { await navigator.clipboard.writeText(signIn.code ?? ""); setCopy("copied"); } catch { setCopy("copyFailed"); } }}
+      onCancel={() => { void api.cancelAccountLogin(signIn.name); setSignIn(undefined); }}
+      onClose={() => setSignIn(undefined)}
+    />}
     {command && <div className="account-command">
       <p>{t("accounts.runCommand")}</p><pre className="commands">{command}</pre>
       <Button type="button" style={COMPACT} onClick={async () => { try { await navigator.clipboard.writeText(command); setCopy("copied"); } catch { setCopy("copyFailed"); } }}>{t("connect.copy")}</Button>
