@@ -49,7 +49,7 @@ pub use profiles::{
     Approvals, Cli, CustomShell, DefaultAgent, EnvVar, Permissions, Profile, ProfileError,
     Profiles, builtin, valid_id,
 };
-pub use route::{RouteRule, Routing};
+pub use route::{MatchRow, Matched, RouteRule, RouteTarget, Routing};
 pub use runner::{
     Cancel, ClaudeRunner, CodexRunner, ContextUse, RunOutcome, RunRequest, Runner,
     parse_claude_json, parse_codex_jsonl,
