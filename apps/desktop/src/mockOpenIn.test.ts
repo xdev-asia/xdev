@@ -8,12 +8,12 @@ const app = (id: string, command = "x") => ({ id, label: id, command, args: [] }
 describe("mock open in", () => {
   it("starts with VS Code and stores a valid list", async () => {
     const api = createMockApi({});
-    expect(await api.openInSettings()).toEqual(OPEN_IN_DEFAULTS);
+    expect(await api.openInSettings()).toMatchObject(OPEN_IN_DEFAULTS);
     const heard: SettingsSection[][] = [];
     api.onSettingsChanged((e) => heard.push(e.sections));
     const next = { apps: [...OPEN_IN_DEFAULTS.apps, { id: "app-1", label: "Cursor", command: "cursor", args: ["-n"] }] };
     expect(await api.openInSettingsPut(next)).toEqual(next);
-    expect(await api.openInSettings()).toEqual(next);
+    expect(await api.openInSettings()).toMatchObject(next);
     expect(heard).toEqual([["openIn"]]);
   });
 

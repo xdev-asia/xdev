@@ -442,6 +442,36 @@ pub struct AgentsSettings {
     /// Directories put after the PATH of new terminals and agents.
     #[serde(deserialize_with = "lenient_items")]
     pub path_append: Vec<String>,
+    /// Where an agent opens when its profile does not say: a new tab, or a split
+    /// of the current terminal.
+    #[serde(deserialize_with = "lenient")]
+    pub open_as: OpenAs,
+}
+
+/// Settings → Agents → Open agents as. A value this build does not know reads
+/// as `Tab`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum OpenAs {
+    /// A new tab.
+    #[default]
+    Tab,
+    /// A pane to the right of the terminal.
+    SplitRight,
+    /// A pane below the terminal.
+    SplitDown,
+}
+
+impl<'de> serde::Deserialize<'de> for OpenAs {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("splitRight") => OpenAs::SplitRight,
+            Some("splitDown") => OpenAs::SplitDown,
+            _ => OpenAs::Tab,
+        })
+    }
 }
 
 /// Settings → Agents → Keep computer awake.
@@ -475,6 +505,7 @@ impl Default for AgentsSettings {
             workspace_trust: true,
             path_prepend: Vec::new(),
             path_append: Vec::new(),
+            open_as: OpenAs::default(),
         }
     }
 }
@@ -1192,6 +1223,9 @@ pub struct UiSettings {
     /// Only a valid file stem is kept (`[a-z0-9-]{1,33}`).
     #[serde(deserialize_with = "lenient")]
     pub app_theme: String,
+    /// The first-terminal coachmark tour was finished or skipped.
+    #[serde(deserialize_with = "lenient_bool_false")]
+    pub tour_seen: bool,
 }
 
 /// The longest `UiSettings::ui_font`, in characters.
@@ -1217,6 +1251,7 @@ impl Default for UiSettings {
             show_titlebar_name: true,
             app_icon: APP_ICON_DEFAULT.to_string(),
             app_theme: String::new(),
+            tour_seen: false,
         }
     }
 }
@@ -4113,6 +4148,30 @@ then sum up"
     }
 
     #[test]
+    fn open_as_and_tour_seen_default_round_trip_and_stay_lenient() {
+        assert_eq!(AgentsSettings::default().open_as, OpenAs::Tab);
+        assert!(!UiSettings::default().tour_seen);
+        for (value, json) in [
+            (OpenAs::SplitRight, "splitRight"),
+            (OpenAs::SplitDown, "splitDown"),
+        ] {
+            assert_eq!(serde_json::to_value(value).unwrap(), json);
+            let back: AgentsSettings =
+                serde_json::from_value(serde_json::json!({ "openAs": json })).unwrap();
+            assert_eq!(back.open_as, value);
+        }
+        let odd: AgentsSettings =
+            serde_json::from_value(serde_json::json!({ "openAs": "floating" })).unwrap();
+        assert_eq!(odd.open_as, OpenAs::Tab);
+        let ui: UiSettings =
+            serde_json::from_value(serde_json::json!({ "tourSeen": true })).unwrap();
+        assert!(ui.tour_seen);
+        let bad: UiSettings =
+            serde_json::from_value(serde_json::json!({ "tourSeen": "yes" })).unwrap();
+        assert!(!bad.tour_seen);
+    }
+
+    #[test]
     fn agents_settings_default_to_ask_and_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);
@@ -4150,7 +4209,8 @@ then sum up"
                     "sessionSearch": false,
                     "workspaceTrust": true,
                     "pathPrepend": [],
-                    "pathAppend": []
+                    "pathAppend": [],
+                    "openAs": "tab"
                 })
             );
             fs::write(

@@ -1,7 +1,7 @@
 import { Badge, Button } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type ApiError, type OpenInApp } from "@/api";
+import { toApiError, type ApiError, type OpenAs, type OpenInApp, type OpenInView } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import { isPresetAdded, OPEN_IN_PRESETS, presetEntry } from "./openInPresets";
@@ -21,6 +21,20 @@ interface Draft {
   command: string;
   /** One argument per line. */
   args: string;
+}
+
+/** Where an agent may open by default, in the order the page lists them. */
+export const OPEN_AS_CHOICES: OpenAs[] = ["tab", "splitRight", "splitDown"];
+
+/** What `open_in_settings` found, by command: the list's apps (matched to their id) and the presets (keyed by command). */
+export function foundByCommand(view: Pick<OpenInView, "apps" | "found" | "presets">): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const p of view.presets) out[p.id] = p.found;
+  for (const f of view.found) {
+    const app = view.apps.find((a) => a.id === f.id);
+    if (app) out[app.command.trim()] = f.found;
+  }
+  return out;
 }
 
 /** The first `app-N` id nobody uses. */
@@ -51,6 +65,9 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
   const [apps, setApps] = useState<OpenInApp[] | null>(null);
+  // Command → program found on this computer; apps and presets alike. A command not listed is not known to be missing.
+  const [found, setFound] = useState<Record<string, boolean>>({});
+  const [openAs, setOpenAs] = useState<OpenAs>("tab");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [deleting, setDeleting] = useState<OpenInApp | null>(null);
   // `bad_arg` carries the field name in its detail; any other code shows as a line under the list.
@@ -59,9 +76,13 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
 
   useEffect(() => {
     api.openInSettings().then(
-      (s) => setApps(s.apps),
+      (s) => {
+        setApps(s.apps);
+        setFound(foundByCommand(s));
+      },
       (e: unknown) => setError(toApiError(e).code),
     );
+    api.agentsSettings().then((s) => setOpenAs(s.openAs), () => {});
   }, [api]);
 
   /** Stores `next`; true when it was accepted. */
@@ -78,6 +99,18 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
       if (err.code === "bad_arg" && (err.detail === "label" || err.detail === "command" || err.detail === "args")) setFieldError(err.detail);
       else setError(err.code);
       return false;
+    }
+  }
+
+  /** Stores the default place an agent opens; the rest of the Agents settings is kept. */
+  async function saveOpenAs(next: OpenAs): Promise<void> {
+    setError(undefined);
+    try {
+      const stored = await api.agentsSettingsPut({ ...(await api.agentsSettings()), openAs: next });
+      setOpenAs(stored.openAs);
+      props.onChanged();
+    } catch (e) {
+      setError(toApiError(e).code);
     }
   }
 
@@ -142,8 +175,12 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
             <div className="settings-item-text">
               <strong>{app.label}</strong>
               <span className="settings-path ws-mono">{[app.command, ...app.args].join(" ")}</span>
+              {found[app.command.trim()] === false && <span className="settings-hint" data-found="false">{t("openIn.missing.reason")}</span>}
             </div>
             <div className="settings-actions">
+              {found[app.command.trim()] !== undefined && (
+                <Badge status={found[app.command.trim()] ? "unchanged" : "changed"}>{t(found[app.command.trim()] ? "openIn.found" : "openIn.missing")}</Badge>
+              )}
               <button type="button" className="btn-secondary" data-act="up" aria-label={t("openIn.moveUp", { name: app.label })} disabled={i === 0} onClick={() => void save(move(apps, i, i - 1))}>
                 ↑
               </button>
@@ -219,17 +256,33 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
         {apps.length >= MAX_APPS && <span className="settings-hint">{t("openIn.limit", { count: MAX_APPS })}</span>}
       </div>
       </SettingRow>
+      <section className="openin-presets" aria-label={t("openIn.openAs")} data-section="open-as">
+        <h4>{t("openIn.openAs")}</h4>
+        <p className="settings-hint">{t("openIn.openAs.hint")}</p>
+        <label className="ws-field">
+          <span>{t("openIn.openAs")}</span>
+          <select name="openAs" value={openAs} onChange={(e) => void saveOpenAs(e.target.value as OpenAs)}>
+            {OPEN_AS_CHOICES.map((c) => (
+              <option key={c} value={c}>
+                {t(`openIn.openAs.${c}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
       <section className="openin-presets" aria-label={t("openIn.presets")}>
         <h4>{t("openIn.presets")}</h4>
         <p className="settings-hint">{t("openIn.presets.hint")}</p>
         <ul className="openin-list">
           {OPEN_IN_PRESETS.map((preset) => {
             const added = isPresetAdded(apps, preset);
+            const missing = found[preset.command] === false;
             return (
               <li key={preset.command} className="settings-card openin-row" data-preset={preset.command}>
                 <div className="settings-item-text">
                   <strong>{preset.label}</strong>
                   <span className="settings-path ws-mono">{preset.command}</span>
+                  {missing && !added && <span className="settings-hint" data-found="false">{t("openIn.missing.reason")}</span>}
                 </div>
                 <div className="settings-actions">
                   {added ? (
@@ -240,7 +293,7 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
                       className="btn-secondary"
                       data-act="add-preset"
                       aria-label={t("openIn.preset.addName", { name: preset.label })}
-                      disabled={apps.length >= MAX_APPS}
+                      disabled={apps.length >= MAX_APPS || missing}
                       onClick={() => void save([...apps, presetEntry(apps, preset)])}
                     >
                       {t("openIn.preset.add")}

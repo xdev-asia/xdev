@@ -1,10 +1,14 @@
-import type { Api, ApiError, OpenInApp, OpenInSettings, OpenTarget } from "./api";
+import type { Api, ApiError, OpenInApp, OpenInFound, OpenInSettings, OpenInView, OpenTarget } from "./api";
 import type { SettingsEmit } from "./mockSettings";
 
 type OpenInApi = Pick<Api, "openInSettings" | "openInSettingsPut" | "openIn" | "repoClone" | "repoCloneCancel" | "repoCloneName">;
 
 /** `OpenInSettings::default()` in Rust: VS Code alone. */
 export const OPEN_IN_DEFAULTS: OpenInSettings = { apps: [{ id: "vscode", label: "VS Code", command: "code", args: [] }] };
+/** The programs the mock finds on "this computer"; any other command is missing. */
+export const OPEN_IN_INSTALLED: readonly string[] = ["code", "cursor"];
+/** The presets the Rust side checks, by command. */
+export const OPEN_IN_PRESET_COMMANDS: readonly string[] = ["code", "cursor", "zed", "windsurf"];
 /** The limits `open_in_settings_put` checks. */
 export const OPEN_IN_LIMITS = { apps: 8, label: 40, command: 260, args: 8, arg: 200 } as const;
 
@@ -44,8 +48,13 @@ export function createMockOpenIn(emit: SettingsEmit, repoAdd: Api["repoAdd"]): M
   const calls: { path: string; target: OpenTarget }[] = [];
   const cancelled = new Set<string>();
   return {
-    async openInSettings() {
-      return structuredClone(settings);
+    async openInSettings(): Promise<OpenInView> {
+      const found = (id: string, command: string): OpenInFound => ({ id, found: OPEN_IN_INSTALLED.includes(command) });
+      return {
+        ...structuredClone(settings),
+        found: settings.apps.map((a) => found(a.id, a.command)),
+        presets: OPEN_IN_PRESET_COMMANDS.map((c) => found(c, c)),
+      };
     },
     async openInSettingsPut(v) {
       if (v.apps.length > OPEN_IN_LIMITS.apps) return reject("bad_arg", "apps");

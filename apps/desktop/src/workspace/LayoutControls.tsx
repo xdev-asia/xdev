@@ -239,6 +239,7 @@ export function LayoutControls(props: { api: LayoutControlsApi; sessions: Sessio
           <button
             type="button"
             className="ws-icon-btn ws-header-btn"
+            data-tour="layout"
             aria-label={t("layoutPreset.menu.label")}
             title={t("layoutPreset.menu.label")}
             {...triggerProps}

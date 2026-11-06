@@ -22,6 +22,7 @@ import { RecentStore } from "./recent";
 import { api, type BoardTask } from "@/api";
 import { openTaskEditor, repoOf } from "@/tasks/board/TaskEditorHost";
 import { requestTargets } from "@/targets/targetsEvents";
+import { replayTour } from "@/onboarding/tourStore";
 import { conversationItems } from "@/conversation/conversationStore";
 
 /** What the palette can make the shell do; the shell supplies each one. */
@@ -194,6 +195,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       remoteAdd: actions.remoteAdd ? () => actions.remoteAdd?.() : undefined,
       remoteReconnect: actions.remoteReconnect ? () => actions.remoteReconnect?.() : undefined,
       openSettings: () => actions.openSettings(),
+      replayTour: () => replayTour(),
       searchDocs: () => actions.searchDocs(),
       toggleSidebar: () => actions.toggleSidebar(),
       showDocs: () => actions.showDocs(),
