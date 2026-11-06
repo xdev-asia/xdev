@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, ValueEnum};
 use xdev_link::{LinkBind, PeerRole, PeerStore};
 
+pub mod host;
 pub mod projects;
 pub mod terms;
 
