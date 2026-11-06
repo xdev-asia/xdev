@@ -59,6 +59,7 @@ import { createMockSquads } from "./mockSquads";
 import { createMockPipeline, type MockPipeline } from "./mockPipeline";
 import { createMockMission } from "./mockMission";
 import { createMockCharts } from "./mockCharts";
+import { createMockLsp } from "./mockLsp";
 import { createMockTasks } from "./mockTasks";
 import { createMockWorkspace, type MockWorkspaceSeed } from "./mockWorkspace";
 import { mockHash, type MockFiles } from "./mockFiles";
@@ -999,6 +1000,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       proposed.set(path, { content, note });
       notify([path]);
     },
+    ...createMockLsp(),
     ...accountRouting,
   };
   // The spread above copied the values; these two stay live views of the profile store.

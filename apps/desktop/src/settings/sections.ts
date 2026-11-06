@@ -5,6 +5,7 @@ import { AccountPage } from "./account/AccountPage";
 import { AgentsPage } from "./agents/AgentsPage";
 import { AppearancePage } from "./AppearancePage";
 import { AutomationsSettingsPage } from "./AutomationsSettingsPage";
+import { CodeIntelPage } from "./CodeIntelPage";
 import { CliPage } from "./cli/CliPage";
 import { DiagnosticsPage } from "./DiagnosticsPage";
 import { EditorPage } from "./EditorPage";
@@ -72,6 +73,7 @@ export const SECTIONS: SettingsSection[] = [
   { id: "git", group: "workspace", labelKey: "settings.git.title", Component: GitSettings },
   { id: "terminal", group: "workspace", labelKey: "settings.terminal.title", Component: TerminalPage },
   { id: "editor", group: "workspace", labelKey: "files.settings.title", Component: EditorPage },
+  { id: "code", group: "workspace", labelKey: "settings.code.title", Component: CodeIntelPage },
   { id: "openIn", group: "workspace", labelKey: "openIn.title", Component: OpenInPage },
   { id: "agents", group: "agents", labelKey: "settings.agents.title", Component: AgentsPage },
   { id: "orchestration", group: "agents", labelKey: "settings.orchestration.title", Component: OrchestrationPage },

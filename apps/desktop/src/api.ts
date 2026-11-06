@@ -349,6 +349,8 @@ export type { ConfigExported, EnvPreviewRow, ImportApplied, ImportPreview, RepoE
 export type { AttributionChanged, AttributionEvent, AttributionSource, FileAttribution, FileVersion, Toucher } from "@xdev/bindings";
 export type { SectionPreview, ConfigChange } from "@xdev/bindings";
 import type { Chart, ChartRun, SeatTab } from "@xdev/bindings";
+import type { LspCompletionList, LspDocState, LspEvent, LspHover, LspLocation, LspPos, LspRange, LspRunning, LspServerInfo, LspSettings, LspSymbol, LspWorkspaceEdit } from "@xdev/bindings";
+export type { LspCompletionItem, LspCompletionList, LspDiagnostic, LspDocState, LspEvent, LspFileEdit, LspHover, LspLanguage, LspLocation, LspPos, LspRange, LspRunning, LspServerInfo, LspSettings, LspState, LspSymbol, LspTextEdit, LspWorkspaceEdit } from "@xdev/bindings";
 export type { Chart, ChartEdge, ChartKind, ChartMember, ChartProblem, ChartRoute, ChartRun, ChartSeat, SeatTab } from "@xdev/bindings";
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind, PathEntry } from "@xdev/bindings";
@@ -818,7 +820,13 @@ export type ErrorCode =
   | "config_too_large"
   | "orchestration"
   | "no_cli"
-  | "single_account";
+  | "single_account"
+  | "lsp_off"
+  | "lsp_untrusted"
+  | "lsp_not_found"
+  | "lsp_timeout"
+  | "lsp_crashed"
+  | "lsp_unsupported";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1840,6 +1848,37 @@ export interface Api {
   chartsSaveSquad(id: string): Promise<Chart>;
   /** Records the tabs opened for a run of chart `id` (one per seat) and links them along its edges. */
   chartsRunBind(id: string, tabs: SeatTab[]): Promise<ChartRun>;
+  /** Language servers: one row per language, from a cached search of PATH; `refresh` searches again. */
+  lspServers(refresh: boolean): Promise<LspServerInfo[]>;
+  lspSettingsGet(): Promise<LspSettings>;
+  /** Saves and returns the settings, idle minutes clamped to 1..120; stops the servers turned off. */
+  lspSettingsPut(settings: LspSettings): Promise<LspSettings>;
+  /** Diagnostics and server states; the last subscriber gets them. */
+  lspSubscribe(cb: (e: LspEvent) => void): Promise<() => void>;
+  /** Remembers the person's answer to "Start language servers for this repo?". */
+  lspTrust(worktree: string, trusted: boolean): Promise<void>;
+  /**
+   * Opens a document in its server, starting one when needed. Rejects, in order, `lsp_off` (all
+   * or this language off), `lsp_untrusted` (detail `session` after a no this session),
+   * `lsp_not_found`. A language with no server resolves with `language: null`.
+   */
+  lspOpen(worktree: string, rel: string, languageId: string, version: number, text: string): Promise<LspDocState>;
+  /** The whole new text of an open document. Rejects `not_found` when it is not open. */
+  lspChange(worktree: string, rel: string, version: number, text: string): Promise<void>;
+  lspClose(worktree: string, rel: string): Promise<void>;
+  /** Positions are 0-based, characters in UTF-16 units. Rejects `lsp_timeout`, `lsp_crashed`, `lsp_unsupported`. */
+  lspHover(worktree: string, rel: string, pos: LspPos): Promise<LspHover | null>;
+  lspDefinition(worktree: string, rel: string, pos: LspPos): Promise<LspLocation[]>;
+  lspCompletion(worktree: string, rel: string, pos: LspPos): Promise<LspCompletionList>;
+  /** The range a rename would change, or null where nothing can be renamed. */
+  lspPrepareRename(worktree: string, rel: string, pos: LspPos): Promise<LspRange | null>;
+  /** The edits of a rename; nothing is written. Rejects `lsp_unsupported` with the server's reason. */
+  lspRename(worktree: string, rel: string, pos: LspPos, newName: string): Promise<LspWorkspaceEdit>;
+  /** Rejects `lsp_not_found` when no server of the worktree is ready. */
+  lspWorkspaceSymbols(worktree: string, query: string): Promise<LspSymbol[]>;
+  /** Restarts the servers of a worktree, or every server for null. */
+  lspRestart(worktree: string | null): Promise<void>;
+  lspStatus(): Promise<LspRunning[]>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2034,6 +2073,12 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "orchestration",
   "no_cli",
   "single_account",
+  "lsp_off",
+  "lsp_untrusted",
+  "lsp_not_found",
+  "lsp_timeout",
+  "lsp_crashed",
+  "lsp_unsupported",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2592,6 +2637,32 @@ const tauriApi: Api = {
   chartsDuplicate: (id, name) => call("charts_duplicate", { id, name }),
   chartsSaveSquad: (id) => call("charts_save_squad", { id }),
   chartsRunBind: (id, tabs) => call("charts_run_bind", { id, tabs }),
+  lspServers: (refresh) => call("lsp_servers", { refresh }),
+  lspSettingsGet: () => call("lsp_settings_get"),
+  lspSettingsPut: (settings) => call("lsp_settings_put", { settings }),
+  async lspSubscribe(cb) {
+    const channel = new Channel<LspEvent>();
+    let live = true;
+    channel.onmessage = (e) => {
+      if (live) cb(e);
+    };
+    await call("lsp_subscribe", { onEvent: channel });
+    return () => {
+      live = false;
+    };
+  },
+  lspTrust: (worktree, trusted) => call("lsp_trust", { worktree, trusted }),
+  lspOpen: (worktree, rel, languageId, version, text) => call("lsp_open", { worktree, rel, languageId, version, text }),
+  lspChange: (worktree, rel, version, text) => call("lsp_change", { worktree, rel, version, text }),
+  lspClose: (worktree, rel) => call("lsp_close", { worktree, rel }),
+  lspHover: (worktree, rel, pos) => call("lsp_hover", { worktree, rel, pos }),
+  lspDefinition: (worktree, rel, pos) => call("lsp_definition", { worktree, rel, pos }),
+  lspCompletion: (worktree, rel, pos) => call("lsp_completion", { worktree, rel, pos }),
+  lspPrepareRename: (worktree, rel, pos) => call("lsp_prepare_rename", { worktree, rel, pos }),
+  lspRename: (worktree, rel, pos, newName) => call("lsp_rename", { worktree, rel, pos, newName }),
+  lspWorkspaceSymbols: (worktree, query) => call("lsp_workspace_symbols", { worktree, query }),
+  lspRestart: (worktree) => call("lsp_restart", { worktree }),
+  lspStatus: () => call("lsp_status"),
 };
 
 const DEMO_CRASH: CrashReport = {

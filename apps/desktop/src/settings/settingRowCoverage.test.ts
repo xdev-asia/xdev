@@ -16,6 +16,7 @@ const PAGES: Record<string, string[]> = {
   notifications: ["notifications/NotificationsPage.tsx"],
   terminal: ["TerminalPage.tsx", "terminal/TerminalLookSection.tsx", "terminal/TerminalBehaviourSection.tsx", "terminal/TerminalKeyboardSection.tsx"],
   editor: ["EditorPage.tsx"],
+  code: ["CodeIntelPage.tsx"],
   repos: ["ReposSettings.tsx"],
   openIn: ["OpenInPage.tsx"],
   git: ["GitSettings.tsx"],
