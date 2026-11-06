@@ -328,6 +328,8 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 import type { DeployPreset, TargetsView, VpsTarget } from "@xdev/bindings";
 export type { DeployPreset, TargetsView, VpsTarget };
+import type { SimDevice, SimLaunch, SimList, SimPlatform, SimRef, SimState } from "@xdev/bindings";
+export type { SimDevice, SimLaunch, SimList, SimPlatform, SimRef, SimState };
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 import type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView } from "@xdev/bindings";
 import type { CloudSettings, DeviceRow, LicenseState } from "@xdev/bindings";
@@ -807,6 +809,10 @@ export type ErrorCode =
   | "hook_untrusted"
   | "deploy_untrusted"
   | "vps_host_unknown"
+  | "sim_unsupported"
+  | "sim_not_found"
+  | "sim_tool_missing"
+  | "sim_boot_failed"
   | "hook_none"
   | "setup_skipped"
   | "cancelled"
@@ -2043,6 +2049,10 @@ export interface Api {
   targetsTrust(worktree: string, hash: string): Promise<void>;
   /** The `[vps] notes` path, repo-relative, when that file exists in the worktree. */
   targetsVpsNotes(worktree: string): Promise<string | null>;
+  /** The installed iOS simulators (macOS) and Android AVDs; a missing tool is `null` with a problem key. */
+  simsList(): Promise<SimList>;
+  /** Boots a simulator and returns the commands to type into tabs. Rejects `sim_not_found`, `sim_unsupported`, `sim_tool_missing`, `sim_boot_failed`. */
+  simBoot(device: SimRef): Promise<SimLaunch>;
   /** The server and trusted keys the license and xDev ID talk to. */
   cloudSettings(): Promise<CloudSettings>;
   /**
@@ -2235,6 +2245,10 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "hook_untrusted",
   "deploy_untrusted",
   "vps_host_unknown",
+  "sim_unsupported",
+  "sim_not_found",
+  "sim_tool_missing",
+  "sim_boot_failed",
   "hook_none",
   "setup_skipped",
   "cancelled",
@@ -2957,6 +2971,8 @@ const tauriApi: Api = {
   targetsList: (worktree) => call("targets_list", { worktree }),
   targetsTrust: (worktree, hash) => call("targets_trust", { worktree, hash }),
   targetsVpsNotes: (worktree) => call("targets_vps_notes", { worktree }),
+  simsList: () => call("sims_list"),
+  simBoot: (device) => call("sim_boot", { device }),
   cloudSettings: () => call("cloud_settings_get"),
   cloudSettingsPut: (settings) => call("cloud_settings_put", { settings }),
   captureStart: () => call("capture_start"),

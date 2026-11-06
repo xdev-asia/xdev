@@ -49,6 +49,7 @@ mod links;
 mod links_open;
 mod lsp;
 mod mcp_tools;
+mod mobile;
 mod network;
 mod notch;
 mod notes;
@@ -880,6 +881,8 @@ pub fn run() {
             run_targets::targets_list,
             run_targets::targets_trust,
             run_targets::targets_vps_notes,
+            run_targets::sims_list,
+            run_targets::sim_boot,
             capture::capture_start,
             capture::capture_save_png,
             capture::capture_read,

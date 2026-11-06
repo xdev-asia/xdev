@@ -142,6 +142,65 @@ pub fn targets_vps_notes(
 
 // --- simulators (run-targets-mobile) ---
 
+fn sdk_list(sdk: &crate::mobile::Sdk<'_>, ios: bool) -> crate::mobile::SimList {
+    crate::mobile::list_all(ios, sdk, &|p, a, t| crate::agent_path::capture(p, a, t))
+}
+
+/// Runs `f` with the real environment's SDK search.
+fn with_sdk<R>(f: impl FnOnce(&crate::mobile::Sdk<'_>) -> R) -> R {
+    let find = |p: &str| xdev_agent::find_program(p);
+    let var = |k: &str| std::env::var(k).ok();
+    let is_file = |p: &Path| p.is_file();
+    f(&crate::mobile::Sdk {
+        find_program: &find,
+        var: &var,
+        is_file: &is_file,
+        home: crate::applog::home_dir(),
+    })
+}
+
+/// The installed iOS simulators (macOS) and Android AVDs.
+#[tauri::command(async)]
+pub fn sims_list() -> Result<crate::mobile::SimList, CmdError> {
+    Ok(with_sdk(|sdk| sdk_list(sdk, cfg!(target_os = "macos"))))
+}
+
+/// Boots a simulator (iOS) and returns the commands to type into tabs. The
+/// id must be in a fresh list, so no other string reaches a command.
+#[tauri::command(async)]
+pub fn sim_boot(device: crate::mobile::SimRef) -> Result<crate::mobile::SimLaunch, CmdError> {
+    use crate::mobile::{self, SimPlatform};
+    let ios = cfg!(target_os = "macos");
+    if device.platform == SimPlatform::Ios && !ios {
+        return Err(CmdError {
+            code: "sim_unsupported",
+            detail: None,
+        });
+    }
+    with_sdk(|sdk| {
+        // Only the requested platform is listed: no xcrun for Android, no adb for iOS.
+        let list = mobile::list_platform(ios, sdk, device.platform, &|p, a, t| {
+            crate::agent_path::capture(p, a, t)
+        });
+        let found = mobile::find_device(&list, &device)?;
+        if found.platform == SimPlatform::Ios {
+            mobile::boot_ios(&found.id, &mobile::run_exit, &|p, a, t| {
+                crate::agent_path::capture(p, a, t)
+            })?;
+        }
+        let emulator = sdk.find("emulator", "emulator");
+        let adb = sdk.find("adb", "platform-tools");
+        mobile::sim_launch(
+            &found,
+            emulator.as_deref(),
+            adb.as_deref(),
+            mobile::Shell::host(),
+            // The tab title is translated in the UI; this is only a fallback.
+            &|name| name.to_owned(),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
