@@ -25,6 +25,8 @@ export type MockCapture = CaptureApi & {
   __captureTrigger(): void;
   /** How many times `captureOpenPrivacy` ran. */
   __capturePrivacyOpens(): number;
+  /** Stores the demo PNG in the fake paste folder and returns its path, as the clipboard image would be saved. */
+  __captureSeed(): string;
 };
 
 export type MockCaptureOptions = {
@@ -156,6 +158,11 @@ export function createMockCapture(options: MockCaptureOptions = {}): MockCapture
     },
     __capturePrivacyOpens() {
       return privacyOpens;
+    },
+    __captureSeed() {
+      const path = newPath();
+      files.set(path, demoPng());
+      return path;
     },
   };
 }

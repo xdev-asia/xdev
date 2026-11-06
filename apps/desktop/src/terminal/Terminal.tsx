@@ -24,6 +24,7 @@ import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
 import { appIsLight, followAppTheme } from "./terminalColors";
 import { createFileLinkProvider, createLinkResolver, createOscLinkHandler, cwdFromOsc7, urlLinkOptions, type TermLinksEnv } from "./termLinks";
+import { annotatePasted } from "@/capture/annotateBridge";
 import { pasteClipboard, type PasteResult } from "./clipboardPaste";
 import { registerDropTarget } from "./fileDrop";
 import { trackInputModes } from "./inputModes";
@@ -139,6 +140,7 @@ export function Terminal(props: {
       saveImage: () => handlers.current.api.clipboardImageSave(),
       shell: () => shellKind.current,
       pasted: (result) => reportPasteRef.current(result),
+      annotate: annotatePasted,
     }),
   );
   useImperativeHandle(props.handleRef, () => handle.current, []);
@@ -344,6 +346,7 @@ export function Terminal(props: {
           writeRaw: (data) => client.input(data),
           shell: () => shellKind.current,
           bracketedMode: () => term.modes.bracketedPasteMode,
+          annotate: annotatePasted,
         }).then((result) => reportPasteRef.current(result), () => {});
         return;
       }

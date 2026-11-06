@@ -1,0 +1,102 @@
+/* The annotate dialog (capture/AnnotateDialog.tsx). Colours are tokens only. */
+.annotate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  min-width: 0;
+  color: var(--x-color-ink);
+}
+.annotate-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-3);
+}
+.annotate-bar .pane-head {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.annotate-bar .pane-tools {
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+}
+.annotate-undo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x-space-1);
+}
+.annotate-colors.term-radios {
+  gap: var(--x-space-1);
+  flex-wrap: nowrap;
+}
+.annotate-colors .term-radio {
+  position: relative;
+  min-width: 24px;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.annotate-colors .term-radio input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.annotate-colors .term-radio-text {
+  display: inline-flex;
+}
+.annotate-dot {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--x-color-line);
+  box-sizing: content-box;
+}
+.annotate-dot[data-color="danger"] { background: var(--danger); }
+.annotate-dot[data-color="warning"] { background: var(--warn); }
+.annotate-dot[data-color="accent"] { background: var(--accent); }
+.annotate-dot[data-color="fg"] { background: var(--text-1); }
+.annotate-colors input:checked + .term-radio-text .annotate-dot { border-color: var(--x-color-ink); }
+.annotate-colors input:focus-visible + .term-radio-text .annotate-dot {
+  outline: 2px solid var(--x-color-signal);
+  outline-offset: 2px;
+}
+.annotate-stage {
+  position: relative;
+  align-self: center;
+  max-width: 100%;
+  line-height: 0;
+}
+.annotate-canvas {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 60vh;
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-sm);
+  background: var(--bg-2);
+  cursor: crosshair;
+  touch-action: none;
+}
+.annotate-note {
+  position: absolute;
+  z-index: 1;
+  width: 200px;
+  max-width: 100%;
+  line-height: 1.4;
+}
+.annotate-note .ws-field {
+  gap: 0;
+}
+.annotate-extra {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--x-space-2);
+}
