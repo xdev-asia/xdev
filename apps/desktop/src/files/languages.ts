@@ -40,6 +40,12 @@ const LOADERS = {
   swift: legacy(() => import("@codemirror/legacy-modes/mode/swift").then((m) => m.swift)),
   diff: legacy(() => import("@codemirror/legacy-modes/mode/diff").then((m) => m.diff)),
   groovy: legacy(() => import("@codemirror/legacy-modes/mode/groovy").then((m) => m.groovy)),
+  perl: legacy(() => import("@codemirror/legacy-modes/mode/perl").then((m) => m.perl)),
+  r: legacy(() => import("@codemirror/legacy-modes/mode/r").then((m) => m.r)),
+  powershell: legacy(() => import("@codemirror/legacy-modes/mode/powershell").then((m) => m.powerShell)),
+  protobuf: legacy(() => import("@codemirror/legacy-modes/mode/protobuf").then((m) => m.protobuf)),
+  scala: legacy(() => import("@codemirror/legacy-modes/mode/clike").then((m) => m.scala)),
+  dart: legacy(() => import("@codemirror/legacy-modes/mode/clike").then((m) => m.dart)),
   cmake: legacy(() => import("@codemirror/legacy-modes/mode/cmake").then((m) => m.cmake)),
 } satisfies Record<string, Loader>;
 
@@ -72,6 +78,15 @@ const BY_EXTENSION: Record<string, Language> = {
   kt: "kotlin", kts: "kotlin",
   diff: "diff", patch: "diff",
   properties: "properties",
+  pl: "perl", pm: "perl",
+  r: "r",
+  ps1: "powershell", psm1: "powershell", psd1: "powershell",
+  proto: "protobuf",
+  scala: "scala", sbt: "scala",
+  dart: "dart",
+  // No vue or svelte package: their templates read as html.
+  vue: "html", svelte: "html",
+  dockerignore: "ini",
 };
 
 // Checked before the extension, by lowercase name. There is no makefile mode in the legacy modes,
@@ -84,7 +99,9 @@ const BY_FILENAME: Record<string, Language> = {
   justfile: "shell",
   ".justfile": "shell",
   "cmakelists.txt": "cmake",
+  "cargo.lock": "toml",
   ".gitignore": "ini",
+  ".dockerignore": "ini",
   ".gitattributes": "ini",
   ".editorconfig": "ini",
   ".npmrc": "ini",
@@ -112,7 +129,7 @@ function shebangLanguage(firstLine: string): Language | null {
 export function languageOf(rel: string, firstLine?: string): Language | null {
   const name = rel.slice(rel.lastIndexOf("/") + 1);
   const lower = name.toLowerCase();
-  const named = BY_FILENAME[lower] ?? (lower.startsWith(".env.") ? "properties" : undefined);
+  const named = BY_FILENAME[lower] ?? (lower.startsWith(".env.") ? "properties" : lower.startsWith("dockerfile.") ? "dockerfile" : undefined);
   if (named) return named;
   const dot = name.lastIndexOf(".");
   if (dot <= 0) return firstLine === undefined ? null : shebangLanguage(firstLine);
