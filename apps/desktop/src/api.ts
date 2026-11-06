@@ -233,6 +233,7 @@ import type {
   CliAsk,
   CliOpenFile,
   CliOpenTab,
+  CliTerminal,
   CliWorktreeRead,
   TabReport,
   CrashDetail,
@@ -390,7 +391,7 @@ export type { FsChanged, FsEvent, FsEventKind, PathEntry } from "@xdev/bindings"
 export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase, UpdateDeferral, ReleaseBuild, ReleaseList };
 export type { AiKeyStatus } from "@xdev/bindings";
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
-export type { CliAsk, CliOpenFile, CliOpenTab, CliWorktreeRead, TabReport };
+export type { CliAsk, CliOpenFile, CliOpenTab, CliTerminal, CliWorktreeRead, TabReport };
 export type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView };
 export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, WorkerOpenOutcome, WorkerClose, ReadTab, WorkerChanged };
 export type { CliStatus } from "@xdev/bindings";
@@ -1810,6 +1811,9 @@ export interface Api {
   onCliAsk(cb: (e: CliAsk) => void): Promise<() => void>;
   // `xdev file open` (`cli://open-file`): a file of a known worktree to show; the window is in front already.
   onCliOpenFile(cb: (e: CliOpenFile) => void): Promise<() => void>;
+  // `xdev terminal create | split | close` (`cli://terminal`): open a shell tab with the given id, or
+  // close one; the backend waits for the tab report.
+  onCliTerminal(cb: (e: CliTerminal) => void): Promise<() => void>;
   // `xdev worktree set --unread | --read` (`cli://worktree-read`): the sidebar's read state of one worktree.
   onCliWorktreeRead(cb: (e: CliWorktreeRead) => void): Promise<() => void>;
   // Orchestration. The skill card, the strip over a worker's terminal, and the answers the UI owes the backend.
@@ -2947,6 +2951,7 @@ const tauriApi: Api = {
   onAutomationsChanged: (cb) => listen<AutomationsChanged>("automations://changed", (e) => cb(e.payload)),
   onCliAsk: (cb) => listen<CliAsk>("cli://ask", (e) => cb(e.payload)),
   onCliOpenFile: (cb) => listen<CliOpenFile>("cli://open-file", (e) => cb(e.payload)),
+  onCliTerminal: (cb) => listen<CliTerminal>("cli://terminal", (e) => cb(e.payload)),
   onCliWorktreeRead: (cb) => listen<CliWorktreeRead>("cli://worktree-read", (e) => cb(e.payload)),
   orchestrationSkillStatus: () => call("orchestration_skill_status"),
   orchestrationSkillInstall: (force = false) => call("orchestration_skill_install", { force }),

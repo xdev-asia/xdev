@@ -20,6 +20,7 @@ use crate::automations::{
 };
 use crate::cli_file::CliOpenFile;
 use crate::cli_install::CliStatus;
+use crate::cli_tab_ops::CliTerminal;
 use crate::cli_verbs::{CliAsk, CliOpenTab, CliWorktreeRead, TabReport};
 use crate::commands::{Changed, CmdError, Expected, VaultSetup, VcsState};
 use crate::crash::{CrashReport, RenderCrash};
@@ -350,6 +351,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     CliOpenTab::export_all(cfg)?;
     CliAsk::export_all(cfg)?;
     CliOpenFile::export_all(cfg)?;
+    CliTerminal::export_all(cfg)?;
     CliWorktreeRead::export_all(cfg)?;
     PortsAdvertised::export_all(cfg)?;
     xdev_ports::PortScan::export_all(cfg)?;

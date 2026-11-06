@@ -54,6 +54,21 @@ describe("CLI events", () => {
     expect(translate("vi", "cli.ask.send")).not.toBe("cli.ask.send");
   });
 
+  it("says what a terminal verb does to the terminal", async () => {
+    const api = createMockApi({});
+    startCliEvents(api, { reload() {}, openTab() {}, t });
+    await flush();
+    api.__cliAsk({ request: 7, caller: "/w/lead", verb: "terminal.create", target: "/w/other" });
+    api.__cliAsk({ request: 8, caller: "/w/lead", verb: "terminal.close", target: "/w/other" });
+    api.__cliAsk({ request: 9, caller: "/w/lead", verb: "terminal.stop", target: "/w/other" });
+    expect(getToasts().map((x) => x.text)).toEqual([
+      "lead wants to open a terminal in other.",
+      "lead wants to close a terminal of other.",
+      "lead wants to stop a terminal of other.",
+    ]);
+    for (const k of ["cli.ask.terminalOpen", "cli.ask.terminalStop", "cli.ask.terminalClose"]) expect(translate("vi", k)).not.toBe(k);
+  });
+
   it("names an outside caller and goes away after 60 s without an answer", async () => {
     vi.useFakeTimers();
     const api = createMockApi({});

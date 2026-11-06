@@ -26,3 +26,20 @@ States to wait for:
 - `exit`: the process ended.
 
 The answer is `state<TAB>atMs`. Exit 4 means the timeout passed with no change. Exit 5 means the tab closed. Exit 6 means xDev quit.
+
+## Open, split, stop, close
+
+```sh
+xdev terminal create --title tests --cmd make
+xdev terminal create --worktree <id> --cwd src --json
+xdev terminal split --right
+xdev terminal split --down --terminal <id>
+xdev terminal stop --terminal <id>
+xdev terminal close --terminal <id>
+```
+
+- `create` opens a shell tab in a worktree (default: yours) and prints its id. `--cmd` is one line, typed and run once the shell starts. `--cwd` is a folder inside the worktree, relative to the current folder; a folder outside is refused.
+- `split` opens a shell in a new pane beside a tab's pane (default: this terminal's), in that tab's folder, and prints the new id. Give `--right` or `--down`.
+- `stop` ends the tab's process; the tab stays. Exit 5 means it had already ended.
+- `close` closes the tab and prints its id. A tab id may be a unique prefix.
+- Your own worktree passes. Opening in a child worktree passes. Anything else asks the person first; exit 7 means they said no.

@@ -357,6 +357,54 @@ pub enum TerminalCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Open a shell tab in a worktree (default: yours), in front; prints its
+    /// id. Outside your worktree and its family the person is asked first.
+    Create {
+        #[arg(long)]
+        worktree: Option<String>,
+        /// One line, typed into the shell once it runs, then Enter.
+        #[arg(long)]
+        cmd: Option<String>,
+        /// The tab's name.
+        #[arg(long)]
+        title: Option<String>,
+        /// A folder inside the worktree to start in; relative to here.
+        #[arg(long)]
+        cwd: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Split a tab's pane (default: this terminal's) and open a shell in the
+    /// new pane, in the tab's folder; prints the new tab's id.
+    #[command(group(ArgGroup::new("side").required(true).args(["right", "down"])))]
+    Split {
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        right: bool,
+        #[arg(long)]
+        down: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// End a tab's process (default: this terminal's); the tab stays.
+    Stop {
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Close a tab (default: this terminal), ending its process. Outside
+    /// your own worktree the person is asked first.
+    Close {
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Args)]
@@ -484,6 +532,40 @@ pub fn request(
             json!({ "tab": tab, "for": state, "timeoutS": timeout }),
             *json,
         ),
+        AppCommand::Terminal(TerminalCommand::Create {
+            worktree,
+            cmd,
+            title,
+            cwd,
+            json,
+        }) => {
+            let here = std::env::current_dir()
+                .ok()
+                .map(|d| d.display().to_string());
+            let params = json!({
+                "worktree": worktree,
+                "cmd": cmd,
+                "title": title,
+                "cwd": cwd,
+                "here": here,
+            });
+            ("terminal.create", params, *json)
+        }
+        AppCommand::Terminal(TerminalCommand::Split {
+            tab,
+            right: _,
+            down,
+            json,
+        }) => {
+            let dir = if *down { "down" } else { "right" };
+            ("terminal.split", json!({ "tab": tab, "dir": dir }), *json)
+        }
+        AppCommand::Terminal(TerminalCommand::Stop { tab, json }) => {
+            ("terminal.stop", json!({ "tab": tab }), *json)
+        }
+        AppCommand::Terminal(TerminalCommand::Close { tab, json }) => {
+            ("terminal.close", json!({ "tab": tab }), *json)
+        }
     })
 }
 
@@ -614,6 +696,13 @@ pub fn plain(method: &str, result: &Value) -> String {
             out
         }
         "terminal.read" => result["tail"].as_str().unwrap_or_default().to_owned(),
+        "terminal.create" | "terminal.split" | "terminal.stop" | "terminal.close" => {
+            format!(
+                "{}
+",
+                text(&result["id"])
+            )
+        }
         "terminal.send" => format!(
             "sent\t{}\t{}\n",
             text(&result["bytes"]),
@@ -830,6 +919,80 @@ mod tests {
         assert!(
             answer_limit("terminal.send", &json!({ "enter": true })) >= Duration::from_secs(11)
         );
+    }
+
+    #[test]
+    fn create_split_stop_close_map_their_flags() {
+        use clap::Parser;
+        let none = &mut &b""[..];
+        let parse = |args: &[&str]| {
+            let argv = [&["terminal"][..], args].concat();
+            TerminalCli::try_parse_from(argv).map(|c| AppCommand::Terminal(c.command))
+        };
+        let cmd = parse(&[
+            "create",
+            "--worktree",
+            "w",
+            "--cmd",
+            "make test",
+            "--title",
+            "build",
+            "--cwd",
+            "src",
+            "--json",
+        ])
+        .unwrap();
+        let (m, p, json) = request(&cmd, none).unwrap();
+        assert_eq!(m, "terminal.create");
+        assert!(json);
+        assert_eq!(p["worktree"], "w");
+        assert_eq!(p["cmd"], "make test");
+        assert_eq!(p["title"], "build");
+        assert_eq!(p["cwd"], "src");
+        let here = std::env::current_dir().unwrap().display().to_string();
+        assert_eq!(p["here"], here);
+        let (_, p, json) = request(&parse(&["create"]).unwrap(), none).unwrap();
+        assert!(!json);
+        assert_eq!(p["worktree"], Value::Null);
+        assert_eq!(p["cmd"], Value::Null);
+
+        let (m, p, _) = request(&parse(&["split", "--right"]).unwrap(), none).unwrap();
+        assert_eq!(
+            (m, p),
+            ("terminal.split", json!({ "tab": null, "dir": "right" }))
+        );
+        let split = parse(&["split", "--down", "--terminal", "t1"]).unwrap();
+        let (_, p, _) = request(&split, none).unwrap();
+        assert_eq!(p, json!({ "tab": "t1", "dir": "down" }));
+        for bad in [&["split"][..], &["split", "--right", "--down"]] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
+
+        let (m, p, _) = request(&parse(&["stop", "--tab", "t1"]).unwrap(), none).unwrap();
+        assert_eq!((m, p), ("terminal.stop", json!({ "tab": "t1" })));
+        let (m, p, json) = request(&parse(&["close", "--json"]).unwrap(), none).unwrap();
+        assert_eq!(
+            (m, p, json),
+            ("terminal.close", json!({ "tab": null }), true)
+        );
+    }
+
+    #[test]
+    fn plain_tab_verbs_print_the_id() {
+        let r = json!({ "id": "t9", "worktree": "/w", "cwd": null, "title": null });
+        for m in [
+            "terminal.create",
+            "terminal.split",
+            "terminal.stop",
+            "terminal.close",
+        ] {
+            assert_eq!(
+                plain(m, &r),
+                "t9
+",
+                "{m}"
+            );
+        }
     }
 
     #[test]

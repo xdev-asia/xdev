@@ -63,7 +63,7 @@ pub fn split_position(text: &str) -> (&str, Option<u32>, Option<u32>) {
 
 /// `path` without `.` parts and with `..` folded in; none when a `..` would
 /// climb above the start of the path.
-fn fold(path: &Path) -> Option<PathBuf> {
+pub(crate) fn fold(path: &Path) -> Option<PathBuf> {
     let mut out = PathBuf::new();
     for c in path.components() {
         match c {

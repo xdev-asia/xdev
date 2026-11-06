@@ -110,6 +110,7 @@ import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setu
 import { SetupGate } from "./setupGate";
 import { startCliReport } from "./cliReport";
 import { startCliEvents } from "./cliEvents";
+import { startCliTerminal } from "./cliTerminal";
 import { openFailedToast, startOrchestrationEvents } from "./orchestrationEvents";
 import { AutomationsPage } from "@/automations/AutomationsPage";
 import { startAutomationDispatch } from "@/automations/dispatch";
@@ -868,6 +869,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       markUnread: (w, unread) => (unread ? sessions.markUnread(w) : sessions.markRead(w)),
       t: (key, vars) => live.t(key, vars),
     });
+    const stopTerminal = startCliTerminal(api, { sessions, ensureMounted: (w) => live.ensureMounted(w) });
     // Worker tabs the backend asks for, closes and reads (orchestration).
     const stopOrchestration = startOrchestrationEvents(api, {
       sessions,
@@ -882,6 +884,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     return () => {
       reporter.stop();
       stopEvents();
+      stopTerminal();
       stopOrchestration();
       live.cliPoke = () => {};
     };
