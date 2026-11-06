@@ -339,6 +339,18 @@
   list-style: none;
 }
 
+/* The sub-agent runs of a thread: indented under its row, one status dot each. */
+.act-sub {
+  padding-left: 24px;
+  list-style: none;
+}
+
+.act-sub-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .act-toggle {
   flex-shrink: 0;
   min-height: 24px;

@@ -1,6 +1,6 @@
 import type { Api, ApiError, Conversation, ConversationEntry, ConversationSubagent, ConversationTool } from "@/api";
 
-type ConversationApi = Pick<Api, "agentConversation">;
+type ConversationApi = Pick<Api, "agentConversation" | "agentSubagents">;
 
 export type MockConversation = ConversationApi & {
   /** Replaces the demo conversation of every session; `null` puts the fixture back. */
@@ -143,6 +143,10 @@ export function createMockConversation(now: () => number = () => Date.now()): Mo
         subagents: structuredClone(runs),
       };
       return page;
+    },
+    async agentSubagents(session) {
+      if (!session || session === "missing") return reject("not_found", "session");
+      return runs.map(({ id, description, agentType, status, stepsTotal, at }) => ({ id, description, agentType, status, stepsTotal, at }));
     },
   };
 }

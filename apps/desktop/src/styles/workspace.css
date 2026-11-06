@@ -4197,6 +4197,29 @@ button.ws-tree-row[data-flash="true"] {
   color: var(--warn);
 }
 
+/* Known progress: a 1.5px ring that fills clockwise from the top. */
+.ws-tab-ring {
+  transform: rotate(-90deg);
+}
+
+.ws-tab-ring circle {
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+.ws-tab-ring-track {
+  stroke: var(--line);
+}
+
+.ws-tab-ring-fill {
+  stroke: var(--signal);
+  transition: stroke-dasharray 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-tab-ring-fill { transition: none; }
+}
+
 .ws-tab-card {
   position: fixed;
   max-width: min(320px, calc(100vw - 16px));

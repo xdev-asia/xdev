@@ -398,8 +398,10 @@ export type { CliStatus } from "@xdev/bindings";
 export type { McpActivityView, McpHealth, McpToolView };
 import type { Grant as LinkGrant, Message as OrchMessage, MissionSettings, MissionTab, MissionView, TabLink, TabWorker, Worker as OrchWorker } from "@xdev/bindings";
 export type { LinkGrant, MissionSettings, MissionTab, MissionView, OrchMessage, OrchWorker, TabLink, TabWorker };
-import type { Conversation, ConversationEntry, ConversationTool } from "@xdev/bindings";
-export type { Conversation, ConversationEntry, ConversationTool };
+import type { AgentSubagent, Conversation, ConversationEntry, ConversationTool } from "@xdev/bindings";
+export type { AgentSubagent, Conversation, ConversationEntry, ConversationTool };
+import type { Cli, CliHooks, HookInstall, HookSupport } from "@xdev/bindings";
+export type { CliHooks, HookInstall, HookSupport };
 import type { ConversationSubagent, HookQuestion, QuestionKind as HookQuestionKind, QuestionOption } from "@xdev/bindings";
 export type { ConversationSubagent, HookQuestion, HookQuestionKind, QuestionOption };
 export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCrash, StartupReport, StartupStep } from "@xdev/bindings";
@@ -934,7 +936,12 @@ export type ErrorCode =
   | "browser_blocked"
   | "browser_unavailable"
   | "browser_template"
-  | "shortcut_taken";
+  | "shortcut_taken"
+  | "hooks-unsupported"
+  | "hooks-no-home"
+  | "hooks-no-cli"
+  | "hooks-unreadable"
+  | "hooks-conflict";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1288,6 +1295,13 @@ export interface Api {
   statusSound(): Promise<Uint8Array | null>;
   // Picks a sound file to pass to `statusSoundSet`; null when cancelled.
   pickSoundFile(): Promise<string | null>;
+  // How each catalogue CLI gets status hooks, in menu order; a managed one also says whether xDev's
+  // hooks are in its own config (`error`: `hooks-unreadable`, `hooks-conflict`, `hooks-no-home`, `io`).
+  hookInstalls(): Promise<CliHooks[]>;
+  // Writes (or takes out) xDev's hooks in a managed CLI's config and returns its new row. Rejects with
+  // `hooks-unsupported`, `hooks-no-home`, `hooks-no-cli`, `hooks-unreadable`, `hooks-conflict` or `io`.
+  hookInstall(cli: Cli): Promise<CliHooks>;
+  hookUninstall(cli: Cli): Promise<CliHooks>;
   // Every repo the workspace knows, each with its primary checkout first; a repo whose folder is
   // gone stays in the list as `missing`.
   workspaceList(): Promise<RepoView[]>;
@@ -1967,6 +1981,8 @@ export interface Api {
   onOrchestrationFailover(cb: (e: WorkerFailover) => void): Promise<() => void>;
   /** One page of an agent session's conversation (its CLI session id or `<home id>:<id>` key): messages, tool steps and markers. `from` absent gives the last page; `limit` is 200 when absent, at most 1000. Rejects `not_found`, `bad_path`, `io`. */
   agentConversation(key: string, from?: number, limit?: number): Promise<Conversation>;
+  /** The sub-agent runs of an agent session (its CLI session id or key), oldest first, read again on each call; `pending` ones run (or the session stopped in them). Rejects `not_found`, `bad_path`, `io`. */
+  agentSubagents(session: string): Promise<AgentSubagent[]>;
   // Terminals and agent CLIs this app did not start; at most 500 rows, within 2 s. Rejects with `timeout`.
   foreignTermsScan(): Promise<ForeignScan>;
   // The main window's agent tabs, for the status strip at the notch.
@@ -2458,6 +2474,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "browser_unavailable",
   "browser_template",
   "shortcut_taken",
+  "hooks-unsupported",
+  "hooks-no-home",
+  "hooks-no-cli",
+  "hooks-unreadable",
+  "hooks-conflict",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2689,6 +2710,9 @@ const tauriApi: Api = {
     const picked = await open({ multiple: false, directory: false, filters: [{ name: "Sound", extensions: ["wav", "mp3", "ogg"] }] });
     return typeof picked === "string" ? picked : null;
   },
+  hookInstalls: () => call("hook_installs"),
+  hookInstall: (cli) => call("hook_install", { cli }),
+  hookUninstall: (cli) => call("hook_uninstall", { cli }),
   workspaceList: () => call("workspace_list"),
   repoAdd: (path) => call("repo_add", { path }),
   repoForget: (id) => call("repo_forget", { id }),
@@ -3020,6 +3044,7 @@ const tauriApi: Api = {
   orchestrationWorkerFailover: (tab) => call("orchestration_worker_failover", { tab }),
   onOrchestrationFailover: (cb) => listen<WorkerFailover>("orchestration://failover", (e) => cb(e.payload)),
   agentConversation: (key, from, limit) => call("agent_conversation", { key, from: from ?? null, limit: limit ?? null }),
+  agentSubagents: (session) => call("agent_subagents", { session }),
   foreignTermsScan: () => call("foreign_terms_scan"),
   notchReport: (tabs) => call("notch_report", { tabs }),
   notchState: () => call("notch_state"),

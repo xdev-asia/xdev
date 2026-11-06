@@ -43,6 +43,7 @@ mod files;
 mod foreign_terms;
 mod gitlab;
 mod history;
+mod hook_install;
 mod hooks;
 mod issues;
 mod keybindings;
@@ -438,6 +439,9 @@ pub fn run() {
             cli_install::cli_remove,
             cli_install::cli_repair,
             cli_install::cli_reveal,
+            hook_install::hook_installs,
+            hook_install::hook_install,
+            hook_install::hook_uninstall,
             mcp_tools::mcp_tools_get,
             mcp_tools::mcp_tool_set,
             mcp_tools::mcp_activity,
@@ -852,6 +856,7 @@ pub fn run() {
             orch_sweep::orchestration_worker_failover,
             commands::path_effective,
             conversation::agent_conversation,
+            conversation::agent_subagents,
             foreign_terms::foreign_terms_scan,
             notch::notch_report,
             notch::notch_state,

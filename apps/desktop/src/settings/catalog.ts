@@ -91,7 +91,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("agents.sessionSearch", "settings.agents.sessionSearch.label", ["search", "session", "conversation", "history", "index", "tìm kiếm", "tim kiem", "phiên", "phien", "hội thoại", "hoi thoai", "chỉ mục", "chi muc"], "settings.agents.sessionSearch.hint"),
   e("agents.autoSleep", "settings.agents.autoSleep.label", ["sleep", "auto", "idle", "hibernate", "agent", "tab", "minutes", "ngủ", "ngu", "tự động", "tu dong", "nhàn rỗi", "nhan roi", "phút", "phut"], "settings.agents.autoSleep.hint"),
   e("agents.workspaceTrust", "settings.agents.trust.title", ["trust", "folder", "workspace", "prompt", "tin cậy", "tin cay", "thư mục", "thu muc"], "settings.agents.trust.what"),
-  e("agents.statusHooks", "settings.agents.statusHooks.label", ["hooks", "status", "trạng thái", "trang thai"], "settings.agents.statusHooks.what"),
+  e("agents.statusHooks", "settings.agents.statusHooks.label", ["hooks", "status", "install", "plugin", "gemini", "copilot", "opencode", "kilo", "antigravity", "trạng thái", "trang thai", "cài đặt", "cai dat"], "settings.agents.statusHooks.what"),
   // Orchestration
   e("orchestration.skill", "settings.orchestration.skill.title", ["orchestration", "skill", "install", "coordinate", "agents", "handoff", "worker", "điều phối", "dieu phoi", "cài đặt", "cai dat", "bàn giao", "ban giao"], "settings.orchestration.skill.text"),
   e("orchestration.depth", "settings.orchestration.depth.label", ["nested", "depth", "worker", "child", "spawn", "orchestration", "lồng nhau", "long nhau", "độ sâu", "do sau", "điều phối", "dieu phoi"], "settings.orchestration.depth.hint"),

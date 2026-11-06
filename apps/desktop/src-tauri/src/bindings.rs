@@ -215,6 +215,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     KeybindingsText::export_all(cfg)?;
     KeybindingsChanged::export_all(cfg)?;
     PtyHook::export_all(cfg)?;
+    crate::hook_install::CliHooks::export_all(cfg)?;
     xdev_workspace::RepoView::export_all(cfg)?;
     crate::visibility::NestedRepo::export_all(cfg)?;
     crate::visibility::NestedScanResult::export_all(cfg)?;
@@ -380,6 +381,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_orch::FailReason::export_all(cfg)?;
     xdev_orch::FailoverKind::export_all(cfg)?;
     crate::conversation::Conversation::export_all(cfg)?;
+    crate::conversation::AgentSubagent::export_all(cfg)?;
     crate::foreign_terms::ForeignTerm::export_all(cfg)?;
     crate::foreign_terms::ForeignScan::export_all(cfg)?;
     crate::notch::NotchTab::export_all(cfg)?;

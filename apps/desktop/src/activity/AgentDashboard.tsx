@@ -5,6 +5,7 @@ import { useI18n } from "@/i18n";
 import { AgentIcon } from "@/workspace/AgentIcon";
 import { ago } from "@/workspace/ago";
 import { dashboardBuckets, type DashboardBucket } from "./dashboard";
+import { subagentBadge, subagentItem } from "./Subagents";
 import type { ThreadSource, WorktreeName } from "./threads";
 
 const HEADING: Record<DashboardBucket, string> = {
@@ -16,6 +17,8 @@ const HEADING: Record<DashboardBucket, string> = {
 export interface AgentDashboardViewProps {
   buckets: ReturnType<typeof dashboardBuckets>;
   now: number;
+  /** Compact rows count a tab's sub-agents in place of listing them. */
+  compact?: boolean;
   onJump(tabId: string): void;
   onDismiss(key: string): void;
 }
@@ -30,12 +33,14 @@ export function AgentDashboardView(props: AgentDashboardViewProps): JSX.Element 
         <li key={`g:${group.bucket}`} className="act-group" role="presentation">
           {t(HEADING[group.bucket], { count: group.rows.length })}
         </li>,
-        ...group.rows.map((row) => {
+        ...group.rows.flatMap((row) => {
           const { thread } = row;
           const where = [thread.worktreeName, thread.branch].filter((x): x is string => !!x);
           if (thread.lastOutput !== null) where.push(ago(thread.lastOutput, props.now, t));
           const dismissable = thread.tab.status === "done" || thread.tab.status === "failed";
-          return (
+          const badge = props.compact ? subagentBadge(thread.tab, t) : null;
+          const subs = props.compact ? null : subagentItem(thread.tab, props.now, t, props.onJump);
+          const item = (
             <ListRow
               key={row.key}
               as="li"
@@ -48,20 +53,26 @@ export function AgentDashboardView(props: AgentDashboardViewProps): JSX.Element 
               title={thread.tab.title ?? t("activity.untitled")}
               meta={where.join(" · ")}
               trailing={
-                dismissable ? (
-                  <IconButton
-                    icon="close"
-                    label={t("activity.dashboard.dismiss")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      props.onDismiss(row.key);
-                    }}
-                  />
+                badge || dismissable ? (
+                  <>
+                    {badge}
+                    {dismissable && (
+                      <IconButton
+                        icon="close"
+                        label={t("activity.dashboard.dismiss")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          props.onDismiss(row.key);
+                        }}
+                      />
+                    )}
+                  </>
                 ) : undefined
               }
               onClick={() => props.onJump(thread.tab.id)}
             />
           );
+          return subs ? [item, subs] : [item];
         }),
       ])}
     </ul>
@@ -72,6 +83,7 @@ export interface AgentDashboardProps {
   sources: readonly ThreadSource[];
   names: Readonly<Record<string, WorktreeName>>;
   now: number;
+  compact?: boolean;
   onJump(tabId: string): void;
 }
 
@@ -82,6 +94,7 @@ export function AgentDashboard(props: AgentDashboardProps): JSX.Element {
     <AgentDashboardView
       buckets={dashboardBuckets(props.sources, props.names, dismissed)}
       now={props.now}
+      compact={props.compact}
       onJump={props.onJump}
       onDismiss={(key) => setDismissed((prev) => new Set(prev).add(key))}
     />

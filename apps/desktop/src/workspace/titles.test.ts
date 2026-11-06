@@ -24,6 +24,18 @@ it("maps every glyph per CLI", () => {
   expect(titleStatus("codex", "✦ x")).toBeNull();
 });
 
+it("gemini_working_without_output_is_working", () => {
+  expect(titleStatus("gemini", "⏲  Working… (repo)")).toBe("working");
+  expect(titleStatus("claude", "⏲  Working…")).toBeNull();
+});
+
+it("codex_action_required_needs_you_in_both_frames_even_with_a_spinner_after", () => {
+  expect(titleStatus("codex", "[ ! ] Action Required | repo")).toBe("needs-you");
+  expect(titleStatus("codex", "[ . ] Action Required | ◐ repo")).toBe("needs-you");
+  expect(titleStatus("codex", "repo | [ ! ] Action Required")).toBeNull();
+  expect(titleStatus("gemini", "[ ! ] Action Required")).toBeNull();
+});
+
 it("a spinner glyph counts only at the start of a Braille title", () => {
   expect(titleStatus("claude", "Task ⠋")).toBeNull();
 });

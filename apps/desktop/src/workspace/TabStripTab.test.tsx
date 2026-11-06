@@ -4,7 +4,7 @@ import { Icon, Spinner } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { middleClick } from "./TabStrip";
 import { beforeOf, insertAt, pastThreshold, zoneFor } from "./tabDrag";
-import { TabIndicator } from "./TabIndicator";
+import { TabIndicator, progressPercent } from "./TabIndicator";
 import { TabHoverCard } from "./TabHoverCard";
 import { reorderTabs } from "./sessions";
 import { single, splitPane, leaves } from "./paneTree";
@@ -101,6 +101,34 @@ it("the indicator is a spinner while working, a question icon when it needs you,
   expect(idle[0].props.className).toBe("ws-glyph");
   expect(idle[0].props["data-status"]).toBe("idle");
   expect(TabIndicator({ status: null, label: "" })).toBeNull();
+});
+
+it("a known progress draws a ring with its value instead of the spinner", () => {
+  const ring = nodes(TabIndicator({ status: "working", label: "Working", progress: 42.4, progressLabel: "Working, 42%" }));
+  expect(ring[0].props.role).toBe("progressbar");
+  expect(ring[0].props["aria-valuenow"]).toBe(42);
+  expect(ring[0].props["aria-valuemin"]).toBe(0);
+  expect(ring[0].props["aria-valuemax"]).toBe(100);
+  expect(ring[0].props["aria-label"]).toBe("Working, 42%");
+  expect(ring.some((n) => n.type === Spinner)).toBe(false);
+  expect(ring.some((n) => n.props.className === "ws-tab-ring-fill" && n.props.strokeDasharray === "42 100")).toBe(true);
+  // No progress, or one that is not a number: the spinner.
+  for (const progress of [null, undefined, Number.NaN]) {
+    const spin = nodes(TabIndicator({ status: "working", label: "Working", progress }));
+    expect(spin.some((n) => n.type === Spinner), String(progress)).toBe(true);
+  }
+  // Only a working tab shows it.
+  const needs = nodes(TabIndicator({ status: "needs-you", label: "Needs you", progress: 50 }));
+  expect(needs.some((n) => n.props.role === "progressbar")).toBe(false);
+});
+
+it("progressPercent clamps and rounds", () => {
+  expect(progressPercent(-5)).toBe(0);
+  expect(progressPercent(0)).toBe(0);
+  expect(progressPercent(99.6)).toBe(100);
+  expect(progressPercent(250)).toBe(100);
+  expect(progressPercent(null)).toBeNull();
+  expect(progressPercent(Number.POSITIVE_INFINITY)).toBeNull();
 });
 
 it("the hover card shows title, agent, status and folder", () => {

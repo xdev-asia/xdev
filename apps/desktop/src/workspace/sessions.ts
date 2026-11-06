@@ -1,4 +1,4 @@
-import { toApiError, type AccountSource, type Api, type HookDetail, type LaunchOverrides, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
+import { toApiError, type AccountSource, type AgentSubagent, type Api, type HookDetail, type LaunchOverrides, type PtyInfo, type PtyProfile, type RestoreMode } from "@/api";
 import { PtyClient } from "@/terminal/ptyClient";
 import { setPrime, takePrime } from "@/terminal/restorePrime";
 import { translate } from "@/i18n";
@@ -74,6 +74,8 @@ export interface Tab {
   overrides?: LaunchOverrides | null;
   /** The agent's own session id, from its hooks (latest wins) or the resumed id; null until known. */
   agentSession: string | null;
+  /** The sub-agents of a claude tab's session, oldest first, read from its log after its hooks fire; absent until read. */
+  subagents?: readonly AgentSubagent[];
   /** When the tab was opened or resumed, in ms. */
   openedAt: number;
   /** Pinned tabs sort first and are skipped by Close Others and Close to the Right. */
@@ -93,6 +95,12 @@ const TICK_MS = 1000;
 const TITLE_MAX = 200;
 
 export { DONE_QUIET_MS };
+
+/** How long after a hook a claude tab's sub-agents are read again; the hooks in between share one read. */
+export const ROSTER_MS = 2000;
+
+const sameRoster = (a: readonly AgentSubagent[], b: readonly AgentSubagent[]): boolean =>
+  a.length === b.length && a.every((r, i) => r.id === b[i].id && r.status === b[i].status && r.stepsTotal === b[i].stepsTotal && r.description === b[i].description && r.agentType === b[i].agentType);
 
 interface Entry {
   tab: Tab;
@@ -187,6 +195,8 @@ export class Sessions {
   private readonly announce = new Map<string, ReturnType<typeof setTimeout>>();
   // A working hooked pane with no event for STALE_MS rests.
   private readonly stale = new Map<string, ReturnType<typeof setTimeout>>();
+  // Pending sub-agent reads, per tab (`queueRoster`).
+  private readonly roster = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly unlisten: Promise<() => void>[];
   private hooksOn = true;
   // A restore runs once per app run.
@@ -212,6 +222,7 @@ export class Sessions {
       api.onPtyHook((h) => {
         this.apply(h.id, { kind: "hook", event: h.event, at: this.now(), detail: h.detail });
         this.noteSession(h.id, h.session ?? null);
+        this.queueRoster(h.id);
       }),
     ];
   }
@@ -567,6 +578,7 @@ export class Sessions {
     this.clear(this.settle, id);
     this.clear(this.announce, id);
     this.clear(this.stale, id);
+    this.clear(this.roster, id);
     this.lazy.delete(id);
     const next = this.entry(old.tab.worktree, old.tab.profileId, account, old.tab.cli, resumeOf, old.tab.title);
     // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
@@ -751,6 +763,29 @@ export class Sessions {
     const entry = this.entries.get(id);
     if (!entry || !session || entry.tab.agentSession === session) return;
     this.update(entry, { agentSession: session });
+  }
+
+  /**
+   * Reads the sub-agents of a claude tab's session again, `ROSTER_MS` after a hook. A hook carries no
+   * sub-agent id, so the session log says which ones run (`pending`) and which ended.
+   */
+  private queueRoster(id: string): void {
+    const entry = this.entries.get(id);
+    if (!entry || entry.tab.cli !== "claude" || !entry.tab.agentSession || this.roster.has(id)) return;
+    this.roster.set(
+      id,
+      setTimeout(() => {
+        this.roster.delete(id);
+        const session = this.entries.get(id)?.tab.agentSession;
+        if (!session) return;
+        // A failed read keeps the last roster; the next hook tries again.
+        this.api.agentSubagents(session).then((runs) => {
+          const e = this.entries.get(id);
+          if (!e || e.tab.agentSession !== session || sameRoster(e.tab.subagents ?? [], runs)) return;
+          this.update(e, { subagents: runs });
+        }, () => {});
+      }, ROSTER_MS),
+    );
   }
 
   /** A keystroke batch from the person. Escape or Ctrl-C on a hooked working pane may stop its turn. */
@@ -1021,10 +1056,11 @@ export class Sessions {
     this.interval = null;
     this.listeners.clear();
     this.attention.clear();
-    for (const t of [...this.settle.values(), ...this.announce.values(), ...this.stale.values()]) clearTimeout(t);
+    for (const t of [...this.settle.values(), ...this.announce.values(), ...this.stale.values(), ...this.roster.values()]) clearTimeout(t);
     this.settle.clear();
     this.announce.clear();
     this.stale.clear();
+    this.roster.clear();
     const entries = [...this.entries.values()];
     this.entries.clear();
     this.cache.clear();
@@ -1205,6 +1241,7 @@ export class Sessions {
       this.clear(this.settle, e.tab.id);
       this.clear(this.announce, e.tab.id);
       this.clear(this.stale, e.tab.id);
+      this.clear(this.roster, e.tab.id);
       this.entries.delete(e.tab.id);
       this.lazy.delete(e.tab.id);
       this.cache.delete(e.tab.worktree);
