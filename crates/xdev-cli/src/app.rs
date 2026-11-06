@@ -365,6 +365,7 @@ pub fn request(
         AppCommand::Orchestration(o) => return crate::orch::request(o, stdin),
         AppCommand::File(c) => return Ok(crate::file::request(c)),
         AppCommand::Ports(a) => return Ok(crate::ports::request(a)),
+        AppCommand::Capture(a) => return Ok(crate::capture::request(a)),
         AppCommand::Automations(c) => return crate::automations::request(c),
         AppCommand::Status(a) => ("status", json!({}), a.json),
         AppCommand::Worktree(WorktreeCommand::Ps { all, json }) => {
@@ -446,6 +447,7 @@ pub enum AppCommand {
     File(crate::file::FileCommand),
     Ports(crate::ports::PortsArgs),
     Automations(crate::automations::AutomationsCommand),
+    Capture(crate::capture::CaptureCommand),
 }
 
 pub(crate) fn text(v: &Value) -> String {
@@ -488,6 +490,7 @@ pub fn plain(method: &str, result: &Value) -> String {
         .or_else(|| crate::file::plain(method, result))
         .or_else(|| crate::ports::plain(method, result))
         .or_else(|| crate::automations::plain(method, result))
+        .or_else(|| crate::capture::plain(method, result))
     {
         return text;
     }

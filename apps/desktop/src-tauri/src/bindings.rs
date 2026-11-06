@@ -425,6 +425,11 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::run_targets::TargetsView::export_all(cfg)?;
     xdev_workspace::deploy::DeployPreset::export_all(cfg)?;
     xdev_workspace::deploy::VpsTarget::export_all(cfg)?;
+    crate::settings::CaptureSettings::export_all(cfg)?;
+    crate::capture::CapturePermission::export_all(cfg)?;
+    crate::capture::ShortcutStatus::export_all(cfg)?;
+    crate::capture::CaptureReady::export_all(cfg)?;
+    crate::capture::CaptureFailed::export_all(cfg)?;
     Ok(())
 }
 

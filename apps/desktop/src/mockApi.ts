@@ -62,6 +62,7 @@ import { createMockPipeline, type MockPipeline } from "./mockPipeline";
 import { createMockMission } from "./mockMission";
 import { createMockCharts } from "./mockCharts";
 import { createMockLsp } from "./mockLsp";
+import { captureOptionsFromLocation, createMockCapture, type MockCapture } from "./mockCapture";
 import { createMockTasks } from "./mockTasks";
 import { createMockBoard, type MockBoard } from "./mockBoard";
 import { createMockWorkspace, type MockWorkspaceSeed } from "./mockWorkspace";
@@ -413,7 +414,8 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   & Pick<MockPeers, "__peersPairRequest" | "__peersDrop" | "__peersActivity" | "__peersConfirm" | "__peersSetTheirRole" | "__peersConfirmDeny" | "__peersRise">
   & Pick<MockLicense, "__licenseCheckoutComplete" | "__licenseSet">
   & Pick<MockRemoteSsh, "__remoteDrop" | "__remoteOffline">
-  & Pick<MockTargets, "__targetsUntrusted" | "__targetsTyped">;
+  & Pick<MockTargets, "__targetsUntrusted" | "__targetsTyped">
+  & Pick<MockCapture, "__captureFail" | "__captureCancel" | "__captureSaved" | "__captureTrigger" | "__capturePrivacyOpens">;
 
 type MockOptions = {
   repo?: boolean;
@@ -1021,6 +1023,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       notify([path]);
     },
     ...createMockLsp(),
+    ...createMockCapture(captureOptionsFromLocation()),
     ...accountRouting,
     // Last: an `ssh://` worktree's file calls go to the remote mock, every other one to the workspace's.
     ...createMockRemoteSsh(workspace, () => api.sshHostsList()),

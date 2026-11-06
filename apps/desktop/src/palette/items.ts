@@ -126,6 +126,7 @@ export type ActionName =
   | "searchDocs"
   | "toggleSidebar"
   | "showDocs"
+  | "captureScreen"
   | "resumeSession"
   | "stageAll"
   | "discardAll"
@@ -142,7 +143,7 @@ export type ActionName =
   | "activatePro"
   | "refreshLicense";
 
-const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "resumeSession", "stageAll", "discardAll", "pinTab", "unpinTab", "moveTabRight", "clearTerminal", "resetTerminal", "copyTerminalContext", "newTask", "runTargets", "openServerShell", "getPro", "activatePro", "refreshLicense"];
+const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "captureScreen", "resumeSession", "stageAll", "discardAll", "pinTab", "unpinTab", "moveTabRight", "clearTerminal", "resetTerminal", "copyTerminalContext", "newTask", "runTargets", "openServerShell", "getPro", "activatePro", "refreshLicense"];
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 const HINTS: Partial<Record<ActionName, string>> = {
   searchDocs: MAC ? "⌘ K" : "Ctrl K",
