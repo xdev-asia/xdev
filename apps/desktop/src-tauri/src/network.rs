@@ -329,8 +329,9 @@ pub(crate) fn apply_to_client(
     }
 }
 
-/// `builder` with HTTP/1.1 forced when the setting asks for it. Every client
-/// xDev builds for its own requests goes through this and `apply_to_client`.
+/// `builder` with HTTP/1.1 forced when the setting asks for it. Every
+/// reqwest client xDev builds goes through this and `apply_to_client`; the
+/// ureq clients in `xdev-id` and `xdev-ai` do not yet.
 pub(crate) fn apply_http_version(
     builder: reqwest::ClientBuilder,
     s: &NetworkSettings,

@@ -21,7 +21,7 @@ regex.workspace = true
 notify-debouncer-full.workspace = true
 png = "0.18"
 # The updater's own HTTP client, for the releases list of the build picker.
-reqwest = { version = "0.13", default-features = false, features = ["json"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "http2"] }
 semver = "1"
 # A paired computer's terminal input (base64) and the hashed xDev ID (sha2).
 base64.workspace = true

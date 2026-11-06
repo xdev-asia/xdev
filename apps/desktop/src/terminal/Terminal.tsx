@@ -377,7 +377,7 @@ export function Terminal(props: {
       });
       if (text === null) return;
       e.preventDefault();
-      if (e.type === "auxclick") term.paste(text);
+      if (e.type === "mouseup") term.paste(text);
     };
     for (const type of ["mousedown", "mouseup", "auxclick"]) el.addEventListener(type, onMiddle as EventListener, true);
     // A change in Settings applies to this pane at once, with no restart.
