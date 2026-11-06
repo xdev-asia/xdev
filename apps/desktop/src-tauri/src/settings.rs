@@ -2435,10 +2435,19 @@ mod tests {
             }
             .checked(false)
         };
-        assert_eq!(bad("http://id.example.com", vec![key()]), Err("cloud_bad_url"));
-        assert_eq!(bad("http://localhost:8787", vec![key()]), Err("cloud_bad_url"));
+        assert_eq!(
+            bad("http://id.example.com", vec![key()]),
+            Err("cloud_bad_url")
+        );
+        assert_eq!(
+            bad("http://localhost:8787", vec![key()]),
+            Err("cloud_bad_url")
+        );
         assert_eq!(bad("ftp://x", vec![key()]), Err("cloud_bad_url"));
-        assert_eq!(bad("https://x.example/a", vec![key()]), Err("cloud_bad_url"));
+        assert_eq!(
+            bad("https://x.example/a", vec![key()]),
+            Err("cloud_bad_url")
+        );
         assert_eq!(
             bad("https://x.example", vec!["short".into()]),
             Err("cloud_bad_root")

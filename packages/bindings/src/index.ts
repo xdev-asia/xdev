@@ -53,6 +53,7 @@ export type { CliStatus } from "./CliStatus";
 export type { CloneProgress } from "./CloneProgress";
 export type { CloseIntent } from "./CloseIntent";
 export type { CloseRequest } from "./CloseRequest";
+export type { CloudSettings } from "./CloudSettings";
 export type { CmdError } from "./CmdError";
 export type { Commit } from "./Commit";
 export type { CommitFile } from "./CommitFile";
