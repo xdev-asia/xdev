@@ -678,3 +678,39 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Line authors gutter: one chip per line an agent wrote, a ring for lines changed outside. */
+.attr-gutter .cm-gutterElement {
+  display: grid;
+  place-items: center;
+  padding: 0 var(--x-space-1);
+}
+
+.attr-outside {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--text-3);
+  border-radius: 50%;
+}
+
+.attr-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+  margin: 0;
+  padding: var(--x-space-1) var(--x-space-3);
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .attr-gutter .ws-chip {
+    width: 8px;
+    height: 8px;
+    font-size: 0;
+    border-radius: 50%;
+  }
+}
