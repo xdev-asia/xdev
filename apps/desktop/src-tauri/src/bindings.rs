@@ -30,7 +30,7 @@ use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
 use crate::mcp_tools::{McpActivityView, McpHealth, McpToolView};
 use crate::notes::Note;
-use crate::open_in::OpenTarget;
+use crate::open_in::{OpenInView, OpenTarget};
 use crate::orchestration::{
     ReadTab, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome,
 };
@@ -164,6 +164,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     SidebarLook::export_all(cfg)?;
     StatusBarItems::export_all(cfg)?;
     OpenInSettings::export_all(cfg)?;
+    OpenInView::export_all(cfg)?;
     OpenTarget::export_all(cfg)?;
     CloneProgress::export_all(cfg)?;
     EditorSettings::export_all(cfg)?;

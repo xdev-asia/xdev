@@ -1,8 +1,9 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
+import { Select } from "@xdev-asia/ui";
 import { createMockApi, type OpenInApp } from "@/api";
 import { translate } from "@/i18n";
-import { DEFAULT_APPS, MAX_APPS, move, nextId, OpenInPage } from "./OpenInPage";
+import { DEFAULT_APPS, foundByCommand, MAX_APPS, move, nextId, OPEN_AS_CHOICES, OpenInPage } from "./OpenInPage";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void)[] }));
 vi.mock("react", async (original) => {
@@ -169,4 +170,38 @@ it("Add on a preset stores it through the same save path", async () => {
   expect(v.onChanged).toHaveBeenCalledTimes(1);
   const after = v.all().find((n) => n.props["data-preset"] === "cursor")!;
   expect(nodes(after).some((n) => n.props["data-act"] === "add-preset")).toBe(false);
+});
+
+it("marks each app and preset found or missing, and disables a missing preset", async () => {
+  const v = await view([...DEFAULT_APPS, { id: "app-1", label: "Nano", command: "nano", args: [] }]);
+  const badge = (app: string) => nodes(v.all().find((n) => n.props["data-app"] === app)!).find((n) => n.props.status)?.props.children;
+  expect(badge("vscode")).toBe(en("openIn.found"));
+  expect(badge("app-1")).toBe(en("openIn.missing"));
+  const reasons = v.all().filter((n) => n.props["data-found"] === "false");
+  expect(reasons.map((n) => n.props.children)).toContain(en("openIn.missing.reason"));
+  // Presets: Cursor is found, Zed and Windsurf are not.
+  const add = (cmd: string) => nodes(v.all().find((n) => n.props["data-preset"] === cmd)!).find((n) => n.props["data-act"] === "add-preset")!;
+  expect(add("cursor").props.disabled).toBe(false);
+  expect(add("zed").props.disabled).toBe(true);
+  expect(add("windsurf").props.disabled).toBe(true);
+});
+
+it("foundByCommand keys apps by their command and presets by theirs", () => {
+  const apps = [{ id: "a", label: "A", command: " nano ", args: [] }];
+  expect(foundByCommand({ apps, found: [{ id: "a", found: false }], presets: [{ id: "code", found: true }] })).toEqual({ nano: false, code: true });
+});
+
+it("Open agents as starts at a new tab and stores the choice without touching other Agents settings", async () => {
+  const v = await view();
+  const select = () => v.all().find((n) => n.type === Select && n.props.name === "openAs")!;
+  expect(select().props.value).toBe("tab");
+  expect((select().props.options as { value: string }[]).map((o) => o.value)).toEqual(OPEN_AS_CHOICES);
+  await v.api.agentsSettingsPut({ ...(await v.api.agentsSettings()), sleepAfterMin: 5 });
+  select().props.onChange({ target: { value: "splitRight" } });
+  await tick();
+  const stored = await v.api.agentsSettings();
+  expect(stored.openAs).toBe("splitRight");
+  expect(stored.sleepAfterMin).toBe(5);
+  expect(v.onChanged).toHaveBeenCalledTimes(1);
+  expect(select().props.value).toBe("splitRight");
 });

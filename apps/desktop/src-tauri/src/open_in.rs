@@ -29,10 +29,59 @@ pub enum OpenTarget {
     FileManager,
 }
 
-/// Settings → Open In Apps as stored; the default list when nothing is.
+/// The programs the Open In page offers as one-click presets, by command.
+const PRESET_COMMANDS: [&str; 4] = ["code", "cursor", "zed", "windsurf"];
+
+/// Whether one Open In app's program was found on this computer.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct OpenInFound {
+    /// The app's id in the list; for a preset, its command.
+    pub id: String,
+    /// The program was found on `PATH` (or at its absolute path).
+    pub found: bool,
+}
+
+/// The Open In list with, for each app, whether its program is installed.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct OpenInView {
+    pub apps: Vec<crate::settings::OpenInApp>,
+    /// One entry per app, same order as `apps`.
+    pub found: Vec<OpenInFound>,
+    /// The one-click presets, by command, found or not.
+    pub presets: Vec<OpenInFound>,
+}
+
+/// `apps` with the same lookup `open_in` uses to start them.
+fn detect(apps: &OpenInSettings, search: &Search) -> OpenInView {
+    OpenInView {
+        apps: apps.apps.clone(),
+        found: apps
+            .apps
+            .iter()
+            .map(|a| OpenInFound {
+                id: a.id.clone(),
+                found: search.find(&a.command).is_some(),
+            })
+            .collect(),
+        presets: PRESET_COMMANDS
+            .iter()
+            .map(|c| OpenInFound {
+                id: (*c).to_owned(),
+                found: search.find(c).is_some(),
+            })
+            .collect(),
+    }
+}
+
+/// Settings → Open In Apps as stored (the default list when nothing is),
+/// each app marked found or not on this computer.
 #[tauri::command(async)]
-pub fn open_in_settings(app: AppHandle) -> OpenInSettings {
-    settings_store::read(&app).open_in
+pub fn open_in_settings(app: AppHandle) -> OpenInView {
+    detect(&settings_store::read(&app).open_in, &Search::from_env())
 }
 
 /// Stores the Open In list and returns what was stored; `bad_arg` names
@@ -269,6 +318,36 @@ mod tests {
         let read = store.read();
         assert_eq!(read.open_in, OpenInSettings::default());
         assert!(read.vault_prompted);
+    }
+
+    #[test]
+    fn detection_marks_each_app_found_or_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = if cfg!(windows) { "edit.cmd" } else { "edit" };
+        std::fs::write(dir.path().join(name), b"").unwrap();
+        let search = Search {
+            path: Some(std::env::join_paths([dir.path()]).unwrap()),
+            pathext: Some(".CMD".into()),
+        };
+        let apps = list(vec![app("a", "edit"), app("b", "no-such-editor")]);
+        let view = detect(&apps, &search);
+        assert_eq!(view.apps, apps.apps);
+        let ids: Vec<_> = view.presets.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, PRESET_COMMANDS);
+        assert!(view.presets.iter().all(|p| !p.found));
+        assert_eq!(
+            view.found,
+            vec![
+                OpenInFound {
+                    id: "a".into(),
+                    found: true
+                },
+                OpenInFound {
+                    id: "b".into(),
+                    found: false
+                },
+            ]
+        );
     }
 
     #[test]

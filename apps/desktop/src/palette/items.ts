@@ -145,10 +145,11 @@ export type ActionName =
   | "refreshLicense"
   | "remoteAdd"
   | "remoteReconnect"
+  | "replayTour"
   | "openTaskBoard"
   | "decomposeGoal";
 
-const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "captureScreen", "annotateClipboard", "resumeSession", "stageAll", "discardAll", "pinTab", "unpinTab", "moveTabRight", "clearTerminal", "resetTerminal", "copyTerminalContext", "newTask", "openTaskBoard", "decomposeGoal", "runTargets", "openServerShell", "getPro", "activatePro", "refreshLicense", "remoteAdd", "remoteReconnect"];
+const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "captureScreen", "annotateClipboard", "resumeSession", "stageAll", "discardAll", "pinTab", "unpinTab", "moveTabRight", "clearTerminal", "resetTerminal", "copyTerminalContext", "newTask", "openTaskBoard", "decomposeGoal", "runTargets", "openServerShell", "getPro", "activatePro", "refreshLicense", "remoteAdd", "remoteReconnect", "replayTour"];
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 const HINTS: Partial<Record<ActionName, string>> = {
   searchDocs: MAC ? "⌘ K" : "Ctrl K",

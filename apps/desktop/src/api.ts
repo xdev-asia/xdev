@@ -79,6 +79,9 @@ import type {
   OnNameTaken,
   SchemePreview,
   OpenInSettings,
+  OpenInView,
+  OpenAs,
+  OpenInFound,
   OpenTarget,
   CloneProgress,
   NestedRepo,
@@ -616,6 +619,9 @@ export type {
   StartupPreset,
   OpenInApp,
   OpenInSettings,
+  OpenInView,
+  OpenAs,
+  OpenInFound,
   OpenTarget,
   CloneProgress,
   NestedRepo,
@@ -1249,7 +1255,7 @@ export interface Api {
   // Open in. Settings → Open In Apps; the put rejects with `bad_arg` (at most 8 apps, unique ids,
   // label 1..=40 chars, command 1..=260 chars without arguments, at most 8 args of 200 chars) and
   // returns what was stored.
-  openInSettings(): Promise<OpenInSettings>;
+  openInSettings(): Promise<OpenInView>;
   openInSettingsPut(v: OpenInSettings): Promise<OpenInSettings>;
   // Opens a known repo or worktree folder in an Open In app or the file manager. Rejects with
   // `worktree_unknown`, `not_found` (no such app id, or its program is missing; the detail names

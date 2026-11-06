@@ -9,15 +9,15 @@ vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n
 const en = (key: string) => translate("en", key);
 
 it("lists shortcuts, the links, then about and restart, in that order", () => {
-  expect(HELP_ITEMS.map((i) => i.id)).toEqual(["shortcuts", "separator", "docs", "getting-started", "changelog", "report-issue", "source", "separator", "check-updates", "reload", "devtools", "separator", "about", "restart"]);
+  expect(HELP_ITEMS.map((i) => i.id)).toEqual(["shortcuts", "replay-tour", "separator", "docs", "getting-started", "changelog", "report-issue", "source", "separator", "check-updates", "reload", "devtools", "separator", "about", "restart"]);
 });
 
 it("renders every item as a menu item with its label", () => {
   const html = renderToStaticMarkup(<HelpMenu onPick={() => {}} />);
-  for (const key of ["shortcuts", "docs", "gettingStarted", "changelog", "reportIssue", "source", "checkUpdates", "reload", "devtools", "about", "restart"]) {
+  for (const key of ["shortcuts", "replayTour", "docs", "gettingStarted", "changelog", "reportIssue", "source", "checkUpdates", "reload", "devtools", "about", "restart"]) {
     expect(html).toContain(en(`shell.help.${key}`));
   }
-  expect(html.match(/role="menuitem"/g)).toHaveLength(11);
+  expect(html.match(/role="menuitem"/g)).toHaveLength(12);
   expect(html.match(/role="separator"/g)).toHaveLength(3);
 });
 

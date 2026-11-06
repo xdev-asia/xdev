@@ -95,6 +95,7 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   showTitlebarName: true,
   appIcon: "default",
   appTheme: "",
+  tourSeen: false,
 };
 /** `UI_FONT_MAX` in Rust. */
 export const UI_FONT_MAX = 120;
@@ -119,6 +120,7 @@ export const AGENTS_SETTINGS_DEFAULTS: AgentsSettings = {
   workspaceTrust: true,
   pathPrepend: [],
   pathAppend: [],
+  openAs: "tab",
 };
 
 /** The system PATH the mock reports; the last folder is one that does not exist. */

@@ -84,4 +84,8 @@ appIcon: string,
  * Settings → Appearance → Theme colours: the id of the saved app theme; empty is Default.
  * Only a valid file stem is kept (`[a-z0-9-]{1,33}`).
  */
-appTheme: string, };
+appTheme: string, 
+/**
+ * The first-terminal coachmark tour was finished or skipped.
+ */
+tourSeen: boolean, };

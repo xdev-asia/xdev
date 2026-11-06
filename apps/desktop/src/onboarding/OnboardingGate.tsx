@@ -4,6 +4,7 @@ import { OnboardingFlow } from "./OnboardingFlow";
 import { finishOnboarding, skipOnboarding, useOnboarding, type OnboardingState } from "./onboardingStore";
 import { isFirstRun } from "./onboardingState";
 import { SetupGuide } from "./SetupGuide";
+import { Tour } from "./Tour";
 
 /** The wizard shows alone on a first run (neither done nor skipped), and over the app when resumed. */
 export const wizardAlone = (s: OnboardingState): boolean => s.wizardOpen && isFirstRun(s.saved);
@@ -21,6 +22,7 @@ export function OnboardingGate(props: { api: Api; children: ReactNode }): JSX.El
       {props.children}
       {wizardOver(state) && <div className="onb-over">{flow}</div>}
       <SetupGuide api={props.api} />
+      <Tour api={props.api} />
     </>
   );
 }

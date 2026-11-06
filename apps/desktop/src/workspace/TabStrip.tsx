@@ -519,6 +519,7 @@ export function TabStrip(props: {
         <button
           type="button"
           className="ws-icon-btn"
+          data-tour="tab-add"
           aria-label={t("workspace.tabs.new")}
           title={withChord(t, t("workspace.tabs.new"), "tab.new")}
           aria-haspopup="menu"

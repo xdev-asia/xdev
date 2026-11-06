@@ -4,14 +4,16 @@ import { Icon, Menu, Popover } from "@xdev-asia/ui";
 import type { MenuEntry } from "@xdev-asia/ui";
 import type { Api, HelpLink } from "@/api";
 import { useI18n } from "@/i18n";
+import { replayTour } from "@/onboarding/tourStore";
 
-export type HelpPick = "shortcuts" | HelpLink | "check-updates" | "reload" | "devtools" | "about" | "restart";
+export type HelpPick = "shortcuts" | "replay-tour" | HelpLink | "check-updates" | "reload" | "devtools" | "about" | "restart";
 
 type HelpItem = { id: HelpPick; key: string } | { id: "separator" };
 
 /** The Help menu, top to bottom. */
 export const HELP_ITEMS: HelpItem[] = [
   { id: "shortcuts", key: "shortcuts" },
+  { id: "replay-tour", key: "replayTour" },
   { id: "separator" },
   { id: "docs", key: "docs" },
   { id: "getting-started", key: "gettingStarted" },
@@ -41,6 +43,8 @@ export function runHelpPick(
   switch (pick) {
     case "shortcuts":
       return h.openSettings("keys");
+    case "replay-tour":
+      return replayTour();
     case "check-updates":
       return h.openUpdates();
     case "about":
