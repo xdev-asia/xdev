@@ -6069,6 +6069,7 @@
   "floating.empty.cta": "Terminal mới",
   "floating.homeFailed": "Không tìm thấy thư mục home: {message}",
   "keys.action.floating.toggle": "Hiện hoặc ẩn không gian nổi",
+  "keys.action.dictation.toggle": "Đọc chính tả",
   "palette.action.toggleFloating": "Hiện hoặc ẩn không gian nổi",
   "palette.action.toggleFloating.keywords": "floating global scratch terminal browser note nổi",
   "floating.tab.close": "Đóng {name}",

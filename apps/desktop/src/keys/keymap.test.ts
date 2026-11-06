@@ -420,3 +420,12 @@ it("a history key runs its handler, and passes on when there is nowhere to go", 
   expect(forward).toHaveBeenCalledTimes(1);
   expect(passed.event.defaultPrevented).toBe(false);
 });
+
+it("a focused terminal hands the dictation chord to the app, but keeps Ctrl+E", () => {
+  for (const policy of ["app-first", "terminal-first"] as const) {
+    setKeySettings({ terminalPolicy: policy, terminalHints: true });
+    expect(appOwnsKey(ev({ ctrlKey: true, shiftKey: true, code: "Space" }), false)).toBe("dictation.toggle");
+    expect(appOwnsKey(ev({ metaKey: true, code: "KeyE" }), true)).toBe("dictation.toggle");
+    expect(appOwnsKey(ev({ ctrlKey: true, code: "KeyE" }), false)).toBeNull();
+  }
+});

@@ -6069,6 +6069,7 @@
   "floating.empty.cta": "New terminal",
   "floating.homeFailed": "Could not find your home folder: {message}",
   "keys.action.floating.toggle": "Show or hide the floating workspace",
+  "keys.action.dictation.toggle": "Dictate",
   "palette.action.toggleFloating": "Show or hide the floating workspace",
   "palette.action.toggleFloating.keywords": "floating global scratch terminal browser note",
   "floating.tab.close": "Close {name}",

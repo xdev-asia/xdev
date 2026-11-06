@@ -130,6 +130,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("quickCommands.open", "app", ["Mod+Shift+;"]),
   def("composer.open", "agents", ["Mod+Shift+M"]),
   def("floating.toggle", "view", ["Mod+Alt+A"]),
+  // Not Mod+E off macOS: Ctrl+E is readline's end of line, which a focused terminal keeps.
+  def("dictation.toggle", "app", { mac: ["Mod+E"], all: ["Ctrl+Shift+Space"] }),
 ];
 
 /** The default chords of `def` on `p`, as written in the list (not normalized). */

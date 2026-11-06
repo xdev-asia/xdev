@@ -70,7 +70,9 @@ export type ActionId =
   | "quickOpen.open"
   // Opens the prompt composer on the focused terminal tab; the composer host registers the handler.
   | "composer.open"
-  | "floating.toggle";
+  | "floating.toggle"
+  // Starts or stops voice dictation; the dictation host registers the handler.
+  | "dictation.toggle";
 
 export interface Binding {
   action: ActionId;
