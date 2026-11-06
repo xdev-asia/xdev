@@ -55,7 +55,7 @@ export interface BrowserTabProps {
 export function BrowserTab({ api, entry, visible }: BrowserTabProps): JSX.Element {
   const { t } = useI18n();
   const id = entry.id;
-  const overlay = useAppOverlay();
+  const overlay = useAppOverlay(id);
   const body = useRef<HTMLDivElement | null>(null);
   const showing = useRef(false);
   const placedAt = useRef<BrowserBounds | null>(null);

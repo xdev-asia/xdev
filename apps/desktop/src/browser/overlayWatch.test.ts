@@ -1,5 +1,19 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { OVERLAY_SELECTOR, hasOverlay, holdOverlay, overlayOpen, pageShown, recheckOverlay, resetOverlayForTests, subscribeOverlay } from "./overlayWatch";
+import {
+  FLOATING_SELECTOR,
+  OVERLAY_SELECTOR,
+  PAGE_SELECTOR,
+  coveredPages,
+  hasOverlay,
+  holdOverlay,
+  overlaps,
+  overlayOpen,
+  overlayOver,
+  pageShown,
+  recheckOverlay,
+  resetOverlayForTests,
+  subscribeOverlay,
+} from "./overlayWatch";
 
 afterEach(() => resetOverlayForTests());
 
@@ -40,6 +54,68 @@ describe("the overlay rule", () => {
     expect(hasOverlay(root([{ hiddenAncestor: true }]))).toBe(false);
     expect(hasOverlay(root([{ overlayAttr: "false" }]))).toBe(false);
     expect(hasOverlay(root([{ hiddenAncestor: true }, { overlayAttr: "" }]))).toBe(true);
+  });
+});
+
+// A page at x 100..500, y 100..400, and floating parts placed around it.
+type Floating = { box: [number, number, number, number]; inPage?: boolean; hidden?: boolean; invisible?: boolean };
+const rect = ([left, top, width, height]: [number, number, number, number]) => ({ left, top, width, height, right: left + width, bottom: top + height }) as DOMRect;
+const page = (tab: string, box: [number, number, number, number]) => ({
+  getAttribute: (name: string) => (name === "data-tab" ? tab : null),
+  getBoundingClientRect: () => rect(box),
+});
+const floating = (f: Floating) => ({
+  closest: (q: string) => (q === "[hidden]" && f.hidden) || (q === ".browser-page" && f.inPage) ? {} : null,
+  getBoundingClientRect: () => rect(f.box),
+  checkVisibility: () => !f.invisible,
+});
+const screen = (pages: ReturnType<typeof page>[], parts: Floating[]): ParentNode =>
+  ({
+    querySelectorAll(sel: string) {
+      if (sel === PAGE_SELECTOR) return pages;
+      expect(sel).toBe(FLOATING_SELECTOR);
+      return parts.map(floating);
+    },
+  }) as unknown as ParentNode;
+
+describe("floating parts", () => {
+  it("the selector names status lines, tooltips and the toast stack", () => {
+    for (const part of ['[role="status"]', '[role="tooltip"]', ".ws-toasts"]) expect(FLOATING_SELECTOR).toContain(part);
+    expect(OVERLAY_SELECTOR).not.toContain("status");
+  });
+
+  it("boxes overlap only when they share some area", () => {
+    const a = { left: 0, top: 0, right: 10, bottom: 10 };
+    expect(overlaps(a, { left: 5, top: 5, right: 20, bottom: 20 })).toBe(true);
+    expect(overlaps(a, { left: 10, top: 0, right: 20, bottom: 10 })).toBe(false);
+    expect(overlaps(a, { left: 0, top: 11, right: 10, bottom: 20 })).toBe(false);
+  });
+
+  it("hide only the page they lie over", () => {
+    const pages = [page("browser:a", [100, 100, 400, 300]), page("browser:b", [600, 100, 400, 300])];
+    // A toast over the corner of page a.
+    expect([...coveredPages(screen(pages, [{ box: [400, 350, 150, 60] }]))]).toEqual(["browser:a"]);
+    // A status line in the footer, below both pages.
+    expect(coveredPages(screen(pages, [{ box: [0, 700, 1200, 24] }])).size).toBe(0);
+    // A toast across both.
+    expect([...coveredPages(screen(pages, [{ box: [300, 150, 400, 40] }]))].sort()).toEqual(["browser:a", "browser:b"]);
+  });
+
+  it("skip the page's own note, hidden parts and screen-reader-only regions", () => {
+    const pages = [page("browser:a", [100, 100, 400, 300])];
+    const over: [number, number, number, number] = [200, 200, 100, 40];
+    expect(coveredPages(screen(pages, [{ box: over, inPage: true }])).size).toBe(0);
+    expect(coveredPages(screen(pages, [{ box: over, hidden: true }])).size).toBe(0);
+    expect(coveredPages(screen(pages, [{ box: over, invisible: true }])).size).toBe(0);
+    expect(coveredPages(screen(pages, [{ box: [200, 200, 1, 1] }])).size).toBe(0);
+    expect(coveredPages(screen([], [{ box: over }])).size).toBe(0);
+  });
+
+  it("a modal overlay still hides every page", () => {
+    holdOverlay();
+    expect(overlayOver("browser:a")).toBe(true);
+    resetOverlayForTests();
+    expect(overlayOver("browser:a")).toBe(false);
   });
 });
 
