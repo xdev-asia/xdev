@@ -24,6 +24,7 @@ const subscribe = (l: () => void): (() => void) => {
 };
 const read = (): WallState => state;
 
+export const getWallState = read;
 export const useWallState = (): WallState => useSyncExternalStore(subscribe, read, read);
 
 export function setWallVersion(appVersion: string): void {

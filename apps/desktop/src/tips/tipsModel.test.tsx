@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Button } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { TipsModalView } from "./TipsModal";
-import { CLI_SKILL_TIP, LEGACY_CLI_TIP_KEY, loadSeenTips, loadTipsEnabled, markTipSeen, nextTip, saveTipsEnabled, TIPS, tipsGate } from "./tipsModel";
+import { countLaunch, dayKey, markTipDay, tipShownOn, CLI_SKILL_TIP, LEGACY_CLI_TIP_KEY, loadSeenTips, loadTipsEnabled, markTipSeen, nextTip, saveTipsEnabled, TIPS, tipsGate } from "./tipsModel";
 
 vi.mock("@/i18n", async (original) => ({ ...(await original<typeof import("@/i18n")>()), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
@@ -37,7 +37,7 @@ describe("which tip comes next", () => {
 });
 
 describe("the startup gate", () => {
-  const open = { enabled: true, shownThisRun: false, suppressed: false, settled: true };
+  const open = { enabled: true, shownThisRun: false, suppressed: false, settled: true, launch: 2, hasProject: true, shownToday: false };
   it("opens when tips are on, none showed this run, nothing has the screen and the start settled", () => {
     expect(tipsGate(open)).toBe(true);
   });
@@ -46,6 +46,30 @@ describe("the startup gate", () => {
     expect(tipsGate({ ...open, shownThisRun: true })).toBe(false);
     expect(tipsGate({ ...open, suppressed: true })).toBe(false);
     expect(tipsGate({ ...open, settled: false })).toBe(false);
+  });
+  it("stays closed on the first launch, before a project exists, and after a tip today", () => {
+    expect(tipsGate({ ...open, launch: 1 })).toBe(false);
+    expect(tipsGate({ ...open, hasProject: false })).toBe(false);
+    expect(tipsGate({ ...open, shownToday: true })).toBe(false);
+  });
+});
+
+describe("one tip a day and the launch count", () => {
+  it("remembers the calendar day a tip showed", () => {
+    const store = memory();
+    const morning = new Date(2026, 10, 6, 8, 0);
+    expect(tipShownOn(morning, store)).toBe(false);
+    markTipDay(morning, store);
+    expect(tipShownOn(new Date(2026, 10, 6, 23, 59), store)).toBe(true);
+    expect(tipShownOn(new Date(2026, 10, 7, 0, 1), store)).toBe(false);
+    expect(dayKey(new Date(2026, 0, 5))).toBe("2026-01-05");
+  });
+  it("counts launches from 1, and treats unreadable storage as a later launch", () => {
+    const store = memory();
+    expect(countLaunch(store)).toBe(1);
+    expect(countLaunch(store)).toBe(2);
+    expect(countLaunch(memory({ "xdev.launches": "x" }))).toBe(1);
+    expect(countLaunch(null)).toBe(2);
   });
 });
 

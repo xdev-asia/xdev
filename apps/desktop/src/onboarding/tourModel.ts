@@ -29,12 +29,15 @@ export interface TourGate {
   terminal: boolean;
   /** The tour is already running. */
   running: boolean;
+  /** The person is idle and the terminal is not brand new. A replay does not wait for it. */
+  calm: boolean;
 }
 
 /** Whether to start the tour now. A run in progress is never restarted. */
 export function shouldStart(g: TourGate): boolean {
   if (g.running || g.onboarding || !g.terminal || g.seen === null) return false;
-  return g.replay || !g.seen;
+  if (g.replay) return true;
+  return !g.seen && g.calm;
 }
 
 /** The step to show, or null when the tour ends: a missing anchor ends it (no card pointing at nothing). */

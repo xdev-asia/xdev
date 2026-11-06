@@ -1,7 +1,9 @@
 import { Coachmark } from "@xdev-asia/ui";
 import { useCallback, useEffect, useState } from "react";
 import type { JSX } from "react";
+import { getWallState, wallHasNew } from "@/featureWall/featureWallStore";
 import { useI18n } from "@/i18n";
+import { calmWait, claimInterruption, lastInputAt } from "./interruptions";
 import { FEATURE_TOURS, liveSteps, loadSeenTours, markTourSeen, tourMayStart, typingInTerminal, type FeatureTourId } from "./featureTours";
 import { useFeatureTourToken } from "./featureTourStore";
 import type { TourStep } from "./tourModel";
@@ -31,9 +33,12 @@ export function FeatureTour(props: { tour: FeatureTourId }): JSX.Element | null 
     const tryStart = (): boolean => {
       const seen = loadSeenTours().has(tour);
       if (seen) return true;
-      if (!tourMayStart({ seen, running: false, typing: typingInTerminal(document.activeElement) })) return false;
+      const calm = calmWait({ now: Date.now(), lastInput: lastInputAt(), paneSince: null }) === 0;
+      if (!tourMayStart({ seen, running: false, typing: typingInTerminal(document.activeElement), calm })) return false;
       const live = liveSteps(FEATURE_TOURS[tour], drawn);
       if (live.length === 0) return false;
+      // A replay is asked for (`replay` > 0 after "Replay feature tours"); otherwise one slot per launch.
+      if (replay === 0 && !claimInterruption("tour", wallHasNew(getWallState()) ? ["wall"] : [])) return false;
       markTourSeen(tour);
       setIndex(0);
       setSteps(live);
@@ -45,7 +50,9 @@ export function FeatureTour(props: { tour: FeatureTourId }): JSX.Element | null 
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
     const onBlur = (): void => void (tryStart() && observer.disconnect());
     document.addEventListener("focusout", onBlur);
+    const poll = setInterval(() => void (tryStart() && clearInterval(poll)), 500);
     return () => {
+      clearInterval(poll);
       observer.disconnect();
       document.removeEventListener("focusout", onBlur);
     };

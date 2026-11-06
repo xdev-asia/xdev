@@ -5,7 +5,7 @@ import { loadSeen, markSeen, shouldStart, stepToShow, TOUR_STEPS, type TourGate 
 import { replayCount, replayTour, subscribeReplay } from "./tourStore";
 import { runHelpPick, HELP_ITEMS } from "@/workspace/HelpMenu";
 
-const ready: TourGate = { seen: false, replay: false, onboarding: false, terminal: true, running: false };
+const ready: TourGate = { seen: false, replay: false, onboarding: false, terminal: true, running: false, calm: true };
 const has = (...found: string[]) => (selector: string) => found.includes(selector);
 
 describe("when the tour starts", () => {
@@ -14,6 +14,10 @@ describe("when the tour starts", () => {
   });
   it("shows once: not again when seen", () => {
     expect(shouldStart({ ...ready, seen: true })).toBe(false);
+  });
+  it("waits until the person is idle and the terminal is not brand new, but a replay does not", () => {
+    expect(shouldStart({ ...ready, calm: false })).toBe(false);
+    expect(shouldStart({ ...ready, calm: false, seen: true, replay: true })).toBe(true);
   });
   it("waits for the stored flag", () => {
     expect(shouldStart({ ...ready, seen: null })).toBe(false);

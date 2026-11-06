@@ -2,11 +2,12 @@ import { Button, Dialog } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type SkillStatus } from "@/api";
-import { wallHasNew, useWallState } from "@/featureWall/featureWallStore";
+import { getWallState, wallHasNew, useWallState } from "@/featureWall/featureWallStore";
 import { useI18n } from "@/i18n";
 import { typingInTerminal } from "@/onboarding/featureTours";
-import { loadSeenTips, markTipSeen, nextTip, SETTLE_MS, TIPS, tipsGate, type Tip, type TipContext } from "./tipsModel";
-import { markTipShownThisRun, setTipsEnabled, tipShownThisRun, useTipsEnabled } from "./tipsStore";
+import { claimInterruption } from "@/onboarding/interruptions";
+import { loadSeenTips, markTipDay, markTipSeen, nextTip, SETTLE_MS, TIPS, tipShownOn, tipsGate, type Tip, type TipContext } from "./tipsModel";
+import { launchNumber, markTipShownThisRun, setTipsEnabled, tipShownThisRun, useTipsEnabled } from "./tipsStore";
 
 export type TipPhase = "idle" | "installing" | "done";
 
@@ -67,10 +68,10 @@ export function TipsModalView(props: {
 }
 
 /**
- * Offers one tip per launch, once the start has settled and nothing else has the screen (`suppressed`: onboarding).
- * Each tip shown is remembered; "Don't show tips" turns them off until Settings → General turns them on.
+ * Offers one tip per launch and per day, once the start has settled and nothing else has the screen (`suppressed`:
+ * onboarding). Not on the first launch, and not before the person has a project. Each tip shown is remembered; "Don't show tips" turns them off until Settings → General turns them on.
  */
-export function TipsHost(props: { api: Pick<Api, "orchestrationSkillStatus" | "orchestrationSkillInstall">; suppressed?: boolean }): JSX.Element | null {
+export function TipsHost(props: { api: Pick<Api, "orchestrationSkillStatus" | "orchestrationSkillInstall" | "workspaceSidebar">; suppressed?: boolean }): JSX.Element | null {
   const wall = useWallState();
   // The what's new wall comes first: tips wait while it is open or about to open.
   const suppressed = (props.suppressed ?? false) || wall.open || wallHasNew(wall);
@@ -82,6 +83,8 @@ export function TipsHost(props: { api: Pick<Api, "orchestrationSkillStatus" | "o
   const [phase, setPhase] = useState<TipPhase>("idle");
   const [error, setError] = useState<string>();
   const [retry, setRetry] = useState(0);
+  const [launch] = useState(launchNumber);
+  const [hasProject, setHasProject] = useState(false);
   const ctx: TipContext = { cliSkillInstalled: status === null ? null : status.installed };
 
   // A failed read leaves the status empty, so the skill tip stays back.
@@ -96,14 +99,28 @@ export function TipsHost(props: { api: Pick<Api, "orchestrationSkillStatus" | "o
     };
   }, [api]);
 
+  // The projects are read when the start settles; a failed read counts as none.
   useEffect(() => {
     if (suppressed) return;
-    const timer = setTimeout(() => setSettled(true), SETTLE_MS);
-    return () => clearTimeout(timer);
-  }, [suppressed]);
+    let live = true;
+    const timer = setTimeout(() => {
+      api.workspaceSidebar().then(
+        (items) => {
+          if (!live) return;
+          setHasProject(items.length > 0);
+          setSettled(true);
+        },
+        () => undefined,
+      );
+    }, SETTLE_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [suppressed, api]);
 
   useEffect(() => {
-    if (tip || !tipsGate({ enabled, shownThisRun: tipShownThisRun(), suppressed, settled })) return;
+    if (tip || !tipsGate({ enabled, shownThisRun: tipShownThisRun(), suppressed, settled, launch, hasProject, shownToday: tipShownOn(new Date()) })) return;
     // A tip never takes the keyboard from a terminal: it waits for the focus to leave.
     if (typingInTerminal(document.activeElement)) {
       const again = (): void => setRetry((n) => n + 1);
@@ -112,7 +129,9 @@ export function TipsHost(props: { api: Pick<Api, "orchestrationSkillStatus" | "o
     }
     const first = nextTip(TIPS, loadSeenTips(), ctx);
     if (!first) return;
+    if (!claimInterruption("tip", wallHasNew(getWallState()) ? ["wall"] : [])) return;
     markTipSeen(first.id);
+    markTipDay(new Date());
     markTipShownThisRun();
     setTip(first);
     // `ctx` is read as of now; it is not a trigger.

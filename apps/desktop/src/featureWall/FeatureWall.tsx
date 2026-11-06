@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import type { JSX } from "react";
 import type { Api } from "@/api";
 import { useI18n } from "@/i18n";
-import { markTipShownThisRun } from "@/tips/tipsStore";
+import { claimInterruption } from "@/onboarding/interruptions";
 import { SETTLE_MS } from "@/tips/tipsModel";
 import { releasesFor, wallStart } from "./featureWallModel";
 import { closeFeatureWall, openFeatureWall, rememberWallVersion, setWallVersion, tryFeature, useWallState } from "./featureWallStore";
@@ -67,8 +67,8 @@ export function FeatureWallHost(props: { api: Pick<Api, "appVersion">; firstRun:
     if (start === "remember") return rememberWallVersion(version);
     if (start !== "open" || firstRun) return;
     const timer = setTimeout(() => {
-      markTipShownThisRun();
-      openFeatureWall();
+      // One interruption per launch: a tour or a tip that came first keeps the wall for the next start.
+      if (claimInterruption("wall")) openFeatureWall();
     }, SETTLE_MS);
     return () => clearTimeout(timer);
   }, [version, start, firstRun]);
