@@ -7132,6 +7132,7 @@ dependencies = [
  "xdev-input-source",
  "xdev-ipc",
  "xdev-kit",
+ "xdev-license",
  "xdev-link",
  "xdev-lsp",
  "xdev-mcp",

@@ -411,6 +411,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_lsp::Symbol::export_all(cfg)?;
     xdev_lsp::Diagnostic::export_all(cfg)?;
     xdev_lsp::State::export_all(cfg)?;
+    xdev_license::LicenseState::export_all(cfg)?;
+    xdev_license::DeviceRow::export_all(cfg)?;
     Ok(())
 }
 

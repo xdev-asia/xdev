@@ -328,6 +328,7 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 import type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView } from "@xdev/bindings";
+import type { DeviceRow, LicenseState } from "@xdev/bindings";
 import type { GateKind, Matched, MatchRow, Pipeline, RevealTab, RouteTarget, StageRun, StageSpec, StageStatus, SwarmRow, SwarmStart, SwarmStopped } from "@xdev/bindings";
 
 export { createMockApi };
@@ -843,7 +844,14 @@ export type ErrorCode =
   | "lsp_unsupported"
   | "board_conflict"
   | "board_bad_id"
-  | "board_too_large";
+  | "board_too_large"
+  | "license_keychain"
+  | "license_unavailable"
+  | "license_device_revoked"
+  | "license_no_seat"
+  | "license_transfer_limit"
+  | "license_server_key"
+  | "license_wrong_device";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1959,6 +1967,27 @@ export interface Api {
   boardLinks(repo: string): Promise<TaskLink[]>;
   /** Sets, or with `null` clears, the tab working on task `id`. */
   boardLinkSet(repo: string, id: string, link: TaskLink | null): Promise<void>;
+  /** The license as this device sees it now, checked offline from the cached token. */
+  licenseState(): Promise<LicenseState>;
+  /** Asks the service for a fresh token. Offline, resolves with the cached state. */
+  licenseRefresh(): Promise<LicenseState>;
+  /**
+   * Puts this device on a free Pro seat. Rejects `license_no_seat`, `license_device_revoked`,
+   * `license_keychain` or `license_unavailable`.
+   */
+  licenseActivate(grant?: string): Promise<LicenseState>;
+  /** Frees the Pro seat of this device, or of `deviceId`. Rejects `license_transfer_limit`. */
+  licenseDeactivate(deviceId?: string): Promise<LicenseState>;
+  /** Every device on the account. */
+  licenseDevices(): Promise<DeviceRow[]>;
+  /** Opens checkout for `product` in the browser; resolves once the purchase reaches this device. */
+  licenseBuy(product: string): Promise<void>;
+  /** Stops waiting for a checkout; the pending `licenseBuy` rejects `cancelled`. */
+  licenseBuyCancel(): Promise<void>;
+  /** False for an unknown id. Only Pro surfaces ask; free features never do. */
+  licenseAllows(feature: string): Promise<boolean>;
+  /** `license://changed`, with the full state, after every change. */
+  onLicenseChanged(cb: (s: LicenseState) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2170,6 +2199,13 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "board_conflict",
   "board_bad_id",
   "board_too_large",
+  "license_keychain",
+  "license_unavailable",
+  "license_device_revoked",
+  "license_no_seat",
+  "license_transfer_limit",
+  "license_server_key",
+  "license_wrong_device",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2796,6 +2832,15 @@ const tauriApi: Api = {
   boardCreateMany: (repo, drafts) => call("board_create_many", { repo, drafts }),
   boardLinks: (repo) => call("board_links", { repo }),
   boardLinkSet: (repo, id, link) => call("board_link_set", { repo, id, link }),
+  licenseState: () => call("license_state"),
+  licenseRefresh: () => call("license_refresh"),
+  licenseActivate: (grant) => call("license_activate", { grant: grant ?? null }),
+  licenseDeactivate: (deviceId) => call("license_deactivate", { deviceId: deviceId ?? null }),
+  licenseDevices: () => call("license_devices"),
+  licenseBuy: (product) => call("license_buy", { product }),
+  licenseBuyCancel: () => call("license_buy_cancel"),
+  licenseAllows: (feature) => call("license_allows", { feature }),
+  onLicenseChanged: (cb) => listen<LicenseState>("license://changed", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {
