@@ -15,6 +15,7 @@ mod automations;
 #[cfg(test)]
 mod bindings;
 mod board;
+mod board_decompose;
 mod capture;
 mod charts;
 mod cli_automations;
@@ -477,6 +478,7 @@ pub fn run() {
             board::board_create_many,
             board::board_links,
             board::board_link_set,
+            board_decompose::board_decompose,
             tasks::tasks_context,
             tasks::tasks_list,
             tasks::task_get,
