@@ -414,6 +414,10 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   & Pick<MockPeers, "__peersPairRequest" | "__peersDrop" | "__peersActivity" | "__peersConfirm" | "__peersSetTheirRole" | "__peersConfirmDeny" | "__peersRise">
   & Pick<MockLicense, "__licenseCheckoutComplete" | "__licenseSet">
   & Pick<MockRemoteSsh, "__remoteDrop" | "__remoteOffline" | "__remoteFail">
+  & {
+    // The `remoteHost` each `ptySpawn` got, by pty id; absent for a local launch.
+    __spawnRemoteHosts(): Record<string, string>;
+  }
   & Pick<MockTargets, "__targetsUntrusted" | "__targetsTyped">;
 
 type MockOptions = {
@@ -645,6 +649,8 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     write: (worktree, rel, text) => workspace.__editFile(worktree, rel, text),
     read: (worktree, rel) => workspace.fileRead(worktree, rel).then((f) => f.text, () => null),
   });
+  // The `remoteHost` each `ptySpawn` got, by pty id.
+  const remoteHosts: Record<string, string> = {};
   const api: MockApi = {
     ...createMockBoard(),
     ...createMockTasks({
@@ -1025,9 +1031,16 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...accountRouting,
     // Last: an `ssh://` worktree's file calls go to the remote mock, every other one to the workspace's.
     ...createMockRemoteSsh(workspace, () => api.sshHostsList()),
+    __spawnRemoteHosts: () => ({ ...remoteHosts }),
   };
   // The `worktree_*` calls the desktop guards: refused on an `ssh://` worktree, `worktreeStat` from the remote changes.
   Object.assign(api, guardRemote(workspace, api));
+  // `ptySpawn` takes the host a launch runs on as its last argument; the mock keeps it for the tests.
+  const spawn = api.ptySpawn.bind(api);
+  api.ptySpawn = (...args: Parameters<Api["ptySpawn"]>) => {
+    if (args[12] !== undefined) remoteHosts[args[0]] = args[12];
+    return spawn(...args);
+  };
   // The spread above copied the values; these two stay live views of the profile store.
   Object.defineProperties(api, {
     __installed: { get: () => profiles.__installed, set: (ids: string[]) => void (profiles.__installed = ids), enumerable: true, configurable: true },
