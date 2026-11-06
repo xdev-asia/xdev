@@ -6033,5 +6033,7 @@
   "floating.homeFailed": "Could not find your home folder: {message}",
   "keys.action.floating.toggle": "Show or hide the floating workspace",
   "palette.action.toggleFloating": "Show or hide the floating workspace",
-  "palette.action.toggleFloating.keywords": "floating global scratch terminal browser note"
+  "palette.action.toggleFloating.keywords": "floating global scratch terminal browser note",
+  "floating.tab.close": "Close {name}",
+  "floating.terminalFailed": "Terminal could not start: {message}"
 }

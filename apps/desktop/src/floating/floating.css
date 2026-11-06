@@ -1,0 +1,30 @@
+/* The floating workspace: a non-modal panel above the footer, over every view. */
+.floating-ws {
+  position: fixed;
+  inset-inline-end: var(--x-space-3);
+  bottom: calc(var(--x-space-3) + var(--x-space-8));
+  z-index: var(--x-z-nav);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(960px, 100% - 2 * var(--x-space-3));
+  height: min(60vh, 560px);
+  background: var(--x-color-panel);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-lg);
+  box-shadow: var(--shadow-dialog);
+  color: var(--x-color-ink);
+  overflow: hidden;
+}
+.floating-ws[hidden] { display: none; }
+.floating-ws-head { position: relative; display: flex; align-items: center; gap: var(--x-space-2); min-width: 0; padding-inline-end: var(--x-space-2); border-bottom: 1px solid var(--x-color-line); }
+.floating-ws-head .ws-tabstrip { flex: 1; min-width: 0; overflow-x: auto; }
+.floating-ws-add { position: absolute; inset-inline-end: var(--x-space-8); top: 100%; z-index: var(--x-z-dropdown); }
+.floating-ws-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.floating-ws-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.floating-ws-pane[hidden] { display: none; }
+.floating-ws-pane > * { flex: 1; min-height: 0; }
+.floating-ws-empty { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--x-space-4); }
+@media (max-width: 480px) {
+  .floating-ws { inset-inline: var(--x-space-2); width: auto; }
+}

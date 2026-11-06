@@ -6033,5 +6033,7 @@
   "floating.homeFailed": "Không tìm thấy thư mục home: {message}",
   "keys.action.floating.toggle": "Hiện hoặc ẩn không gian nổi",
   "palette.action.toggleFloating": "Hiện hoặc ẩn không gian nổi",
-  "palette.action.toggleFloating.keywords": "floating global scratch terminal browser note nổi"
+  "palette.action.toggleFloating.keywords": "floating global scratch terminal browser note nổi",
+  "floating.tab.close": "Đóng {name}",
+  "floating.terminalFailed": "Terminal không khởi động được: {message}"
 }
