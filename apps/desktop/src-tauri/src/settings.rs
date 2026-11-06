@@ -112,6 +112,71 @@ pub struct Settings {
     /// same way.
     #[serde(default, deserialize_with = "lenient")]
     pub link: LinkSettings,
+    /// Settings → Cloud: the license server and its trusted keys; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub cloud: CloudSettings,
+}
+
+/// Settings → Cloud: which xDev ID server the license talks to, and the keys its tokens are
+/// trusted under. Changing the server signs out of xDev ID and drops `license.json`.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct CloudSettings {
+    /// A self-hosted server's origin. `None`: the official service.
+    pub server_url: Option<String>,
+    /// base64url raw 32-byte Ed25519 root keys. Used only with a custom server.
+    pub pinned_roots: Vec<String>,
+}
+
+impl CloudSettings {
+    /// What the store may hold: `https://` (or `http://localhost` when `allow_http`), roots that
+    /// are 32-byte base64url keys, and at least one root for a custom server. Returns the
+    /// normalised value: trimmed, empty as `None`, roots de-duplicated.
+    pub fn checked(&self, allow_http: bool) -> Result<CloudSettings, &'static str> {
+        let raw = self.server_url.as_deref().map(str::trim).unwrap_or("");
+        let server_url = if raw.is_empty() {
+            None
+        } else {
+            let origin = xdev_id::check_origin(raw).ok_or("cloud_bad_url")?;
+            if origin.starts_with("http://") && !allow_http {
+                return Err("cloud_bad_url");
+            }
+            (origin != xdev_license::cloud::DEFAULT_SERVER).then_some(origin)
+        };
+        let mut pinned_roots: Vec<String> = Vec::new();
+        for root in &self.pinned_roots {
+            let root = root.trim();
+            if root.is_empty() {
+                continue;
+            }
+            if xdev_license::b64::decode_32(root).is_none() {
+                return Err("cloud_bad_root");
+            }
+            if !pinned_roots.iter().any(|r| r == root) {
+                pinned_roots.push(root.to_owned());
+            }
+        }
+        if server_url.is_none() {
+            pinned_roots.clear();
+        } else if pinned_roots.is_empty() {
+            return Err("cloud_need_root");
+        }
+        Ok(CloudSettings {
+            server_url,
+            pinned_roots,
+        })
+    }
+
+    pub fn config(&self) -> xdev_license::cloud::CloudConfig {
+        xdev_license::cloud::CloudConfig {
+            server_url: self
+                .server_url
+                .clone()
+                .unwrap_or_else(|| xdev_license::cloud::DEFAULT_SERVER.to_owned()),
+            pinned_roots: self.pinned_roots.clone(),
+        }
+    }
 }
 
 /// The port the link listener tries first.
@@ -1726,6 +1791,8 @@ pub enum SettingsSection {
     /// `terminalSets` and `startupPresets`.
     TerminalSets,
     Link,
+    /// `cloud`.
+    Cloud,
 }
 
 /// What a `settings://changed` event carries.
@@ -2329,6 +2396,70 @@ pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
 mod tests {
     use super::*;
     use crate::quick_commands::{QuickAction, QuickScope};
+
+    fn key() -> String {
+        xdev_license::b64::encode(&[7u8; 32])
+    }
+
+    #[test]
+    fn cloud_defaults_to_the_official_service() {
+        let c = CloudSettings::default().checked(false).unwrap();
+        assert_eq!(c, CloudSettings::default());
+        let s: Settings = serde_json::from_str(r#"{"cloud":{"serverUrl":5}}"#).unwrap();
+        assert_eq!(s.cloud, CloudSettings::default());
+    }
+
+    #[test]
+    fn cloud_custom_server_needs_a_root() {
+        let c = CloudSettings {
+            server_url: Some(" https://id.example.com/ ".into()),
+            pinned_roots: vec![],
+        };
+        assert_eq!(c.checked(false), Err("cloud_need_root"));
+        let ok = CloudSettings {
+            pinned_roots: vec![key(), format!(" {} ", key())],
+            ..c
+        }
+        .checked(false)
+        .unwrap();
+        assert_eq!(ok.server_url.as_deref(), Some("https://id.example.com"));
+        assert_eq!(ok.pinned_roots, vec![key()]);
+    }
+
+    #[test]
+    fn cloud_rejects_bad_urls_and_roots() {
+        let bad = |url: &str, roots: Vec<String>| {
+            CloudSettings {
+                server_url: Some(url.into()),
+                pinned_roots: roots,
+            }
+            .checked(false)
+        };
+        assert_eq!(bad("http://id.example.com", vec![key()]), Err("cloud_bad_url"));
+        assert_eq!(bad("http://localhost:8787", vec![key()]), Err("cloud_bad_url"));
+        assert_eq!(bad("ftp://x", vec![key()]), Err("cloud_bad_url"));
+        assert_eq!(bad("https://x.example/a", vec![key()]), Err("cloud_bad_url"));
+        assert_eq!(
+            bad("https://x.example", vec!["short".into()]),
+            Err("cloud_bad_root")
+        );
+        let local = CloudSettings {
+            server_url: Some("http://localhost:8787".into()),
+            pinned_roots: vec![key()],
+        };
+        assert!(local.checked(true).is_ok());
+    }
+
+    #[test]
+    fn cloud_ignores_roots_for_the_official_server() {
+        let c = CloudSettings {
+            server_url: Some(xdev_license::cloud::DEFAULT_SERVER.into()),
+            pinned_roots: vec![key()],
+        }
+        .checked(false)
+        .unwrap();
+        assert_eq!(c, CloudSettings::default());
+    }
 
     #[test]
     fn link_defaults_off_and_reads_lenient() {
