@@ -52,6 +52,7 @@ import { createMockPorts } from "./mockPorts";
 import { createMockAttribution, type MockAttribution } from "./mockAttribution";
 import { createMockSsh, type MockSsh } from "./mockSsh";
 import { createMockRemoteSsh, type MockRemoteSsh } from "./mockRemoteSsh";
+import { guardRemote } from "./mockRemoteSsh";
 import { createMockComposer } from "./mockComposer";
 import { createMockPromptQueue } from "./mockPromptQueue";
 import { createMockSettings, createSettingsHub } from "./mockSettings";
@@ -411,7 +412,7 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
 } & Pick<MockNotch, "__notchTabs"> & Pick<MockPipeline, "__pipelineExits" | "__swarmOpened">
   & Pick<MockPeers, "__peersPairRequest" | "__peersDrop" | "__peersActivity" | "__peersConfirm" | "__peersSetTheirRole" | "__peersConfirmDeny" | "__peersRise">
   & Pick<MockLicense, "__licenseCheckoutComplete" | "__licenseSet">
-  & Pick<MockRemoteSsh, "__remoteDrop" | "__remoteOffline">
+  & Pick<MockRemoteSsh, "__remoteDrop" | "__remoteOffline" | "__remoteFail">
   & Pick<MockTargets, "__targetsUntrusted" | "__targetsTyped">;
 
 type MockOptions = {
@@ -1023,6 +1024,8 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     // Last: an `ssh://` worktree's file calls go to the remote mock, every other one to the workspace's.
     ...createMockRemoteSsh(workspace, () => api.sshHostsList()),
   };
+  // The `worktree_*` calls the desktop guards: refused on an `ssh://` worktree, `worktreeStat` from the remote changes.
+  Object.assign(api, guardRemote(workspace, api));
   // The spread above copied the values; these two stay live views of the profile store.
   Object.defineProperties(api, {
     __installed: { get: () => profiles.__installed, set: (ids: string[]) => void (profiles.__installed = ids), enumerable: true, configurable: true },
