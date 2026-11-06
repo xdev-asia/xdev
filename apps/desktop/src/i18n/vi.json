@@ -5892,5 +5892,10 @@
   "settings.general.updates.remind.1": "Nhắc lại sau 1 ngày",
   "settings.general.updates.remind.3": "Nhắc lại sau 3 ngày",
   "settings.general.updates.remind.7": "Nhắc lại sau 7 ngày",
-  "settings.general.updates.remindHint": "Thời gian Nhắc lại sau chờ trước khi thẻ cập nhật quay lại. Phiên bản mới hơn sẽ đưa thẻ trở lại ngay."
+  "settings.general.updates.remindHint": "Thời gian Nhắc lại sau chờ trước khi thẻ cập nhật quay lại. Phiên bản mới hơn sẽ đưa thẻ trở lại ngay.",
+  "linksChoice.title": "Mở liên kết ở đâu?",
+  "linksChoice.body": "Bạn vừa bấm một liên kết trong terminal. Mở trong một tab của ứng dụng hay trong trình duyệt hệ thống?",
+  "linksChoice.pane": "Mở trong ứng dụng",
+  "linksChoice.system": "Mở trong trình duyệt hệ thống",
+  "linksChoice.hint": "Giữ Shift khi bấm để dùng cách còn lại. Đổi trong Cài đặt, Trình duyệt."
 }

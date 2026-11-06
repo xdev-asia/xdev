@@ -1,5 +1,6 @@
 import type { Api, LinksTarget } from "@/api";
 import { linkKeepsFocus, routeLink } from "@/browser/linkRouting";
+import type { LinksAnswer } from "@/browser/linksChoice";
 import { toApiError } from "@/api";
 import type { OpenFileRequest } from "@/files/openFile";
 import type { MenuItem } from "@/ui/ContextMenu";
@@ -23,6 +24,8 @@ export interface LinkDeps {
   openInPane?(url: string, keepFocus: boolean): void;
   /** The setting `browser.openLinksIn`. */
   linksTarget?(): LinksTarget;
+  /** The first-run question where web links open; see `askLinksTarget`. Without it nothing is asked. */
+  askTarget?(): Promise<LinksAnswer>;
 }
 
 /** A file link as the backend resolved it, with the text the terminal printed. */
@@ -59,13 +62,20 @@ export function openDefaultLink(target: FileTarget, deps: LinkDeps): Promise<voi
   });
 }
 
-/** Opens an http(s) URL in the system browser. */
-/** Opens a web link where `browser.openLinksIn` says; `shift` (a Shift click) sends it to the other place. */
-export function openUrlLink(url: string, deps: LinkDeps, shift = false): Promise<void> {
-  const setting = deps.linksTarget?.() ?? "system";
+/**
+ * Opens a web link where `browser.openLinksIn` says; `shift` (a Shift click) sends it to the other place.
+ * The first plain click asks where links open (the answer is the setting, and this click follows it); a Shift click never asks.
+ */
+export async function openUrlLink(url: string, deps: LinkDeps, shift = false): Promise<void> {
+  let setting = deps.linksTarget?.() ?? "system";
+  if (!shift && deps.askTarget && deps.openInPane && /^https?:\/\//i.test(url)) {
+    const answer = await deps.askTarget().catch((): LinksAnswer => ({ kind: "skip" }));
+    if (answer.kind === "cancel") return;
+    if (answer.kind === "chosen") setting = answer.target;
+  }
   if (deps.openInPane && routeLink(setting, shift, url) === "pane") {
     deps.openInPane(url, linkKeepsFocus(setting, shift));
-    return Promise.resolve();
+    return;
   }
   return deps.api.openUrl(url).catch((e: unknown) => failed(deps, e, url));
 }

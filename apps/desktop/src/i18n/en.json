@@ -5892,5 +5892,10 @@
   "settings.general.updates.remind.1": "Remind me after 1 day",
   "settings.general.updates.remind.3": "Remind me after 3 days",
   "settings.general.updates.remind.7": "Remind me after 7 days",
-  "settings.general.updates.remindHint": "How long Remind me later waits before the update card returns. A newer version brings it back at once."
+  "settings.general.updates.remindHint": "How long Remind me later waits before the update card returns. A newer version brings it back at once.",
+  "linksChoice.title": "Where should links open?",
+  "linksChoice.body": "You clicked a link in a terminal. Open it in a tab of this app, or in your system browser?",
+  "linksChoice.pane": "Open in the app",
+  "linksChoice.system": "Open in the system browser",
+  "linksChoice.hint": "Hold Shift while you click to use the other one. Change this in Settings, Browser."
 }
