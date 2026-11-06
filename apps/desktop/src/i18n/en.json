@@ -5578,7 +5578,7 @@
   "capture.color.danger": "Red",
   "capture.color.warning": "Amber",
   "capture.color.accent": "Blue",
-  "capture.color.fg": "Light",
+  "capture.color.fg": "Text",
   "capture.canvas": "Screenshot to annotate",
   "capture.text.placeholder": "Type a note",
   "capture.send": "Send to agent",

@@ -98,6 +98,8 @@ export function useCaptureHost(props: CaptureHostProps): {
   const close = useCallback((result: string | null) => {
     const done = settle.current;
     settle.current = null;
+    // The bitmap holds memory until it is closed.
+    (sessionRef.current?.image as { close?: () => void } | undefined)?.close?.();
     setSession(null);
     done?.(result);
   }, []);
@@ -162,7 +164,10 @@ export function useCaptureHost(props: CaptureHostProps): {
         return;
       }
       const sessions = p.sessions();
-      if (!sessions) return;
+      if (!sessions) {
+        pushToast({ text: tr("capture.noTab") });
+        return;
+      }
       const outcome = await sendCapture(
         {
           api: p.api,

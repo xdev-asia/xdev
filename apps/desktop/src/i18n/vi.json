@@ -5578,7 +5578,7 @@
   "capture.color.danger": "Đỏ",
   "capture.color.warning": "Hổ phách",
   "capture.color.accent": "Xanh",
-  "capture.color.fg": "Sáng",
+  "capture.color.fg": "Chữ",
   "capture.canvas": "Ảnh chụp màn hình cần chú thích",
   "capture.text.placeholder": "Nhập ghi chú",
   "capture.send": "Gửi cho agent",

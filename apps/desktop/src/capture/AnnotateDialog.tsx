@@ -71,7 +71,7 @@ export function AnnotateDialog({ image, onSend, onDiscard }: AnnotateDialogProps
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
       dispatch({ type: e.shiftKey ? "redo" : "undo" });
-    } else if (e.key === "Delete") {
+    } else if (e.key === "Delete" || e.key === "Backspace") {
       dispatch({ type: "deleteSelected" });
     } else if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[1-4]$/.test(e.key)) {
       dispatch({ type: "setTool", tool: TOOLS[Number(e.key) - 1] });

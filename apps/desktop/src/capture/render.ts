@@ -17,6 +17,27 @@ const TOKENS: Record<ColorKey | "halo", string> = {
   halo: "--bg-0",
 };
 
+/** Relative brightness of a `#rgb`, `#rrggbb` or `rgb()` colour; null when it is none of those. */
+function brightness(css: string): number | null {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(css);
+  let rgb: number[] | null = null;
+  if (hex) {
+    const h = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join("") : hex[1];
+    rgb = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  } else {
+    const fn = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(css);
+    if (fn) rgb = [Number(fn[1]), Number(fn[2]), Number(fn[3])];
+  }
+  return rgb ? 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] : null;
+}
+
+/** The darker of two colours, so a halo stays dark in both themes (`bg-0` is light in light theme, `text-1` is dark there). */
+export function darker(a: string, b: string): string {
+  const x = brightness(a);
+  const y = brightness(b);
+  return x !== null && y !== null && y < x ? b : a;
+}
+
 /** The colours from the custom properties on `el`, and its font family. */
 export function resolveColors(el: Element): Colors {
   const style = getComputedStyle(el);
@@ -26,7 +47,7 @@ export function resolveColors(el: Element): Colors {
     warning: read(TOKENS.warning),
     accent: read(TOKENS.accent),
     fg: read(TOKENS.fg),
-    halo: read(TOKENS.halo),
+    halo: darker(read(TOKENS.halo), read(TOKENS.fg)),
     font: style.fontFamily,
   };
 }
