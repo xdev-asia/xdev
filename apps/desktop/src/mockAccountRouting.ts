@@ -63,6 +63,10 @@ const highest = (q: Quota | undefined): number | null => {
   return all.length ? Math.max(...all) : null;
 };
 
+// api.ts imports the mocks, so its provider lists cannot be imported back without a cycle.
+const ROUTED: readonly Provider[] = ["claude", "codex", "gemini"];
+const WITH_QUOTA: readonly Provider[] = ["claude", "codex"];
+
 export const defaultRouting = (provider: Provider): AccountRouting => ({ provider, policy: "manual", pool: [], priority: [], thresholds: [80, 95], autoSwitch: false, switchAt: 95 });
 
 export type MockAccountRouting = Pick<Api, "accountsRouting" | "accountRoutingSet" | "accountUseNext" | "onQuotaAlert"> & {
@@ -96,26 +100,30 @@ export function createMockAccountRouting(deps: {
   function route(provider: Provider, avoid: string | null): string | null {
     const r = get(provider);
     const signedOut = (name: string) => deps.quotas().some((q) => q.name === name && q.state === "unknown" && (q.reason === "logged_out" || q.reason === "expired" || q.reason === "no_credentials"));
+    if (!ROUTED.includes(provider)) return null;
+    const policy = avoid !== null && r.policy === "manual" ? (WITH_QUOTA.includes(provider) ? "most_quota" : "round_robin") : r.policy;
+    // Like Rust `route`: "most quota" never picks an account with no quota source.
+    const noSource = (name: string) => policy === "most_quota" && deps.quotas().some((q) => q.name === name && q.reason === "no_quota_source");
     const pool = deps
       .accounts()
-      .filter((a) => a.provider === provider && (r.pool.length === 0 || r.pool.includes(a.name)) && !signedOut(a.name) && a.name !== avoid)
+      .filter((a) => a.provider === provider && (r.pool.length === 0 || r.pool.includes(a.name)) && !signedOut(a.name) && !noSource(a.name) && a.name !== avoid)
       .map((a) => a.name);
     if (r.pool.length > 0) pool.sort((a, b) => r.pool.indexOf(a) - r.pool.indexOf(b));
     const usage = deps.quotas().map((q) => ({ id: q.name, used: highest(q) }));
-    const policy = avoid !== null && r.policy === "manual" ? "most_quota" : r.policy;
     const picked = pickAccount({ policy, default: deps.active(provider), priority: r.priority, limit: r.autoSwitch ? r.switchAt : null }, pool, usage, lastUsed.get(provider) ?? null);
     return avoid !== null && (pool.length === 0 || picked === avoid) ? null : picked;
   }
 
   return {
     async accountsRouting() {
-      return [get("claude"), get("codex")];
+      return ROUTED.map(get);
     },
     async accountRoutingSet(next) {
       const mine = new Set(deps.accounts().filter((a) => a.provider === next.provider).map((a) => a.name));
       const thresholds = [...new Set(next.thresholds)].sort((a, b) => a - b);
       const percent = (n: number) => Number.isInteger(n) && n >= 1 && n <= 100;
       const names = (list: string[]) => list.every((n) => mine.has(n)) && new Set(list).size === list.length;
+      if (!ROUTED.includes(next.provider) || (next.policy === "most_quota" && !WITH_QUOTA.includes(next.provider))) return reject("bad_routing");
       if (!thresholds.every(percent) || thresholds.length > 4 || !percent(next.switchAt) || !names(next.pool) || !names(next.priority)) return reject("bad_routing");
       routing.set(next.provider, { ...structuredClone(next), thresholds });
       deps.changed();

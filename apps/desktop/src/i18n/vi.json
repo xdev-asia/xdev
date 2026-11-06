@@ -4583,5 +4583,22 @@
   "settings.path.error.empty": "Nhập một thư mục.",
   "settings.path.error.separator": "Thư mục không được chứa dấu phân tách PATH.",
   "settings.path.error.control": "Thư mục không được chứa ký tự điều khiển.",
-  "settings.path.error.save": "Không thể lưu PATH."
+  "settings.path.error.save": "Không thể lưu PATH.",
+  "accounts.provider.gemini": "Gemini CLI",
+  "accounts.provider.qwen-code": "Qwen Code",
+  "accounts.provider.opencode": "OpenCode",
+  "accounts.provider.amp": "Amp",
+  "accounts.provider.cursor": "Cursor",
+  "accounts.status.no_cli": "Thiếu CLI",
+  "accounts.status.undetected": "Không xác định được đăng nhập",
+  "accounts.reason.no_cli": "Hãy cài CLI của tác tử để dùng tài khoản này.",
+  "accounts.reason.no_quota_source": "Tác tử này không có nguồn hạn mức cục bộ. Chế độ còn nhiều hạn mức nhất bỏ qua tài khoản này.",
+  "accounts.single.badge": "Một tài khoản",
+  "accounts.single.taken": "Đã thêm",
+  "accounts.single.hint": "{provider} chỉ giữ một lần đăng nhập. Hãy đăng nhập hoặc đăng xuất bằng chính {provider} trong terminal.",
+  "accounts.single.addHint": "{provider} chỉ giữ một lần đăng nhập, nên xDev thêm nguyên trạng và không thể chuyển sang tài khoản khác. Hãy đăng nhập bằng chính {provider} trong terminal.",
+  "error.no_cli": "Không tìm thấy CLI của tác tử. Hãy cài đặt rồi thử lại.",
+  "error.single_account": "Tác tử này chỉ giữ một lần đăng nhập, nên xDev không thể thêm hoặc chuyển sang tài khoản khác.",
+  "settings.account.routing.noQuotaSource": "{provider} không có nguồn hạn mức cục bộ, nên không biết hạn mức. Hãy dùng xoay vòng hoặc thứ tự ưu tiên.",
+  "settings.usage.credentials.note.noQuotaSource": "Không có nguồn hạn mức"
 }

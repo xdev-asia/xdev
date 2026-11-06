@@ -1,9 +1,10 @@
-import type { Accounts, Provider, Quota, UsageSettings } from "@/api";
+import type { Accounts, ProviderSwitches, Quota, UsageSettings } from "@/api";
 import type { MenuItem } from "@/ui/ContextMenu";
 
 export const EMPTY_CTA_KEY = "xdev.usage.emptyCta.hidden";
 
-const PROVIDERS: Provider[] = ["claude", "codex"];
+// The providers with a footer meter; the others have no quota source to show.
+const PROVIDERS: (keyof ProviderSwitches)[] = ["claude", "codex"];
 
 /** The right-click menu of the footer meters: one switch per provider, then a way to the usage settings. */
 export function usageMenuItems(usage: UsageSettings, put: (next: UsageSettings) => void, openSettings?: () => void): MenuItem[] {

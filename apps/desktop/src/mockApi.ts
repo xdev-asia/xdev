@@ -3,6 +3,7 @@ import type {
   AiKeyProvider,
   Account,
   ActiveAccount,
+  Provider,
   Quota,
   Routing,
   ApiError,
@@ -243,7 +244,10 @@ export const DEMO_COMMITS: SeedCommit[] = [
   },
 ];
 
-// api.ts imports this file, so its AI_KEY_PROVIDERS cannot be imported back without a cycle.
+// api.ts imports this file, so its AI_KEY_PROVIDERS and provider lists cannot be imported back
+// without a cycle.
+const MOCK_PROVIDERS: readonly Provider[] = ["claude", "codex", "gemini", "qwen-code", "opencode", "amp", "cursor"];
+const MOCK_ISOLATED: readonly Provider[] = ["claude", "codex", "gemini"];
 const AI_KEY_PROVIDERS: readonly AiKeyProvider[] = ["anthropic", "openai", "gemini"];
 
 function reject(code: ApiError["code"], detail?: string): Promise<never> {
@@ -700,18 +704,27 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     async addAccount(name, provider, dir) {
       if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) return reject("bad_name");
       if (accounts.some(a => a.name === name)) return reject("exists");
-      if (provider !== "claude" && provider !== "codex") return reject("unknown_provider");
-      // An imported folder is the demo of a hive account that is already signed in.
-      const account: Account = { name, provider, dir: dir ?? `/demo/accounts/${name}`, status: { state: dir ? "logged_in" : "logged_out", email: null, plan: null, org: null } };
+      if (!MOCK_PROVIDERS.includes(provider)) return reject("unknown_provider");
+      // Like Rust `Registry::create`: a single-account CLI has one sign-in and no folder to import.
+      const single = !MOCK_ISOLATED.includes(provider);
+      if (single && (dir !== undefined || accounts.some(a => a.provider === provider))) return reject("single_account");
+      // An imported folder is the demo of a hive account that is already signed in. A
+      // single-account CLI shows its own sign-in: found for some, not detectable for others.
+      const state = dir ? "logged_in" : single ? (provider === "amp" || provider === "cursor" ? "undetected" : "logged_in") : "logged_out";
+      const account: Account = { name, provider, dir: dir ?? (single ? `/demo/home/.${provider}` : `/demo/accounts/${name}`), status: { state, email: null, plan: null, org: null } };
       accounts.push(account);
-      quotas.push({ name, state: "unknown", reason: "logged_out", windows: [], asOf: null });
+      quotas.push({ name, state: "unknown", reason: single || state === "logged_in" ? "no_quota_source" : "logged_out", windows: [], asOf: null });
       accountsChanged();
       return structuredClone(account);
     },
     async loginAccount(name) {
       const account = accounts.find(a => a.name === name);
       if (!account) return reject("not_found");
-      const command = account.provider === "codex" ? `CODEX_HOME='${account.dir}' codex login` : `CLAUDE_CONFIG_DIR='${account.dir}' claude auth login`;
+      if (!MOCK_ISOLATED.includes(account.provider)) return reject("single_account");
+      const command =
+        account.provider === "codex" ? `CODEX_HOME='${account.dir}' codex login`
+        : account.provider === "gemini" ? `GEMINI_CLI_HOME='${account.dir}' gemini`
+        : `CLAUDE_CONFIG_DIR='${account.dir}' claude auth login`;
       return { opened: false, command };
     },
     async removeAccount(name) {
@@ -723,6 +736,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       accountsChanged();
     },
     async accountActivate(provider, name) {
+      if (name !== null && !MOCK_ISOLATED.includes(provider)) return reject("single_account");
       if (name !== null && !accounts.some((a) => a.name === name && a.provider === provider)) return reject("not_found");
       active = active.filter((a) => a.provider !== provider);
       if (name !== null) active.push({ provider, name });

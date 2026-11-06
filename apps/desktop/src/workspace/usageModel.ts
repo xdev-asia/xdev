@@ -87,6 +87,7 @@ export function footerQuota(quota: readonly Quota[], accounts: Accounts | null, 
   const providers = new Map((accounts?.accounts ?? []).map((a) => [a.name, a.provider]));
   return quota.filter((q) => {
     const provider = providers.get(q.name);
-    return provider === undefined || on[provider];
+    // A provider with no footer switch has no quota source, so no meter.
+    return provider === undefined || (provider in on && on[provider as keyof ProviderSwitches]);
   });
 }

@@ -561,7 +561,7 @@ describe("accounts mock contract", () => {
     const api = createMockApi({});
     for (const name of ["", "A b", "-a", "a\n", "a".repeat(33)]) await expect(api.addAccount(name, "claude")).rejects.toEqual({ code: "bad_name" });
     await expect(api.addAccount("old", "claude")).rejects.toEqual({ code: "exists" });
-    await expect(api.addAccount("g", "gemini" as never)).rejects.toEqual({ code: "unknown_provider" });
+    await expect(api.addAccount("g", "nope" as never)).rejects.toEqual({ code: "unknown_provider" });
     const added = await api.addAccount("new-1", "claude");
     expect(added.status.state).toBe("logged_out");
     expect((await api.loginAccount(added.name)).command).toContain(added.dir);
@@ -571,6 +571,20 @@ describe("accounts mock contract", () => {
     await api.removeAccount(added.name);
     await expect(api.loginAccount(added.name)).rejects.toEqual({ code: "not_found" });
     await expect(api.removeAccount(added.name)).rejects.toEqual({ code: "not_found" });
+  });
+  it("keeps Gemini accounts apart and a single-account CLI to one", async () => {
+    const api = createMockApi({});
+    const gemini = await api.addAccount("gem", "gemini");
+    expect((await api.loginAccount(gemini.name)).command).toBe(`GEMINI_CLI_HOME='${gemini.dir}' gemini`);
+    await api.addAccount("gem-2", "gemini");
+    const qwen = await api.addAccount("qwen", "qwen-code");
+    expect(qwen.status.state).toBe("logged_in");
+    expect((await api.quota()).find(q => q.name === "qwen")).toMatchObject({ state: "unknown", reason: "no_quota_source" });
+    await expect(api.addAccount("qwen-2", "qwen-code")).rejects.toEqual({ code: "single_account" });
+    await expect(api.addAccount("amp", "amp", "/some/folder")).rejects.toEqual({ code: "single_account" });
+    await expect(api.loginAccount("qwen")).rejects.toEqual({ code: "single_account" });
+    await expect(api.accountActivate("qwen-code", "qwen")).rejects.toEqual({ code: "single_account" });
+    expect((await api.addAccount("amp", "amp")).status.state).toBe("undetected");
   });
   it("preserves account error codes", () => {
     for (const code of ["bad_name", "exists", "not_found", "no_claude", "no_codex", "unknown_provider", "bad_registry", "bad_reserve"]) expect(toApiError({ code })).toEqual({ code });

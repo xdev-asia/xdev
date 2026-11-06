@@ -592,7 +592,14 @@ export type {
 export type { Event as SquadEvent, FileStatus as ExportStatus, PlannedFile as ExportFile } from "@xdev/bindings";
 
 // Types do not exist at run time, so the provider menu needs its own list.
-export const PROVIDERS: readonly Provider[] = ["claude", "codex"];
+export const PROVIDERS: readonly Provider[] = ["claude", "codex", "gemini", "qwen-code", "opencode", "amp", "cursor"];
+// Providers whose CLI takes a home folder, so xDev keeps several accounts apart and switches them
+// (`xdev_ai::Isolation::Home`). The others are one account: the CLI's own sign-in.
+export const ISOLATED_PROVIDERS: readonly Provider[] = ["claude", "codex", "gemini"];
+// Providers with a local quota source; the others read "quota unknown" and "most quota" skips them.
+export const QUOTA_PROVIDERS: readonly Provider[] = ["claude", "codex"];
+export const isIsolated = (provider: Provider): boolean => ISOLATED_PROVIDERS.includes(provider);
+export const hasQuota = (provider: Provider): boolean => QUOTA_PROVIDERS.includes(provider);
 
 // What a terminal tab can start; Rust maps each id to a program (`xdev_agent::launch`).
 // A profile id: `shell`, a built-in (`claude`, `codex`, `gemini`), a custom id, or a `shell:` menu id.
@@ -788,7 +795,9 @@ export type ErrorCode =
   | "config_version"
   | "config_sections"
   | "config_too_large"
-  | "orchestration";
+  | "orchestration"
+  | "no_cli"
+  | "single_account";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1935,6 +1944,8 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "config_sections",
   "config_too_large",
   "orchestration",
+  "no_cli",
+  "single_account",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.

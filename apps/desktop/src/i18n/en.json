@@ -4583,5 +4583,22 @@
   "settings.path.error.empty": "Enter a folder.",
   "settings.path.error.separator": "A folder cannot contain the PATH separator.",
   "settings.path.error.control": "A folder cannot contain control characters.",
-  "settings.path.error.save": "Could not save the PATH."
+  "settings.path.error.save": "Could not save the PATH.",
+  "accounts.provider.gemini": "Gemini CLI",
+  "accounts.provider.qwen-code": "Qwen Code",
+  "accounts.provider.opencode": "OpenCode",
+  "accounts.provider.amp": "Amp",
+  "accounts.provider.cursor": "Cursor",
+  "accounts.status.no_cli": "CLI missing",
+  "accounts.status.undetected": "Sign-in not detected",
+  "accounts.reason.no_cli": "Install the agent CLI to use this account.",
+  "accounts.reason.no_quota_source": "This agent has no local quota source. Most quota left skips this account.",
+  "accounts.single.badge": "Single account",
+  "accounts.single.taken": "Already added",
+  "accounts.single.hint": "{provider} keeps one sign-in. Sign in or out with {provider} itself in a terminal.",
+  "accounts.single.addHint": "{provider} keeps one sign-in, so xDev adds it as is and cannot switch to another. Sign in with {provider} itself in a terminal.",
+  "error.no_cli": "The agent CLI was not found. Install it and try again.",
+  "error.single_account": "This agent keeps one sign-in, so xDev cannot add or switch another.",
+  "settings.account.routing.noQuotaSource": "{provider} has no local quota source, so its quota is unknown. Use round robin or a priority order.",
+  "settings.usage.credentials.note.noQuotaSource": "No quota source"
 }
