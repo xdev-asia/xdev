@@ -182,3 +182,42 @@ it("choosing an older build asks first, with a downgrade warning", () => {
   expect(p.props.onConfirm).toHaveBeenCalledOnce();
   expect(p.props.onCancelConfirm).toHaveBeenCalledOnce();
 });
+
+function channelOptions(p: ReturnType<typeof view>): string[] {
+  const select = p.by("data-field", "update-channel")!;
+  return nodes(select.props.children)
+    .filter((n) => n.type === "option")
+    .map((n) => text(n.props.children));
+}
+
+it("without Pro the rc channel carries the Pro tag and opens the upsell", () => {
+  const onLocked = vi.fn();
+  const p = view(INITIAL_CHECK, { proEarly: false, onLocked });
+  expect(channelOptions(p)).toEqual([t("settings.general.updates.channel.stable"), `${t("settings.general.updates.channel.rc")} · ${t("pro.tag")}`]);
+  const change = p.by("data-field", "update-channel")!.props.onChange as (e: { target: { value: string } }) => void;
+  change({ target: { value: "rc" } });
+  expect(onLocked).toHaveBeenCalledTimes(1);
+  expect(p.props.onChannel).not.toHaveBeenCalled();
+  change({ target: { value: "stable" } });
+  expect(p.props.onChannel).toHaveBeenCalledWith("stable");
+  // A Shift check follows the rc feed, so it asks for Pro too.
+  const click = p.by("data-act", "update-check")!.props.onClick as (e: { shiftKey: boolean }) => void;
+  click({ shiftKey: true });
+  expect(onLocked).toHaveBeenCalledTimes(2);
+  expect(p.props.onCheck).not.toHaveBeenCalled();
+});
+
+it("a saved rc is grandfathered: no tag and no upsell without Pro", () => {
+  const onLocked = vi.fn();
+  const p = view(INITIAL_CHECK, { proEarly: false, channel: "rc", onLocked });
+  expect(channelOptions(p).join("|")).not.toContain(t("pro.tag"));
+  const change = p.by("data-field", "update-channel")!.props.onChange as (e: { target: { value: string } }) => void;
+  change({ target: { value: "rc" } });
+  expect(onLocked).not.toHaveBeenCalled();
+  expect(p.props.onChannel).toHaveBeenCalledWith("rc");
+});
+
+it("with Pro the rc channel has no tag", () => {
+  const p = view(INITIAL_CHECK, { proEarly: true });
+  expect(channelOptions(p).join("|")).not.toContain(t("pro.tag"));
+});

@@ -1,4 +1,4 @@
-import type { DeviceRow, LicenseState } from "@xdev/bindings";
+import type { DayTotals, DeviceRow, LicenseState, UserPreset } from "@xdev/bindings";
 import type { Api, ApiError } from "./api";
 
 // The license contract in the browser mock. Pick a state with `?license=free|pro|grace|expired|noseat`
@@ -16,6 +16,10 @@ type LicenseApi = Pick<
   | "licenseBuyCancel"
   | "licenseAllows"
   | "onLicenseChanged"
+  | "usageArchive"
+  | "layoutPresetsUser"
+  | "layoutPresetSave"
+  | "layoutPresetDelete"
 >;
 
 export type MockLicense = LicenseApi & {
@@ -105,6 +109,21 @@ function initialDevices(mode: LicenseMockMode): DeviceRow[] {
   ];
 }
 
+/** The mock CLI logs reach back to here; an older day is only in the archive, which needs Pro. */
+export const MOCK_CLI_HORIZON = "2026-10-01";
+const NAME_MAX = 40;
+const MAX_PRESETS = 20;
+
+function archiveDays(from: string, to: string): DayTotals[] {
+  const out: DayTotals[] = [];
+  const start = Math.max(Date.parse(`${from}T00:00:00Z`), Date.parse("2026-06-01T00:00:00Z"));
+  const end = Math.min(Date.parse(`${to}T00:00:00Z`), Date.parse("2026-11-05T00:00:00Z"));
+  for (let at = start, n = 1; at <= end; at += 86_400_000, n += 1) {
+    out.push({ day: new Date(at).toISOString().slice(0, 10), input: 1000 * n, output: 400 * n, cacheRead: 5000 * n, cacheWrite: 200 * n });
+  }
+  return out;
+}
+
 function reject(code: ApiError["code"]): Promise<never> {
   const error: ApiError = { code };
   return Promise.reject(error);
@@ -116,6 +135,7 @@ export function createMockLicense(
   let state = initialState(mode);
   let devices = initialDevices(mode);
   const listeners = new Set<(s: LicenseState) => void>();
+  let presets: UserPreset[] = [];
   // The account owns a Pro grant: bought in the mock, or already held by a device in the mode.
   let refreshes = 0;
   let purchased = devices.some((d) => d.proGrant !== null);
@@ -164,6 +184,28 @@ export function createMockLicense(
     licenseBuyCancel() {
       checkout?.reject({ code: "cancelled" });
       checkout = null;
+      return Promise.resolve();
+    },
+    usageArchive(fromDay, toDay) {
+      const pro = state.state === "active" && state.features.includes("pro.usage_history");
+      if (fromDay > toDay) return reject("bad_arg");
+      if (!pro && fromDay < MOCK_CLI_HORIZON) return reject("license_required");
+      return Promise.resolve(archiveDays(fromDay, toDay));
+    },
+    layoutPresetsUser: () => Promise.resolve(structuredClone(presets)),
+    layoutPresetSave(name, layout) {
+      if (!(state.state === "active" && state.features.includes("pro.layouts"))) return reject("license_required");
+      const clean = name.trim();
+      if (!clean || [...clean].length > NAME_MAX) return reject("bad_arg");
+      const next = { name: clean, layout: structuredClone(layout) };
+      const at = presets.findIndex((p) => p.name === clean);
+      if (at >= 0) presets[at] = next;
+      else if (presets.length >= MAX_PRESETS) return reject("too_large");
+      else presets.push(next);
+      return Promise.resolve();
+    },
+    layoutPresetDelete(name) {
+      presets = presets.filter((p) => p.name !== name);
       return Promise.resolve();
     },
     licenseAllows: (feature) => Promise.resolve(state.state === "active" && state.features.includes(feature)),

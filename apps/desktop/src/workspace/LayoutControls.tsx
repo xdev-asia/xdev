@@ -1,12 +1,48 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { Icon, Menu, Popover } from "@xdev-asia/ui";
+import { Dialog, Field, Icon, Menu, Popover } from "@xdev-asia/ui";
 import type { MenuEntry } from "@xdev-asia/ui";
+import { toApiError, type Api } from "@/api";
 import { useI18n } from "@/i18n";
+import { LicenseUpsellContext } from "@/license/ProGate";
+import { useLicense } from "@/license/useLicense";
 import { applyPresetTo, applyPresetToAll, arrangeable, toggleCanvas } from "./layoutActions";
 import { onLayoutRequest, type LayoutRequest } from "./layoutEvents";
-import { LAYOUT_PRESETS, presetApplies, type LayoutPreset } from "./layoutPresets";
+import { LAYOUT_PRESETS, applyUserPreset, presetApplies, savedLayoutOf, type LayoutPreset, type UserPreset } from "./layoutPresets";
 import type { Sessions } from "./sessions";
+
+export const LAYOUT_NAME_MAX = 40;
+export const LAYOUTS_FEATURE = "pro.layouts";
+
+export type LayoutControlsApi = Pick<Api, "layoutPresetsUser" | "layoutPresetSave" | "layoutPresetDelete" | "licenseState" | "licenseRefresh" | "onLicenseChanged">;
+
+/** Asks for the name of the layout being saved. */
+function SaveDialog(props: { onSave(name: string): void; onCancel(): void; error: string | null }): JSX.Element {
+  const { t } = useI18n();
+  const [name, setName] = useState("");
+  const clean = name.trim();
+  return (
+    <Dialog
+      title={t("layout.save")}
+      modal
+      body="plain"
+      confirmLabel={t("layout.save.confirm")}
+      confirmDisabled={clean === ""}
+      cancelLabel={t("dialog.cancel")}
+      onConfirm={() => props.onSave(clean)}
+      onCancel={props.onCancel}
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (clean !== "") props.onSave(clean);
+        }}
+      >
+        <Field label={t("layout.save.name")} value={name} maxLength={LAYOUT_NAME_MAX} autoFocus onChange={(e) => setName(e.target.value)} error={props.error ?? undefined} hint={t("layout.save.hint", { max: LAYOUT_NAME_MAX })} />
+      </form>
+    </Dialog>
+  );
+}
 
 const ALL_PRESETS = LAYOUT_PRESETS.filter((p) => p !== "fullscreen");
 
@@ -51,9 +87,14 @@ function ConfirmAll(props: { preset: LayoutPreset; count: number; onConfirm(): v
  * The layout button of the header with its menu, and the host of the palette's layout requests: it applies
  * a preset to the current worktree, toggles canvas mode, and asks before a preset changes every project.
  */
-export function LayoutControls(props: { sessions: Sessions | null; worktree: string | null }): JSX.Element | null {
-  const { sessions, worktree } = props;
+export function LayoutControls(props: { api: LayoutControlsApi; sessions: Sessions | null; worktree: string | null }): JSX.Element | null {
+  const { api, sessions, worktree } = props;
   const { t } = useI18n();
+  const { allows } = useLicense(api);
+  const upsell = useContext(LicenseUpsellContext);
+  const [saved, setSaved] = useState<UserPreset[]>([]);
+  const [naming, setNaming] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [asking, setAsking] = useState<LayoutPreset | null>(null);
   const [said, setSaid] = useState("");
@@ -75,6 +116,27 @@ export function LayoutControls(props: { sessions: Sessions | null; worktree: str
       setSaid(t("layoutPreset.applied", { name: t(`layoutPreset.${req.preset}`) }));
     }
   };
+  const reload = () => void api.layoutPresetsUser().then(setSaved, () => undefined);
+  useEffect(reload, [api]);
+  const save = (name: string) => {
+    const at = worktree ? sessions?.layout(worktree) : null;
+    if (!at) return;
+    api.layoutPresetSave(name, savedLayoutOf(at)).then(
+      () => {
+        setNaming(false);
+        setNameError(null);
+        setSaid(t("layout.saved", { name }));
+        reload();
+      },
+      (e: unknown) => {
+        const code = toApiError(e).code;
+        if (code === "license_required") {
+          setNaming(false);
+          upsell(LAYOUTS_FEATURE);
+        } else setNameError(code === "bad_arg" || code === "too_large" ? t(`layout.save.err.${code}`, { max: LAYOUT_NAME_MAX }) : t(`error.${code}`));
+      },
+    );
+  };
   const latest = useRef(run);
   latest.current = run;
   useEffect(() => onLayoutRequest((req) => latest.current(req)), []);
@@ -95,6 +157,37 @@ export function LayoutControls(props: { sessions: Sessions | null; worktree: str
     })),
     { type: "separator" },
     { label: t("canvas.menu.toggle"), checked: layout?.canvas?.on === true, disabled, onSelect: () => pick({ kind: "canvas" }) },
+    { type: "separator" },
+    { type: "group", label: t("layout.menu.saved") },
+    ...saved.map((preset): MenuEntry => ({
+      label: preset.name,
+      disabled: layout === null,
+      onSelect: () => {
+        setOpen(false);
+        if (!worktree || !layout) return;
+        sessions.setLayout(worktree, applyUserPreset(layout, preset));
+        setSaid(t("layoutPreset.applied", { name: preset.name }));
+      },
+    })),
+    {
+      label: allows(LAYOUTS_FEATURE) ? t("layout.save") : `${t("layout.save")} · ${t("pro.tag")}`,
+      disabled,
+      onSelect: () => {
+        setOpen(false);
+        if (allows(LAYOUTS_FEATURE)) {
+          setNameError(null);
+          setNaming(true);
+        } else upsell(LAYOUTS_FEATURE);
+      },
+    },
+    ...saved.map((preset): MenuEntry => ({
+      label: t("layout.delete", { name: preset.name }),
+      danger: true,
+      onSelect: () => {
+        setOpen(false);
+        void api.layoutPresetDelete(preset.name).then(reload, () => undefined);
+      },
+    })),
     { type: "separator" },
     { type: "group", label: t("layoutPreset.menu.all") },
     ...ALL_PRESETS.map((preset): MenuEntry => ({
@@ -128,6 +221,7 @@ export function LayoutControls(props: { sessions: Sessions | null; worktree: str
       <span className="cv-sr" role="status">
         {said}
       </span>
+      {naming && <SaveDialog error={nameError} onSave={save} onCancel={() => setNaming(false)} />}
       {asking && (
         <ConfirmAll
           preset={asking}

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { applyPreset, gridShape, LAYOUT_PRESETS, presetTree } from "./layoutPresets";
+import { applyPreset, applyUserPreset, gridShape, LAYOUT_PRESETS, presetTree, readSaved, savedLayoutOf, type UserPreset } from "./layoutPresets";
 import { leaves, type PaneLayout, type PaneNode } from "./paneTree";
 import { paneRects } from "./PaneView";
 import { initialCanvas } from "./canvas/canvasModel";
@@ -109,4 +109,44 @@ it("a preset leaves canvas mode and keeps the cards", () => {
   const next = applyPreset({ ...l, canvas }, "rows");
   expect(next.canvas?.on).toBe(false);
   expect(next.canvas?.cards).toEqual(canvas.cards);
+});
+
+// ---- applyUserPreset ----------------------------------------------------------------------
+
+const saved = (from: PaneLayout, name = "Review"): UserPreset => ({ name, layout: savedLayoutOf(from) });
+
+it("a saved layout comes back with the same shape for the same number of tabs", () => {
+  const source = applyPreset(layoutOf(ids(4)), "focus");
+  const out = applyUserPreset(layoutOf(["a", "b", "c", "d"]), saved(source));
+  expect(savedLayoutOf(out)).toEqual(savedLayoutOf(source));
+  expect([...tabsOf(out.root)].sort()).toEqual(["a", "b", "c", "d"]);
+  expect(leafList(out).map((l) => l.tabs)).toEqual([["a"], ["b"], ["c"], ["d"]]);
+});
+
+it("fewer tabs drop panes, more tabs join the last pane, and no tab is lost", () => {
+  const four = saved(applyPreset(layoutOf(ids(4)), "grid"));
+  const two = applyUserPreset(layoutOf(["a", "b"]), four);
+  expect(leafList(two)).toHaveLength(2);
+  expect([...tabsOf(two.root)].sort()).toEqual(["a", "b"]);
+  const two2 = saved(layoutOf(ids(2)));
+  const five = applyUserPreset(layoutOf(ids(5)), two2);
+  expect(leafList(five)).toHaveLength(2);
+  expect(leafList(five)[1].tabs).toEqual(["t2", "t3", "t4", "t5"]);
+});
+
+it("review tabs join the active pane and the focused pane follows the active tab", () => {
+  const base = layoutOf(["a", "b", "review:x"], 1);
+  const out = applyUserPreset(base, saved(layoutOf(ids(2))));
+  const focused = leafList(out).find((l) => l.id === out.focused)!;
+  expect(focused.tabs).toContain("b");
+  expect(focused.tabs).toContain("review:x");
+  expect(out.expanded).toBeNull();
+});
+
+it("an unreadable saved layout, or no tabs, changes nothing", () => {
+  const base = layoutOf(ids(3));
+  expect(applyUserPreset(base, { name: "x", layout: { v: 2, shape: { kind: "leaf" } } })).toBe(base);
+  expect(applyUserPreset(base, { name: "x", layout: "no" })).toBe(base);
+  expect(applyUserPreset(base, { name: "x", layout: { v: 1, shape: { kind: "split", dir: "up", sizes: [1, 1], children: [] } } })).toBe(base);
+  expect(readSaved(savedLayoutOf(base))).not.toBeNull();
 });

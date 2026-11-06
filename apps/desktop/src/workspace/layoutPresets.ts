@@ -2,7 +2,8 @@
 // Pure functions. A preset builder turns the tab ids and the active one into a pane tree; `applyPreset`
 // puts that tree into a layout. Fullscreen is not a tree: it is the existing "expanded" pane, toggled.
 
-import { leaves, toggleExpand, type PaneLayout, type PaneNode } from "./paneTree";
+import type { UserPreset } from "@xdev/bindings";
+import { leaves, toggleExpand, type PaneDir, type PaneLayout, type PaneNode } from "./paneTree";
 
 export type LayoutPreset = "grid" | "columns" | "rows" | "focus" | "fullscreen";
 
@@ -127,4 +128,90 @@ function leaveCanvas(l: PaneLayout): PaneLayout {
 export function presetApplies(layout: PaneLayout, preset: LayoutPreset): boolean {
   if (preset === "fullscreen") return leaves(layout).length > 1 || layout.expanded !== null;
   return applyPreset(layout, preset) !== layout && leaves(layout).length > 0;
+}
+
+// ---- layouts the person saved (`pro.layouts`) -------------------------------------------------
+// A saved layout keeps the shape of the panes, never the tabs: tab ids do not outlive a session.
+
+export type { UserPreset };
+
+/** The shape of a pane tree: its splits, directions and sizes, with an empty slot for each pane. */
+export type SavedShape = { kind: "leaf" } | { kind: "split"; dir: PaneDir; sizes: number[]; children: SavedShape[] };
+
+/** What `layoutPresetSave` stores: a version and the shape. */
+export interface SavedLayout {
+  v: 1;
+  shape: SavedShape;
+}
+
+function shapeOfNode(n: PaneNode): SavedShape {
+  if (n.kind === "leaf") return { kind: "leaf" };
+  return { kind: "split", dir: n.dir, sizes: [...n.sizes], children: n.children.map(shapeOfNode) };
+}
+
+/** The saved form of the current arrangement. */
+export function savedLayoutOf(layout: PaneLayout): SavedLayout {
+  return { v: 1, shape: shapeOfNode(layout.root) };
+}
+
+/** The shape inside a stored layout, or null when it is not one this version wrote. */
+export function readSaved(value: unknown): SavedShape | null {
+  const shape = (value as Partial<SavedLayout> | null)?.shape;
+  const ok = (n: unknown, depth: number): n is SavedShape => {
+    if (depth > 16 || typeof n !== "object" || n === null) return false;
+    const node = n as Partial<Omit<Extract<SavedShape, { kind: "split" }>, "kind">> & { kind?: unknown };
+    if (node.kind === "leaf") return true;
+    if (node.kind !== "split" || (node.dir !== "right" && node.dir !== "down")) return false;
+    const { children, sizes } = node;
+    return Array.isArray(children) && children.length > 1 && Array.isArray(sizes) && sizes.length === children.length && sizes.every((x) => typeof x === "number" && x > 0) && children.every((c) => ok(c, depth + 1));
+  };
+  return (value as Partial<SavedLayout> | null)?.v === 1 && ok(shape, 0) ? (shape as SavedShape) : null;
+}
+
+/**
+ * The layout with the panes arranged like the saved shape. Tabs fill the panes in reading order; panes
+ * left without a tab are dropped, and tabs past the last pane join it. Review, commit and preview tabs
+ * join the pane of the active tab, as they do for a built-in preset. Applying is free on every plan.
+ * Same reference when the saved shape is not readable or there is nothing to arrange.
+ */
+export function applyUserPreset(layout: PaneLayout, saved: UserPreset): PaneLayout {
+  const shape = readSaved(saved.layout);
+  const all = leaves(layout).flatMap((n) => (n.kind === "leaf" ? n.tabs : []));
+  const seeds = all.filter((t) => !isAttached(t));
+  if (!shape || seeds.length === 0) return layout;
+  const attached = all.filter(isAttached);
+  const focusedLeaf = leaves(layout).find((n) => n.kind === "leaf" && n.id === layout.focused);
+  const active = focusedLeaf && focusedLeaf.kind === "leaf" ? focusedLeaf.active : seeds[0];
+  const home = seeds.includes(active) ? active : seeds[0];
+  const slots = (n: SavedShape): number => (n.kind === "leaf" ? 1 : n.children.reduce((a, c) => a + slots(c), 0));
+  const count = Math.min(slots(shape), seeds.length);
+  let next = 0;
+  let p = 0;
+  let sp = 0;
+  const build = (n: SavedShape): PaneNode | null => {
+    if (n.kind === "leaf") {
+      if (next >= count) return null;
+      const last = next === count - 1;
+      const tabs = last ? seeds.slice(next) : [seeds[next]];
+      next += 1;
+      const tab = tabs.includes(home) ? home : tabs[0];
+      return { kind: "leaf", id: `p${++p}`, tabs, active: tab };
+    }
+    const id = `s${++sp}`;
+    const kept = n.children.map((c, i) => ({ node: build(c), size: n.sizes[i] })).filter((k): k is { node: PaneNode; size: number } => k.node !== null);
+    if (kept.length === 1) return kept[0].node;
+    const total = kept.reduce((a, k) => a + k.size, 0);
+    return { kind: "split", id, dir: n.dir, children: kept.map((k) => k.node), sizes: kept.map((k) => k.size / total) };
+  };
+  const root = build(shape);
+  if (!root) return layout;
+  const place = (n: PaneNode): PaneNode => {
+    if (n.kind === "split") return { ...n, children: n.children.map(place) };
+    if (!n.tabs.includes(home)) return n;
+    return { ...n, tabs: [...n.tabs, ...attached], active: attached.includes(active) ? active : n.active };
+  };
+  const placed = place(root);
+  const focused = (leaves({ ...layout, root: placed }).find((n) => n.kind === "leaf" && n.tabs.includes(active)) ?? leaves({ ...layout, root: placed })[0]).id;
+  const { preset: _drop, ...rest } = layout;
+  return { ...leaveCanvas(rest), root: placed, focused, expanded: null };
 }

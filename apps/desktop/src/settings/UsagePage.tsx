@@ -12,6 +12,8 @@ import { UsageChart } from "@/kit/UsageChart";
 import { rangeDays, type UsageRange } from "@/kit/usageRange";
 import { RECENT_DAYS, bestDay, cacheReuse, formatCost, recentDays } from "@/kit/usageStats";
 import { ApiKeysSection } from "./ApiKeysSection";
+import { ProGate } from "@/license/ProGate";
+import { UsageHistory, UsageHistoryLocked, HISTORY_FEATURE } from "./UsageHistory";
 import { UsageRecentSessions } from "./UsageRecentSessions";
 import { UsageShare } from "./UsageShare";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
@@ -359,6 +361,10 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
           </button>
         </div>
       ))}
+
+      <ProGate feature={HISTORY_FEATURE} fallback={<UsageHistoryLocked />}>
+        <UsageHistory api={api} />
+      </ProGate>
 
       {report !== undefined && empty && <p className="kit-empty">{t("usage.stats.empty")}</p>}
       {report !== undefined && !empty && (
