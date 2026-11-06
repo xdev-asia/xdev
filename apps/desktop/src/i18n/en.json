@@ -5043,5 +5043,12 @@
   "swarm.announce.started": "{count} workers started.",
   "swarm.announce.partial": "{count} workers started, {failed} did not.",
   "swarm.announce.stopped": "{count} workers stopped.",
-  "swarm.announce.opened": "{worker} opened as a tab."
+  "swarm.announce.opened": "{worker} opened as a tab.",
+  "error.peer_offline": "That computer is offline.",
+  "error.peer_role": "That computer has not given you access for that.",
+  "error.pair_code": "The code is wrong or expired.",
+  "error.pair_rejected": "The other computer did not confirm the pairing.",
+  "error.pair_busy": "That computer is pairing with someone else. Try again in a minute.",
+  "error.peer_denied": "The other computer denied the request.",
+  "error.link_port": "No free port between 47821 and 47836."
 }

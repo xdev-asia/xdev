@@ -349,6 +349,8 @@ export type { ConfigExported, EnvPreviewRow, ImportApplied, ImportPreview, RepoE
 export type { AttributionChanged, AttributionEvent, AttributionSource, FileAttribution, FileVersion, Toucher } from "@xdev/bindings";
 export type { SectionPreview, ConfigChange } from "@xdev/bindings";
 import type { Chart, ChartRun, SeatTab } from "@xdev/bindings";
+import type { JoinTarget, LinkBind, NearbyHost, PairOfferView, PairPending, PeerActivity, PeerConfirm, PeerKind, PeerPairRequest, PeerPairResult, PeerProject, PeerRole, PeersState, PeerTerm, PeerTermAttached, PeerTermClosed, PeerTermState, PeerView } from "@xdev/bindings";
+export type { JoinTarget, LinkBind, NearbyHost, PairOfferView, PairPending, PeerActivity, PeerConfirm, PeerKind, PeerPairRequest, PeerPairResult, PeerProject, PeerRole, PeersState, PeerTerm, PeerTermAttached, PeerTermClosed, PeerTermState, PeerView };
 export type { Chart, ChartEdge, ChartKind, ChartMember, ChartProblem, ChartRoute, ChartRun, ChartSeat, SeatTab } from "@xdev/bindings";
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind, PathEntry } from "@xdev/bindings";
@@ -818,7 +820,14 @@ export type ErrorCode =
   | "config_too_large"
   | "orchestration"
   | "no_cli"
-  | "single_account";
+  | "single_account"
+  | "peer_offline"
+  | "peer_role"
+  | "pair_code"
+  | "pair_rejected"
+  | "pair_busy"
+  | "peer_denied"
+  | "link_port";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1840,6 +1849,41 @@ export interface Api {
   chartsSaveSquad(id: string): Promise<Chart>;
   /** Records the tabs opened for a run of chart `id` (one per seat) and links them along its edges. */
   chartsRunBind(id: string, tabs: SeatTab[]): Promise<ChartRun>;
+  // Paired computers (xdev-link). The listener's state on this computer.
+  peersState(): Promise<PeersState>;
+  /** Starts or stops the listener. Rejects `link_port` when no port in the range is free. */
+  peersSetEnabled(on: boolean): Promise<PeersState>;
+  peersList(): Promise<PeerView[]>;
+  /** Computers announcing on this network, paired or pairing. */
+  peersNearby(): Promise<NearbyHost[]>;
+  /** Opens pairing on `bind` and returns the code and link. Replaces an open offer. */
+  peerPairStart(bind: LinkBind): Promise<PairOfferView>;
+  peerPairCancel(): Promise<void>;
+  /** Joins a computer that shows a code. Rejects `pair_code`, `pair_busy` or `peer_offline`. */
+  peerPairJoin(target: JoinTarget, code: string, grantBack: boolean): Promise<PairPending>;
+  /** Answers `peers://pair-request` (host) or confirms the SAS (joiner). `role` is what the other computer gets here. */
+  peerPairConfirm(requestId: string, accept: boolean, role: PeerRole): Promise<void>;
+  peerSetRole(peerId: string, role: PeerRole): Promise<PeerView>;
+  peerRename(peerId: string, name: string): Promise<PeerView>;
+  peerRemove(peerId: string): Promise<void>;
+  /** Rejects `peer_offline` or `peer_role`. */
+  peerProjects(peerId: string): Promise<PeerProject[]>;
+  peerTerms(peerId: string): Promise<PeerTerm[]>;
+  /** Streams a remote terminal's output to `onData` until detached or `peers://term-closed`. */
+  peerTermAttach(peerId: string, termId: string, onData: (bytes: Uint8Array) => void): Promise<PeerTermAttached>;
+  peerTermDetach(peerId: string, termId: string): Promise<void>;
+  /** Operator and up. Rejects `peer_role` or `peer_denied`. */
+  peerTermWrite(peerId: string, termId: string, data: Uint8Array): Promise<void>;
+  peerAgentStart(peerId: string, projectId: string, profileId: string, prompt: string | null): Promise<PeerTerm>;
+  /** Answers `peers://confirm`. */
+  peerConfirmReply(requestId: string, allow: boolean): Promise<void>;
+  onPeersChanged(cb: (state: PeersState) => void): Promise<() => void>;
+  onPeersNearby(cb: (hosts: NearbyHost[]) => void): Promise<() => void>;
+  onPeerPairRequest(cb: (req: PeerPairRequest) => void): Promise<() => void>;
+  onPeerPairResult(cb: (res: PeerPairResult) => void): Promise<() => void>;
+  onPeerActivity(cb: (ev: PeerActivity) => void): Promise<() => void>;
+  onPeerConfirm(cb: (req: PeerConfirm) => void): Promise<() => void>;
+  onPeerTermClosed(cb: (ev: PeerTermClosed) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2034,6 +2078,13 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "orchestration",
   "no_cli",
   "single_account",
+  "peer_offline",
+  "peer_role",
+  "pair_code",
+  "pair_rejected",
+  "pair_busy",
+  "peer_denied",
+  "link_port",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2592,6 +2643,35 @@ const tauriApi: Api = {
   chartsDuplicate: (id, name) => call("charts_duplicate", { id, name }),
   chartsSaveSquad: (id) => call("charts_save_squad", { id }),
   chartsRunBind: (id, tabs) => call("charts_run_bind", { id, tabs }),
+  peersState: () => call("peers_state"),
+  peersSetEnabled: (on) => call("peers_set_enabled", { on }),
+  peersList: () => call("peers_list"),
+  peersNearby: () => call("peers_nearby"),
+  peerPairStart: (bind) => call("peer_pair_start", { bind }),
+  peerPairCancel: () => call("peer_pair_cancel"),
+  peerPairJoin: (target, code, grantBack) => call("peer_pair_join", { target, code, grantBack }),
+  peerPairConfirm: (requestId, accept, role) => call("peer_pair_confirm", { requestId, accept, role }),
+  peerSetRole: (peerId, role) => call("peer_set_role", { peerId, role }),
+  peerRename: (peerId, name) => call("peer_rename", { peerId, name }),
+  peerRemove: (peerId) => call("peer_remove", { peerId }),
+  peerProjects: (peerId) => call("peer_projects", { peerId }),
+  peerTerms: (peerId) => call("peer_terms", { peerId }),
+  peerTermAttach(peerId, termId, onData) {
+    const out = new Channel<ArrayBuffer | number[]>();
+    out.onmessage = (msg) => onData(toBytes(msg));
+    return call("peer_term_attach", { peerId, termId, out });
+  },
+  peerTermDetach: (peerId, termId) => call("peer_term_detach", { peerId, termId }),
+  peerTermWrite: (peerId, termId, data) => call("peer_term_write", { peerId, termId, data: [...data] }),
+  peerAgentStart: (peerId, projectId, profileId, prompt) => call("peer_agent_start", { peerId, projectId, profileId, prompt }),
+  peerConfirmReply: (requestId, allow) => call("peer_confirm_reply", { requestId, allow }),
+  onPeersChanged: (cb) => listen<PeersState>("peers://changed", (e) => cb(e.payload)),
+  onPeersNearby: (cb) => listen<NearbyHost[]>("peers://nearby", (e) => cb(e.payload)),
+  onPeerPairRequest: (cb) => listen<PeerPairRequest>("peers://pair-request", (e) => cb(e.payload)),
+  onPeerPairResult: (cb) => listen<PeerPairResult>("peers://pair-result", (e) => cb(e.payload)),
+  onPeerActivity: (cb) => listen<PeerActivity>("peers://activity", (e) => cb(e.payload)),
+  onPeerConfirm: (cb) => listen<PeerConfirm>("peers://confirm", (e) => cb(e.payload)),
+  onPeerTermClosed: (cb) => listen<PeerTermClosed>("peers://term-closed", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {

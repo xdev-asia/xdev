@@ -5043,5 +5043,12 @@
   "swarm.announce.started": "Đã bắt đầu {count} worker.",
   "swarm.announce.partial": "Đã bắt đầu {count} worker, {failed} worker không khởi động được.",
   "swarm.announce.stopped": "Đã dừng {count} worker.",
-  "swarm.announce.opened": "Đã mở {worker} thành tab."
+  "swarm.announce.opened": "Đã mở {worker} thành tab.",
+  "error.peer_offline": "Máy tính đó đang ngoại tuyến.",
+  "error.peer_role": "Máy tính đó chưa cấp cho bạn quyền làm việc này.",
+  "error.pair_code": "Mã sai hoặc đã hết hạn.",
+  "error.pair_rejected": "Máy tính kia không xác nhận việc ghép đôi.",
+  "error.pair_busy": "Máy tính đó đang ghép đôi với người khác. Hãy thử lại sau một phút.",
+  "error.peer_denied": "Máy tính kia đã từ chối yêu cầu.",
+  "error.link_port": "Không còn cổng trống từ 47821 đến 47836."
 }
