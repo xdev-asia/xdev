@@ -5,7 +5,8 @@ import { createMockApi, type Api } from "@/api";
 import { translate } from "@/i18n";
 import { BasePicker } from "./BasePicker";
 import { FileDiff } from "./FileDiff";
-import { SearchInput, TreeView } from "@xdev-asia/ui";
+import { Checkbox, SearchInput, TreeView } from "@xdev-asia/ui";
+import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ReviewView } from "./ReviewView";
 import { touchChanges } from "@/workspace/changesBus";
 import { VIEW_KEY } from "./viewOptions";
@@ -410,4 +411,60 @@ it("the tree follows the filter and marks the file that was clicked", async () =
   expect(tree().props.selected).toBe("src/status.ts");
   v.all().find((n) => n.type === SearchInput)!.props.onChange({ target: { value: "notes" } });
   expect(tree().props.rows.filter((r: { kind: string }) => r.kind === "file").map((r: { id: string }) => r.id)).toEqual(["docs/old-notes.md"]);
+});
+
+const PR = { number: 9, url: "https://example.test/pull/9", state: "open" as const, title: "Oak", base: "main", head: "oak" };
+const withPr = (viewed?: string[]) =>
+  createMockApi({}, { workspace: { ...DEMO_WORKSPACE, prs: { [OAK]: PR }, prViewed: viewed ? { [OAK]: viewed } : {} } });
+const viewedBox = (v: ReturnType<typeof review>, path: string) => nodes(v.diff(path).props.extra).find((n) => n.type === Checkbox);
+
+it("with an open PR each file offers Viewed; a viewed file starts folded", async () => {
+  const api = withPr(["src/status.ts"]);
+  const read = vi.spyOn(api, "worktreePrViewed");
+  const v = review(api);
+  await tick();
+  expect(read).toHaveBeenCalledWith(OAK, 9);
+  expect(viewedBox(v, "src/status.ts")!.props).toMatchObject({ label: en("review.viewed"), checked: true });
+  expect(viewedBox(v, "src/session.ts")!.props.checked).toBe(false);
+  expect(v.diff("src/status.ts").props.open).toBe(false);
+  expect(v.diff("src/session.ts").props.open).toBe(true);
+});
+
+it("checking Viewed marks the file on the PR and folds it; unchecking opens it again", async () => {
+  const api = withPr([]);
+  const mark = vi.spyOn(api, "worktreePrFileViewed");
+  const v = review(api);
+  await tick();
+  viewedBox(v, "src/session.ts")!.props.onChange({ target: { checked: true } });
+  expect(viewedBox(v, "src/session.ts")!.props.checked).toBe(true);
+  expect(v.diff("src/session.ts").props.open).toBe(false);
+  await tick();
+  expect(mark).toHaveBeenLastCalledWith(OAK, "PR_mock9", "src/session.ts", true);
+  viewedBox(v, "src/session.ts")!.props.onChange({ target: { checked: false } });
+  await tick();
+  expect(mark).toHaveBeenLastCalledWith(OAK, "PR_mock9", "src/session.ts", false);
+  expect(viewedBox(v, "src/session.ts")!.props.checked).toBe(false);
+  expect(v.diff("src/session.ts").props.open).toBe(true);
+});
+
+it("a failed mark puts the box back and says why", async () => {
+  const api = withPr([]);
+  vi.spyOn(api, "worktreePrFileViewed").mockRejectedValue({ code: "gh_auth" });
+  const v = review(api);
+  await tick();
+  viewedBox(v, "src/status.ts")!.props.onChange({ target: { checked: true } });
+  await tick();
+  expect(viewedBox(v, "src/status.ts")!.props.checked).toBe(false);
+  expect(v.html()).toContain(en("error.gh_auth"));
+});
+
+it("no Viewed box without an open PR or when the viewed read fails", async () => {
+  const none = review(createMockApi({}));
+  await tick();
+  expect(none.diffs().length).toBeGreaterThan(0);
+  expect(none.diffs().every((d) => nodes(d.props.extra).every((n) => n.type !== Checkbox))).toBe(true);
+  hooks.values = [];
+  const offline = review(withPr());
+  await tick();
+  expect(offline.diffs().every((d) => nodes(d.props.extra).every((n) => n.type !== Checkbox))).toBe(true);
 });

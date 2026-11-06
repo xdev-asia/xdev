@@ -88,6 +88,11 @@ type WorkspaceApi = Pick<
   | "worktreePrDetail"
   | "worktreePrComment"
   | "worktreePrAutoMerge"
+  | "worktreePrEdit"
+  | "worktreePrReviewers"
+  | "worktreePrReviewerCandidates"
+  | "worktreePrViewed"
+  | "worktreePrFileViewed"
   | "worktreeCheckLog"
   | "worktreeDraftCommit"
   | "worktreeDraftPr"
@@ -132,6 +137,10 @@ export type MockWorkspaceSeed = {
   prDetails?: Record<string, PrDetail>;
   // The PR head on GitHub by worktree path; the mock's own HEAD when absent.
   prHeads?: Record<string, string>;
+  // The collaborators offered as reviewers; the list is closed (`gh_failed`) when absent.
+  reviewerCandidates?: string[];
+  // The files of each worktree's PR marked viewed; the read fails (`gh_failed`, as offline) when the worktree is absent.
+  prViewed?: Record<string, string[]>;
   // The next commit or amend in that worktree is rejected with `hook_failed`; the text is the hook output.
   hookFailure?: Record<string, string>;
   // Worktrees that already track a remote branch, with how far they have drifted.
@@ -216,6 +225,8 @@ type Remote = { tracked: boolean; ahead: number; behind: number; commits: Commit
 
 // Like `COMMENT_BODY_MAX` in Rust.
 const COMMENT_BODY_MAX = 64 * 1024;
+// A GitHub login, or `org/team`.
+const REVIEWER = /^(?!-)[A-Za-z0-9-]{1,39}(\/(?!-)[A-Za-z0-9_-]{1,100})?$/;
 
 /** The commit every mock worktree is on, and the PR head unless a seed says otherwise. */
 export const MOCK_HEAD = "1".repeat(40);
@@ -278,6 +289,9 @@ export const DEMO_WORKSPACE: MockWorkspaceSeed = {
       demoComment(5, { kind: "review", author: "maya", body: "Looks good overall, two small notes." }),
       demoComment(6, { kind: "conversation", author: "sam", body: "Can we ship this today?" }),
     ],
+  },
+  prViewed: {
+    "/demo/wt/xdev-elm": ["src/status.ts"],
   },
   changes: {
     "/demo/wt/xdev-oak": [
@@ -522,6 +536,7 @@ export function createMockWorkspace(
   const prComments = new Map<string, PrComment[]>(Object.entries(structuredClone(seed.prComments ?? {})));
   const mergeInfo = new Map<string, PrMergeInfo>(Object.entries(structuredClone(seed.mergeInfo ?? {})));
   const prDetails = new Map<string, PrDetail>(Object.entries(structuredClone(seed.prDetails ?? {})));
+  const prViewed = new Map<string, Set<string>>(Object.entries(seed.prViewed ?? {}).map(([k, v]) => [k, new Set(v)]));
   const hooks = new Map<string, string>(Object.entries(seed.hookFailure ?? {}));
   const remotes = new Map<string, Remote>();
   // Worktrees whose local commits were rewritten after they were pushed, by an amend or a rebase.
@@ -1614,6 +1629,45 @@ export function createMockWorkspace(
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       const own = prDetails.get(path);
       if (own) own.autoMerge = method === null ? null : { method, enabledBy: "you" };
+    },
+    async worktreePrEdit(path, _number, title, body) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const trimmed = title.trim();
+      if (trimmed === "" || [...trimmed].length > 256 || [...body].length > COMMENT_BODY_MAX) return reject("bad_pr_edit");
+      const own = prDetails.get(path);
+      if (own) Object.assign(own, { title: trimmed, body });
+      const pr = prs.get(path);
+      if (pr) prs.set(path, { ...pr, title: trimmed });
+    },
+    async worktreePrReviewers(path, _number, add, remove) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const bad = [...add, ...remove].find((r) => !REVIEWER.test(r));
+      if (bad !== undefined) return reject("bad_reviewer", bad);
+      const own = prDetails.get(path);
+      if (!own) return;
+      own.reviewers = own.reviewers.filter((r) => !remove.includes(r.login));
+      for (const login of add) {
+        if (!own.reviewers.some((r) => r.login === login)) own.reviewers.push({ login, state: "requested" });
+      }
+    },
+    async worktreePrReviewerCandidates(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (!seed.reviewerCandidates) return reject("gh_failed");
+      return [...seed.reviewerCandidates];
+    },
+    async worktreePrViewed(path, number) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const files = prViewed.get(path);
+      if (!files) return reject("gh_failed");
+      if (prs.get(path)?.number !== number) return reject("pr_not_found");
+      return { id: `PR_mock${number}`, viewed: [...files] };
+    },
+    async worktreePrFileViewed(path, prId, file, viewed) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const files = prViewed.get(path);
+      if (!files || prId !== `PR_mock${prs.get(path)?.number}`) return reject("pr_not_found");
+      if (viewed) files.add(file);
+      else files.delete(file);
     },
     async worktreeCheckLog(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

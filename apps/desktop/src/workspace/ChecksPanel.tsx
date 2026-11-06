@@ -27,6 +27,8 @@ export function ChecksPanel(props: {
   visible: boolean;
   // Embedded under the pull request panel, which has its own header, merge controls and comments.
   bare?: boolean;
+  // Embedded in the pull request page, which has its own header: the merge menu and comments stay.
+  headless?: boolean;
   // Where queued comments can go: the sessions to pick an agent tab from, and the send itself.
   sessions?: Sessions | null;
   onSendComments?(pr: { number: number; title: string; url: string }, groups: CommentGroup[], choice: SendChoice, ack: boolean): Promise<SendOutcome>;
@@ -158,7 +160,7 @@ export function ChecksPanel(props: {
       )}
       {pr ? (
         <>
-          {!props.bare && <div className="ws-checks-pr">
+          {!props.bare && !props.headless && <div className="ws-checks-pr">
             <span className="ws-dot" data-pr={pr.state} aria-hidden="true" />
             <span className="ws-checks-number">{`#${pr.number}`}</span>
             <span className="ws-checks-title" title={pr.title}>
@@ -167,7 +169,7 @@ export function ChecksPanel(props: {
             <span className="ws-checks-state">{t(`checks.state.${pr.state}`)}</span>
           </div>}
           <div className="ws-checks-actions">
-            {!props.bare && (
+            {!props.bare && !props.headless && (
               <button type="button" className="ws-checks-btn" onClick={() => void open(false)}>
                 {t("checks.openPr")}
               </button>

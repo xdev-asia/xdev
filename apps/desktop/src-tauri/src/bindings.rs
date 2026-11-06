@@ -314,6 +314,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::PrMergeInfo::export_all(cfg)?;
     xdev_git::RerunReport::export_all(cfg)?;
     xdev_git::PrDetail::export_all(cfg)?;
+    xdev_git::PrViewed::export_all(cfg)?;
     xdev_git::PrEntry::export_all(cfg)?;
     xdev_git::PrEntryKind::export_all(cfg)?;
     xdev_git::PrFile::export_all(cfg)?;

@@ -7,7 +7,10 @@ import { createMockApi, type Api, type PrDetail, type PrView } from "@/api";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { translate } from "@/i18n";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Button, Tabs } from "@xdev-asia/ui";
+import { ChecksPanel } from "./ChecksPanel";
 import { PrPanel } from "./PrPanel";
+import { EditPrDialog } from "./EditPrDialog";
 import { PrStore } from "./prs";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -72,7 +75,7 @@ function seeded(details: Record<string, PrDetail> = {}, prs: Record<string, PrVi
 }
 
 // Draws with its own hook values; the first draw's effects run once, as on mount.
-function mount(api: Api, prs: PrStore, extra: { onOpenFile?: (rel: string) => void } = {}) {
+function mount(api: Api, prs: PrStore, extra: { onOpenFile?: (rel: string) => void; page?: boolean; onOpenPage?: () => void } = {}) {
   const values: unknown[] = [];
   const draw = () => {
     hooks.values = values;
@@ -127,6 +130,21 @@ it("opens in the browser and refreshes from the header", async () => {
   read.mockClear();
   button(view, en("prPanel.refresh")).props.onClick();
   expect(read).toHaveBeenCalledTimes(1);
+});
+
+it("Edit opens the edit dialog on the current title and body, and a save reads the PR again", async () => {
+  const api = seeded({ [OAK]: structuredClone(DETAIL) }, { [OAK]: PR });
+  const read = vi.spyOn(api, "worktreePrDetail");
+  const view = mount(api, new PrStore(api));
+  await tick();
+  expect(view.all().some((n) => n.type === EditPrDialog)).toBe(false);
+  button(view, en("prPanel.edit")).props.onClick();
+  const dialog = view.all().find((n) => n.type === EditPrDialog)!;
+  expect(dialog.props).toMatchObject({ number: 7, title: DETAIL.title, body: DETAIL.body });
+  read.mockClear();
+  await dialog.props.onSaved();
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(view.all().some((n) => n.type === EditPrDialog)).toBe(false);
 });
 
 it("the reply goes out as a PR comment and the conversation shows it", async () => {
@@ -251,4 +269,43 @@ it("holds at 360 px: the tab strip scrolls and long names cut instead of widenin
   expect(css).toMatch(/\.pr-file\s*\{[^}]*text-overflow:\s*ellipsis/);
   expect(css).toMatch(/\.pr-body\s*\{[^}]*overflow-x:\s*auto/);
   expect(css).not.toMatch(/border-left/);
+});
+
+it("Open full view asks for the page; the page itself has no such button", async () => {
+  const api = seeded({ [OAK]: DETAIL }, { [OAK]: PR });
+  const opened = vi.fn();
+  const panel = mount(api, new PrStore(api), { onOpenPage: opened });
+  await tick();
+  button(panel, en("prPanel.openPage")).props.onClick();
+  expect(opened).toHaveBeenCalledTimes(1);
+  expect(mount(api, new PrStore(api)).html()).not.toContain(en("prPanel.openPage"));
+  const page = mount(api, new PrStore(api), { page: true, onOpenPage: opened });
+  await tick();
+  expect(page.html()).not.toContain(en("prPanel.openPage"));
+});
+
+it("the page shows every part at once, with the checks, merge menu and comments under its own header", async () => {
+  const api = seeded({ [OAK]: DETAIL }, { [OAK]: PR });
+  const view = mount(api, new PrStore(api), { page: true });
+  await tick();
+  expect(view.all().some((n) => n.type === Tabs)).toBe(false);
+  const html = view.html();
+  expect(html).toContain("pr-page");
+  for (const text of ["#7", "Fix the thing", "main ← oak", en("prPanel.by", { author: "ada" }), "<strong>loop</strong>", "grace", "First note", "src/b.ts"]) {
+    expect(html).toContain(text);
+  }
+  expect(html).toContain(en("prPanel.tab.checks"));
+  expect(html).toContain(en("prPanel.auto"));
+  expect(html).not.toContain("<script>");
+  expect(html).not.toContain("ws-checks-pr");
+  const checks = view.all().find((n) => n.type === ChecksPanel)!;
+  expect(checks.props).toMatchObject({ bare: false, headless: true, worktree: OAK });
+  // The merge button inside the checks is the one primary button of the page.
+  expect(view.all().filter((n) => n.type === Button && n.props.variant === undefined)).toEqual([]);
+});
+
+it("the page lays out in one column at 360 px", () => {
+  const css = readFileSync(fileURLToPath(new URL("../styles/prPanel.css", import.meta.url)), "utf8");
+  expect(css).toMatch(/\.pr-page-cols\s*\{[^}]*flex-wrap:\s*wrap/);
+  expect(css).toMatch(/\.pr-page-main,\s*\.pr-page-side\s*\{[^}]*min-width:\s*0/);
 });

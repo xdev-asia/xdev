@@ -196,3 +196,75 @@ button.pr-file:hover {
   flex-direction: column;
   gap: 6px;
 }
+
+.pr-reviewers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-edit-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pr-edit textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.pr-edit-preview {
+  max-height: 50vh;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}
+
+/* The pull request as a page in a workspace tab: the conversation and checks beside the reviewers and files, one column when narrow. */
+.pr-page {
+  gap: 12px;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.pr-page-cols {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.pr-page-main,
+.pr-page-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pr-page-main {
+  flex: 2 1 420px;
+}
+
+.pr-page-side {
+  flex: 1 1 240px;
+}

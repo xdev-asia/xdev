@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Badge, Button, FilterChip, SearchInput, TreeView } from "@xdev-asia/ui";
+import { Badge, Button, Checkbox, FilterChip, SearchInput, TreeView } from "@xdev-asia/ui";
 import { reviewRows } from "./reviewRows";
 import type { JSX } from "react";
 import { toApiError, type Api, type ReviewData, type ReviewFile, type ReviewNote } from "@/api";
@@ -81,10 +81,22 @@ export function ReviewView(props: {
   const [openPr, setOpenPr] = useState<number | null>(null);
   // The PR head on GitHub, read again after every review read (a push does not move the local HEAD).
   const [prHead, setPrHead] = useState<string | null>(null);
+  // The files of the open PR marked viewed on GitHub, with the PR node id the mark needs; null (no open PR, offline) hides the box.
+  const [viewed, setViewed] = useState<{ id: string; files: Set<string> } | null>(null);
   useEffect(() => {
     let live = true;
+    setViewed(null);
     api.worktreePr(worktree).then(
-      (pr) => live && setOpenPr(pr && (pr.state === "open" || pr.state === "draft") ? pr.number : null),
+      (pr) => {
+        const number = pr && (pr.state === "open" || pr.state === "draft") ? pr.number : null;
+        if (!live) return;
+        setOpenPr(number);
+        if (number === null) return;
+        api.worktreePrViewed(worktree, number).then(
+          (v) => live && setViewed({ id: v.id, files: new Set(v.viewed) }),
+          () => live && setViewed(null),
+        );
+      },
       () => live && setOpenPr(null),
     );
     return () => {
@@ -239,7 +251,7 @@ export function ReviewView(props: {
   const shown = multiOnly ? matching.filter((f) => isMulti(byPath.get(f.path))) : matching;
   // The clicked file stays marked only while it is still in the review.
   const active = selected !== null && files.some((f) => f.path === selected) ? selected : undefined;
-  const isOpen = (path: string) => expanded[path] ?? files.length <= OPEN_LIMIT;
+  const isOpen = (path: string) => expanded[path] ?? (!viewed?.files.has(path) && files.length <= OPEN_LIMIT);
 
   function setOption(patch: Partial<ViewOptions>): void {
     const next = { ...opts, ...patch };
@@ -258,6 +270,27 @@ export function ReviewView(props: {
 
   function toggle(path: string): void {
     setExpanded({ ...expanded, [path]: !isOpen(path) });
+  }
+
+  // Marks a file viewed on the PR at once and folds it; a failure puts the box back.
+  async function markViewed(path: string, on: boolean): Promise<void> {
+    if (!viewed) return;
+    const flip = (want: boolean) =>
+      setViewed((v) => {
+        if (!v) return v;
+        const next = new Set(v.files);
+        if (want) next.add(path);
+        else next.delete(path);
+        return { ...v, files: next };
+      });
+    flip(on);
+    setExpanded({ ...expanded, [path]: !on });
+    try {
+      await api.worktreePrFileViewed(worktree, viewed.id, path, on);
+    } catch (e) {
+      flip(!on);
+      setProblem(toApiError(e));
+    }
   }
 
   function show(path: string): void {
@@ -472,6 +505,14 @@ export function ReviewView(props: {
                     <Button variant="secondary" className="attr-versions-button" onClick={() => setVersionsOf(f.path)}>
                       {t("review.attr.versions")}
                     </Button>
+                    {viewed && (
+                      <Checkbox
+                        label={t("review.viewed")}
+                        aria-label={t("review.viewedFile", { path: f.path })}
+                        checked={viewed.files.has(f.path)}
+                        onChange={(e) => void markViewed(f.path, e.target.checked)}
+                      />
+                    )}
                   </span>
                 }
                 api={api}

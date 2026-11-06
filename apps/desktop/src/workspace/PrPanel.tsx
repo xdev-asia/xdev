@@ -8,7 +8,9 @@ import { useI18n } from "@/i18n";
 import { ago } from "./ago";
 import { ChecksPanel } from "./ChecksPanel";
 import { CreatePrDialog } from "./CreatePrDialog";
+import { EditPrDialog } from "./EditPrDialog";
 import type { PrCommentStore } from "./prCommentStore";
+import { PrReviewers } from "./PrReviewers";
 import type { SendChoice } from "./agentPrompt";
 import type { CommentGroup } from "./prComments";
 import type { SendOutcome } from "./PrSendBar";
@@ -22,20 +24,15 @@ const REASONS: readonly string[] = ["gh_missing", "gh_auth", "not_github"];
 const NO_LINKS = () => null;
 const METHODS: MergeMethod[] = ["squash", "merge", "rebase"];
 
-const VERDICT_TONE: Record<ReviewerState, "ok" | "danger" | "neutral" | "warn"> = {
-  approved: "ok",
-  "changes-requested": "danger",
-  commented: "neutral",
-  dismissed: "neutral",
-  requested: "warn",
-};
-
 function errorText(error: ApiError, t: T): string {
   const base = REASONS.includes(error.code) ? t(`checks.reason.${error.code}`) : t(`error.${error.code}`);
   return error.code === "gh_failed" && error.detail ? `${base} ${error.detail}` : base;
 }
 
-/** The pull request of the current branch: conversation, checks and changed files, with auto-merge. */
+/**
+ * The pull request of the current branch: conversation, checks and changed files, with auto-merge.
+ * As a page (a workspace tab) it shows all of them at once, with the merge menu and review comments.
+ */
 export function PrPanel(props: {
   api: Api;
   worktree: string;
@@ -49,8 +46,13 @@ export function PrPanel(props: {
   /** Opens the diff of a changed file, by its path in the worktree. Left out, the files only list. */
   onOpenFile?(rel: string): void;
   onOpenGitSettings?(): void;
+  /** Laid out as the full page instead of the side panel. */
+  page?: boolean;
+  /** Opens the full page; left out, the panel has no way there. */
+  onOpenPage?(): void;
 }): JSX.Element {
   const { api, worktree, prs, visible } = props;
+  const page = props.page === true;
   const { t } = useI18n();
   const [detail, setDetail] = useState<PrDetail | null | undefined>(undefined);
   const [error, setError] = useState<ApiError | null>(null);
@@ -62,6 +64,7 @@ export function PrPanel(props: {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [base, setBase] = useState("");
   const [git, setGit] = useState({ prDraft: false, sourceControlAi: false, prGenerateOnOpen: false, prOpenAfterCreate: false });
   // The worktree a response belongs to; an answer for another worktree is dropped.
@@ -90,6 +93,7 @@ export function PrPanel(props: {
     setInfo(null);
     setMethod(null);
     setReply("");
+    setEditing(false);
     setTab("conversation");
   }, [worktree]);
 
@@ -191,8 +195,121 @@ export function PrPanel(props: {
   const verdict = (state: ReviewerState): string => t(`prPanel.verdict.${state}`);
   const entryLabel = (e: PrEntry): string => (e.kind === "review" && e.review ? verdict(e.review) : t("prPanel.commented"));
 
+  // The parts, laid out as tabs in the panel and side by side on the page.
+  const body =
+    detail.body.trim() !== "" ? (
+      <div className="preview-body pr-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(detail.body, "", NO_LINKS) }} />
+    ) : (
+      <p className="ws-empty">{t("prPanel.noBody")}</p>
+    );
+  const reviewers = (
+    <PrReviewers
+      api={api}
+      worktree={worktree}
+      number={detail.number}
+      reviewers={detail.reviewers}
+      editable={detail.state === "open" || detail.state === "draft"}
+      onChanged={load}
+      onError={setError}
+    />
+  );
+  const activity = (
+    <>
+      <h3 className="pr-h">{t("prPanel.activity")}</h3>
+      {detail.entries.length === 0 ? (
+        <p className="ws-empty">{t("prPanel.noActivity")}</p>
+      ) : (
+        <ul className="pr-list">
+          {detail.entries.map((e, i) => {
+            const at = Date.parse(e.at);
+            return (
+              <li key={`${e.at}/${i}`} className="pr-entry">
+                <div className="pr-entry-head">
+                  <strong>{e.author}</strong>
+                  <span className="pr-muted">{entryLabel(e)}</span>
+                  {!Number.isNaN(at) && <span className="pr-muted">{ago(at, now, t)}</span>}
+                </div>
+                {e.body.trim() !== "" && <div className="preview-body pr-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(e.body, "", NO_LINKS) }} />}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <form
+        className="pr-reply"
+        onSubmit={(ev) => {
+          ev.preventDefault();
+          void post();
+        }}
+      >
+        <Textarea label={t("prPanel.reply")} rows={4} value={reply} disabled={posting} onChange={(ev) => setReply(ev.target.value)} />
+        {/* On the page the merge button is the primary one. */}
+        <Button type="submit" variant={page ? "secondary" : undefined} disabled={posting || reply.trim() === ""}>
+          {t(posting ? "prPanel.replying" : "prPanel.replySend")}
+        </Button>
+      </form>
+    </>
+  );
+  const auto = detail.state === "open" && (
+    <div className="pr-auto">
+      <h3 className="pr-h">{t("prPanel.auto")}</h3>
+      <p className="pr-muted">
+        {detail.autoMerge
+          ? t("prPanel.auto.on", { method: t(`prPanel.method.${detail.autoMerge.method}`), by: detail.autoMerge.enabledBy ?? "-" })
+          : t("prPanel.auto.off")}
+      </p>
+      <div className="pr-actions">
+        {!detail.autoMerge && (
+          <Select
+            aria-label={t("prPanel.auto.method")}
+            options={methods.map((m) => ({ value: m, label: t(`prPanel.method.${m}`) }))}
+            value={chosen}
+            disabled={busy}
+            onChange={(ev) => setMethod(ev.target.value as MergeMethod)}
+          />
+        )}
+        <Button type="button" variant="secondary" disabled={busy} onClick={() => (detail.autoMerge ? void setAuto(false) : setConfirm(true))}>
+          {t(detail.autoMerge ? "prPanel.auto.disable" : "prPanel.auto.enable")}
+        </Button>
+      </div>
+    </div>
+  );
+  // The page keeps the merge menu and review comments under the checks; the panel leaves them to the Checks panel.
+  const checks = (
+    <ChecksPanel
+      bare={!page}
+      headless={page}
+      api={api}
+      worktree={worktree}
+      prs={prs}
+      comments={props.comments}
+      visible={visible}
+      sessions={props.sessions}
+      onSendComments={props.onSendComments}
+      onFix={props.onFix}
+      onFixAll={props.onFixAll}
+    />
+  );
+  const files =
+    detail.files.length === 0 ? (
+      <p className="ws-empty">{t("prPanel.noFiles")}</p>
+    ) : (
+      <ul className="pr-list">
+        {detail.files.map((f) => (
+          <li key={f.path} className="pr-row">
+            {props.onOpenFile ? (
+              <button type="button" className="pr-file" title={f.path} onClick={() => props.onOpenFile?.(f.path)}>{f.path}</button>
+            ) : (
+              <span className="pr-file" title={f.path}>{f.path}</span>
+            )}
+            <DiffStat added={f.additions} removed={f.deletions} labels={{ diffStat: (a, r) => t("prPanel.diffStat", { added: a, removed: r }) }} />
+          </li>
+        ))}
+      </ul>
+    );
+
   return (
-    <div className="pr-panel">
+    <div className={page ? "pr-panel pr-page" : "pr-panel"}>
       <header className="pr-head">
         <div className="pr-title-row">
           <span className="pr-number">{`#${detail.number}`}</span>
@@ -209,10 +326,14 @@ export function PrPanel(props: {
           {detail.mergeState !== "unknown" && <span>{t(`prPanel.mergeState.${detail.mergeState}`)}</span>}
         </div>
         <div className="pr-actions">
+          <Button type="button" variant="secondary" onClick={() => setEditing(true)}>{t("prPanel.edit")}</Button>
           <Button type="button" variant="secondary" onClick={() => void api.worktreePrOpen(worktree, false).catch((e: unknown) => setError(toApiError(e)))}>
             {t("prPanel.openBrowser")}
           </Button>
           <Button type="button" variant="secondary" onClick={() => void load()}>{t("prPanel.refresh")}</Button>
+          {!page && props.onOpenPage && (
+            <Button type="button" variant="secondary" onClick={props.onOpenPage}>{t("prPanel.openPage")}</Button>
+          )}
         </div>
       </header>
       {error && (
@@ -221,134 +342,78 @@ export function PrPanel(props: {
           <Button type="button" variant="secondary" onClick={() => void load()}>{t("prPanel.retry")}</Button>
         </div>
       )}
-      <div className="pr-tabs">
-        <Tabs
-          label={t("prPanel.tabs")}
-          idPrefix="pr"
-          value={tab}
-          onChange={(id) => setTab(id as Tab)}
-          items={[
-            { id: "conversation", label: t("prPanel.tab.conversation") },
-            { id: "checks", label: t("prPanel.tab.checks"), badge: failing > 0 ? failing : undefined, badgeTone: "danger" },
-            { id: "files", label: t("prPanel.tab.files"), badge: detail.files.length || undefined },
-          ]}
+      {page ? (
+        <div className="pr-page-cols">
+          <div className="pr-page-main">
+            {body}
+            <section className="pr-section" aria-labelledby="pr-page-checks">
+              <h3 id="pr-page-checks" className="pr-h">{t("prPanel.tab.checks")}</h3>
+              {checks}
+            </section>
+            {activity}
+          </div>
+          <div className="pr-page-side">
+            {reviewers}
+            {auto}
+            <section className="pr-section" aria-labelledby="pr-page-files">
+              <h3 id="pr-page-files" className="pr-h">{t("prPanel.tab.files")}</h3>
+              {files}
+            </section>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="pr-tabs">
+            <Tabs
+              label={t("prPanel.tabs")}
+              idPrefix="pr"
+              value={tab}
+              onChange={(id) => setTab(id as Tab)}
+              items={[
+                { id: "conversation", label: t("prPanel.tab.conversation") },
+                { id: "checks", label: t("prPanel.tab.checks"), badge: failing > 0 ? failing : undefined, badgeTone: "danger" },
+                { id: "files", label: t("prPanel.tab.files"), badge: detail.files.length || undefined },
+              ]}
+            />
+          </div>
+          {tab === "conversation" && (
+            <section className="pr-section" id="pr-panel-conversation" role="tabpanel" aria-labelledby="pr-tab-conversation">
+              {body}
+              {reviewers}
+              {activity}
+              {auto}
+            </section>
+          )}
+          {tab === "checks" && (
+            <section className="pr-section" id="pr-panel-checks" role="tabpanel" aria-labelledby="pr-tab-checks">
+              {checks}
+            </section>
+          )}
+          {tab === "files" && (
+            <section className="pr-section" id="pr-panel-files" role="tabpanel" aria-labelledby="pr-tab-files">
+              {files}
+            </section>
+          )}
+        </>
+      )}
+      {editing && (
+        <EditPrDialog
+          api={api}
+          worktree={worktree}
+          number={detail.number}
+          title={detail.title}
+          body={detail.body}
+          onSaved={async () => {
+            setEditing(false);
+            await load();
+            void prs.load(worktree);
+          }}
+          onClose={() => setEditing(false)}
         />
-      </div>
-      {tab === "conversation" && (
-        <section className="pr-section" id="pr-panel-conversation" role="tabpanel" aria-labelledby="pr-tab-conversation">
-          {detail.body.trim() !== "" ? (
-            <div className="preview-body pr-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(detail.body, "", NO_LINKS) }} />
-          ) : (
-            <p className="ws-empty">{t("prPanel.noBody")}</p>
-          )}
-          <h3 className="pr-h">{t("prPanel.reviewers")}</h3>
-          {detail.reviewers.length === 0 ? (
-            <p className="ws-empty">{t("prPanel.noReviewers")}</p>
-          ) : (
-            <ul className="pr-list">
-              {detail.reviewers.map((r) => (
-                <li key={r.login} className="pr-row">
-                  <span className="pr-grow">{r.login}</span>
-                  <StatusDot tone={VERDICT_TONE[r.state]} label={verdict(r.state)} />
-                </li>
-              ))}
-            </ul>
-          )}
-          <h3 className="pr-h">{t("prPanel.activity")}</h3>
-          {detail.entries.length === 0 ? (
-            <p className="ws-empty">{t("prPanel.noActivity")}</p>
-          ) : (
-            <ul className="pr-list">
-              {detail.entries.map((e, i) => {
-                const at = Date.parse(e.at);
-                return (
-                  <li key={`${e.at}/${i}`} className="pr-entry">
-                    <div className="pr-entry-head">
-                      <strong>{e.author}</strong>
-                      <span className="pr-muted">{entryLabel(e)}</span>
-                      {!Number.isNaN(at) && <span className="pr-muted">{ago(at, now, t)}</span>}
-                    </div>
-                    {e.body.trim() !== "" && <div className="preview-body pr-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(e.body, "", NO_LINKS) }} />}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <form
-            className="pr-reply"
-            onSubmit={(ev) => {
-              ev.preventDefault();
-              void post();
-            }}
-          >
-            <Textarea label={t("prPanel.reply")} rows={4} value={reply} disabled={posting} onChange={(ev) => setReply(ev.target.value)} />
-            <Button type="submit" disabled={posting || reply.trim() === ""}>{t(posting ? "prPanel.replying" : "prPanel.replySend")}</Button>
-          </form>
-          {detail.state === "open" && (
-            <div className="pr-auto">
-              <h3 className="pr-h">{t("prPanel.auto")}</h3>
-              <p className="pr-muted">
-                {detail.autoMerge
-                  ? t("prPanel.auto.on", { method: t(`prPanel.method.${detail.autoMerge.method}`), by: detail.autoMerge.enabledBy ?? "-" })
-                  : t("prPanel.auto.off")}
-              </p>
-              <div className="pr-actions">
-                {!detail.autoMerge && (
-                  <Select
-                    aria-label={t("prPanel.auto.method")}
-                    options={methods.map((m) => ({ value: m, label: t(`prPanel.method.${m}`) }))}
-                    value={chosen}
-                    disabled={busy}
-                    onChange={(ev) => setMethod(ev.target.value as MergeMethod)}
-                  />
-                )}
-                <Button type="button" variant="secondary" disabled={busy} onClick={() => (detail.autoMerge ? void setAuto(false) : setConfirm(true))}>
-                  {t(detail.autoMerge ? "prPanel.auto.disable" : "prPanel.auto.enable")}
-                </Button>
-              </div>
-            </div>
-          )}
-        </section>
-      )}
-      {tab === "checks" && (
-        <section className="pr-section" id="pr-panel-checks" role="tabpanel" aria-labelledby="pr-tab-checks">
-          <ChecksPanel
-            bare
-            api={api}
-            worktree={worktree}
-            prs={prs}
-            comments={props.comments}
-            visible={visible}
-            sessions={props.sessions}
-            onSendComments={props.onSendComments}
-            onFix={props.onFix}
-            onFixAll={props.onFixAll}
-          />
-        </section>
-      )}
-      {tab === "files" && (
-        <section className="pr-section" id="pr-panel-files" role="tabpanel" aria-labelledby="pr-tab-files">
-          {detail.files.length === 0 ? (
-            <p className="ws-empty">{t("prPanel.noFiles")}</p>
-          ) : (
-            <ul className="pr-list">
-              {detail.files.map((f) => (
-                <li key={f.path} className="pr-row">
-                  {props.onOpenFile ? (
-                    <button type="button" className="pr-file" title={f.path} onClick={() => props.onOpenFile?.(f.path)}>{f.path}</button>
-                  ) : (
-                    <span className="pr-file" title={f.path}>{f.path}</span>
-                  )}
-                  <DiffStat added={f.additions} removed={f.deletions} labels={{ diffStat: (a, r) => t("prPanel.diffStat", { added: a, removed: r }) }} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
       )}
       <ConfirmDialog
         open={confirm}
-        titleId="pr-auto-title"
+        titleId={page ? "pr-page-auto-title" : "pr-auto-title"}
         title={t("prPanel.auto.confirm.title", { number: detail.number })}
         body={t("prPanel.auto.confirm.body", { method: t(`prPanel.method.${chosen}`), base: detail.base })}
         confirmLabel={t("prPanel.auto.enable")}

@@ -50,7 +50,7 @@ import { flash } from "./flash";
 import { startBusyReport } from "@/stats/busyReport";
 import { startNotchReport } from "@/notch/notchReport";
 import { PrPanel } from "./PrPanel";
-import { onPrPanelOpen } from "./prPanelEvents";
+import { onPrPageOpen, onPrPanelOpen } from "./prPanelEvents";
 import { ForeignTermsHost } from "@/foreignTerms/ForeignTermsHost";
 import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
@@ -326,7 +326,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const statusSettings = useStatusSettings();
   const automationsSettings = useAutomationsSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string): boolean => false, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, openPrTab: () => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {}, automationSetup: async (_w: string, _r: string, _d: SetupDecision) => {} }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string): boolean => false, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, openPrTab: () => {}, openPrPage: () => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {}, automationSetup: async (_w: string, _r: string, _d: SetupDecision) => {} }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -1003,6 +1003,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
   live.openPrTab = openPrTab;
   useEffect(() => onPrPanelOpen(() => live.openPrTab()), []);
+  // "Open full view" and the palette open the pull request as a page among the worktree's tabs.
+  const [prPage, setPrPage] = useState<{ worktree: string; seq: number } | null>(null);
+  live.openPrPage = () => {
+    show("workspace");
+    if (current) setPrPage((p) => ({ worktree: current.path, seq: (p?.seq ?? 0) + 1 }));
+  };
+  useEffect(() => onPrPageOpen(() => live.openPrPage()), []);
   // Read on start and again when the person comes back from Settings.
   useEffect(() => {
     if (view === "settings") return;
@@ -2192,6 +2199,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                       onPanes={(ids) => setPanes((s) => (s[path]?.join(" ") === ids.join(" ") ? s : { ...s, [path]: ids }))}
                       reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
                       commit={commitAsk?.worktree === path ? { id: commitAsk.id, file: commitAsk.file, seq: commitAsk.seq } : undefined}
+                      prPage={prPage?.worktree === path ? prPage.seq : undefined}
+                      renderPrPage={(shown) => <PrPanel page api={api} worktree={path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={shown} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} onOpenFile={(rel) => openFile(path, rel)} />}
                       front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
                       focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
                       onShowHistory={showInHistory}
@@ -2437,7 +2446,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "pr"}>
                 <SurfaceBoundary id="panel.pr" surface="Right sidebar: pull request" resetKey={current?.path} titleKey="boundary.panel.title">
                   {current ? (
-                    <PrPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={rightOpen && panelTab === "pr"} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} onOpenFile={(rel) => openFile(current.path, rel)} />
+                    <PrPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={rightOpen && panelTab === "pr"} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} onOpenFile={(rel) => openFile(current.path, rel)} onOpenPage={() => live.openPrPage()} />
                   ) : (
                     <p className="ws-empty">{t("workspace.panel.empty")}</p>
                   )}

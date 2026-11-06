@@ -1865,6 +1865,28 @@ it("ctrl_w_on_the_commit_tab_closes_it", () => {
   expect(view.find((n) => n.props["data-tab"] === "commit:")).toBeUndefined();
 });
 
+it("a PR page ask opens one pull request tab drawn by the shell, and closing it removes it", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const render = vi.fn((shown: boolean) => <p className="pr-page-probe">{String(shown)}</p>);
+  const view = harness(api, live, A, true, { prPage: 1, renderPrPage: render });
+  expect(selected(view)).toEqual(["pr:"]);
+  const html = view.html();
+  expect(html).toContain(en("prPanel.tab"));
+  expect(html).toContain('<p class="pr-page-probe">true</p>');
+  const again = harness(api, live, A, true, { prPage: 2, renderPrPage: render });
+  expect(again.all().filter((n) => n.props["data-tab"] === "pr:" && n.props.role === "tab")).toHaveLength(1);
+  press(again, CTRL_W);
+  expect(again.find((n) => n.props["data-tab"] === "pr:")).toBeUndefined();
+});
+
+it("without a way to draw it, a PR page ask opens no tab", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live, A, true, { prPage: 1 });
+  expect(view.find((n) => n.props["data-tab"] === "pr:")).toBeUndefined();
+});
+
 it("a sleeping tab shows a Wake overlay in place of its terminal, and Wake starts it again", async () => {
   const api = createMockApi({});
   const live = (sessions = new Sessions(api));
