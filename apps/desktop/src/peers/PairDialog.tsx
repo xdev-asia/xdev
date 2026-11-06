@@ -6,13 +6,44 @@ import { useI18n } from "@/i18n";
 import { pushToast } from "@/workspace/toastStore";
 import { codeText, errorText, formatCountdown } from "./peersModel";
 import { SasCheck } from "./SasCheck";
-import { CodeInput } from "./standins/CodeInput";
+import { CodeInput, formatCode } from "./standins/CodeInput";
 import { PairingCode } from "./standins/PairingCode";
 
 const TICK_MS = 1000;
 const BINDS: LinkBind[] = ["localhost", "lan", "tailscale"];
 
 type JoinStep = { kind: "form" } | { kind: "sas"; pending: PairPending; answered: boolean } | { kind: "done"; name: string };
+
+/** The code this computer shows and how long it holds; when the time is up, a New code button instead. */
+export function HostCode(props: { t: (key: string, vars?: Record<string, string | number>) => string; code: string; remainingMs: number; onCopy(): void; onNew(): void }): JSX.Element {
+  const { t } = props;
+  if (props.remainingMs <= 0) {
+    return (
+      <>
+        <p role="status">{t("peers.pair.expired")}</p>
+        <div>
+          <Button type="button" variant="secondary" onClick={props.onNew}>
+            {t("peers.pair.newCode")}
+          </Button>
+        </div>
+      </>
+    );
+  }
+  return (
+    <>
+      <p>{t("peers.pair.code")}</p>
+      <PairingCode value={props.code} label={t("peers.pair.code")} copyLabel={t("peers.pair.copyLink")} onCopy={props.onCopy} />
+      <p className="settings-hint" role="status">
+        {t("peers.pair.expires", { time: formatCountdown(props.remainingMs) })}
+      </p>
+      <div>
+        <Button type="button" variant="secondary" onClick={props.onCopy}>
+          {t("peers.pair.copyLink")}
+        </Button>
+      </div>
+    </>
+  );
+}
 
 /** Pair a computer: show a code here, or join the code another computer shows. */
 export function PairDialog(props: { api: Api; onClose(): void; onPaired(): void }): JSX.Element {
@@ -108,7 +139,8 @@ export function PairDialog(props: { api: Api; onClose(): void; onPaired(): void 
     setBusy(true);
     setError(undefined);
     try {
-      const pending = await api.peerPairJoin(to, code, grantBack);
+      // The code goes as it is shown, in two groups: `7K4QM-2XD9P`.
+      const pending = await api.peerPairJoin(to, formatCode(code, 5), grantBack);
       joinName.current = pending.name;
       setStep({ kind: "sas", pending, answered: false });
     } catch (e) {
@@ -135,7 +167,6 @@ export function PairDialog(props: { api: Api; onClose(): void; onPaired(): void 
   }
 
   const remaining = offer ? offer.expiresAtMs - now : 0;
-  const expired = offer !== null && remaining <= 0;
 
   // One primary per surface: the dialog's own button changes with the step.
   let confirmLabel = t("peers.pair.close");
@@ -201,30 +232,7 @@ export function PairDialog(props: { api: Api; onClose(): void; onPaired(): void 
                   value={bind}
                   onChange={(v) => setBind(v as LinkBind)}
                 />
-                {offer && !expired && (
-                  <>
-                    <p>{t("peers.pair.code")}</p>
-                    <PairingCode value={offer.code} label={t("peers.pair.code")} copyLabel={t("peers.pair.copyLink")} onCopy={copyLink} />
-                    <p className="settings-hint" role="status">
-                      {t("peers.pair.expires", { time: formatCountdown(remaining) })}
-                    </p>
-                    <div>
-                      <Button type="button" variant="secondary" onClick={copyLink}>
-                        {t("peers.pair.copyLink")}
-                      </Button>
-                    </div>
-                  </>
-                )}
-                {expired && (
-                  <>
-                    <p role="status">{t("peers.pair.expired")}</p>
-                    <div>
-                      <Button type="button" variant="secondary" onClick={() => setNonce(nonce + 1)}>
-                        {t("peers.pair.newCode")}
-                      </Button>
-                    </div>
-                  </>
-                )}
+                {offer && <HostCode t={t} code={offer.code} remainingMs={remaining} onCopy={copyLink} onNew={() => setNonce(nonce + 1)} />}
               </>
             )}
           </div>
