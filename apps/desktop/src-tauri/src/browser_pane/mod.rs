@@ -339,16 +339,24 @@ pub fn browser_navigate(app: AppHandle, tab: String, input: String) -> Result<St
     Ok(url)
 }
 
-/// Back (`-1`) or forward (`1`) in `tab`'s history.
+/// The script that moves `step` through a page's history: back when below 0, forward when above.
+/// `0` moves nowhere.
+fn history_js(step: i32) -> Option<&'static str> {
+    match step.signum() {
+        -1 => Some("history.back()"),
+        1 => Some("history.forward()"),
+        _ => None,
+    }
+}
+
+/// Back (`-1`) or forward (`1`) in `tab`'s history. A `0` step does nothing.
 #[tauri::command(async)]
 pub fn browser_history(app: AppHandle, tab: String, step: i32) -> Result<(), CmdError> {
-    let Some(view) = webview_of(&app, &tab) else {
+    let Some(js) = history_js(step) else {
         return Ok(());
     };
-    let js = if step < 0 {
-        "history.back()"
-    } else {
-        "history.forward()"
+    let Some(view) = webview_of(&app, &tab) else {
+        return Ok(());
     };
     view.eval(js).map_err(|e| err("browser_unavailable", e))
 }
@@ -401,6 +409,15 @@ pub fn browser_settings_put(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_zero_history_step_moves_nowhere() {
+        assert_eq!(history_js(0), None);
+        assert_eq!(history_js(-1), Some("history.back()"));
+        assert_eq!(history_js(-3), Some("history.back()"));
+        assert_eq!(history_js(1), Some("history.forward()"));
+        assert_eq!(history_js(i32::MIN), Some("history.back()"));
+    }
 
     #[test]
     fn unsafe_start_urls_become_blank() {
