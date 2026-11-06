@@ -1,6 +1,7 @@
 import { toApiError, type Api } from "@/api";
 import { fileTabs, type FileEntry, type FileTabs } from "../fileTabs";
 import { lspLanguageId } from "./languageIds";
+import { lspAsk, type LspAskCounter } from "./lspAskModel";
 import { lspStatus, type LspStatusStore } from "./lspStatus";
 
 /** How long the text must stay still before a change goes to the server. */
@@ -35,6 +36,7 @@ export class DocSync {
     private readonly store: FileTabs = fileTabs,
     private readonly status: LspStatusStore = lspStatus,
     private readonly delay = CHANGE_DELAY_MS,
+    private readonly ask: LspAskCounter = lspAsk,
   ) {
     this.off = store.subscribe(() => this.sync());
     this.sync();
@@ -102,8 +104,9 @@ export class DocSync {
         const err = toApiError(e);
         if (err.code === "lsp_untrusted") {
           this.status.setDoc(doc.worktree, doc.rel, "untrusted");
-          // A "no" given this session is not asked again.
-          if (err.detail !== "session") this.status.setAsking(doc.worktree, true);
+          // A "no" given this session is not asked again; a first small file is not worth a question, a third file of its language is.
+          const enough = this.ask.shouldAsk(doc.worktree, doc.rel);
+          if (err.detail !== "session" && enough) this.status.setAsking(doc.worktree, true);
         } else {
           this.status.setDoc(doc.worktree, doc.rel, "off");
         }
