@@ -5,11 +5,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 use xdev_ssh::{SshError, SshHost, SyncCounts, parse_config};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
+use crate::settings::SettingsSection;
+use crate::settings_store;
 
 /// One writer at a time: a change reads the file, edits the list and writes it back.
 static LOCK: Mutex<()> = Mutex::new(());
@@ -74,6 +76,10 @@ fn remove_in(dir: &Path, ids: &[String]) -> Result<u32, CmdError> {
     let gone = xdev_ssh::remove_many(&mut hosts, ids);
     if gone > 0 {
         xdev_ssh::save(dir, &hosts).map_err(cmd_error)?;
+        // The history mirror of a removed host goes with it.
+        for id in ids {
+            crate::hosts::remove_mirror(dir, id);
+        }
     }
     Ok(u32::try_from(gone).unwrap_or(u32::MAX))
 }
@@ -139,20 +145,38 @@ pub fn ssh_host_save(state: State<'_, AppState>, host: SshHost) -> Result<SshHos
 }
 
 #[tauri::command(async)]
-pub fn ssh_host_remove(state: State<'_, AppState>, id: String) -> Result<(), CmdError> {
-    match remove_in(data_dir(&state)?, &[id])? {
+pub fn ssh_host_remove(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), CmdError> {
+    let ids = [id];
+    match remove_in(data_dir(&state)?, &ids)? {
         0 => Err(cmd_error(SshError::NotFound)),
-        _ => Ok(()),
+        _ => forget_overrides(&app, &ids),
     }
+}
+
+/// Drops the per-host settings of removed hosts.
+fn forget_overrides(app: &AppHandle, ids: &[String]) -> Result<(), CmdError> {
+    settings_store::write(app, &[SettingsSection::Hosts], |s| {
+        crate::hosts::forget(s, ids);
+    })
+    .map(|_| ())
 }
 
 /// Removes every host in `ids`; returns how many were there.
 #[tauri::command(async)]
 pub fn ssh_hosts_remove_many(
+    app: AppHandle,
     state: State<'_, AppState>,
     ids: Vec<String>,
 ) -> Result<u32, CmdError> {
-    remove_in(data_dir(&state)?, &ids)
+    let gone = remove_in(data_dir(&state)?, &ids)?;
+    if gone > 0 {
+        forget_overrides(&app, &ids)?;
+    }
+    Ok(gone)
 }
 
 /// Reads `~/.ssh/config` again: new aliases are added, hosts that came from it are updated,
@@ -202,6 +226,21 @@ mod tests {
             1
         );
         assert_eq!(list_in(dir.path()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn removing_a_host_deletes_its_mirror() {
+        let dir = tempfile::tempdir().unwrap();
+        let id = counter();
+        save_in(dir.path(), &host("a"), &id).unwrap();
+        save_in(dir.path(), &host("b"), &id).unwrap();
+        for h in ["id0", "id1"] {
+            let logs = crate::hosts::host_dir(dir.path(), h).join("logs");
+            std::fs::create_dir_all(&logs).unwrap();
+        }
+        assert_eq!(remove_in(dir.path(), &["id0".into()]).unwrap(), 1);
+        assert!(!crate::hosts::host_dir(dir.path(), "id0").exists());
+        assert!(crate::hosts::host_dir(dir.path(), "id1").exists());
     }
 
     #[test]
