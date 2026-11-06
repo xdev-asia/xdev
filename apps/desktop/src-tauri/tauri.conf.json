@@ -33,6 +33,9 @@
       "icons/icon.ico"
     ],
     "createUpdaterArtifacts": true,
+    "macOS": {
+      "entitlements": "./entitlements.plist"
+    },
     "linux": {
       "deb": {
         "desktopTemplate": "linux/xdev.desktop.hbs"

@@ -15,6 +15,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 arboard = { version = "3", features = ["wayland-data-control"] }
 blake3.workspace = true
+# Microphone capture for voice dictation (Settings → Voice). Linux needs libasound2-dev.
+cpal = { version = "=0.16.0", default-features = false }
 ignore.workspace = true
 dunce = "1.0.5"
 regex.workspace = true

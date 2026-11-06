@@ -97,6 +97,7 @@ mod shell;
 mod shell_integration;
 mod ship;
 mod squads;
+mod speech;
 mod ssh;
 mod ssh_connect;
 mod stages;
