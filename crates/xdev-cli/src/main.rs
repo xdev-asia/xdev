@@ -126,7 +126,7 @@ enum Command {
         #[command(subcommand)]
         command: app::TerminalCommand,
     },
-    /// Files in the running app: `open <path>[:line[:col]]`.
+    /// Files in the running app: `open <path>[:line[:col]]`, `open-changed`.
     File {
         #[command(subcommand)]
         command: file::FileCommand,
