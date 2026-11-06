@@ -5599,5 +5599,10 @@
   "usage.history.locked": "Days past your CLI logs, and CSV export, are part of xDev Pro.",
   "license.err.required": "This needs xDev Pro.",
   "error.license_required": "This needs xDev Pro.",
-  "usage.stats.range.history": "Saved history (Pro)"
+  "usage.stats.range.history": "Saved history (Pro)",
+  "layout.save.err.nolayout": "There is no layout to save yet.",
+  "layout.manage": "Delete a saved layout…",
+  "layout.delete.title": "Delete a saved layout",
+  "layout.delete.body": "Pick the layout to delete. This cannot be undone.",
+  "layout.deleted": "Deleted layout {name}"
 }

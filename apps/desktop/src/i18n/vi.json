@@ -5599,5 +5599,10 @@
   "usage.history.locked": "Những ngày ngoài nhật ký CLI và xuất CSV thuộc xDev Pro.",
   "license.err.required": "Tính năng này cần xDev Pro.",
   "error.license_required": "Tính năng này cần xDev Pro.",
-  "usage.stats.range.history": "Lịch sử đã lưu (Pro)"
+  "usage.stats.range.history": "Lịch sử đã lưu (Pro)",
+  "layout.save.err.nolayout": "Chưa có bố cục nào để lưu.",
+  "layout.manage": "Xóa một bố cục đã lưu…",
+  "layout.delete.title": "Xóa một bố cục đã lưu",
+  "layout.delete.body": "Chọn bố cục cần xóa. Thao tác này không thể hoàn tác.",
+  "layout.deleted": "Đã xóa bố cục {name}"
 }

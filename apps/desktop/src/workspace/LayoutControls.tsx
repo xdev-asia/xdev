@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { Dialog, Field, Icon, Menu, Popover } from "@xdev-asia/ui";
+import { Button, Dialog, Field, Icon, Menu, Popover } from "@xdev-asia/ui";
 import type { MenuEntry } from "@xdev-asia/ui";
 import { toApiError, type Api } from "@/api";
 import { useI18n } from "@/i18n";
@@ -40,6 +40,28 @@ function SaveDialog(props: { onSave(name: string): void; onCancel(): void; error
       >
         <Field label={t("layout.save.name")} value={name} maxLength={LAYOUT_NAME_MAX} autoFocus onChange={(e) => setName(e.target.value)} error={props.error ?? undefined} hint={t("layout.save.hint", { max: LAYOUT_NAME_MAX })} />
       </form>
+    </Dialog>
+  );
+}
+
+/** Lists the saved layouts, each with its own Delete; a delete is a deliberate click here, not an item of the menu. */
+function DeleteDialog(props: { saved: UserPreset[]; onDelete(name: string): void; onClose(): void }): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <Dialog title={t("layout.delete.title")} modal alert body="plain" confirmLabel={t("dialog.close")} cancelLabel={null} onConfirm={props.onClose} onCancel={props.onClose}>
+      <p>{t("layout.delete.body")}</p>
+      <ul className="settings-list">
+        {props.saved.map((p) => (
+          <li className="settings-item" key={p.name}>
+            <div className="settings-item-text">
+              <strong>{p.name}</strong>
+            </div>
+            <Button type="button" variant="secondary" onClick={() => props.onDelete(p.name)}>
+              {t("layout.delete", { name: p.name })}
+            </Button>
+          </li>
+        ))}
+      </ul>
     </Dialog>
   );
 }
@@ -90,10 +112,13 @@ function ConfirmAll(props: { preset: LayoutPreset; count: number; onConfirm(): v
 export function LayoutControls(props: { api: LayoutControlsApi; sessions: Sessions | null; worktree: string | null }): JSX.Element | null {
   const { api, sessions, worktree } = props;
   const { t } = useI18n();
-  const { allows } = useLicense(api);
+  const { allows, state: licenseState } = useLicense(api);
+  // While the licence is unread nothing is tagged and a Pro action waits; it is not "free" yet.
+  const known = licenseState !== null;
   const upsell = useContext(LicenseUpsellContext);
   const [saved, setSaved] = useState<UserPreset[]>([]);
   const [naming, setNaming] = useState(false);
+  const [managing, setManaging] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [asking, setAsking] = useState<LayoutPreset | null>(null);
@@ -120,7 +145,10 @@ export function LayoutControls(props: { api: LayoutControlsApi; sessions: Sessio
   useEffect(reload, [api]);
   const save = (name: string) => {
     const at = worktree ? sessions?.layout(worktree) : null;
-    if (!at) return;
+    if (!at) {
+      setNameError(t("layout.save.err.nolayout"));
+      return;
+    }
     api.layoutPresetSave(name, savedLayoutOf(at)).then(
       () => {
         setNaming(false);
@@ -158,7 +186,7 @@ export function LayoutControls(props: { api: LayoutControlsApi; sessions: Sessio
     { type: "separator" },
     { label: t("canvas.menu.toggle"), checked: layout?.canvas?.on === true, disabled, onSelect: () => pick({ kind: "canvas" }) },
     { type: "separator" },
-    { type: "group", label: t("layout.menu.saved") },
+    ...(saved.length > 0 ? [{ type: "group", label: t("layout.menu.saved") } as MenuEntry] : []),
     ...saved.map((preset): MenuEntry => ({
       label: preset.name,
       disabled: layout === null,
@@ -170,24 +198,28 @@ export function LayoutControls(props: { api: LayoutControlsApi; sessions: Sessio
       },
     })),
     {
-      label: allows(LAYOUTS_FEATURE) ? t("layout.save") : `${t("layout.save")} · ${t("pro.tag")}`,
+      label: !known || allows(LAYOUTS_FEATURE) ? t("layout.save") : `${t("layout.save")} · ${t("pro.tag")}`,
       disabled,
       onSelect: () => {
         setOpen(false);
+        if (!known) return;
         if (allows(LAYOUTS_FEATURE)) {
           setNameError(null);
           setNaming(true);
         } else upsell(LAYOUTS_FEATURE);
       },
     },
-    ...saved.map((preset): MenuEntry => ({
-      label: t("layout.delete", { name: preset.name }),
-      danger: true,
-      onSelect: () => {
-        setOpen(false);
-        void api.layoutPresetDelete(preset.name).then(reload, () => undefined);
-      },
-    })),
+    ...(saved.length > 0
+      ? [
+          {
+            label: t("layout.manage"),
+            onSelect: () => {
+              setOpen(false);
+              setManaging(true);
+            },
+          } as MenuEntry,
+        ]
+      : []),
     { type: "separator" },
     { type: "group", label: t("layoutPreset.menu.all") },
     ...ALL_PRESETS.map((preset): MenuEntry => ({
@@ -221,6 +253,22 @@ export function LayoutControls(props: { api: LayoutControlsApi; sessions: Sessio
       <span className="cv-sr" role="status">
         {said}
       </span>
+      {managing && (
+        <DeleteDialog
+          saved={saved}
+          onClose={() => setManaging(false)}
+          onDelete={(name) => {
+            void api.layoutPresetDelete(name).then(
+              () => {
+                setSaid(t("layout.deleted", { name }));
+                reload();
+              },
+              () => undefined,
+            );
+            if (saved.length <= 1) setManaging(false);
+          }}
+        />
+      )}
       {naming && <SaveDialog error={nameError} onSave={save} onCancel={() => setNaming(false)} />}
       {asking && (
         <ConfirmAll
