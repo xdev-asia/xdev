@@ -1,9 +1,15 @@
 import { Button } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type PrDraft, type PrView } from "@/api";
+import { toApiError, type Api, type ApiError, type PrDraft, type PrView, type ReviewHost } from "@/api";
 import { isRecipeProblem } from "@/components/ChangesPanel";
+import { glabReasonText } from "@/issues/glabReason";
 import { useI18n } from "@/i18n";
+import { mrAsPr } from "./ship";
+
+// The strings that differ between a pull request and a merge request.
+const PR_WORDS = { title: "ship.pr.title", base: "ship.pr.base", draft: "ship.pr.draft", create: "ship.pr.create", creating: "ship.pr.creating" } as const;
+const MR_WORDS = { title: "ship.mr.title", base: "ship.mr.target", draft: "ship.mr.draft", create: "ship.mr.create", creating: "ship.mr.creating" } as const;
 
 // Mounted only while open, so every opening starts from the given fields.
 export function CreatePrDialog(props: {
@@ -20,9 +26,13 @@ export function CreatePrDialog(props: {
   generateOnOpen?: boolean;
   // Opens the new pull request in the browser.
   openAfterCreate?: boolean;
+  // Where the request is made; "gitlab" creates a merge request through glab. Default "github".
+  host?: ReviewHost;
 }): JSX.Element {
   const { api, worktree } = props;
   const ai = props.ai ?? true;
+  const gitlab = props.host === "gitlab";
+  const words = gitlab ? MR_WORDS : PR_WORDS;
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const [base, setBase] = useState(props.initial.base);
@@ -59,9 +69,18 @@ export function CreatePrDialog(props: {
     setBusy(true);
     setError(null);
     try {
-      const created = await api.worktreePrCreate(worktree, { base: base.trim(), title: title.trim(), body, draft });
-      // The pull request exists either way; a browser that will not open is not an error here.
-      if (props.openAfterCreate) void api.worktreePrOpen(worktree, false).catch(() => undefined);
+      const fields = { base: base.trim(), title: title.trim(), body, draft };
+      let created: PrView;
+      if (gitlab) {
+        const mr = await api.worktreeMrCreate(worktree, fields);
+        // The merge request exists either way; a browser that will not open is not an error here.
+        if (props.openAfterCreate) void api.openUrl(mr.url).catch(() => undefined);
+        created = mrAsPr(mr);
+      } else {
+        created = await api.worktreePrCreate(worktree, fields);
+        // The pull request exists either way; a browser that will not open is not an error here.
+        if (props.openAfterCreate) void api.worktreePrOpen(worktree, false).catch(() => undefined);
+      }
       props.onCreated(created);
     } catch (e) {
       setError(toApiError(e));
@@ -89,11 +108,11 @@ export function CreatePrDialog(props: {
         }}
       >
         <h2 id="ws-pr-title" className="dialog-title">
-          {t("ship.pr.title")}
+          {t(words.title)}
         </h2>
         <div className="ws-fields">
           <label className="ws-field">
-            <span>{t("ship.pr.base")}</span>
+            <span>{t(words.base)}</span>
             <input type="text" className="ws-mono" value={base} spellCheck={false} disabled={busy} onChange={(e) => setBase(e.target.value)} />
           </label>
           <label className="ws-field">
@@ -106,13 +125,13 @@ export function CreatePrDialog(props: {
           </label>
           <label className="ws-amend">
             <input type="checkbox" checked={draft} disabled={busy} onChange={() => setDraft((d) => !d)} />
-            {t("ship.pr.draft")}
+            {t(words.draft)}
           </label>
         </div>
         {error && (
           <p className="error-text" role="alert">
-            {t(`error.${error.code}`)}
-            {["git", "push_rejected", "gh_failed", "draft_failed", "denied"].includes(error.code) && error.detail ? ` ${error.detail}` : ""}
+            {gitlab ? glabReasonText(error, t) : t(`error.${error.code}`)}
+            {["git", "push_rejected", "gh_failed", "draft_failed", "denied", "body_too_long"].includes(error.code) && error.detail ? ` ${error.detail}` : ""}
             {props.onOpenGitSettings && isRecipeProblem(error.code) && (
               <>
                 {" "}
@@ -133,7 +152,7 @@ export function CreatePrDialog(props: {
             {t("dialog.cancel")}
           </button>
           <Button type="submit" disabled={blocked}>
-            {busy ? t("ship.pr.creating") : t("ship.pr.create")}
+            {busy ? t(words.creating) : t(words.create)}
           </Button>
         </div>
       </form>
