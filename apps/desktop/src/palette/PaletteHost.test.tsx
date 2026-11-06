@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import type { RepoView, Task, WorktreeView } from "@/api";
+import { api, type RepoView, type Task, type WorktreeView } from "@/api";
 import { translate } from "@/i18n";
 import type { Sessions, Tab } from "@/workspace/sessions";
 import { JumpPalette } from "./JumpPalette";
@@ -273,4 +273,32 @@ it("opens settings on the section and entry for a setting entry", () => {
   const h = host();
   h.item("set:git.prefix").run();
   expect(h.actions.openSettings).toHaveBeenCalledWith("git", "git.prefix");
+});
+
+it("reads the current worktree's files on open and offers them for a query of two characters", async () => {
+  const list = vi.spyOn(api, "filesList").mockResolvedValue({ files: ["src/app/main.ts", "README.md"], truncated: false } as Awaited<ReturnType<typeof api.filesList>>);
+  const openFile = vi.fn();
+  const h = host({ current: elm });
+  h.props.actions.openFile = openFile;
+  h.draw();
+  hooks.effects.forEach((e) => e());
+  await settle();
+  expect(list).toHaveBeenCalledWith("/wt/elm");
+  const queryItems = (h.draw().props as { queryItems(q: string): { id: string; run(): void }[] }).queryItems;
+  expect(queryItems("m")).toEqual([]);
+  const found = queryItems("main");
+  expect(found.map((i) => i.id)).toEqual(["file:src/app/main.ts"]);
+  found[0].run();
+  expect(openFile).toHaveBeenCalledWith("/wt/elm", "src/app/main.ts");
+  list.mockRestore();
+});
+
+it("without an openFile action it reads no files", () => {
+  const list = vi.spyOn(api, "filesList");
+  const h = host();
+  h.draw();
+  hooks.effects.forEach((e) => e());
+  expect(list).not.toHaveBeenCalled();
+  expect((h.draw().props as { queryItems(q: string): unknown[] }).queryItems("main")).toEqual([]);
+  list.mockRestore();
 });

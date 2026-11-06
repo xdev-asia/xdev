@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Button } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { TipsModalView } from "./TipsModal";
-import { countLaunch, dayKey, markTipDay, tipShownOn, CLI_SKILL_TIP, LEGACY_CLI_TIP_KEY, loadSeenTips, loadTipsEnabled, markTipSeen, nextTip, saveTipsEnabled, TIPS, tipsGate } from "./tipsModel";
+import { countLaunch, dayKey, markTipDay, tipShownOn, CLI_SKILL_TIP, LEGACY_CLI_TIP_KEY, loadSeenTips, loadTipsEnabled, markTipSeen, nextTip, saveTipsEnabled, TIP_IDLE_MS, tipIdleWait, TIPS, tipsGate } from "./tipsModel";
 
 vi.mock("@/i18n", async (original) => ({ ...(await original<typeof import("@/i18n")>()), useI18n: () => ({ t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
@@ -137,5 +137,14 @@ describe("the modal", () => {
     const done = TipsModalView({ tip: cli, phase: "done", hasNext: true, ...h });
     expect(done.props.confirmLabel).toBe(en("tip.done"));
     expect(done.props.onConfirm).toBe(h.onClose);
+  });
+});
+
+describe("tipIdleWait", () => {
+  it("waits until the person has been idle long enough", () => {
+    expect(tipIdleWait(10_000, 10_000)).toBe(TIP_IDLE_MS);
+    expect(tipIdleWait(12_000, 10_000)).toBe(TIP_IDLE_MS - 2000);
+    expect(tipIdleWait(10_000 + TIP_IDLE_MS, 10_000)).toBe(0);
+    expect(tipIdleWait(60_000, 10_000)).toBe(0);
   });
 });

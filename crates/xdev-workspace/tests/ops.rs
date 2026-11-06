@@ -671,6 +671,35 @@ two
 }
 
 #[test]
+fn stat_leaves_out_installed_packages_nobody_ignored() {
+    let (reg, _id, main) = registered();
+    let pkg = main.path().join("node_modules").join("left-pad");
+    fs::create_dir_all(&pkg).unwrap();
+    fs::write(
+        pkg.join("index.js"),
+        "a
+b
+c
+",
+    )
+    .unwrap();
+    fs::write(
+        main.path().join("new.txt"),
+        "x
+",
+    )
+    .unwrap();
+    assert_eq!(
+        stat(&reg, main.path()).unwrap(),
+        WorktreeStat {
+            files: 1,
+            added: 1,
+            removed: 0
+        }
+    );
+}
+
+#[test]
 fn stat_refuses_unknown_worktree() {
     let (reg, _id, main) = registered();
     let other = main.path().join("nowhere");

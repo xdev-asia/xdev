@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import type { PaletteItem } from "./items";
+import { fileItems } from "./items";
 import { FILTERS, rank, type Row } from "./rank";
 
 const noop = () => {};
@@ -143,5 +144,14 @@ it("scope drops other repos' rows but keeps settings and actions", () => {
 });
 
 it("FILTERS order", () => {
-  expect(FILTERS).toEqual(["all", "tab", "worktree", "task", "other"]);
+  expect(FILTERS).toEqual(["all", "tab", "worktree", "file", "task", "other"]);
+});
+
+it("file items rank under a files header once the query has two characters", () => {
+  const files = fileItems(["src/app/main.ts", "README.md"], "/wt/a", "/repo", noop);
+  expect(ids(rank({ ...base, items: files, query: "m" }))).toEqual([]);
+  const rows = rank({ ...base, items: files, query: "main" });
+  expect(ids(rows)).toEqual(["file:src/app/main.ts"]);
+  expect(labels(rows)).toEqual(["files"]);
+  expect(ids(rank({ ...base, items: [...files, wt("main")], query: "main", filter: "file" }))).toEqual(["file:src/app/main.ts"]);
 });

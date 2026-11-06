@@ -5,7 +5,7 @@ import { translate } from "@/i18n";
 import { entriesFor } from "@/settings/catalog";
 import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
-import { actionItems, settingItems, tabItems, validWorktreeName, worktreeItems } from "./items";
+import { actionItems, FILE_MIN_QUERY, fileItems, settingItems, tabItems, validWorktreeName, worktreeItems } from "./items";
 
 const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 
@@ -193,4 +193,14 @@ it("lists the two remote actions only when they have a handler", () => {
   expect(some.find((i) => i.id === "act:remoteAdd")!.title).toBe("Open remote folder over SSH");
   const both = actionItems(t, { remoteAdd: add, remoteReconnect: add });
   expect(both.find((i) => i.id === "act:remoteReconnect")!.title).toBe("Reconnect to remote host");
+});
+
+it("fileItems names a file by its base name, shows its folder and opens it on run", () => {
+  const picked: string[] = [];
+  const [nested, top] = fileItems(["src/app/main.ts", "README.md"], "/wt/a", "/repo", (rel) => picked.push(rel));
+  expect(nested).toMatchObject({ id: "file:src/app/main.ts", kind: "file", title: "main.ts", detail: "src/app", keywords: ["src/app/main.ts"], worktree: "/wt/a", repo: "/repo", minQuery: FILE_MIN_QUERY });
+  expect(top.title).toBe("README.md");
+  expect(top.detail).toBeUndefined();
+  nested.run();
+  expect(picked).toEqual(["src/app/main.ts"]);
 });

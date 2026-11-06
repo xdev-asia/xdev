@@ -26,6 +26,12 @@ import { openTaskEditor, repoOf } from "@/tasks/board/TaskEditorHost";
 import { requestTargets } from "@/targets/targetsEvents";
 import { replayTour } from "@/onboarding/tourStore";
 import { conversationItems } from "@/conversation/conversationStore";
+import { readFileList } from "@/search/QuickOpenDialog";
+import { rankFiles } from "@/search/quickOpen";
+import { FILE_MIN_QUERY, fileItems } from "./items";
+
+/** The most files a query adds to the palette; Go to file lists more. */
+const FILE_ROWS = 40;
 
 /** What the palette can make the shell do; the shell supplies each one. */
 export interface PaletteActions {
@@ -67,6 +73,8 @@ export interface PaletteActions {
   captureScreen?(): void;
   /** Opens the clipboard image in the annotate dialog. */
   annotateClipboard?(): void;
+  /** Opens a file of a worktree in the editor; absent leaves files out of the palette. */
+  openFile?(worktree: string, rel: string): void;
 }
 
 export interface PaletteHostProps {
@@ -151,6 +159,31 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
   }, [open, boardRepo, canOpenBoard]);
 
   const currentPath = current?.path ?? null;
+  // --- files of the current worktree, read as the palette opens (the Go to file list, shared) ---
+  const [files, setFiles] = useState<{ worktree: string; files: string[] } | null>(null);
+  const canOpenFile = !!props.actions.openFile;
+  useEffect(() => {
+    if (!open || !currentPath || !canOpenFile) return;
+    let live = true;
+    void readFileList(api.filesList, currentPath, Date.now()).then((list) => live && setFiles({ worktree: currentPath, files: list.files }));
+    return () => {
+      live = false;
+    };
+  }, [open, currentPath, canOpenFile]);
+  const openFileRef = useRef(props.actions.openFile);
+  openFileRef.current = props.actions.openFile;
+  const fileRepo = repos?.find((r) => r.worktrees.some((w) => w.path === currentPath))?.path;
+  // Files are ranked per query (top FILE_ROWS), not matched item by item.
+  const queryItems = (query: string) => {
+    if (!files || files.worktree !== currentPath || query.trim().length < FILE_MIN_QUERY) return [];
+    const wt = files.worktree;
+    return fileItems(
+      rankFiles(files.files, query, [], FILE_ROWS).map((r) => r.rel),
+      wt,
+      fileRepo,
+      (rel) => openFileRef.current?.(wt, rel),
+    );
+  };
   // --- run targets ---
   const [hasVps, setHasVps] = useState(false);
   const readTargets = props.targets;
@@ -292,6 +325,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       recent={recent}
       scopes={list.filter((r) => !r.missing).map((r) => ({ path: r.path, name: r.shortName }))}
       canCreate={usable}
+      queryItems={queryItems}
       onCreate={(name) => actions.newWorktree(name)}
       onClose={props.onClose}
     />

@@ -70,6 +70,14 @@ export function dayKey(date: Date): string {
 /** How long after the start the app is left alone before a tip appears. */
 export const SETTLE_MS = 4000;
 
+/** No key, click or scroll for this long before a tip opens, so it never lands on what the person is doing. */
+export const TIP_IDLE_MS = 5000;
+
+/** Milliseconds still to wait for the person to be idle; 0 when a tip may open now. */
+export function tipIdleWait(now: number, lastInput: number): number {
+  return Math.max(0, TIP_IDLE_MS - (now - lastInput));
+}
+
 // Storage. Injected so a test keeps its own copy.
 export const TIPS_SEEN_KEY = "xdev.tips.seen";
 export const TIPS_OFF_KEY = "xdev.tips.off";

@@ -5,8 +5,8 @@ import { toApiError, type Api, type SkillStatus } from "@/api";
 import { getWallState, wallHasNew, useWallState } from "@/featureWall/featureWallStore";
 import { useI18n } from "@/i18n";
 import { typingInTerminal } from "@/onboarding/featureTours";
-import { claimInterruption } from "@/onboarding/interruptions";
-import { loadSeenTips, markTipDay, markTipSeen, nextTip, SETTLE_MS, TIPS, tipShownOn, tipsGate, type Tip, type TipContext } from "./tipsModel";
+import { claimInterruption, lastInputAt } from "@/onboarding/interruptions";
+import { loadSeenTips, markTipDay, markTipSeen, nextTip, SETTLE_MS, tipIdleWait, TIPS, tipShownOn, tipsGate, type Tip, type TipContext } from "./tipsModel";
 import { launchNumber, markTipShownThisRun, setTipsEnabled, tipShownThisRun, useTipsEnabled } from "./tipsStore";
 
 export type TipPhase = "idle" | "installing" | "done";
@@ -129,6 +129,12 @@ export function TipsHost(props: { api: Pick<Api, "orchestrationSkillStatus" | "o
     }
     const first = nextTip(TIPS, loadSeenTips(), ctx);
     if (!first) return;
+    // Nor does it land on a click: switching a worktree or typing a search waits it out.
+    const idle = tipIdleWait(Date.now(), lastInputAt());
+    if (idle > 0) {
+      const timer = setTimeout(() => setRetry((n) => n + 1), idle);
+      return () => clearTimeout(timer);
+    }
     if (!claimInterruption("tip", wallHasNew(getWallState()) ? ["wall"] : [])) return;
     markTipSeen(first.id);
     markTipDay(new Date());

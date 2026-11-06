@@ -20,6 +20,19 @@ interface Listed {
 }
 const cache = new Map<string, Listed>();
 
+/** The files of `worktree`, from the cache while it is fresh; a failed read is an empty list and is not kept. */
+export function readFileList(read: Api["filesList"], worktree: string, now: number): Promise<{ files: string[]; truncated: boolean }> {
+  const hit = cache.get(worktree);
+  if (hit && now - hit.at < FILE_LIST_TTL_MS) return Promise.resolve({ files: hit.files, truncated: hit.truncated });
+  return read(worktree).then(
+    (list) => {
+      cache.set(worktree, { at: now, files: list.files, truncated: list.truncated });
+      return { files: list.files, truncated: list.truncated };
+    },
+    () => ({ files: [], truncated: false }),
+  );
+}
+
 /** Forgets every cached file list; for tests. */
 export function resetFileListCache(): void {
   cache.clear();

@@ -30,7 +30,7 @@ impl Repo {
         )?;
 
         let mut found = parse_name_status(&diff);
-        for path in fields(&untracked) {
+        for path in fields(&untracked).filter(|p| !in_dependency_dir(p)) {
             found.insert(path.to_owned(), ChangeKind::Added);
         }
         Ok(found
@@ -62,8 +62,33 @@ impl Repo {
             &["ls-files", "--others", "--exclude-standard", "-z"],
             None,
         )?;
-        Ok(fields(&out).map(str::to_owned).collect())
+        Ok(fields(&out)
+            .filter(|p| !in_dependency_dir(p))
+            .map(str::to_owned)
+            .collect())
     }
+}
+
+/// Folders of installed packages and build output. An untracked file in one
+/// is not a change the user made: a repo with no `.gitignore` would otherwise
+/// count every file under `node_modules`.
+const DEPENDENCY_DIRS: [&str; 8] = [
+    "node_modules",
+    ".venv",
+    "__pycache__",
+    ".next",
+    ".nuxt",
+    ".cache",
+    "target",
+    "bower_components",
+];
+
+/// `path` lies inside one of `DEPENDENCY_DIRS`.
+pub(crate) fn in_dependency_dir(path: &str) -> bool {
+    let mut parts = path.split('/');
+    // The last part is the file itself.
+    parts.next_back();
+    parts.any(|part| DEPENDENCY_DIRS.contains(&part))
 }
 
 /// NUL-separated fields; a name that is not valid UTF-8 cannot cross the
@@ -112,5 +137,19 @@ mod tests {
             ]
         );
         assert!(parse_name_status(b"").is_empty());
+    }
+
+    #[test]
+    fn files_under_installed_packages_are_not_changes() {
+        assert!(in_dependency_dir("node_modules/a/index.js"));
+        assert!(in_dependency_dir("web/node_modules/a.js"));
+        assert!(in_dependency_dir("api/.venv/lib/x.py"));
+        // A nested repo is listed as its folder.
+        assert!(in_dependency_dir("node_modules/"));
+        assert!(!in_dependency_dir("src/main.rs"));
+        // Only a folder by that exact name counts, not a file or a look-alike.
+        assert!(!in_dependency_dir("node_modules"));
+        assert!(!in_dependency_dir("docs/node_modules.md"));
+        assert!(!in_dependency_dir("my_node_modules/a.js"));
     }
 }

@@ -273,10 +273,10 @@ it("Escape in the menu closes the menu, not the palette", () => {
   expect(p.props.onClose).toHaveBeenCalledTimes(1);
 });
 
-it("Tab still cycles five chips", () => {
+it("Tab still cycles six chips", () => {
   const p = setup({ items: scoped, scopes });
-  expect(nodes(p.draw()).filter((n) => n.props.role === "tab")).toHaveLength(5);
-  for (let i = 0; i < 5; i++) p.key({ key: "Tab" });
+  expect(nodes(p.draw()).filter((n) => n.props.role === "tab")).toHaveLength(6);
+  for (let i = 0; i < 6; i++) p.key({ key: "Tab" });
   const active = nodes(p.draw()).filter((n) => n.props.role === "tab" && n.props["aria-selected"]);
   expect(active[0].props.children).toBe(en("palette.filter.all"));
 });
@@ -333,4 +333,13 @@ it("reopening resets the scope", () => {
 it("no projects, no Filter button", () => {
   const p = setup({ items: scoped });
   expect(nodes(p.draw()).some((n) => n.props.className === "pal-filter-btn")).toBe(false);
+});
+
+it("rows from queryItems join the ranked rows for the typed query", () => {
+  const seen: string[] = [];
+  const queryItems = (q: string) => (seen.push(q), q.length >= 2 ? [mk("file:src/oak.ts", "file", "oak.ts", { detail: "src", minQuery: 2 })] : []);
+  const p = setup({ queryItems });
+  p.type("oak");
+  expect(p.html()).toContain(en("palette.section.files"));
+  expect(seen).toContain("oak");
 });

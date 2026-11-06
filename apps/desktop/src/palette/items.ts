@@ -5,7 +5,7 @@ import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
 import type { TabStatus } from "@/workspace/status";
 
-export type PaletteKind = "tab" | "chat" | "worktree" | "task" | "setting" | "action";
+export type PaletteKind = "tab" | "chat" | "worktree" | "task" | "file" | "setting" | "action";
 /** What an agent wants from the person; supplied by the status feature when it exists. */
 export type Attention = "needs-you" | "done";
 export type ItemStatus = TabStatus | Attention;
@@ -33,6 +33,27 @@ export interface PaletteItem {
 }
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
+
+/** The shortest query that lists files: one letter would match most of a repo. */
+export const FILE_MIN_QUERY = 2;
+
+/** Files of the current worktree: the name, then the folder it is in. */
+export function fileItems(rels: readonly string[], worktree: string, repo: string | undefined, onPick: (rel: string) => void): PaletteItem[] {
+  return rels.map((rel) => {
+    const cut = rel.lastIndexOf("/");
+    return {
+      id: `file:${rel}`,
+      kind: "file" as const,
+      title: cut < 0 ? rel : rel.slice(cut + 1),
+      detail: cut < 0 ? undefined : rel.slice(0, cut),
+      keywords: [rel],
+      worktree,
+      repo,
+      minQuery: FILE_MIN_QUERY,
+      run: () => onPick(rel),
+    };
+  });
+}
 
 export function worktreeItems(
   repos: RepoView[],

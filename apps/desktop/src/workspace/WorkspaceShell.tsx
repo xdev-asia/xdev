@@ -2622,6 +2622,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             focusTerminal(wt.path);
           },
           showWorkspace: () => show("workspace"),
+          openFile: (worktree, rel) => {
+            show("workspace");
+            requestOpenFile({ worktree, rel });
+          },
           frontTab: (worktree, id) => {
             setFront((f) => ({ worktree, id, seq: (f?.seq ?? 0) + 1 }));
             focusTerminal(worktree);

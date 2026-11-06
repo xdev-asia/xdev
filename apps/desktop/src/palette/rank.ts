@@ -1,11 +1,11 @@
 import { matchItem, tokens, type Hits } from "./match";
 import { validWorktreeName, type PaletteItem } from "./items";
 
-export type Filter = "all" | "tab" | "worktree" | "task" | "other";
-export const FILTERS: Filter[] = ["all", "tab", "worktree", "task", "other"];
+export type Filter = "all" | "tab" | "worktree" | "file" | "task" | "other";
+export const FILTERS: Filter[] = ["all", "tab", "worktree", "file", "task", "other"];
 
 export type Row =
-  | { type: "header"; label: "recentTabs" | "recentWorktrees" | "tabs" | "worktrees" | "tasks" | "other" }
+  | { type: "header"; label: "recentTabs" | "recentWorktrees" | "tabs" | "worktrees" | "files" | "tasks" | "other" }
   | { type: "item"; item: PaletteItem; hits: Hits; digit: number | null }
   | { type: "more"; section: Filter; count: number }
   | { type: "create"; name: string };
@@ -30,11 +30,15 @@ export const MORE = 20;
 const NONE: Hits = { title: [], detail: [] };
 const HOUR = 3_600_000;
 
-type Section = "tab" | "worktree" | "task" | "other";
-const SECTIONS: Section[] = ["tab", "worktree", "task", "other"];
+type Section = "tab" | "worktree" | "file" | "task" | "other";
+const SECTIONS: Section[] = ["tab", "worktree", "file", "task", "other"];
 const sectionOf = (item: PaletteItem): Section =>
-  item.kind === "tab" || item.kind === "chat" ? "tab" : item.kind === "worktree" ? "worktree" : item.kind === "task" ? "task" : "other";
-const LABEL = { tab: "tabs", worktree: "worktrees", task: "tasks", other: "other" } as const;
+  item.kind === "tab" || item.kind === "chat"
+    ? "tab"
+    : item.kind === "worktree" || item.kind === "file" || item.kind === "task"
+      ? item.kind
+      : "other";
+const LABEL = { tab: "tabs", worktree: "worktrees", file: "files", task: "tasks", other: "other" } as const;
 
 function urgency(item: PaletteItem): number {
   switch (item.status) {
