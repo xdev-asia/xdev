@@ -8,8 +8,8 @@ test("command palette opens with its shortcut and runs a command", async ({ page
   const mac = await page.evaluate(() => /Mac|iPhone|iPad/.test(navigator.userAgent));
   await page.keyboard.press(mac ? "Meta+j" : "Control+j");
   await expect(palette).toBeVisible();
-  await palette.getByRole("textbox").fill("settings");
-  await palette.getByRole("option").first().click();
+  await palette.getByRole("textbox").fill("Open settings");
+  await palette.getByRole("option", { name: "Open settings" }).click();
   await expect(palette).toBeHidden();
   await expect(page.getByRole("navigation", { name: "Settings sections" })).toBeVisible();
 });

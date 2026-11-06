@@ -14,13 +14,13 @@ import { lspItems } from "@/files/lsp/lspEvents";
 import { chartItems } from "@/orchestration/charts/chartEvents";
 import { resourceItems } from "@/stats/resourceEvents";
 import { foreignTermsItems } from "@/foreignTerms/foreignTermsEvents";
-import { actionItems, crashItems, quickCommandItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
+import { actionItems, boardTaskItems, crashItems, quickCommandItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
 import { JumpPalette } from "./JumpPalette";
 import { layoutItems } from "@/workspace/layoutEvents";
 import { chatItems, taskItems } from "./moreItems";
 import { RecentStore } from "./recent";
-import { api } from "@/api";
-import { openTaskEditor } from "@/tasks/board/TaskEditorHost";
+import { api, type BoardTask } from "@/api";
+import { openTaskEditor, repoOf } from "@/tasks/board/TaskEditorHost";
 import { requestTargets } from "@/targets/targetsEvents";
 import { conversationItems } from "@/conversation/conversationStore";
 
@@ -52,6 +52,8 @@ export interface PaletteActions {
   resumeSession?(row: SessionRow): void;
   /** Opens Docs > Tasks on one task. */
   openTask?(id: string): void;
+  /** Opens Tasks on the Board tab, and the editor on a file task when one is named. */
+  openTaskBoard?(taskId?: string): void;
   /** Runs a saved quick command in the current worktree. */
   runQuickCommand?(cmd: QuickCommand): void;
   /** Opens the new quick command dialog. */
@@ -122,6 +124,25 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
     };
   }, [open, canReadTasks]);
 
+  // The file tasks of the current repo are read as the palette opens too; a repo with none, or a failure, leaves them out.
+  const [fileTasks, setFileTasks] = useState<BoardTask[]>([]);
+  const boardRepo = repoOf(repos, current);
+  const canOpenBoard = !!props.actions.openTaskBoard;
+  useEffect(() => {
+    if (!open || !boardRepo || !canOpenBoard) {
+      setFileTasks([]);
+      return;
+    }
+    let live = true;
+    api.boardList(boardRepo).then(
+      (found) => live && setFileTasks(found.tasks),
+      () => live && setFileTasks([]),
+    );
+    return () => {
+      live = false;
+    };
+  }, [open, boardRepo, canOpenBoard]);
+
   const currentPath = current?.path ?? null;
   // --- run targets ---
   const [hasVps, setHasVps] = useState(false);
@@ -185,6 +206,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       // No free seat: Settings → Account says so and offers to move one.
       activatePro: () => void api.licenseActivate().catch(() => actions.openSettings("account")),
       refreshLicense: () => void api.licenseRefresh().catch(() => undefined),
+      openTaskBoard: actions.openTaskBoard ? () => actions.openTaskBoard?.() : undefined,
     };
     // The tab in front, when it is a terminal: the same calls as the tab and terminal menus.
     const front = sessions && current && shownTab ? sessions.tabs(current.path).find((x) => x.id === shownTab) : undefined;
@@ -240,6 +262,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
         ? quickCommandItems([...picked.global, ...picked.project], repoOfCurrent?.shortName ?? "", t, { run: actions.runQuickCommand, create: actions.newQuickCommand })
         : []),
       ...(actions.resumeSession ? chatItems(rows.filter((r) => !isLive(r)), list, t, actions.resumeSession) : []),
+      ...(boardRepo && actions.openTaskBoard ? boardTaskItems(fileTasks, t, boardRepo, (id) => actions.openTaskBoard?.(id)) : []),
       ...(readTasks && actions.openTask ? taskItems(taskRows, list, t, actions.openTask) : []),
     ];
   }

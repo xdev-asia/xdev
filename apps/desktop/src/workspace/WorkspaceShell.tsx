@@ -26,7 +26,7 @@ import { startOptionAsAltProbe } from "@/terminal/optionAsAlt";
 import { startAutosave } from "@/files/autosave";
 import { useWorktreeWatch } from "./useWorktreeWatch";
 import { ComposerHost, type ComposerRequest } from "@/composer/ComposerHost";
-import { TaskEditorHost } from "@/tasks/board/TaskEditorHost";
+import { repoOf, TaskEditorHost } from "@/tasks/board/TaskEditorHost";
 import { fileTabId, fileTabRel, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { LayoutControls } from "./LayoutControls";
@@ -1495,8 +1495,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // A new worktree starts with the agent picked for it, else the resolved default agent; with no
   // agent at all, the default shell, and nothing is typed into it. A picked agent that is off or not
   // installed opens nothing, and a toast says why: another agent never takes its place or its prompt.
-  async function openDefaultAgent(path: string, pick?: string | null, prompt?: string): Promise<void> {
-    if (!sessions || pick === null) return;
+  async function openDefaultAgent(path: string, pick?: string | null, prompt?: string): Promise<Tab | null> {
+    if (!sessions || pick === null) return null;
     try {
       const view = await api.profiles();
       const usable = (id: string) => view.profiles.some((p) => p.profile.id === id && p.profile.enabled && p.installed);
@@ -1506,19 +1506,29 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           text: t("workspace.agentUnusable", { name }),
           actions: [{ label: t("workspace.agentPicker.manage"), run: () => openSettings("agents") }],
         });
-        return;
+        return null;
       }
       const agent = pick ?? view.resolvedDefault;
       const shell = view.shells.some((s) => s.id === view.defaultShell) ? view.defaultShell : view.shells[0]?.id;
       const id = agent ?? shell;
-      if (!id) return;
+      if (!id) return null;
       // The prompt goes with the agent tab: on its command line, or typed once it started.
-      const launch = (): void => void sessions.open(path, id, null, undefined, agent && prompt ? { prompt } : {});
+      let opened: Tab | null = null;
+      const launch = (): void => void (opened = sessions.open(path, id, null, undefined, agent && prompt ? { prompt } : {}));
       // With the repo set to wait, the tab opens when the setup tab has exited.
       if (!gate.defer(path, launch)) launch();
+      return opened;
     } catch {
       // The worktree is made; it just opens empty.
+      return null;
     }
+  }
+
+  // The Tasks app starts an agent on a task: in a worktree it made or the current one. Resolves with the tab, to link it.
+  async function startBoardAgent(req: { worktree: string; agent: string | null; prompt: string }): Promise<{ tabId: string; tabTitle: string } | null> {
+    if (!all.some((w) => w.path === req.worktree)) await load();
+    const tab = await openDefaultAgent(req.worktree, req.agent ?? undefined, req.prompt);
+    return tab ? { tabId: tab.id, tabTitle: tab.title ?? tab.profileId } : null;
   }
 
   // What a new worktree does about setup. Skip never opens the setup tab; the card choices and a
@@ -1746,6 +1756,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   function openTask(id: string): void {
     setAppRequest((r) => ({ app: "tasks", task: id, seq: (r?.seq ?? 0) + 1 }));
+    show("docs");
+  }
+
+  // The Tasks app on the Board tab, with the editor on a file task when one is named.
+  function openTaskBoard(boardTask?: string): void {
+    setAppRequest((r) => ({ app: "tasks", tab: "board", boardTask, seq: (r?.seq ?? 0) + 1 }));
     show("docs");
   }
 
@@ -2389,7 +2405,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </div>
 
         <div className="ws-docs" hidden={view !== "docs"}>
-          {docsMounted && <SurfaceBoundary id="page.docs" surface="Docs" resetKey={docsKey} titleKey="boundary.page.title"><DocsApp key={docsKey} appRequest={appRequest} kit={{ worktree: current?.path ?? null, open: kitOpen, onOpened: kitOpened, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} /></SurfaceBoundary>}
+          {docsMounted && <SurfaceBoundary id="page.docs" surface="Docs" resetKey={docsKey} titleKey="boundary.page.title"><DocsApp key={docsKey} appRequest={appRequest} board={{ repos, defaultRepo: repoOf(repos, current), sessions, current: current ? { path: current.path, branch: current.branch } : null, onStart: startBoardAgent, onOpenTab: (l) => void jumpTo(l.tabId) }} kit={{ worktree: current?.path ?? null, open: kitOpen, onOpened: kitOpened, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} /></SurfaceBoundary>}
         </div>
 
         <div className="ws-automations" hidden={view !== "automations"}>
@@ -2506,6 +2522,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         shownTab={current ? shownTab[current.path] ?? null : null}
         actions={{
           openTask,
+          openTaskBoard,
           selectWorktree: (wt) => {
             select(wt);
             show("workspace");
@@ -2698,6 +2715,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             await load();
           }}
           onMoveError={() => pushToast({ text: t("kanban.moveError") })}
+          api={api}
+          repoPath={repoOf(repos, current)}
+          onTaskError={() => pushToast({ id: "board-sync-failed", text: t("kanban.taskSyncError") })}
           onClose={() => setBoardOpen(false)}
         />
       )}

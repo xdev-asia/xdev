@@ -32,7 +32,7 @@ import { NewDocForm } from "./components/NewDocForm";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { SquadsView } from "./components/SquadsView";
-import { TasksView } from "./components/TasksView";
+import { BoardHost, type BoardTab, type BoardWiring } from "./tasks/board/BoardHost";
 import { useKeymap } from "./keys/keymap";
 import { TerminalView } from "./terminal/TerminalView";
 import { isDirty } from "./doc/docState";
@@ -59,9 +59,9 @@ function folderName(path: string): string {
 }
 
 /** Docs & SDLC: the vault, its docs and the agents that work on them. */
-export type AppRequest = { app: AppId; seq: number; task?: string };
+export type AppRequest = { app: AppId; seq: number; task?: string; /** Tasks: the tab to show. */ tab?: BoardTab; /** Tasks: a file task to open in the editor. */ boardTask?: string };
 
-export function DocsApp(props: { kit?: KitHost; appRequest?: AppRequest | null }) {
+export function DocsApp(props: { kit?: KitHost; appRequest?: AppRequest | null; board?: BoardWiring }) {
   const { t } = useI18n();
   const [booting, setBooting] = useState(true);
   const [vault, setVault] = useState<Vault | null>(null);
@@ -144,7 +144,7 @@ export function DocsApp(props: { kit?: KitHost; appRequest?: AppRequest | null }
     <>
       {vault ? (
         // Keyed by path so switching folders starts with a clean editor and search state.
-        <VaultView key={vault.path} vault={vault} kit={props.kit} appRequest={props.appRequest} onChangeFolder={pickAndOpen} />
+        <VaultView key={vault.path} vault={vault} kit={props.kit} appRequest={props.appRequest} board={props.board} onChangeFolder={pickAndOpen} />
       ) : (
         <NoVaultView
           kit={props.kit}
@@ -169,7 +169,7 @@ export function DocsApp(props: { kit?: KitHost; appRequest?: AppRequest | null }
   );
 }
 
-export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: AppRequest | null; onChangeFolder(): Promise<void> }) {
+export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: AppRequest | null; board?: BoardWiring; onChangeFolder(): Promise<void> }) {
   const { t } = useI18n();
   const doc = useDoc(api);
   const review = useChanges(api, doc.flush);
@@ -184,6 +184,8 @@ export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: App
   // `seq` bumps on each focus, so picking the same task again remounts Tasks on it.
   const [taskFocus, setTaskFocusState] = useState<{ id: string; seq: number } | null>(null);
   const setTaskFocus = (id: string) => setTaskFocusState((f) => ({ id, seq: (f?.seq ?? 0) + 1 }));
+  // The tab or file task a request asked Tasks to show; `seq` remounts Tasks on each one.
+  const [boardFocus, setBoardFocus] = useState<{ tab?: BoardTab; task?: string; seq: number } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [rejecting, setRejecting] = useState<Change[] | null>(null);
@@ -380,6 +382,10 @@ export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: App
     if (!props.appRequest) return;
     // A task in the request is the `onOpenTask` path: focus it, then show Tasks.
     if (props.appRequest.task) setTaskFocus(props.appRequest.task);
+    else if (props.appRequest.app === "tasks") {
+      setTaskFocusState(null);
+      setBoardFocus({ tab: props.appRequest.tab, task: props.appRequest.boardTask, seq: props.appRequest.seq });
+    }
     openApp(props.appRequest.app);
     // Only a new request runs this; `openApp` just sets state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -542,7 +548,23 @@ export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: App
         )}
       </aside>
       <main className="main">
-        {app === "tasks" && <TasksView key={taskFocus ? `${taskFocus.id}:${taskFocus.seq}` : ""} api={api} initial={taskFocus?.id} />}
+        {app === "tasks" && (
+          <BoardHost
+            key={taskFocus ? `${taskFocus.id}:${taskFocus.seq}` : boardFocus ? `board:${boardFocus.seq}` : ""}
+            api={api}
+            repos={props.board?.repos ?? null}
+            defaultRepo={props.board?.defaultRepo}
+            sessions={props.board?.sessions}
+            current={props.board?.current}
+            onStart={props.board?.onStart ?? (async () => null)}
+            onOpenTab={props.board?.onOpenTab}
+            onDecompose={props.board?.onDecompose}
+            // An agent task asks for Agent runs; a request with a tab names it; the default is the Board.
+            initialTab={taskFocus ? "runs" : boardFocus?.tab}
+            initialRun={taskFocus?.id}
+            initialTask={taskFocus ? undefined : boardFocus?.task}
+          />
+        )}
         {app === "squads" && (
           <SquadsView
             api={api}

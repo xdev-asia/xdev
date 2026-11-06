@@ -63,3 +63,10 @@ it("says so when the project has no worktrees", () => {
   expect(out).toContain("No worktrees yet");
   expect(out).not.toContain("kb-col");
 });
+
+it("a card whose worktree came from a task carries the Task tag", () => {
+  const item = { kind: "task" as const, url: ".xdev/tasks/tbk2a3c.md", title: "Plan" };
+  const out = html({ worktrees: [wt("oak", "todo", { item }), wt("elm", "todo")] });
+  expect(out.match(/ws-tag/g)).toHaveLength(1);
+  expect(out).toContain(">Task<");
+});
