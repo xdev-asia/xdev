@@ -56,6 +56,8 @@ export type ActionId =
   | "file.save"
   // Opens the Markdown preview of the focused file tab; the handler declines for any other file.
   | "file.markdownPreview"
+  | "file.splitRight"
+  | "file.splitDown"
   // The quick-commands plan registers the handler.
   | "quickCommands.open"
   // Quick open: a file of the worktree on screen by name.
@@ -239,7 +241,7 @@ export const TERMINAL_KEEPS: readonly string[] = [
  */
 // Saving a file or previewing it means nothing in a terminal, so those keys stay the terminal's own there
 // (Ctrl+Shift+V is its paste).
-const EDITOR_ONLY: ReadonlySet<ActionId> = new Set<ActionId>(["file.save", "file.markdownPreview"]);
+const EDITOR_ONLY: ReadonlySet<ActionId> = new Set<ActionId>(["file.save", "file.markdownPreview", "file.splitRight", "file.splitDown"]);
 
 function terminalActions(e: KeyboardEvent, p: Platform): ActionId[] {
   const chord = eventChord(e, p);

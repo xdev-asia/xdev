@@ -7,6 +7,8 @@ export interface OpenFileRequest {
   column?: number;
   // Reserved: P1 has no preview tabs, every open is a normal tab.
   preview?: boolean;
+  /** Open the file tab in a new pane to the right of the focused pane. */
+  side?: boolean;
 }
 
 const listeners = new Set<(req: OpenFileRequest) => void>();

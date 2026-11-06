@@ -9,7 +9,7 @@ import { AgentIcon } from "./AgentIcon";
 import type { PaneDir } from "./paneTree";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import type { Tab, TabColor } from "./sessions";
-import { fileTabMenuItems, tabColorVar, tabMenuItems, type FileCloseKind, type MoveDir } from "./tabMenu";
+import { fileTabMenuItems, tabColorVar, tabMenuItems, viewTabMenuItems, type FileCloseKind, type MoveDir } from "./tabMenu";
 import type { TabStatus } from "./status";
 import { QuestionBadge } from "@/conversation/QuestionCard";
 import type { DropZone } from "./sessions";
@@ -28,6 +28,8 @@ export interface StripItem {
   file?: { rel: string; dirty: boolean; pinned?: boolean; markdown?: boolean; gone?: "deleted" | "renamed" };
   /** Set for a Markdown preview tab: the path of the file it shows. */
   preview?: { rel: string };
+  /** Set for a view tab (the second view of a file): its path and whether the file has unsaved edits. */
+  view?: { rel: string; dirty: boolean };
   /** Set for the commit tab: the commit it shows. */
   commit?: { id: string };
 }
@@ -147,6 +149,8 @@ export function TabStrip(props: {
   onCopyFilePath?: (rel: string, relative: boolean) => void;
   /** Opens the Markdown preview of a file tab. */
   onOpenPreview?: (rel: string) => void;
+  /** Shows a file tab's file a second time in a new pane. */
+  onSplitView?: (rel: string, dir: "right" | "down") => void;
   /** Opens the title dialog for a tab. */
   onChangeTitle: (id: string) => void;
   onColor: (id: string, color: TabColor) => void;
@@ -223,7 +227,9 @@ export function TabStrip(props: {
       ? name(item.tab)
       : item.file
         ? fileName(item.file.rel)
-        : item.preview
+        : item.view
+          ? fileName(item.view.rel)
+          : item.preview
           ? t("files.preview.tab", { name: fileName(item.preview.rel) })
           : item.commit
             ? t("commitView.tab", { id: item.commit.id.slice(0, 7) })
@@ -256,6 +262,14 @@ export function TabStrip(props: {
   const contextItems = (item: StripItem): MenuItem[] => {
     // The commit tab stays in its pane: it has only Close.
     if (item.commit) return [{ id: "close", labelKey: "tabMenu.close", run: () => props.onClose(item.id) }];
+    if (item.view) {
+      const rel = item.view.rel;
+      return viewTabMenuItems({
+        close: () => props.onClose(item.id),
+        copyPath: () => props.onCopyFilePath?.(rel, false),
+        copyRelativePath: () => props.onCopyFilePath?.(rel, true),
+      });
+    }
     if (item.file) {
       const file = item.file;
       return fileTabMenuItems({
@@ -263,6 +277,7 @@ export function TabStrip(props: {
         files: items.flatMap((i) => (i.file ? [{ rel: i.file.rel, dirty: i.file.dirty, pinned: !!i.file.pinned }] : [])),
         canMoveToSplit: canSplitTab,
         ...(file.markdown && props.onOpenPreview ? { openPreview: () => props.onOpenPreview?.(file.rel) } : {}),
+        splitView: (dir) => props.onSplitView?.(file.rel, dir),
         moveToSplit: (dir) => props.onMoveToSplit(item.id, dir),
         setPinned: (pinned) => props.onPin(item.id, pinned),
         copyPath: () => props.onCopyFilePath?.(file.rel, false),
@@ -413,7 +428,7 @@ export function TabStrip(props: {
                       ? t("workspace.tabs.unreadLabel", { name: shownName(tab), status: statusLabel(tab.status).toLocaleLowerCase() })
                       : undefined
                   }
-                  title={tab?.title ?? item.file?.rel ?? item.preview?.rel ?? (item.commit ? t("commitView.tab", { id: item.commit.id.slice(0, 7) }) : undefined)}
+                  title={tab?.title ?? item.file?.rel ?? (item.view ? t("files.view.tooltip", { rel: item.view.rel }) : undefined) ?? item.preview?.rel ?? (item.commit ? t("commitView.tab", { id: item.commit.id.slice(0, 7) }) : undefined)}
                   aria-describedby={tab && hover.open?.id === item.id ? cardId : undefined}
                   onMouseEnter={tab ? (e) => hover.show(item.id, e.currentTarget, HOVER_DELAY_MS) : undefined}
                   onMouseLeave={tab ? hover.hide : undefined}
@@ -459,6 +474,8 @@ export function TabStrip(props: {
                           <span className="ws-tab-name">{fileName(item.file.rel)}</span>
                           {item.file.gone && <span className="ws-tab-gone-label">{t(`files.tab.${item.file.gone}`)}</span>}
                         </>
+                      ) : item.view ? (
+                        <span className="ws-tab-name">{fileName(item.view.rel)}</span>
                       ) : (
                         <>
                           <span className="ws-tab-icon ws-mono" aria-hidden="true">
@@ -471,7 +488,7 @@ export function TabStrip(props: {
                   )}
                 </button>
               )}
-              {item.file?.dirty && <span className="ws-tab-dirty" role="img" aria-label={t("files.dirty")} title={t("files.dirty")} />}
+              {(item.file?.dirty || item.view?.dirty) && <span className="ws-tab-dirty" role="img" aria-label={t("files.dirty")} title={t("files.dirty")} />}
               {!tab?.pinned && !item.file?.pinned && (
               <button
                 type="button"

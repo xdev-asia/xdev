@@ -41,7 +41,7 @@ const PRESS: Record<string, Record<string, unknown>> = {
 };
 // The other default chords: a press built from the chord.
 const CODES: Record<string, string> = {
-  "=": "Equal", "-": "Minus", ",": "Comma", "[": "BracketLeft", "]": "BracketRight", ";": "Semicolon", Up: "ArrowUp", Down: "ArrowDown", Left: "ArrowLeft", Right: "ArrowRight",
+  "=": "Equal", "-": "Minus", ",": "Comma", "[": "BracketLeft", "]": "BracketRight", ";": "Semicolon", "\\": "Backslash", Up: "ArrowUp", Down: "ArrowDown", Left: "ArrowLeft", Right: "ArrowRight",
 };
 function pressOf(chord: string): Record<string, unknown> {
   if (PRESS[chord]) return PRESS[chord];

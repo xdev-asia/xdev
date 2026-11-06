@@ -4,7 +4,7 @@ import viText from "@/i18n/vi.json";
 import type { MenuItem } from "@/ui/ContextMenu";
 import type { Tab } from "./sessions";
 import {
-  cycleSameKind, moveEdge, fileCloseTargets, fileTabMenuItems, tabMenuItems,
+  cycleSameKind, moveEdge, fileCloseTargets, fileTabMenuItems, tabMenuItems, viewTabMenuItems,
   type FileTabInfo, type FileTabMenuContext, type TabMenuContext,
 } from "./tabMenu";
 
@@ -114,6 +114,7 @@ function fileSetup(over: Partial<FileTabMenuContext> = {}, files: FileTabInfo[] 
     rel,
     files,
     canMoveToSplit: true,
+    splitView: (d) => void calls.push(`view:${d}`),
     moveToSplit: (d) => void calls.push(`move:${d}`),
     setPinned: (p) => void calls.push(`pin:${p}`),
     copyPath: () => void calls.push("path"),
@@ -131,11 +132,11 @@ function fileSetup(over: Partial<FileTabMenuContext> = {}, files: FileTabInfo[] 
 
 it("a file tab menu has the file items and none of the terminal ones", () => {
   expect(ids(fileSetup().items)).toEqual([
-    "moveToSplit", "-", "pin", "-", "copyPath", "copyRelativePath", "-",
+    "splitRight", "splitDown", "-", "moveToSplit", "-", "pin", "-", "copyPath", "copyRelativePath", "-",
     "close", "closeOthers", "closeToRight", "closeSaved", "closeAll",
   ]);
   const terminal = ids(setup().items);
-  const terminalOnly = ["copyTabId", "changeTitle", "color", "splitRight", "splitDown"];
+  const terminalOnly = ["copyTabId", "changeTitle", "color"];
   for (const id of terminalOnly) {
     expect(terminal).toContain(id);
     expect(ids(fileSetup().items)).not.toContain(id);
@@ -146,10 +147,23 @@ it("a file tab menu has the file items and none of the terminal ones", () => {
 it("a Markdown file offers Open preview first; other files do not", () => {
   const calls: string[] = [];
   const md = fileSetup({ openPreview: () => void calls.push("preview") });
-  expect(ids(md.items).slice(0, 3)).toEqual(["openPreview", "-", "moveToSplit"]);
+  expect(ids(md.items).slice(0, 3)).toEqual(["openPreview", "-", "splitRight"]);
   md.find("openPreview").run!();
   expect(calls).toEqual(["preview"]);
   expect(ids(fileSetup().items)).not.toContain("openPreview");
+});
+
+it("a file menu splits the view right or down; a view menu closes and copies", () => {
+  const f = fileSetup();
+  f.find("splitRight").run!();
+  f.find("splitDown").run!();
+  expect(f.calls).toEqual(["view:right", "view:down"]);
+  const calls: string[] = [];
+  const items = viewTabMenuItems({ close: () => void calls.push("close"), copyPath: () => void calls.push("path"), copyRelativePath: () => void calls.push("rel") });
+  expect(ids(items)).toEqual(["closeView", "-", "copyPath", "copyRelativePath"]);
+  for (const i of items) i.run?.();
+  expect(calls).toEqual(["close", "path", "rel"]);
+  for (const i of items) if (i.kind !== "separator") expect(viText).toHaveProperty([i.labelKey]);
 });
 
 it("the file pin item toggles with the tab's mark", () => {

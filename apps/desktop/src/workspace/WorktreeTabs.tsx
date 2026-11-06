@@ -9,6 +9,7 @@ import { fileName, fileTabId, fileTabRel, fileTabs, isDirty, isFileTab, useOpenF
 import { saveFile } from "@/files/fileIO";
 import { MarkdownPreview } from "@/files/MarkdownPreview";
 import { isPreviewTab, previewTabId, previewTabRel } from "@/files/previewTabs";
+import { isViewTab, viewTabId, viewTabRel } from "@/files/viewTabs";
 import { viewerOf } from "@/files/viewer";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
@@ -73,7 +74,7 @@ import { cycleTab, mruOrder, nthTab } from "./tabNav";
 import { chosenTab, startSwitch, stepSwitch, type Switch } from "./recentTabs";
 import { RecentTabSwitcher, type SwitcherItem } from "./RecentTabSwitcher";
 import { closeAllTargets, cycleSameKind, fileCloseTargets, type FileCloseKind, type FileTabInfo, type MoveDir, moveEdge } from "./tabMenu";
-import { openFile } from "@/files/openFile";
+import { onOpenFile, openFile } from "@/files/openFile";
 import { absolutePath, relativePath } from "@/search/resultCopy";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { toTabStatus } from "@/terminal/programStatus";
@@ -241,7 +242,11 @@ export function WorktreeTabs(props: {
   for (const leaf of layout ? (leaves(layout) as Leaf[]) : []) {
     for (const id of leaf.tabs) {
       // A preview goes with its source: a file that is closed, or never opened, leaves no preview behind.
-      const gone = isFileTab(id) ? !fileIds.has(id) : isPreviewTab(id) && !fileIds.has(fileTabId(previewTabRel(id)!));
+      const gone = isFileTab(id)
+        ? !fileIds.has(id)
+        : isPreviewTab(id)
+          ? !fileIds.has(fileTabId(previewTabRel(id)!))
+          : isViewTab(id) && !fileIds.has(fileTabId(viewTabRel(id)!));
       if (gone && layout) layout = removeTab(layout, id);
     }
   }
@@ -272,7 +277,7 @@ export function WorktreeTabs(props: {
   const [everFront] = useState(() => new Set<string>());
   for (const id of frontIds) everFront.add(id);
   // A string, so the shell hears only when the set on screen changes.
-  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && id !== COMMIT_TAB && !isFileTab(id) && !isPreviewTab(id)).join(" ");
+  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && id !== COMMIT_TAB && !isFileTab(id) && !isPreviewTab(id) && !isViewTab(id)).join(" ");
   const { onShown, onPanes, front } = props;
   useEffect(() => onShown?.(shown), [shown]);
   // The focus order for MRU; a walk records only where it ends, not the tabs it passed.
@@ -391,7 +396,7 @@ export function WorktreeTabs(props: {
 
   // The tab menu's Move to Split: a terminal goes through the sessions store, the other tabs through the tree.
   function moveTab(pane: string, id: string, dir: MoveDir): void {
-    if (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id)) return splitTab(pane, id, dir);
+    if (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id) || isViewTab(id)) return splitTab(pane, id, dir);
     if (dir === "right" || dir === "down") return sessions.moveToSplit(id, dir);
     sessions.dropToSplit(worktree, id, pane, moveEdge(dir));
   }
@@ -458,7 +463,7 @@ export function WorktreeTabs(props: {
   // The next / previous tab of the front tab's kind: files with files, terminals with terminals.
   function stepSameKind(step: 1 | -1): boolean {
     const kindOf = (id: string) =>
-      isFileTab(id) ? "file" : isPreviewTab(id) ? "preview" : id === REVIEW_TAB || id === COMMIT_TAB ? id : "terminal";
+      isFileTab(id) || isViewTab(id) ? "file" : isPreviewTab(id) ? "preview" : id === REVIEW_TAB || id === COMMIT_TAB ? id : "terminal";
     const to = cycleSameKind(focusedLeaf?.tabs ?? [], shown, step, kindOf);
     if (to === null) return false;
     go(to);
@@ -469,7 +474,7 @@ export function WorktreeTabs(props: {
   // Save / Don't save dialog; a running agent asks as a single close does.
   function closeAllTabs(): boolean {
     const kindOf = (id: string): "terminal" | "file" | "other" =>
-      isFileTab(id) ? "file" : isPreviewTab(id) || id === REVIEW_TAB || id === COMMIT_TAB ? "other" : "terminal";
+      isFileTab(id) ? "file" : isPreviewTab(id) || isViewTab(id) || id === REVIEW_TAB || id === COMMIT_TAB ? "other" : "terminal";
     const pinnedOf = (id: string) => {
       const rel = fileTabRel(id);
       return rel !== null ? !!fileTabs.get(worktree, rel)?.pinned : !!byId.get(id)?.pinned;
@@ -485,7 +490,8 @@ export function WorktreeTabs(props: {
   function closeTab(id: string): void {
     const rel = fileTabRel(id);
     if (rel !== null) return closeFiles([rel]);
-    if (isPreviewTab(id)) return void (layout && setLayout(removeTab(layout, id)));
+    // A preview or a view leaves its pane; the file stays open, so there is nothing unsaved to ask about.
+    if (isPreviewTab(id) || isViewTab(id)) return void (layout && setLayout(removeTab(layout, id)));
     if (id === COMMIT_TAB) {
       setCommitAsk(null);
       if (layout) setLayout(removeTab(layout, COMMIT_TAB));
@@ -513,6 +519,32 @@ export function WorktreeTabs(props: {
     else setLayout(addTab(layout, id, opts.pane));
     return true;
   }
+
+  // The second view of `rel`: selected if it is open, else in a new pane beside `pane`.
+  function openView(rel: string, dir: "right" | "down", pane?: string): boolean {
+    if (!layout || !files.some((f) => f.rel === rel)) return false;
+    const id = viewTabId(rel);
+    if (paneOf(layout, id)) {
+      const pid = paneOf(layout, id)!;
+      setLayout(focusPane(selectTab(layout, id), pid));
+    } else setLayout(splitPane(layout, pane ?? layout.focused, dir, id));
+    setKick((k) => k + 1);
+    return true;
+  }
+
+  // A request to open a file to the side: the file tab gets a new pane to the right of the focused one.
+  useEffect(
+    () =>
+      onOpenFile((req) => {
+        if (!req.side || req.worktree !== worktree) return;
+        const now = sessions.layout(worktree);
+        if (!now) return;
+        fileTabs.open(worktree, req.rel, req);
+        const id = fileTabId(req.rel);
+        if (!paneOf(now, id)) sessions.setLayout(worktree, splitPane(now, now.focused, "right", id));
+      }),
+    [sessions, worktree],
+  );
 
   // ---- Keys: they act on the focused pane ----------------------------------------------------
 
@@ -590,7 +622,7 @@ export function WorktreeTabs(props: {
       if (id === COMMIT_TAB) return { id, title: t("commitView.tab", { id: (commitOpen?.id ?? "").slice(0, 7) }), icon: <Icon name="diff" /> };
       const previewRel = previewTabRel(id);
       if (previewRel !== null) return { id, title: t("files.preview.tab", { name: fileName(previewRel) }), icon: <Icon name="eye" />, path: previewRel };
-      const rel = fileTabRel(id);
+      const rel = fileTabRel(id) ?? viewTabRel(id);
       if (rel !== null) return { id, title: fileName(rel), icon: <FileIcon name={fileName(rel)} />, path: rel };
       const tab = byId.get(id);
       return tab
@@ -683,8 +715,16 @@ export function WorktreeTabs(props: {
       "pane.close": () => requestClose(focusedLeaf?.tabs ?? []),
       // Only a file tab takes the save key; anywhere else it goes on to its other owners.
       "file.markdownPreview": () => (shown ? openPreview(fileTabRel(shown) ?? "") : false),
+      "file.splitRight": () => {
+        const rel = shown ? (fileTabRel(shown) ?? viewTabRel(shown)) : null;
+        return rel !== null && openView(rel, "right");
+      },
+      "file.splitDown": () => {
+        const rel = shown ? (fileTabRel(shown) ?? viewTabRel(shown)) : null;
+        return rel !== null && openView(rel, "down");
+      },
       "file.save": () => {
-        const rel = shown ? fileTabRel(shown) : null;
+        const rel = shown ? (fileTabRel(shown) ?? viewTabRel(shown)) : null;
         if (rel === null) return false;
         void saveFile({ api, store: fileTabs, t }, worktree, rel);
         return true;
@@ -816,6 +856,11 @@ export function WorktreeTabs(props: {
       if (id === REVIEW_TAB) return [{ id, tab: null }];
       const previewRel = previewTabRel(id);
       if (previewRel !== null) return [{ id, tab: null, preview: { rel: previewRel } }];
+      const viewRel = viewTabRel(id);
+      if (viewRel !== null) {
+        const entry = files.find((f) => f.rel === viewRel);
+        return entry ? [{ id, tab: null, view: { rel: viewRel, dirty: isDirty(entry) } }] : [];
+      }
       if (id === COMMIT_TAB) return commitOpen ? [{ id, tab: null, commit: { id: commitOpen.id } }] : [];
       const rel = fileTabRel(id);
       if (rel !== null) {
@@ -900,6 +945,7 @@ export function WorktreeTabs(props: {
         onCloseFiles={(id, kind: FileCloseKind) => closeFiles(fileCloseTargets(fileInfos(leaf.tabs), fileTabRel(id), kind))}
         onCopyFilePath={(rel, relative) => void copyText(relative ? relativePath(rel) : absolutePath(worktree, rel))}
         onOpenPreview={(rel) => void openPreview(rel, { pane: leaf.id })}
+        onSplitView={(rel, dir) => void openView(rel, dir, leaf.id)}
         onCopyTabId={(id) => void copyText(id)}
         onChangeTitle={(id) => setTitling(id)}
         onColor={(id, color) => sessions.setColor(id, color)}
@@ -1082,6 +1128,31 @@ export function WorktreeTabs(props: {
               return [
                 <div key={id} className="ws-tab-pane" role="tabpanel" data-tab={id} hidden={at.hidden} style={at.style}>
                   <MarkdownPreview api={api} worktree={worktree} rel={rel} text={entry.text} debounceMs={PREVIEW_DEBOUNCE_MS} hidden={at.hidden} />
+                </div>,
+              ];
+            }),
+          )}
+        {layout &&
+          (leaves(layout) as Leaf[]).flatMap((leaf) =>
+            leaf.tabs.flatMap((id) => {
+              const rel = viewTabRel(id);
+              const entry = rel === null ? undefined : files.find((f) => f.rel === rel);
+              if (rel === null || !entry) return [];
+              const at = placed(id);
+              return [
+                <div
+                  key={id}
+                  className="ws-tab-pane"
+                  role="tabpanel"
+                  data-tab={id}
+                  hidden={at.hidden}
+                  style={at.style}
+                  onPointerDownCapture={() => {
+                    const pane = paneOf(layout, id);
+                    if (pane && layout.focused !== pane) setLayout(focusPane(layout, pane));
+                  }}
+                >
+                  <SurfaceBoundary id="editor.view" surface="Editor" resetKey={rel}><FileView secondary api={api} worktree={worktree} rel={rel} /></SurfaceBoundary>
                 </div>,
               ];
             }),

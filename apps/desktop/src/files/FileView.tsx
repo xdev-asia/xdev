@@ -20,7 +20,7 @@ import { fileTabs, useFileEntry } from "./fileTabs";
 import { viewerOf } from "./viewer";
 
 /** One open file: reads it when it first shows, then edits it, or says why it cannot. */
-export function FileView(props: { api: Api; worktree: string; rel: string }): JSX.Element {
+export function FileView(props: { api: Api; worktree: string; rel: string; secondary?: boolean }): JSX.Element {
   const { api, worktree, rel } = props;
   const { t } = useI18n();
   const entry = useFileEntry(worktree, rel);
@@ -95,7 +95,9 @@ export function FileView(props: { api: Api; worktree: string; rel: string }): JS
       <>
         {needsChoice(entry) && <ExternalChange api={api} entry={entry} io={io} />}
         <CodeEditor
+          worktree={worktree}
           rel={rel}
+          secondary={props.secondary}
           value={entry.text}
           settings={settings}
           goto={entry.goto}

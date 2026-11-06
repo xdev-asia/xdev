@@ -5043,5 +5043,10 @@
   "swarm.announce.started": "Đã bắt đầu {count} worker.",
   "swarm.announce.partial": "Đã bắt đầu {count} worker, {failed} worker không khởi động được.",
   "swarm.announce.stopped": "Đã dừng {count} worker.",
-  "swarm.announce.opened": "Đã mở {worker} thành tab."
+  "swarm.announce.opened": "Đã mở {worker} thành tab.",
+  "tabMenu.closeView": "Đóng khung xem",
+  "files.view.tooltip": "Khung xem thứ hai của {rel}",
+  "keys.action.file.splitRight": "Tách trình soạn thảo sang phải",
+  "keys.action.file.splitDown": "Tách trình soạn thảo xuống dưới",
+  "search.quickOpen.sideHint": "{key}+Enter mở sang bên"
 }

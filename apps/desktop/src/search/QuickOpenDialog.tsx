@@ -3,6 +3,7 @@ import type { JSX, KeyboardEvent } from "react";
 import type { Api } from "@/api";
 import { isAbsolutePath, relUnder } from "@/files/linkPath";
 import { useI18n } from "@/i18n";
+import { IS_MAC } from "@/platform";
 import { Highlight } from "@/palette/Highlight";
 import type { Range } from "@/palette/match";
 import "@/palette/palette.css";
@@ -30,7 +31,7 @@ export interface QuickOpenProps {
   /** The worktree on screen; null when there is none. */
   worktree: string | null;
   recent: RecentFiles;
-  /** `side` is Ctrl+Enter: open in a new pane to the right. */
+  /** `side` is Mod+Enter: open in a new pane to the right. */
   onOpen(rel: string, opts: { line?: number; column?: number; side: boolean }): void;
   onClose(): void;
   now?: () => number;
@@ -197,9 +198,7 @@ export function QuickOpenDialog(props: QuickOpenProps): JSX.Element {
         <span>
           <kbd>Enter</kbd> {t("palette.hint.open")}
         </span>
-        <span>
-          <kbd>Ctrl+Enter</kbd> {t("quickOpen.openSplit")}
-        </span>
+        <span>{t("search.quickOpen.sideHint", { key: IS_MAC ? "Cmd" : "Ctrl" })}</span>
         <span>
           <kbd>Esc</kbd> {t("palette.hint.close")}
         </span>
