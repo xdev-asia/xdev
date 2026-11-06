@@ -2,6 +2,9 @@
 // Pure functions. Each returns a new object only when something changed, the same reference otherwise,
 // so `useSyncExternalStore` snapshots stay stable.
 
+import type { CanvasState } from "./canvas/canvasModel";
+import type { LayoutPreset } from "./layoutPresets";
+
 export type PaneDir = "right" | "down";
 
 export type PaneNode =
@@ -13,6 +16,10 @@ export interface PaneLayout {
   /** Id of the focused leaf. */
   focused: string;
   expanded: string | null;
+  /** The preset the panes were last arranged by, while the arrangement still holds. Absent in older layouts. */
+  preset?: LayoutPreset;
+  /** The terminal canvas: card positions and view. The tree above stays as it was while it is on. Absent in older layouts. */
+  canvas?: CanvasState;
 }
 
 type Leaf = Extract<PaneNode, { kind: "leaf" }>;
@@ -102,7 +109,17 @@ function withTree(l: PaneLayout, root: PaneNode | null, prefer?: string): PaneLa
   const focused = has(prefer ?? l.focused) ? (prefer ?? l.focused) : ls[0].id;
   let expanded = l.expanded;
   if (ls.length < 2 || !has(expanded)) expanded = null;
-  return { root, focused, expanded };
+  // A preset describes the arrangement it made; once panes come or go it no longer does.
+  const kept = ls.length === leaves(l).length ? l : noPreset(l);
+  return { ...kept, root, focused, expanded };
+}
+
+/** The layout without its preset: a change to the arrangement means the preset no longer describes it. */
+function noPreset(l: PaneLayout): PaneLayout {
+  if (l.preset === undefined) return l;
+  const copy = { ...l };
+  delete copy.preset;
+  return copy;
 }
 
 // ---- queries -------------------------------------------------------------------------------
@@ -178,7 +195,7 @@ export function splitPane(l: PaneLayout, pane: string, dir: PaneDir, tabId: stri
   const root = mapNode(l.root, pane, (n) =>
     normalize({ kind: "split", id: splitId, dir, children: before ? [fresh, n] : [n, fresh], sizes: [0.5, 0.5] }),
   )!;
-  return { root, focused: newId, expanded: null };
+  return { ...noPreset(l), root, focused: newId, expanded: null };
 }
 
 export type PaneEdge = "left" | "right" | "top" | "bottom";
@@ -200,7 +217,7 @@ export function movePane(l: PaneLayout, source: string, target: string, edge: Pa
   const root = mapNode(rest, target, (n) =>
     normalize({ kind: "split", id: splitId, dir, children: before ? [moving, n] : [n, moving], sizes: [0.5, 0.5] }),
   )!;
-  return { root, focused: source, expanded: null };
+  return { ...noPreset(l), root, focused: source, expanded: null };
 }
 
 export function closePane(l: PaneLayout, pane: string): PaneLayout | null {

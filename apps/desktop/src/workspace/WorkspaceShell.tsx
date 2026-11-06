@@ -27,6 +27,7 @@ import { useWorktreeWatch } from "./useWorktreeWatch";
 import { ComposerHost, type ComposerRequest } from "@/composer/ComposerHost";
 import { fileTabId, fileTabRel, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
+import { LayoutControls } from "./LayoutControls";
 import { paneOf, splitPane } from "./paneTree";
 import { QuickOpenDialog } from "@/search/QuickOpenDialog";
 import { recentFiles } from "@/search/recentFiles";
@@ -1848,6 +1849,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           </button>
           {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onToggleRead={(tab) => (tab.unread ? sessions?.markTabRead(tab.id) : sessions?.markTabUnread(tab.id))} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
         </div>
+        {view === "workspace" && <LayoutControls sessions={sessions} worktree={current?.path ?? null} />}
         <HelpButton onPick={pickHelp} />
         <button
           type="button"

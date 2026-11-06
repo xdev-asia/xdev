@@ -1,0 +1,77 @@
+/* The terminal canvas: the panes of a worktree as cards on a surface that pans and zooms. The surface fills
+   the pane area and clips; it never scrolls the page. Terminals sit over the card bodies (see CanvasView). */
+.cv-surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg-0, var(--x-color-bg));
+  cursor: grab;
+  touch-action: none;
+  pointer-events: auto;
+}
+
+.cv-surface[data-panning="true"],
+.cv-surface[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+.cv-surface:focus-visible {
+  outline: 2px solid var(--x-color-signal);
+  outline-offset: -2px;
+}
+
+.cv-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  cursor: default;
+}
+
+.cv-head {
+  min-height: var(--ws-strip-h);
+}
+
+.cv-grip {
+  flex-shrink: 0;
+  width: 24px;
+  min-height: 24px;
+  border-right: 1px solid var(--line);
+  background: var(--bg-1);
+  cursor: grab;
+  touch-action: none;
+}
+
+.cv-grip:hover {
+  background: var(--bg-3);
+}
+
+.cv-grip:focus-visible {
+  outline: 2px solid var(--x-color-signal);
+  outline-offset: -2px;
+}
+
+.cv-bar {
+  position: absolute;
+  right: var(--x-space-2);
+  bottom: var(--x-space-2);
+  z-index: 1000;
+  max-width: calc(100% - var(--x-space-4));
+  padding: var(--x-space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  cursor: default;
+}
+
+.cv-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

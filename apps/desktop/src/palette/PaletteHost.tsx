@@ -14,6 +14,7 @@ import { resourceItems } from "@/stats/resourceEvents";
 import { foreignTermsItems } from "@/foreignTerms/foreignTermsEvents";
 import { actionItems, crashItems, quickCommandItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
 import { JumpPalette } from "./JumpPalette";
+import { layoutItems } from "@/workspace/layoutEvents";
 import { chatItems, taskItems } from "./moreItems";
 import { RecentStore } from "./recent";
 import { conversationItems } from "@/conversation/conversationStore";
@@ -189,6 +190,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       ...resourceItems(t),
       ...conversationItems(t, front),
       ...foreignTermsItems(t),
+      ...(sessions && current ? layoutItems(t) : []),
       ...(current && actions.runQuickCommand && actions.newQuickCommand
         ? quickCommandItems([...picked.global, ...picked.project], repoOfCurrent?.shortName ?? "", t, { run: actions.runQuickCommand, create: actions.newQuickCommand })
         : []),

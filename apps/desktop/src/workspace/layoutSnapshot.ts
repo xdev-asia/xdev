@@ -1,4 +1,6 @@
 import type { AccountSource, PtyProfile, RestoreMode } from "@/api";
+import { readCanvas } from "./canvas/canvasModel";
+import { isLayoutPreset } from "./layoutPresets";
 import { leaves, removeTab, replaceTab, type PaneLayout } from "./paneTree";
 import type { Tab, TabCli, TabColor } from "./sessions";
 
@@ -168,7 +170,8 @@ export function toSnapshot(layout: PaneLayout, tabOf: (id: string) => Tab | null
  * one. A tab that did not come back (a skipped shell, a file that is gone) leaves its pane; the review
  * and file tabs not in `ids` keep their own id when `keep` says so. Null when no tab is left.
  */
-export function fromSnapshot(layout: PaneLayout, ids: ReadonlyMap<string, string>, keep: (id: string) => boolean): PaneLayout | null {
+export function fromSnapshot(saved: PaneLayout, ids: ReadonlyMap<string, string>, keep: (id: string) => boolean): PaneLayout | null {
+  const layout = withOptional(saved);
   const all = leaves(layout).flatMap((n) => (n.kind === "leaf" ? n.tabs : []));
   let next: PaneLayout | null = layout;
   for (const id of all) {
@@ -177,4 +180,14 @@ export function fromSnapshot(layout: PaneLayout, ids: ReadonlyMap<string, string
     else if (!(isPlace(id) && keep(id))) next = next && removeTab(next, id);
   }
   return next;
+}
+
+/**
+ * The optional parts of a saved layout (`preset`, `canvas`) read with care: a layout saved before they
+ * existed has neither, and a damaged one loses only the part that is wrong.
+ */
+export function withOptional(saved: PaneLayout): PaneLayout {
+  const { preset, canvas, ...base } = saved as PaneLayout & { preset?: unknown; canvas?: unknown };
+  const c = readCanvas(canvas);
+  return { ...base, ...(isLayoutPreset(preset) ? { preset } : {}), ...(c ? { canvas: c } : {}) };
 }

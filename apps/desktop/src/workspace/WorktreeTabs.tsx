@@ -61,6 +61,8 @@ import {
 } from "./paneTree";
 import { CloseTabsDialog } from "./CloseTabsDialog";
 import { bodyStyle, PaneView, paneRects } from "./PaneView";
+import { CanvasView, cardBodyStyle, cardLayers } from "./canvas/CanvasView";
+import { sync as syncCanvas, screenRect, type CanvasState } from "./canvas/canvasModel";
 import { CommitView, type CommitAsk } from "./CommitView";
 import { cliOf, ownAccount, type Sessions, type Tab, type TabCli } from "./sessions";
 import type { SetupGate } from "./setupGate";
@@ -244,12 +246,23 @@ export function WorktreeTabs(props: {
     }
   }
   for (const id of fileIds) layout = layout ? addTab(layout, id) : single(id);
+  // Canvas mode: every pane has a card, and a pane that is gone leaves none.
+  if (layout?.canvas?.on) {
+    const cards = syncCanvas(layout.canvas, (leaves(layout) as Leaf[]).map((n) => n.id));
+    if (cards !== layout.canvas) layout = { ...layout, canvas: cards };
+  }
   useEffect(() => {
     if (layout !== stored) sessions.setLayout(worktree, layout);
   }, [layout, stored, sessions, worktree]);
 
   // What the shell reads: the front tab of the focused pane, and the front tab of every pane on screen.
-  const rects = layout ? paneRects(layout) : {};
+  const canvas = layout?.canvas?.on ? layout.canvas : null;
+  // In canvas mode every pane is on screen; the cards, not these fractions, give the place.
+  const rects = layout
+    ? canvas
+      ? Object.fromEntries((leaves(layout) as Leaf[]).map((n) => [n.id, { x: 0, y: 0, w: 1, h: 1 }]))
+      : paneRects(layout)
+    : {};
   const panes = layout ? (leaves(layout) as Leaf[]) : [];
   const focusedLeaf = panes.find((n) => n.id === layout?.focused);
   const shown = focusedLeaf?.active ?? null;
@@ -921,7 +934,13 @@ export function WorktreeTabs(props: {
   const placed = (id: string): { hidden: boolean; style?: ReturnType<typeof bodyStyle> } => {
     const pane = layout ? paneOf(layout, id) : null;
     const rect = pane ? rects[pane] : undefined;
-    return rect && frontIds.has(id) ? { hidden: false, style: bodyStyle(rect) } : { hidden: true };
+    if (!rect || !frontIds.has(id)) return { hidden: true };
+    if (canvas && layout && pane) {
+      const card = canvas.cards[pane];
+      const layers = cardLayers((leaves(layout) as Leaf[]).map((n) => n.id), layout.focused);
+      return card ? { hidden: false, style: cardBodyStyle(screenRect(canvas, card), layers[pane]) } : { hidden: true };
+    }
+    return { hidden: false, style: bodyStyle(rect) };
   };
   const reviewAt = placed(REVIEW_TAB);
   const commitAt = placed(COMMIT_TAB);
@@ -936,7 +955,15 @@ export function WorktreeTabs(props: {
       )}
 
       <div className="ws-panes">
-        {layout && (
+        {layout && canvas && (
+          <CanvasView
+            layout={{ ...layout, canvas }}
+            strip={stripOf}
+            onFocus={(pane) => layout.focused !== pane && setLayout(focusPane(layout, pane))}
+            onChange={(next: CanvasState) => setLayout({ ...layout, canvas: next })}
+          />
+        )}
+        {layout && !canvas && (
           <PaneView
             layout={layout}
             strip={stripOf}
