@@ -25,7 +25,8 @@ it("pickAccount: round robin and priority skip accounts over their limit", () =>
 
 it("routing defaults to Manual, alerts at 80 and 95, auto-switch off", async () => {
   const api = createMockApi({});
-  expect(await api.accountsRouting()).toEqual([defaultRouting("claude"), defaultRouting("codex")]);
+  // A single-account provider has nothing to route.
+  expect(await api.accountsRouting()).toEqual([defaultRouting("claude"), defaultRouting("codex"), defaultRouting("gemini")]);
   expect(defaultRouting("claude")).toMatchObject({ policy: "manual", thresholds: [80, 95], autoSwitch: false });
 });
 
@@ -60,4 +61,17 @@ it("use next avoids the account, skips signed-out ones, and gives null when none
   expect(await api.accountUseNext("codex", "codex-1")).toBeNull();
   await api.removeAccount("claude-2");
   expect(await api.accountUseNext("claude", "claude-3")).toBeNull();
+});
+
+it("most quota is refused for, and never picks, an account with no quota source", async () => {
+  const api = createMockApi({});
+  // An imported folder is signed in; neither has a quota source.
+  await api.addAccount("gem-1", "gemini", "/g1");
+  await api.addAccount("gem-2", "gemini", "/g2");
+  await expect(api.accountRoutingSet({ ...defaultRouting("gemini"), policy: "most_quota" })).rejects.toEqual({ code: "bad_routing" });
+  await expect(api.accountRoutingSet({ ...defaultRouting("qwen-code"), policy: "round_robin" })).rejects.toEqual({ code: "bad_routing" });
+  // Round robin still works for a provider without quota.
+  await api.accountRoutingSet({ ...defaultRouting("gemini"), policy: "round_robin" });
+  await api.accountActivate("gemini", "gem-1");
+  expect(await api.accountUseNext("gemini", null)).toBe("gem-2");
 });

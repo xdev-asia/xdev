@@ -7,17 +7,19 @@ mod codex_rpc;
 pub mod ollama;
 mod pool;
 pub mod process;
+mod providers;
 mod quota;
 pub mod secrets;
 pub mod shim;
 
 pub use accounts::{
     AccountEntry, ActiveAccount, Provider, Registry, Routing, account_dir, carry_session,
-    default_home, login_command, status, valid_name,
+    default_home, login_command, login_process, status, valid_name,
 };
 pub use claude::{AccountStatus, StatusState, claude_command, claude_models};
 pub use codex::{codex_command, codex_context, codex_home, codex_models};
 pub use pool::{AccountId, Policy, Route, Usage, pick_account};
+pub use providers::{Isolation, ProviderSpec, spec};
 pub use quota::{
     ALERT_WINDOWS, AlertLog, Quota, QuotaAlert, QuotaState, QuotaWindow, Reason, classify, highest,
     pick, quota,
@@ -47,6 +49,10 @@ pub enum AiError {
     NoClaude,
     #[error("Codex CLI is not installed")]
     NoCodex,
+    #[error("the agent CLI is not installed")]
+    NoCli,
+    #[error("this agent keeps one sign-in: xDev cannot add or switch another")]
+    SingleAccount,
     #[error("the accounts file is unreadable or from a newer xDev")]
     BadRegistry,
     #[error("reserve must be 0 to 90")]
@@ -72,6 +78,8 @@ impl AiError {
             AiError::NotFound => "not_found",
             AiError::NoClaude => "no_claude",
             AiError::NoCodex => "no_codex",
+            AiError::NoCli => "no_cli",
+            AiError::SingleAccount => "single_account",
             AiError::BadRegistry => "bad_registry",
             AiError::BadReserve => "bad_reserve",
             AiError::SessionMissing => "session_missing",

@@ -32,6 +32,10 @@ pub enum Reason {
     NoCodex,
     /// A Codex account with no session that recorded its limits yet.
     NoSessions,
+    /// The agent CLI of a provider other than Claude and Codex is missing.
+    NoCli,
+    /// The provider has no quota source xDev can read: quota unknown.
+    NoQuotaSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -80,9 +84,13 @@ pub(crate) fn quota_with(
         StatusState::LoggedOut => return unknown(Reason::LoggedOut),
         StatusState::NoClaude => return unknown(Reason::NoClaude),
         StatusState::NoCodex => return unknown(Reason::NoCodex),
+        StatusState::NoCli => return unknown(Reason::NoCli),
         // A status that could not be read says nothing about the
         // credentials, so usage is still worth a try.
-        StatusState::LoggedIn | StatusState::Error => {}
+        StatusState::LoggedIn | StatusState::Error | StatusState::Undetected => {}
+    }
+    if !entry.provider.has_quota() {
+        return unknown(Reason::NoQuotaSource);
     }
     let (windows, as_of) = match entry.provider {
         Provider::Claude => match claude::usage(&entry.dir) {
@@ -98,6 +106,7 @@ pub(crate) fn quota_with(
                 None => return unknown(Reason::NoSessions),
             },
         },
+        _ => return unknown(Reason::NoQuotaSource),
     };
     let state = classify(&windows, reserve_percent);
     Quota {
@@ -275,6 +284,32 @@ mod tests {
         });
         fs::create_dir_all(dir.join("sessions")).unwrap();
         fs::write(dir.join("sessions/a.jsonl"), format!("{line}\n")).unwrap();
+    }
+
+    #[test]
+    fn a_provider_without_a_quota_source_is_unknown() {
+        let tmp = tempfile::tempdir().unwrap();
+        for (provider, state) in [
+            (Provider::Gemini, StatusState::LoggedIn),
+            (Provider::Cursor, StatusState::Undetected),
+        ] {
+            let entry = AccountEntry {
+                provider,
+                ..entry(tmp.path())
+            };
+            let q = quota_with(&entry, &AccountStatus::bare(state), 30, &|_| {
+                panic!("no live read for {provider:?}")
+            });
+            assert_eq!(q.state, QuotaState::Unknown);
+            assert_eq!(q.reason, Some(Reason::NoQuotaSource));
+        }
+        let entry = AccountEntry {
+            provider: Provider::Amp,
+            ..entry(tmp.path())
+        };
+        let missing = AccountStatus::bare(StatusState::NoCli);
+        let q = quota_with(&entry, &missing, 30, &|_| Ok(live_window()));
+        assert_eq!(q.reason, Some(Reason::NoCli));
     }
 
     #[test]

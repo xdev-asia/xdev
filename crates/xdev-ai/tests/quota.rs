@@ -116,22 +116,36 @@ fn pick_filters_by_provider() {
 fn login_command_quotes_for_each_shell() {
     let dir = Path::new("C:\\Users\\Me Too\\it's");
     assert_eq!(
-        login_command(Provider::Claude, dir, true),
+        login_command(Provider::Claude, dir, true).unwrap(),
         "$env:CLAUDE_CONFIG_DIR='C:\\Users\\Me Too\\it''s'; claude auth login"
     );
     assert_eq!(
-        login_command(Provider::Codex, dir, true),
+        login_command(Provider::Codex, dir, true).unwrap(),
         "$env:CODEX_HOME='C:\\Users\\Me Too\\it''s'; codex login"
     );
     let dir = Path::new("/home/me too/it's");
     assert_eq!(
-        login_command(Provider::Claude, dir, false),
+        login_command(Provider::Claude, dir, false).unwrap(),
         "CLAUDE_CONFIG_DIR='/home/me too/it'\\''s' claude auth login"
     );
     assert_eq!(
-        login_command(Provider::Codex, dir, false),
+        login_command(Provider::Codex, dir, false).unwrap(),
         "CODEX_HOME='/home/me too/it'\\''s' codex login"
     );
+    // The CLI asks for a sign-in on its first start: no arguments.
+    assert_eq!(
+        login_command(Provider::Gemini, dir, false).unwrap(),
+        "GEMINI_CLI_HOME='/home/me too/it'\\''s' gemini"
+    );
+    // A single-account CLI is signed in on its own.
+    for provider in [
+        Provider::QwenCode,
+        Provider::Opencode,
+        Provider::Amp,
+        Provider::Cursor,
+    ] {
+        assert_eq!(login_command(provider, dir, true), None);
+    }
 }
 
 #[test]

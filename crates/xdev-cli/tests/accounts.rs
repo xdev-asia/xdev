@@ -428,7 +428,7 @@ fn codex_login_and_signed_out_dir() {
 #[test]
 fn add_with_unknown_provider_or_without_codex() {
     let mut env = Env::new();
-    let out = env.xdev(&["accounts", "add", "g", "--provider", "gemini"]);
+    let out = env.xdev(&["accounts", "add", "g", "--provider", "nope"]);
     assert_eq!(out.status.code(), Some(1));
     assert_eq!(stderr(&out), "error: unknown_provider\n");
 
@@ -464,6 +464,6 @@ fn pick_by_provider() {
     assert_eq!(stdout(&out), "a\n");
     let out = env.xdev(&["accounts", "pick", "--provider", "codex"]);
     assert_eq!(stdout(&out), "c\n");
-    let out = env.xdev(&["accounts", "pick", "--provider", "gemini"]);
+    let out = env.xdev(&["accounts", "pick", "--provider", "nope"]);
     assert_eq!(stderr(&out), "error: unknown_provider\n");
 }

@@ -1,7 +1,8 @@
 import { Button } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
-import { PROVIDERS, toApiError, type Account, type Accounts, type Api, type ApiError, type Provider, type Quota } from "@/api";
+import { ISOLATED_PROVIDERS, PROVIDERS, isIsolated, toApiError, type Account, type Accounts, type Api, type ApiError, type Provider, type Quota } from "@/api";
 import { useI18n } from "@/i18n";
+import { AgentIcon } from "@/workspace/AgentIcon";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
 import { loginAction, statusBadge } from "./accountStatus";
 import { RoutingRules } from "./RoutingRules";
@@ -127,6 +128,8 @@ export function AccountsView({ api }: { api: Api }) {
   function openForm(importing: boolean) {
     setProblem(undefined);
     setFolder(importing ? "" : null);
+    // Only a provider that keeps accounts apart has a folder to import.
+    if (importing && !isIsolated(provider)) setProvider("claude");
     setAdding(true);
   }
   function closeForm() {
@@ -142,7 +145,8 @@ export function AccountsView({ api }: { api: Api }) {
     // A hive folder is named like the account (`claude-2`, `codex-3`).
     const base = picked.split(/[\\/]/).filter(Boolean).pop() ?? "";
     if (!name) setName(base.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+/, "").slice(0, 32));
-    if (base.toLowerCase().startsWith("codex")) setProvider("codex");
+    const named = ISOLATED_PROVIDERS.find(p => base.toLowerCase().startsWith(p));
+    if (named) setProvider(named);
   }
   async function add() {
     if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) {
@@ -158,8 +162,8 @@ export function AccountsView({ api }: { api: Api }) {
       const account = await api.addAccount(name, provider, dir);
       closeForm();
       setRevision(n => n + 1);
-      // An imported folder keeps its own sign-in.
-      if (!dir) await login(account.name);
+      // An imported folder keeps its own sign-in; a single-account CLI is signed in with the CLI itself.
+      if (!dir && isIsolated(account.provider)) await login(account.name);
     });
   }
   function resetText(resetsAt: string | null) {
@@ -219,6 +223,10 @@ export function AccountsView({ api }: { api: Api }) {
       ? <Button type="button" style={COMPACT} disabled={busy} aria-label={label} data-switch={active ? "clear" : "use"} onClick={onClick}>{text}</Button>
       : <button type="button" className="btn-secondary" disabled={busy} aria-label={label} data-switch={active ? "clear" : "use"} onClick={onClick}>{text}</button>;
   }
+  // A CLI with no home variable keeps one sign-in: xDev shows it but cannot switch or add another.
+  function singleChip(account: Account) {
+    return !isIsolated(account.provider) && <span className="badge account-single" data-single="true">{t("accounts.single.badge")}</span>;
+  }
   function activeChip(account: Account) {
     return isActive(account) && <span className="badge account-active" data-active="true">{t("accounts.switch.active")}</span>;
   }
@@ -241,6 +249,7 @@ export function AccountsView({ api }: { api: Api }) {
         <span className="account-dot" data-state={state} aria-hidden="true" />
         <h2>{account.name}</h2>
         <span className="badge account-provider" data-provider={account.provider}>{t(`accounts.provider.${account.provider}`)}</span>
+        {singleChip(account)}
         {activeChip(account)}
         <span className="badge" data-state={badge.state}>{t(badge.key)}</span>
         <span className="badge account-state" data-state={state}>{t(`accounts.state.${state}`)}</span>
@@ -255,8 +264,9 @@ export function AccountsView({ api }: { api: Api }) {
           {bar(label, window.utilization, state)}
         </div>;
       })}
+      {!isIsolated(account.provider) && <p className="doc-path account-single-hint">{t("accounts.single.hint", { provider: t(`accounts.provider.${account.provider}`) })}</p>}
       <div className="account-row account-actions">
-        {switchButton(account, true)}
+        {isIsolated(account.provider) && switchButton(account, true)}
         {loginButton(account)}
         <Button type="button" style={COMPACT} disabled={busy} onClick={() => setRemoving(account.name)}>{t("accounts.remove")}</Button>
       </div>
@@ -282,12 +292,12 @@ export function AccountsView({ api }: { api: Api }) {
           <span className="account-dot" data-state={state} aria-hidden="true" />
           <span className="account-name-text"><strong>{account.name}</strong>{activeChip(account)}<span className="doc-path">{who(account) || t(`accounts.status.${account.status.state}`)}</span>{badge.state === "reauth" && <><span className="badge" data-state={badge.state}>{t(badge.key)}</span><span className="doc-path account-reason">{t("accounts.reason.expired")}</span></>}</span>
         </div>
-        <div role="cell"><span className="badge account-provider" data-provider={account.provider}>{t(`accounts.provider.${account.provider}`)}</span></div>
+        <div role="cell"><span className="badge account-provider" data-provider={account.provider}>{t(`accounts.provider.${account.provider}`)}</span>{singleChip(account)}</div>
         {cell(account, "five_hour")}
         {cell(account, "seven_day")}
         <div role="cell"><span className="badge account-state" data-state={state}>{t(`accounts.state.${state}`)}</span></div>
         <div role="cell" className="account-cell-actions">
-          {switchButton(account, false)}
+          {isIsolated(account.provider) && switchButton(account, false)}
           {loginButton(account)}
           <button type="button" className="btn-secondary account-remove" disabled={busy} onClick={() => setRemoving(account.name)}>{t("accounts.remove")}</button>
         </div>
@@ -362,10 +372,21 @@ export function AccountsView({ api }: { api: Api }) {
           <button type="button" className="btn-secondary" disabled={busy} onClick={() => run(browse)}>{t("accounts.browse")}</button></label>
       </>}
       <label>{t("accounts.name")}<input value={name} onChange={e => setName(e.target.value)} disabled={busy} autoFocus={folder === null} /></label>
-      <label>{t("accounts.providerLabel")}<select value={provider} onChange={e => setProvider(e.target.value as Provider)} disabled={busy}>
-        {PROVIDERS.map(p => <option key={p} value={p}>{t(`accounts.provider.${p}`)}</option>)}
-      </select></label>
-      <Button type="submit" style={COMPACT} disabled={busy}>{t(folder === null ? "accounts.addLogin" : "accounts.importSubmit")}</Button>
+      <fieldset className="account-providers" role="radiogroup" aria-label={t("accounts.providerLabel")}>
+        <legend>{t("accounts.providerLabel")}</legend>
+        {(folder === null ? PROVIDERS : ISOLATED_PROVIDERS).map(p => {
+          // A single-account CLI has one sign-in, so it is added once.
+          const taken = !isIsolated(p) && all.some(a => a.provider === p);
+          return <label key={p} className="account-provider-option" data-provider={p} data-disabled={taken || undefined}>
+            <input type="radio" name="account-provider" value={p} checked={provider === p} disabled={busy || taken} onChange={() => setProvider(p)} />
+            <AgentIcon profile={p} size={20} />
+            <span className="account-provider-name">{t(`accounts.provider.${p}`)}</span>
+            {!isIsolated(p) && <small className="account-provider-note">{t(taken ? "accounts.single.taken" : "accounts.single.badge")}</small>}
+          </label>;
+        })}
+      </fieldset>
+      {!isIsolated(provider) && <p className="account-add-hint" data-single-hint="true">{t("accounts.single.addHint", { provider: t(`accounts.provider.${provider}`) })}</p>}
+      <Button type="submit" style={COMPACT} disabled={busy}>{t(folder !== null ? "accounts.importSubmit" : isIsolated(provider) ? "accounts.addLogin" : "accounts.add")}</Button>
       <Button type="button" style={COMPACT} disabled={busy} onClick={closeForm}>{t("accounts.cancel")}</Button>
     </form>}
     {command && <div className="account-command">

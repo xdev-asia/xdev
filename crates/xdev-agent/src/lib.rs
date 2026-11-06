@@ -44,7 +44,9 @@ pub use hooks::{
     QuestionKind, QuestionOption, REPEAT_MS, SESSION_MAX, append_hook, append_hook_detail,
     hook_args, hook_file, hooks_off, question_of, set_hooks_off, valid_pty_id, valid_session_id,
 };
-pub use launch::{AccountSource, Context, Launch, LaunchError, LaunchOverrides, resolve};
+pub use launch::{
+    AccountSource, Context, Launch, LaunchError, LaunchOverrides, provider_of, resolve,
+};
 pub use profiles::{
     Approvals, Cli, CustomShell, DefaultAgent, EnvVar, Permissions, Profile, ProfileError,
     Profiles, builtin, valid_id,

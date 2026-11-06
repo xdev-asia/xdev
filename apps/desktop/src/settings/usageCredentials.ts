@@ -9,7 +9,7 @@ export type CredentialRow = {
   provider: Account["provider"];
   status: CredentialStatus;
   /** Set for the reasons that leave the sign-in itself fine (no sessions yet, source unavailable). */
-  note: "noSessions" | "unavailable" | null;
+  note: "noSessions" | "unavailable" | "noQuotaSource" | null;
   /** Whether Sign in can help. */
   canSignIn: boolean;
 };
@@ -22,6 +22,8 @@ const BY_REASON: Record<Reason, { status: CredentialStatus; note: CredentialRow[
   no_codex: { status: "cliMissing", note: null },
   no_sessions: { status: "found", note: "noSessions" },
   unavailable: { status: "found", note: "unavailable" },
+  no_cli: { status: "cliMissing", note: null },
+  no_quota_source: { status: "found", note: "noQuotaSource" },
 };
 
 /** One row per account: what the last quota read says about its sign-in. Never carries a token. */

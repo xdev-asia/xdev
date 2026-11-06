@@ -114,7 +114,9 @@ impl Launch {
     /// would use (the account's, the profile's `CODEX_HOME`, else the
     /// default). Any failure leaves the launch on its own home.
     fn use_codex_home(&mut self, xdev: &Path, data_dir: &Path, version: CliVersion) {
-        let var = Provider::Codex.home_var();
+        let Some(var) = Provider::Codex.home_var() else {
+            return;
+        };
         let is_var = |key: &str| {
             if cfg!(windows) {
                 key.eq_ignore_ascii_case(var)
@@ -328,6 +330,21 @@ pub struct Context<'a> {
     pub prompt: Option<&'a str>,
 }
 
+/// The account provider of an agent CLI, for the CLIs xDev keeps accounts
+/// for; `None` for the rest.
+pub fn provider_of(cli: Cli) -> Option<Provider> {
+    match cli {
+        Cli::Claude => Some(Provider::Claude),
+        Cli::Codex => Some(Provider::Codex),
+        Cli::Gemini => Some(Provider::Gemini),
+        Cli::QwenCode => Some(Provider::QwenCode),
+        Cli::Opencode => Some(Provider::Opencode),
+        Cli::Amp => Some(Provider::Amp),
+        Cli::Cursor => Some(Provider::Cursor),
+        _ => None,
+    }
+}
+
 /// The launch of the agent profile or shell `id`: `shell` (the default
 /// shell), `shell:<shell id>` or a profile id.
 pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
@@ -387,11 +404,9 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
             }
         }
     }
-    let provider = match profile.cli {
-        Some(Cli::Claude) => Some(Provider::Claude),
-        Some(Cli::Codex) => Some(Provider::Codex),
-        _ => None,
-    };
+    // Only a provider whose accounts are kept apart has a home to switch;
+    // a single-account one runs on its CLI's own sign-in, like no provider.
+    let provider = profile.cli.and_then(provider_of).filter(|p| p.isolated());
     // The tab's account, else the profile's own, else the provider's active
     // one. A profile with no provider has no home to switch, so it ignores
     // the active account (R1: a profile's own account never follows it).
@@ -418,7 +433,7 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
             .filter(|a| a.provider == provider)
             .ok_or(LaunchError::UnknownAccount)?;
         // The account's folder wins over a variable of the same name.
-        let var = provider.home_var();
+        let var = provider.home_var().ok_or(LaunchError::UnknownAccount)?;
         // Variable names are case-insensitive on Windows only.
         env.retain(|(key, _)| {
             if cfg!(windows) {
@@ -1063,7 +1078,74 @@ mod tests {
     }
 
     #[test]
-    fn only_claude_and_codex_take_an_account() {
+    fn gemini_account_sets_its_home_var() {
+        let mut accounts = accounts();
+        accounts
+            .add("gem", Provider::Gemini, PathBuf::from("G"))
+            .unwrap();
+        let launch = |account| {
+            resolve(
+                "gemini",
+                &Context {
+                    profiles: &Profiles::default(),
+                    accounts: &accounts,
+                    shells: &[],
+                    find: &found,
+                    account,
+                    prompt: None,
+                },
+            )
+        };
+        let l = launch(Some("gem")).unwrap();
+        assert_eq!(l.env, [("GEMINI_CLI_HOME".to_owned(), "G".into())]);
+        assert_eq!(l.account.as_deref(), Some("gem"));
+        // Another provider's account is refused.
+        assert_eq!(launch(Some("work")).unwrap_err().code(), "unknown_account");
+    }
+
+    #[test]
+    fn a_single_account_provider_takes_no_account() {
+        let mut accounts = accounts();
+        accounts
+            .add("amp", Provider::Amp, PathBuf::from("A"))
+            .unwrap();
+        let launch = |account| {
+            resolve(
+                "amp",
+                &Context {
+                    profiles: &Profiles::default(),
+                    accounts: &accounts,
+                    shells: &[],
+                    find: &found,
+                    account,
+                    prompt: None,
+                },
+            )
+        };
+        // It runs on the CLI's own sign-in; no variable is guessed.
+        let l = launch(None).unwrap();
+        assert_eq!((l.account, l.env.is_empty()), (None, true));
+        assert_eq!(launch(Some("amp")).unwrap_err().code(), "unknown_account");
+    }
+
+    #[test]
+    fn providers_of_the_agent_clis() {
+        assert_eq!(provider_of(Cli::Gemini), Some(Provider::Gemini));
+        assert_eq!(provider_of(Cli::QwenCode), Some(Provider::QwenCode));
+        assert_eq!(provider_of(Cli::Cursor), Some(Provider::Cursor));
+        assert_eq!(provider_of(Cli::Aider), None);
+        // Each provider's CLI has the provider's id as its profile id.
+        for provider in Provider::ALL {
+            let cli = Cli::ALL
+                .into_iter()
+                .find(|c| provider_of(*c) == Some(provider))
+                .unwrap();
+            assert_eq!(cli.as_str(), provider.as_str());
+        }
+    }
+
+    #[test]
+    fn an_account_must_be_of_the_profiles_provider() {
         let p = Profiles::default();
         let err = run(&p, "gemini", Some("work"), &found).unwrap_err();
         assert_eq!(err.code(), "unknown_account");

@@ -181,10 +181,10 @@ it("adds a Codex account with the chosen provider", async () => {
   const view = harness();
   const login = vi.spyOn(view.api, "loginAccount");
   view.button("Add account").props.onClick();
-  const options = nodes(view.draw()).filter(n => n.type === "option").map(n => [n.props.value, n.props.children]);
-  expect(options).toEqual([["claude", "Claude Code"], ["codex", "Codex"]]);
+  const radios = nodes(view.draw()).filter(n => n.type === "input" && n.props.type === "radio");
+  expect(radios.map(n => n.props.value)).toEqual(["claude", "codex", "gemini", "qwen-code", "opencode", "amp", "cursor"]);
   nodes(view.draw()).find(n => n.type === "input")!.props.onChange({ target: { value: "cx" } });
-  nodes(view.draw()).find(n => n.type === "select")!.props.onChange({ target: { value: "codex" } });
+  radios.find(n => n.props.value === "codex")!.props.onChange();
   await nodes(view.draw()).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} });
   expect((await view.api.accounts()).accounts.find(a => a.name === "cx")!.provider).toBe("codex");
   expect(login).toHaveBeenCalledWith("cx");
@@ -302,5 +302,67 @@ it("Sign in again on a re-auth row runs the same login flow", async () => {
   expect(view.html()).toContain(translate("en", "accounts.status.needsReauth"));
   await view.button(translate("en", "accounts.signInAgain")).props.onClick();
   expect(login).toHaveBeenCalledWith(first.name);
+  if (typeof cleanup === "function") cleanup();
+});
+
+const radio = (view: ReturnType<typeof harness>, provider: string) => nodes(view.draw()).find(n => n.type === "input" && n.props.type === "radio" && n.props.value === provider)!;
+const submit = (view: ReturnType<typeof harness>) => nodes(view.draw()).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} });
+
+it("lists each provider with its letter mark and adds a Gemini account that signs in", async () => {
+  const view = harness(); view.draw(); const cleanup = hooks.effects[0](); await tick();
+  const login = vi.spyOn(view.api, "loginAccount");
+  view.button("Add account").props.onClick();
+  const html = view.html();
+  for (const [id, name] of [["gemini", "Gemini CLI"], ["qwen-code", "Qwen Code"], ["opencode", "OpenCode"], ["amp", "Amp"], ["cursor", "Cursor"]]) {
+    expect(html).toMatch(new RegExp(`data-provider="${id}"[^>]*>.*?class="ws-agent" data-profile="${id}"`));
+    expect(html).toContain(name);
+  }
+  nodes(view.draw()).find(n => n.type === "input")!.props.onChange({ target: { value: "gem" } });
+  radio(view, "gemini").props.onChange();
+  expect(nodes(view.draw()).find(n => n.type === "button" && n.props.type === "submit")).toBeUndefined();
+  expect(view.html()).toContain(translate("en", "accounts.addLogin"));
+  await submit(view);
+  expect((await view.api.accounts()).accounts.find(a => a.name === "gem")!.provider).toBe("gemini");
+  expect(login).toHaveBeenCalledWith("gem");
+  expect(view.html()).toContain("GEMINI_CLI_HOME=");
+  if (typeof cleanup === "function") cleanup();
+});
+
+it("adds a single-account provider without sign-in, then shows it single and refuses a second", async () => {
+  const view = harness(); view.draw(); const cleanup = hooks.effects[0](); await tick();
+  const login = vi.spyOn(view.api, "loginAccount");
+  view.button("Add account").props.onClick();
+  nodes(view.draw()).find(n => n.type === "input")!.props.onChange({ target: { value: "qwen" } });
+  radio(view, "qwen-code").props.onChange();
+  const hint = translate("en", "accounts.single.addHint", { provider: "Qwen Code" });
+  expect(view.html()).toContain(hint);
+  await submit(view);
+  expect(login).not.toHaveBeenCalled();
+  hooks.effects[hooks.effects.length - 1](); await tick();
+  const html = view.html();
+  expect(html).toContain('data-single="true"');
+  expect(html).toContain(translate("en", "accounts.single.hint", { provider: "Qwen Code" }));
+  // No switching for a single-account CLI.
+  const card = nodes(view.draw()).find(n => n.type === "section" && n.props["aria-label"] === "qwen")!;
+  expect(nodes(card.props.children).some(n => n.props["data-switch"])).toBe(false);
+  expect(nodes(card.props.children).some(n => n.props["data-action"] === "sign-in")).toBe(false);
+  // The picker shows it taken.
+  view.button("Add account").props.onClick();
+  expect(radio(view, "qwen-code").props.disabled).toBe(true);
+  expect(view.html()).toContain(translate("en", "accounts.single.taken"));
+  // Import lists only providers that keep accounts apart.
+  view.button("Cancel").props.onClick();
+  view.button("Import folder").props.onClick();
+  expect(nodes(view.draw()).filter(n => n.type === "input" && n.props.type === "radio").map(n => n.props.value)).toEqual(["claude", "codex", "gemini"]);
+  if (typeof cleanup === "function") cleanup();
+});
+
+it("shows the quota-unknown chip and why for an account with no quota source", async () => {
+  const api = createMockApi({});
+  await api.addAccount("open", "opencode");
+  const view = harness(api); view.draw(); const cleanup = hooks.effects[0](); await tick();
+  const card = renderToStaticMarkup(nodes(view.draw()).find(n => n.type === "section" && n.props["aria-label"] === "open")!);
+  expect(card).toContain(`<span class="badge account-state" data-state="unknown">${translate("en", "accounts.state.unknown")}</span>`);
+  expect(card).toContain(translate("en", "accounts.reason.no_quota_source"));
   if (typeof cleanup === "function") cleanup();
 });

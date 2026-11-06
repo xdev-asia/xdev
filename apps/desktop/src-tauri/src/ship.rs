@@ -585,7 +585,7 @@ fn draft_runner_with(
     recipe: &Recipe,
     gate: &dyn Gate,
     find: Find<'_>,
-    make: impl FnOnce(Provider) -> Box<dyn Runner>,
+    make: impl FnOnce(Provider) -> Result<Box<dyn Runner>, AgentError>,
 ) -> Result<Box<dyn Runner>, CmdError> {
     let provider = recipe_provider(data, recipe, find)?;
     let action = Action::SpawnAgent {
@@ -599,7 +599,7 @@ fn draft_runner_with(
         Verdict::Ask { reason } => return Err(err("needs_approval", Some(reason))),
         Verdict::Deny { reason } => return Err(err("denied", Some(reason))),
     }
-    Ok(make(provider))
+    Ok(make(provider)?)
 }
 
 pub(crate) fn draft_runner(
@@ -1837,7 +1837,7 @@ mod tests {
         find: &dyn Fn(&xdev_agent::Profile) -> Option<PathBuf>,
     ) -> Result<String, CmdError> {
         draft_runner_with(data, Path::new("wt"), recipe, gate, find, |p| {
-            Box::new(Labeled(p.as_str()))
+            Ok(Box::new(Labeled(p.as_str())))
         })
         .map(|r| r.provider().to_owned())
     }

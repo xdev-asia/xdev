@@ -1,7 +1,7 @@
 import { Checkbox, Field, IconButton, Select, Switch } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type AccountRouting, type Api, type Provider, type RoutePolicy } from "@/api";
+import { hasQuota, toApiError, type AccountRouting, type Api, type Provider, type RoutePolicy } from "@/api";
 import { useI18n } from "@/i18n";
 import { SettingGroup, SettingRow } from "../SettingRow";
 import type { SettingsFilter } from "../sections";
@@ -33,7 +33,7 @@ export function RoutingSection(props: { api: Pick<Api, "accounts" | "accountsRou
   const { api, filter } = props;
   const { t } = useI18n();
   const [routing, setRouting] = useState<AccountRouting[] | null>(null);
-  const [names, setNames] = useState<Record<Provider, string[]>>({ claude: [], codex: [] });
+  const [names, setNames] = useState<Partial<Record<Provider, string[]>>>({});
   const [drafts, setDrafts] = useState<Partial<Record<Provider, Drafts>>>({});
   const [note, setNote] = useState<{ provider: Provider; text: string; error: boolean } | null>(null);
   const buttons = useRef(new Map<string, HTMLButtonElement | null>());
@@ -48,10 +48,7 @@ export function RoutingSection(props: { api: Pick<Api, "accounts" | "accountsRou
           if (!live) return;
           setRouting(r);
           setDrafts(Object.fromEntries(r.map((x) => [x.provider, draftsOf(x)])));
-          setNames({
-            claude: a.accounts.filter((x) => x.provider === "claude").map((x) => x.name),
-            codex: a.accounts.filter((x) => x.provider === "codex").map((x) => x.name),
-          });
+          setNames(Object.fromEntries(r.map((x) => [x.provider, a.accounts.filter((y) => y.provider === x.provider).map((y) => y.name)])));
         },
         () => undefined,
       );
@@ -88,7 +85,9 @@ export function RoutingSection(props: { api: Pick<Api, "accounts" | "accountsRou
   function section(r: AccountRouting): JSX.Element {
     const p = r.provider;
     const provider = t(`accounts.provider.${p}`);
-    const own = names[p];
+    const own = names[p] ?? [];
+    // "Most quota left" needs a quota source; a provider without one never offers it.
+    const policies = ROUTE_POLICIES.filter((v) => v !== "most_quota" || hasQuota(p) || r.policy === v);
     const draft = drafts[p] ?? draftsOf(r);
     const edit = (patch: Partial<Drafts>) => setDrafts((d) => ({ ...d, [p]: { ...draft, ...patch } }));
     const first = parsePercent(draft.first);
@@ -138,11 +137,12 @@ export function RoutingSection(props: { api: Pick<Api, "accounts" | "accountsRou
                 value={r.policy}
                 data-field="policy"
                 onChange={(e) => save({ ...r, policy: e.target.value as RoutePolicy })}
-                options={ROUTE_POLICIES.map((v) => ({ value: v, label: t(`settings.account.routing.policy.${v}`) }))}
+                options={policies.map((v) => ({ value: v, label: t(`settings.account.routing.policy.${v}`) }))}
               />
             </label>
           </div>
           <p className="settings-empty">{t(`settings.account.routing.policy.${r.policy}Hint`)}</p>
+          {!hasQuota(p) && <p className="settings-empty" data-field="no-quota">{t("settings.account.routing.noQuotaSource", { provider })}</p>}
         </SettingRow>
         <SettingRow id="account.routing.pool" filter={filter}>
           {own.length === 0 ? (

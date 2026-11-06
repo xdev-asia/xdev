@@ -74,3 +74,31 @@ test("the routing settings fit a 360px window and the priority list moves by key
   await expect(claude.getByText("When an account reaches 95%, start new agents on another account")).toBeVisible();
   expect(await fitsWidth(page)).toBe(true);
 });
+
+test("a Gemini account is added and listed, and the accounts page fits at 360px", async ({ page, openApp }) => {
+  await openApp();
+  await page.getByRole("navigation", { name: "App" }).getByRole("button", { name: "Docs & SDLC" }).click();
+  await page.getByRole("navigation", { name: "Apps" }).getByRole("button", { name: "Accounts", exact: true }).click();
+  await page.getByRole("button", { name: "Add account" }).click();
+  const picker = page.getByRole("radiogroup", { name: "Provider" });
+  // Every provider is offered, each with its letter mark.
+  for (const name of ["Claude Code", "Codex", "Gemini CLI", "Qwen Code", "OpenCode", "Amp", "Cursor"]) await expect(picker.getByRole("radio", { name })).toBeVisible();
+  await page.getByLabel("Account name", { exact: true }).fill("gem-1");
+  await picker.getByRole("radio", { name: "Gemini CLI" }).check();
+  await page.getByRole("button", { name: "Add and log in" }).click();
+  const card = page.getByRole("region", { name: "gem-1", exact: true });
+  await expect(card).toBeVisible();
+  await expect(card.getByText("Gemini CLI", { exact: true })).toBeVisible();
+  await expect(page.getByText("GEMINI_CLI_HOME=", { exact: false })).toBeVisible();
+
+  // The list and the add form fit a 360px window.
+  await page.setViewportSize({ width: 360, height: 740 });
+  // In a narrow window the workspace sidebar covers the page until it is hidden.
+  const sidebar = page.getByRole("button", { name: "Show or hide the sidebar" });
+  if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
+  await expect(card).toBeVisible();
+  expect(await fitsWidth(page)).toBe(true);
+  await page.getByRole("button", { name: "Add account" }).click();
+  await expect(page.getByRole("radiogroup", { name: "Provider" })).toBeVisible();
+  expect(await fitsWidth(page)).toBe(true);
+});

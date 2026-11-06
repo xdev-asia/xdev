@@ -32,6 +32,10 @@ pub enum StatusState {
     NoClaude,
     NoCodex,
     Error,
+    /// The agent CLI of a provider other than Claude and Codex is missing.
+    NoCli,
+    /// The CLI is installed but xDev knows no way to see its sign-in.
+    Undetected,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

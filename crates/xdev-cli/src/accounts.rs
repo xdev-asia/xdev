@@ -1,12 +1,10 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
 
 use clap::Subcommand;
 use serde::Serialize;
 use xdev_ai::{
-    AccountEntry, AccountStatus, AiError, Provider, Quota, Registry, account_dir, pick, quota,
-    status,
+    AccountEntry, AccountStatus, AiError, Provider, Quota, Registry, pick, quota, status,
 };
 
 use crate::Outcome;
@@ -16,18 +14,22 @@ pub enum AccountsCommand {
     /// Print `name<TAB>provider<TAB>status<TAB>email<TAB>plan` per account.
     List,
     /// Register an account. Without `--dir`, create its folder under the
-    /// data dir and sign it in.
+    /// data dir and sign it in. A single-account provider (`qwen-code`,
+    /// `opencode`, `amp`, `cursor`) registers its CLI's own sign-in once and
+    /// prints `name<TAB>folder`; sign in with the CLI itself.
     Add {
         name: String,
-        /// `claude` or `codex`.
+        /// `claude`, `codex`, `gemini`, `qwen-code`, `opencode`, `amp` or
+        /// `cursor`.
         #[arg(long, default_value = "claude")]
         provider: String,
-        /// An existing Claude Code or Codex config folder; registered only.
+        /// An existing config folder of the provider; registered only. Not for
+        /// a single-account provider.
         #[arg(long)]
         dir: Option<PathBuf>,
     },
-    /// Run `claude auth login` or `codex login` for an account; exits with
-    /// its code.
+    /// Run the provider's sign-in (`claude auth login`, `codex login`, or
+    /// `gemini` itself) for an account; exits with its code.
     Login { name: String },
     /// Unregister an account. Its folder and credentials stay.
     Remove { name: String },
@@ -59,6 +61,10 @@ pub fn run(command: AccountsCommand, data_dir: &Path) -> Result<Outcome, &'stati
             dir: Some(dir),
         } => {
             let provider = Provider::parse(&provider).map_err(code)?;
+            // A single-account CLI has no variable to point at the folder.
+            if !provider.isolated() {
+                return Err("single_account");
+            }
             // Stored absolute so the registry means the same from any folder.
             let dir = std::path::absolute(&dir).map_err(|_| "io")?;
             reg.add(&name, provider, dir).map_err(code)?;
@@ -70,13 +76,13 @@ pub fn run(command: AccountsCommand, data_dir: &Path) -> Result<Outcome, &'stati
             dir: None,
         } => {
             let provider = Provider::parse(&provider).map_err(code)?;
-            let dir = account_dir(data_dir, &name);
-            let entry = reg.add(&name, provider, dir.clone()).map_err(code)?.clone();
-            // Checked before anything is written, so a failed add leaves no
-            // half-made account behind.
-            provider.command().map_err(code)?;
-            fs::create_dir_all(&dir).map_err(|_| "io")?;
+            let entry = reg.create(data_dir, &name, provider).map_err(code)?;
             reg.save(data_dir).map_err(code)?;
+            if !provider.isolated() {
+                // Its CLI's own sign-in, which the person signs in to there.
+                println!("{}\t{}", entry.name, entry.dir.display());
+                return Ok(Outcome::Ok);
+            }
             return login(&entry);
         }
         AccountsCommand::Login { name } => {
@@ -154,12 +160,8 @@ pub fn run_quota(json: bool, data_dir: &Path) -> Result<Outcome, &'static str> {
 }
 
 fn login(entry: &AccountEntry) -> Result<Outcome, &'static str> {
-    let status = entry
-        .provider
-        .command()
+    let status = xdev_ai::login_process(entry)
         .map_err(code)?
-        .args(entry.provider.login_args())
-        .env(entry.provider.home_var(), &entry.dir)
         .status()
         .map_err(|_| "io")?;
     if status.success() {
