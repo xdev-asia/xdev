@@ -30,7 +30,7 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 const tick = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 
 function setup(buy: () => Promise<void> = () => Promise.resolve()) {
-  const api = { licenseBuy: vi.fn(buy), licenseBuyCancel: vi.fn(() => Promise.resolve()), openUrl: vi.fn(() => Promise.resolve()) };
+  const api = { licenseBuy: vi.fn(buy), licenseBuyCancel: vi.fn(() => Promise.resolve()), openUrl: vi.fn(() => Promise.resolve()), xdevIdServer: vi.fn(() => Promise.resolve({ origin: "https://id.corp.example", source: "setting", setting: "https://id.corp.example", invalid: false })) };
   const onClose = vi.fn();
   const draw = () => {
     hooks.cursor = 0;
@@ -61,11 +61,27 @@ it("Get xDev Pro starts the purchase of pro and closes when it lands", async () 
   expect(s.onClose).toHaveBeenCalledTimes(1);
 });
 
-it("Learn more goes through the opener", () => {
+it("Learn more goes through the opener", async () => {
   const s = setup();
   const learn = flat(s.draw().props.children).find((n) => n.type === Button)!;
   learn.props.onClick();
+  await tick();
   expect(s.api.openUrl).toHaveBeenCalledTimes(1);
+});
+
+it("Learn more opens the pricing page of the configured server", async () => {
+  const s = setup();
+  flat(s.draw().props.children).find((n) => n.type === Button)!.props.onClick();
+  await tick();
+  expect(s.api.openUrl).toHaveBeenCalledWith("https://id.corp.example/pricing");
+});
+
+it("Learn more falls back to the default server when none is known", async () => {
+  const s = setup();
+  s.api.xdevIdServer.mockImplementation(() => Promise.resolve({ origin: "", source: "default", setting: "", invalid: false }));
+  flat(s.draw().props.children).find((n) => n.type === Button)!.props.onClick();
+  await tick();
+  expect(s.api.openUrl).toHaveBeenCalledWith("https://xdev.asia/pricing");
 });
 
 it("a cancelled purchase shows no error; another failure shows its message", async () => {

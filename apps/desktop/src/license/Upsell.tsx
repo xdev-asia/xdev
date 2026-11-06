@@ -5,10 +5,16 @@ import { toApiError, type Api } from "@/api";
 import { useI18n } from "@/i18n";
 import { LicenseUpsellContext } from "./ProGate";
 
-/** Where "Learn more" goes. */
-export const PRICING_URL = "https://xdev.asia/pricing";
+/** The server "Learn more" goes to when none is configured. */
+export const DEFAULT_SERVER = "https://xdev.asia";
 
-export type UpsellApi = Pick<Api, "licenseBuy" | "licenseBuyCancel" | "openUrl">;
+export type UpsellApi = Pick<Api, "licenseBuy" | "licenseBuyCancel" | "openUrl" | "xdevIdServer">;
+
+/** The pricing page of the xDev ID server in use (an on-prem one when configured), else the default server. */
+export async function pricingUrl(api: Pick<Api, "xdevIdServer">): Promise<string> {
+  const origin = await api.xdevIdServer().then((s) => s.origin.replace(/\/+$/, ""), () => "");
+  return `${origin || DEFAULT_SERVER}/pricing`;
+}
 
 /** The name shown for a feature id, such as `pro.early`. Unknown ids show as a plain "xDev Pro" feature. */
 export function featureLabelKey(feature: string): string {
@@ -70,7 +76,7 @@ export function Upsell({ api, feature, onClose }: UpsellProps): JSX.Element {
     >
       <p>{t("pro.upsell.body")}</p>
       <p>
-        <Button type="button" variant="secondary" onClick={() => void api.openUrl(PRICING_URL).catch(() => undefined)}>
+        <Button type="button" variant="secondary" onClick={() => void pricingUrl(api).then((url) => api.openUrl(url)).catch(() => undefined)}>
           {t("pro.upsell.learn")}
         </Button>
       </p>
