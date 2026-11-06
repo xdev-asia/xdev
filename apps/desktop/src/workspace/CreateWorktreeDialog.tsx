@@ -1,7 +1,7 @@
 import { Button, Disclosure, RadioGroup, Segmented, Switch } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type ApiError, type CreateRequest, type Issue, type MrSummary, type NamePreview, type PrSummary, type ReviewBranch, type RepoView, type SparsePreset, type WorkItem, type WorkItemKind } from "@/api";
+import { toApiError, type Api, type ApiError, type CreateRequest, type Issue, type MrSummary, type NamePreview, type PrSummary, type ReviewBranch, type RepoView, type SparsePreset, type WorkItem, type WorkItemKind, type WorkStatus } from "@/api";
 import { isIssueRef } from "@/issues/issueStart";
 import { useI18n } from "@/i18n";
 import { expandShortcodes, hasEmoji, slugFromTitle } from "./emoji";
@@ -15,7 +15,7 @@ import { parseItem } from "./workItemInput";
 import { FeatureTour } from "@/onboarding/FeatureTour";
 
 /** What the dialog adds to the name and base: the title, the agent, the parent and the work item. */
-export type CreateExtra = { title: string | null; agent: string | null; setDefault: boolean; parent: string | null; item: WorkItem | null; /** Becomes the comment of the worktree. */ note?: string | null; /** Typed into the agent that opens, once it has started. */ prompt?: string };
+export type CreateExtra = { title: string | null; agent: string | null; setDefault: boolean; parent: string | null; item: WorkItem | null; /** Becomes the comment of the worktree. */ note?: string | null; /** Typed into the agent that opens, once it has started. */ prompt?: string; /** The work status the worktree starts in; set when the board creates it from a column. */ status?: WorkStatus };
 
 /** How long the name field rests before an issue number with a hash, or an issue URL, is looked up. */
 export const ISSUE_RESOLVE_DEBOUNCE_MS = 300;
@@ -35,6 +35,7 @@ type Form = {
   itemUrl: string;
   itemKind: WorkItemKind;
   note?: string;
+  status?: WorkStatus | null;
 };
 
 /** The name for `worktree_create` and the extras; null while the work item link is unusable. */
@@ -54,6 +55,7 @@ export function buildCreate(form: Form): { name: string; extra: CreateExtra } | 
       parent: form.parent === "" ? null : form.parent,
       item,
       ...(form.note && form.note.trim() !== "" ? { note: form.note.trim() } : {}),
+      ...(form.status ? { status: form.status } : {}),
     },
   };
 }
@@ -80,6 +82,8 @@ export function CreateWorktreeDialog(props: {
   defaultAgent?: string | null;
   /** A name to start with, such as one typed into the jump palette. */
   name?: string;
+  /** The work status the new worktree starts in, from a board column; the Name and Branch tabs apply it. */
+  status?: WorkStatus | null;
   /** The name a create would get; without it no preview shows. */
   namePreview?(repoId: string, name: string): Promise<NamePreview>;
   /** `more` is true when Create more is on: the shell leaves the dialog open and the dialog blanks its name. */
@@ -226,7 +230,7 @@ export function CreateWorktreeDialog(props: {
       return;
     }
     if (picking || badItem || badSparse || needsBranch) return;
-    const built = repo && buildCreate({ text: name.trim() === "" && pickedBranch !== "" ? pickedBranch.replace(/[\/]+/g, "-") : name, agent, defaultAgent, setDefault, parent: parentPath, itemUrl, itemKind, note });
+    const built = repo && buildCreate({ text: name.trim() === "" && pickedBranch !== "" ? pickedBranch.replace(/[\/]+/g, "-") : name, agent, defaultAgent, setDefault, parent: parentPath, itemUrl, itemKind, note, status: props.status });
     if (!repo || !built) return;
     const dirs = Array.isArray(sparse) ? sparse : [];
     const request: CreateRequest | undefined = pickedBranch !== "" || dirs.length > 0 ? { existing: pickedBranch || null, sparse: dirs } : undefined;
@@ -263,6 +267,11 @@ export function CreateWorktreeDialog(props: {
           {t("workspace.create.title")}
         </h2>
         <p className="dialog-body">{t("workspace.create.body")}</p>
+        {props.status && (
+          <small role="status" data-starts>
+            {t("workspace.create.startsIn", { status: t(`workspace.work.${props.status}`) })}
+          </small>
+        )}
         <FeatureTour tour="worktree" />
         <div className="ws-fields">
           <label className="ws-field">

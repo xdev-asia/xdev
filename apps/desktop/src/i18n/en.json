@@ -6002,5 +6002,18 @@
   "linksChoice.body": "You clicked a link in a terminal. Open it in a tab of this app, or in your system browser?",
   "linksChoice.pane": "Open in the app",
   "linksChoice.system": "Open in the system browser",
-  "linksChoice.hint": "Hold Shift while you click to use the other one. Change this in Settings, Browser."
+  "linksChoice.hint": "Hold Shift while you click to use the other one. Change this in Settings, Browser.",
+  "kanban.search": "Search worktrees",
+  "kanban.searchCount": "{count} found",
+  "kanban.filter.pinned": "Pinned",
+  "kanban.filter.agents": "Agent open",
+  "kanban.filter.tasks": "From a task",
+  "kanban.noMatch": "No worktrees match",
+  "kanban.settings": "Board settings",
+  "kanban.settings.columns": "Columns",
+  "kanban.settings.density": "Cards",
+  "kanban.settings.comfortable": "Comfortable",
+  "kanban.settings.compact": "Compact",
+  "kanban.new": "New worktree in {status}",
+  "workspace.create.startsIn": "Starts in {status}"
 }

@@ -6002,5 +6002,18 @@
   "linksChoice.body": "Bạn vừa bấm một liên kết trong terminal. Mở trong một tab của ứng dụng hay trong trình duyệt hệ thống?",
   "linksChoice.pane": "Mở trong ứng dụng",
   "linksChoice.system": "Mở trong trình duyệt hệ thống",
-  "linksChoice.hint": "Giữ Shift khi bấm để dùng cách còn lại. Đổi trong Cài đặt, Trình duyệt."
+  "linksChoice.hint": "Giữ Shift khi bấm để dùng cách còn lại. Đổi trong Cài đặt, Trình duyệt.",
+  "kanban.search": "Tìm worktree",
+  "kanban.searchCount": "Tìm thấy {count}",
+  "kanban.filter.pinned": "Đã ghim",
+  "kanban.filter.agents": "Có agent đang mở",
+  "kanban.filter.tasks": "Từ task",
+  "kanban.noMatch": "Không có worktree nào khớp",
+  "kanban.settings": "Cài đặt bảng",
+  "kanban.settings.columns": "Cột",
+  "kanban.settings.density": "Thẻ",
+  "kanban.settings.comfortable": "Đầy đủ",
+  "kanban.settings.compact": "Gọn",
+  "kanban.new": "Worktree mới ở {status}",
+  "workspace.create.startsIn": "Bắt đầu ở {status}"
 }

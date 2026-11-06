@@ -355,3 +355,17 @@ it("warns, without blocking Create, when the new branch exists on the remote", a
     vi.useRealTimers();
   }
 });
+
+it("carries a preset status into the create extras and leaves the key out without one", () => {
+  expect(buildCreate({ ...BLANK, status: "in-progress" })?.extra.status).toBe("in-progress");
+  expect(buildCreate(BLANK)?.extra).not.toHaveProperty("status");
+  expect(buildCreate({ ...BLANK, status: null })?.extra).not.toHaveProperty("status");
+});
+
+it("says where the worktree starts only when a status is preset", () => {
+  const repos = DEMO_WORKSPACE.repos;
+  const line = (status?: "todo") =>
+    nodes(CreateWorktreeDialog({ repos, repoId: repos[0].id, status, onCreate: vi.fn(), onCancel: vi.fn() })).find((n) => n.props["data-starts"] !== undefined);
+  expect(line("todo")?.props.children).toBe("Starts in To do");
+  expect(line()).toBeUndefined();
+});
