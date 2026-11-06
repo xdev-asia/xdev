@@ -10,6 +10,8 @@ export type ViewOptions = {
   /** The file list is a folder tree. */
   tree: boolean;
   listWidth: number;
+  /** The line-authors gutter and legend of the diff. */
+  attribution: boolean;
 };
 
 export const VIEW_KEY = "xdev.review.view";
@@ -25,6 +27,7 @@ export const DEFAULT_VIEW: ViewOptions = {
   wrap: false,
   tree: false,
   listWidth: LIST_DEFAULT,
+  attribution: true,
 };
 
 export function clampListWidth(px: number): number {
@@ -44,7 +47,7 @@ export function readViewOptions(storage: Reader): ViewOptions {
     raw = null;
   }
   const o = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-  const flag = (k: "ignoreWhitespace" | "collapse" | "lineNumbers" | "wrap" | "tree"): boolean => (typeof o[k] === "boolean" ? o[k] : DEFAULT_VIEW[k]);
+  const flag = (k: "ignoreWhitespace" | "collapse" | "lineNumbers" | "wrap" | "tree" | "attribution"): boolean => (typeof o[k] === "boolean" ? o[k] : DEFAULT_VIEW[k]);
   return {
     layout: o.layout === "split" ? "split" : "inline",
     ignoreWhitespace: flag("ignoreWhitespace"),
@@ -53,6 +56,7 @@ export function readViewOptions(storage: Reader): ViewOptions {
     wrap: flag("wrap"),
     tree: flag("tree"),
     listWidth: typeof o.listWidth === "number" ? clampListWidth(o.listWidth) : LIST_DEFAULT,
+    attribution: flag("attribution"),
   };
 }
 
@@ -65,10 +69,10 @@ export function writeViewOptions(storage: Writer, opts: ViewOptions): void {
 }
 
 /** What a review view keeps for itself: the settings carry the rest. */
-export type LocalView = Pick<ViewOptions, "lineNumbers" | "listWidth">;
+export type LocalView = Pick<ViewOptions, "lineNumbers" | "listWidth" | "attribution">;
 
 export const LOCAL_KEY = "xdev.review.local";
-const LOCAL_DEFAULT: LocalView = { lineNumbers: DEFAULT_VIEW.lineNumbers, listWidth: LIST_DEFAULT };
+const LOCAL_DEFAULT: LocalView = { lineNumbers: DEFAULT_VIEW.lineNumbers, listWidth: LIST_DEFAULT, attribution: DEFAULT_VIEW.attribution };
 
 /** The options a view starts with: the diff settings, plus what the view keeps for itself. */
 export function fromDiffSettings(d: DiffSettings, local: LocalView = LOCAL_DEFAULT): ViewOptions {
@@ -80,6 +84,7 @@ export function fromDiffSettings(d: DiffSettings, local: LocalView = LOCAL_DEFAU
     tree: d.fileTree,
     lineNumbers: local.lineNumbers,
     listWidth: clampListWidth(local.listWidth),
+    attribution: local.attribution,
   };
 }
 
@@ -99,12 +104,13 @@ export function readLocalView(storage: Reader): LocalView {
   return {
     lineNumbers: typeof o.lineNumbers === "boolean" ? o.lineNumbers : LOCAL_DEFAULT.lineNumbers,
     listWidth: typeof o.listWidth === "number" ? clampListWidth(o.listWidth) : LOCAL_DEFAULT.listWidth,
+    attribution: typeof o.attribution === "boolean" ? o.attribution : LOCAL_DEFAULT.attribution,
   };
 }
 
 export function writeLocalView(storage: Writer, local: LocalView): void {
   try {
-    storage?.setItem(LOCAL_KEY, JSON.stringify({ lineNumbers: local.lineNumbers, listWidth: clampListWidth(local.listWidth) }));
+    storage?.setItem(LOCAL_KEY, JSON.stringify({ lineNumbers: local.lineNumbers, listWidth: clampListWidth(local.listWidth), attribution: local.attribution }));
   } catch {
     // A full or blocked store only costs the saved choice.
   }

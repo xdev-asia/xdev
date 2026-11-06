@@ -9,7 +9,7 @@ import { Checkbox, SearchInput, TreeView } from "@xdev-asia/ui";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ReviewView } from "./ReviewView";
 import { touchChanges } from "@/workspace/changesBus";
-import { VIEW_KEY } from "./viewOptions";
+import { LOCAL_KEY, VIEW_KEY } from "./viewOptions";
 
 // Hooks are stubbed only while a component under test is called.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -251,6 +251,22 @@ it("starts from the diff settings; a change stays in this view until Save as def
   const again = review(api);
   await tick();
   expect(again.diff("src/session.ts").props.opts).toMatchObject({ layout: "inline", ignoreWhitespace: true });
+});
+
+it("a Line authors checkbox turns the gutter off for this view and keeps the choice", async () => {
+  const saved = memoryStorage();
+  const api = createMockApi({});
+  const v = review(api);
+  await tick();
+  expect(v.diff("src/session.ts").props.opts).toMatchObject({ attribution: true });
+  const label = v.all().find((n) => n.type === "label" && nodes(n.props.children).some((c) => c.type === "span" && c.props.children === en("review.opt.attribution")))!;
+  const box = nodes(label.props.children).find((c) => c.type === "input")!;
+  expect(box.props).toMatchObject({ type: "checkbox", checked: true });
+  box.props.onChange();
+  expect(v.diff("src/session.ts").props.opts).toMatchObject({ attribution: false });
+  expect(JSON.parse(saved.get(LOCAL_KEY)!)).toMatchObject({ attribution: false });
+  expect(v.html()).toContain("Line authors");
+  expect(v.html()).not.toContain("btn-primary");
 });
 
 it("moves the options an older version kept in localStorage into the settings, once", async () => {

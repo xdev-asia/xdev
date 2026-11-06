@@ -265,7 +265,7 @@ export function ReviewView(props: {
   function setOption(patch: Partial<ViewOptions>): void {
     const next = { ...opts, ...patch };
     setOpts(next);
-    if ("lineNumbers" in patch || "listWidth" in patch) writeLocalView(storage(), next);
+    if ("lineNumbers" in patch || "listWidth" in patch || "attribution" in patch) writeLocalView(storage(), next);
   }
 
   const unsaved = JSON.stringify(toDiffSettings(opts, saved)) !== JSON.stringify(saved);
@@ -351,7 +351,7 @@ export function ReviewView(props: {
   }
 
   const width = clampListWidth(opts.listWidth);
-  const flag = (name: "ignoreWhitespace" | "collapse" | "lineNumbers" | "wrap", label: string) => (
+  const flag = (name: "ignoreWhitespace" | "collapse" | "lineNumbers" | "wrap" | "attribution", label: string) => (
     <label className="rv-check">
       <input type="checkbox" checked={opts[name]} onChange={() => setOption({ [name]: !opts[name] })} />
       <span>{t(label)}</span>
@@ -373,6 +373,7 @@ export function ReviewView(props: {
         {flag("ignoreWhitespace", "review.opt.whitespace")}
         {flag("collapse", "review.opt.collapse")}
         {flag("lineNumbers", "review.opt.lineNumbers")}
+        {flag("attribution", "review.opt.attribution")}
         {flag("wrap", "review.opt.wrap")}
         <div className="rv-layout" role="group" aria-label={t("review.view")}>
           {([false, true] as const).map((tree) => (
