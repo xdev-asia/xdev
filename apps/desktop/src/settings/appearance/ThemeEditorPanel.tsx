@@ -76,11 +76,14 @@ export function ThemeEditorPanel(props: {
     title: t(`settings.appearance.colours.group.${g}`),
     keys: THEME_KEYS.filter((k) => k.group === g).map((k) => ({ key: k.key, label: keyLabel(k.key) })),
   }));
-  const themeIssues = issues.map((i) => ({
-    // "on-accent" is not an editable key; name the accent it sits on so the list can label it.
-    key: THEME_KEYS.some((k) => k.key === i.fg) ? i.fg : i.bg,
-    message: t("settings.appearance.colours.contrast.issue", { fg: keyLabel(i.fg), bg: keyLabel(i.bg), ratio: i.ratio, min: i.min }),
-  }));
+  // The library prints the key's label before each message, so the message starts after it.
+  const themeIssues = issues.map((i) => {
+    const vars = { fg: keyLabel(i.fg), bg: keyLabel(i.bg), ratio: i.ratio, min: i.min };
+    // "on-accent" is not an editable key: the issue sits on the accent it is drawn over.
+    return THEME_KEYS.some((k) => k.key === i.fg)
+      ? { key: i.fg, message: t("settings.appearance.colours.contrast.issue", vars) }
+      : { key: i.bg, message: t("settings.appearance.colours.contrast.issueBehind", vars) };
+  });
   const editorLabels = {
     name: t("settings.appearance.colours.name"),
     mode: t("settings.appearance.colours.mode"),
