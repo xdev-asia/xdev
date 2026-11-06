@@ -277,6 +277,8 @@ mod tests {
         assert_eq!(uri_path("not a uri"), None);
     }
 
+    // Unix paths: on Windows `/run/user/1000` is not absolute, so the runtime dir never counts.
+    #[cfg(unix)]
     #[test]
     fn only_temp_files_are_deleted() {
         let run = Some(Path::new("/run/user/1000"));
