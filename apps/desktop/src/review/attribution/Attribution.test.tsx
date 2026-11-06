@@ -1,11 +1,13 @@
 import { expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { JSX } from "react";
+import { AgentChip } from "@xdev-asia/ui";
 import { I18nProvider } from "@/i18n";
 import type { AttributionEvent } from "@/api";
 import { createMockApi } from "@/api";
 import { AgentChips } from "./AgentChips";
 import { LivePanel } from "./LivePanel";
+import { CHIP_CLASS } from "./lineGutterModel";
 import { RestoreConfirm, VersionsDialog } from "./VersionsDialog";
 
 const render = (node: JSX.Element): string => renderToStaticMarkup(<I18nProvider>{node}</I18nProvider>);
@@ -77,4 +79,12 @@ it("the mock keeps versions once per content, twenty at most, and restores one",
   const oldest = full[full.length - 1];
   await api.attributionRestore(OAK, "src/a.ts", oldest.id);
   expect((await api.fileRead(OAK, "src/a.ts")).text).toBe(await api.attributionVersionRead(OAK, "src/a.ts", oldest.id));
+});
+
+it("the gutter marker uses the chip's own class and profile attribute", () => {
+  const html = renderToStaticMarkup(<AgentChip profile="claude" title="claude" />);
+  expect(html).toContain(`class="${CHIP_CLASS}"`);
+  expect(html).toContain('data-profile="claude"');
+  // A custom agent's chip has no profile attribute; the marker leaves it out too.
+  expect(renderToStaticMarkup(<AgentChip profile="custom" letter="A" title="aider" />)).not.toContain("data-profile");
 });

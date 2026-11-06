@@ -6,9 +6,10 @@ import type { Problem } from "@/changes/useChanges";
 import { ProblemNote } from "@/components/ChangesPanel";
 import { DiffView } from "@/components/DiffView";
 import { useI18n } from "@/i18n";
+import { when } from "./attributionModel";
 import { canRestore, flow, START } from "./versionsModel";
 
-export const when = (at: number) => new Date(at).toLocaleString();
+export { when };
 
 /**
  * The versions an agent wrote of one file. Picking one shows what restoring it would change:
