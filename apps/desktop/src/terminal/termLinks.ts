@@ -146,10 +146,10 @@ function fileRun(env: TermLinksEnv, target: FileTarget, shown?: string) {
   };
 }
 
-function urlRun(env: TermLinksEnv, url: string) {
+function urlRun(env: TermLinksEnv, url: string, shift = false) {
   return {
-    open: () => openUrlLink(url, env.deps),
-    openDefault: () => openUrlLink(url, env.deps),
+    open: () => openUrlLink(url, env.deps, shift),
+    openDefault: () => openUrlLink(url, env.deps, shift),
     menu: () => urlLinkMenu(url, env.deps),
   };
 }
@@ -198,7 +198,7 @@ export function createFileLinkProvider(env: TermLinksEnv): ILinkProvider {
 export function urlLinkOptions(env: TermLinksEnv) {
   return {
     handler(e: MouseEvent, uri: string): void {
-      perform(env, linkAction("url", e, env.settings(), env.mac), e, urlRun(env, uri));
+      perform(env, linkAction("url", e, env.settings(), env.mac), e, urlRun(env, uri, e.shiftKey));
     },
     hover: (_e: MouseEvent, text: string): void => env.tip(hint(env, "url", text)),
     leave: (): void => env.tip(null),
@@ -236,7 +236,7 @@ export function createOscLinkHandler(env: TermLinksEnv): ILinkHandler {
       if (e.button !== 0) return;
       const target = parseOscTarget(text);
       if (!target) return;
-      if (target.kind === "url") return perform(env, linkAction("url", e, env.settings(), env.mac), e, urlRun(env, target.url));
+      if (target.kind === "url") return perform(env, linkAction("url", e, env.settings(), env.mac), e, urlRun(env, target.url, e.shiftKey));
       const action = linkAction("file", e, env.settings(), env.mac);
       const worktree = env.worktree();
       if (action === "none" || !worktree) return;

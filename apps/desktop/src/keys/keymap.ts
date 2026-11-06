@@ -47,6 +47,8 @@ export type ActionId =
   | "tab.nextSameKind" | "tab.prevSameKind"
   // Closes every terminal, agent and file tab of the worktree but the pinned ones; unsaved files ask first.
   | "tab.closeAll"
+  // Opens a browser tab in the worktree.
+  | "browser.new"
   // Bound to nothing by default: closes every file tab (not terminals), asking about unsaved ones.
   | "file.closeAll"
   | "settings.open" | "settings.shortcuts"

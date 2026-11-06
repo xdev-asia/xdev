@@ -16,6 +16,7 @@ mod automations;
 mod bindings;
 mod board;
 mod board_decompose;
+mod browser_pane;
 mod capture;
 mod charts;
 mod cli_automations;
@@ -154,6 +155,7 @@ pub fn run() {
         .manage(updater::Phase::default())
         .manage(updater::Deferred::default())
         .manage(shell::ShellState::default())
+        .manage(browser_pane::BrowserPanes::default())
         // Terminals wait until the start below has picked where they run.
         .manage(pty::Ptys::pending())
         .manage(workspace::WorkspaceLock::default())
@@ -902,6 +904,16 @@ pub fn run() {
             capture::capture_shortcut_apply,
             capture::capture_settings_get,
             capture::capture_settings_put,
+            browser_pane::browser_show,
+            browser_pane::browser_set_bounds,
+            browser_pane::browser_hide,
+            browser_pane::browser_close,
+            browser_pane::browser_navigate,
+            browser_pane::browser_history,
+            browser_pane::browser_reload,
+            browser_pane::browser_devtools,
+            browser_pane::browser_settings_get,
+            browser_pane::browser_settings_put,
             remote_ssh::remote_projects_list,
             remote_ssh::remote_project_add,
             remote_ssh::remote_project_remove,
@@ -995,6 +1007,58 @@ mod tests {
         // The save dialog opens from Rust, so the webview needs no permission.
         assert!(!allowed.iter().any(|p| p == "dialog:allow-save"));
         assert!(allowed.iter().any(|p| p == "dialog:allow-open"));
+    }
+
+    /// The command names of the `generate_handler!` list, read as `build.rs` reads them.
+    fn handler_commands() -> std::collections::BTreeSet<String> {
+        let src = include_str!("lib.rs");
+        let start = src.find("generate_handler![").unwrap() + "generate_handler![".len();
+        let body = &src[start..];
+        body[..body.find(']').unwrap()]
+            .split(',')
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(|p| p.rsplit("::").next().unwrap().to_owned())
+            .collect()
+    }
+
+    /// The app command names a capability file grants (`allow-<command>`, no plugin prefix).
+    fn granted_commands(capability: &str) -> std::collections::BTreeSet<String> {
+        let caps: serde_json::Value = serde_json::from_str(capability).unwrap();
+        caps["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p.as_str())
+            .filter(|p| !p.contains(':'))
+            .map(|p| p.strip_prefix("allow-").unwrap().replace('-', "_"))
+            .collect()
+    }
+
+    #[test]
+    fn main_webview_is_granted_every_app_command() {
+        let handler = handler_commands();
+        assert!(handler.len() > 100, "{}", handler.len());
+        let granted = granted_commands(include_str!("../capabilities/default.json"));
+        let missing: Vec<_> = handler.difference(&granted).collect();
+        let unknown: Vec<_> = granted.difference(&handler).collect();
+        assert!(missing.is_empty(), "not granted to main: {missing:?}");
+        assert!(unknown.is_empty(), "granted but not a command: {unknown:?}");
+    }
+
+    #[test]
+    fn only_the_main_webview_and_the_notch_get_app_commands() {
+        let main: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert_eq!(main["webviews"], serde_json::json!(["main"]));
+        assert!(main.get("windows").is_none());
+        let notch: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/notch.json")).unwrap();
+        assert_eq!(notch["windows"], serde_json::json!(["notch"]));
+        let granted = granted_commands(include_str!("../capabilities/notch.json"));
+        let want: std::collections::BTreeSet<String> =
+            ["notch_state", "notch_open"].map(String::from).into();
+        assert_eq!(granted, want);
     }
 
     #[test]

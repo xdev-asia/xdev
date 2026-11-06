@@ -118,3 +118,41 @@ describe("urlLinkMenu", () => {
     expect(toasts).toEqual(["Failed to copy link"]);
   });
 });
+
+describe("openUrlLink and the browser tab", () => {
+  const sent = () => {
+    const to: { url: string; keepFocus: boolean }[] = [];
+    return { to, openInPane: (url: string, keepFocus: boolean) => void to.push({ url, keepFocus }) };
+  };
+
+  it("system by default; Shift sends the link to the tab without moving the focus", async () => {
+    const pane = sent();
+    const { d } = deps({ openInPane: pane.openInPane, linksTarget: () => "system" });
+    await openUrlLink("https://x.dev/a", d);
+    expect(d.api.openUrl).toHaveBeenCalledWith("https://x.dev/a");
+    await openUrlLink("https://x.dev/b", d, true);
+    expect(pane.to).toEqual([{ url: "https://x.dev/b", keepFocus: true }]);
+    expect(d.api.openUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("pane: a click loads the tab and moves to it; Shift goes to the system", async () => {
+    const pane = sent();
+    const { d } = deps({ openInPane: pane.openInPane, linksTarget: () => "pane" });
+    await openUrlLink("http://localhost:3000/", d);
+    expect(pane.to).toEqual([{ url: "http://localhost:3000/", keepFocus: false }]);
+    await openUrlLink("https://x.dev/", d, true);
+    expect(d.api.openUrl).toHaveBeenCalledWith("https://x.dev/");
+    expect(pane.to).toHaveLength(1);
+  });
+
+  it("without a tab to send to, or for a scheme a tab cannot load, the system opens it", async () => {
+    const pane = sent();
+    const noPane = deps({ linksTarget: () => "pane" });
+    await openUrlLink("https://x.dev/", noPane.d);
+    expect(noPane.d.api.openUrl).toHaveBeenCalledWith("https://x.dev/");
+    const mail = deps({ openInPane: pane.openInPane, linksTarget: () => "pane" });
+    await openUrlLink("mailto:a@x.dev", mail.d);
+    expect(mail.d.api.openUrl).toHaveBeenCalledWith("mailto:a@x.dev");
+    expect(pane.to).toEqual([]);
+  });
+});

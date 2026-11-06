@@ -20,6 +20,7 @@ const PAGES: Record<string, string[]> = {
   code: ["CodeIntelPage.tsx"],
   repos: ["ReposSettings.tsx"],
   openIn: ["OpenInPage.tsx"],
+  browser: ["BrowserPage.tsx"],
   git: ["GitSettings.tsx"],
   vaults: ["VaultsSettings.tsx"],
   keys: ["shortcuts/ShortcutsPage.tsx"],

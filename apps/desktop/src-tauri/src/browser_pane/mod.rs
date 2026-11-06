@@ -1,0 +1,459 @@
+//! Browser tabs: one child webview per live tab, placed over the tab's body by the front end.
+//!
+//! Safety: app commands are declared in `build.rs`, so a webview may call one only when a
+//! capability grants it; the capabilities name the `main` webview and the `notch` window, never a
+//! `browser-` label, so a page gets no app or plugin command whatever origin it loads. A page may
+//! also load only `http`/`https` away from the app's own origins (`address::navigation_allowed`).
+//! Popups become new tabs of the front end, at most one a second and five a minute per tab
+//! (`popup::PopupLimiter`); the rest are dropped with a `POPUP_BLOCKED_EVENT`.
+
+pub mod address;
+pub mod pool;
+pub mod popup;
+
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Instant;
+
+use tauri::async_runtime::Mutex as AsyncMutex;
+use tauri::webview::{NewWindowResponse, PageLoadEvent};
+use tauri::{
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, State, Url, Webview,
+    WebviewBuilder, WebviewUrl,
+};
+
+use crate::commands::CmdError;
+use crate::settings;
+use crate::settings::SettingsSection;
+use crate::settings_store;
+use pool::{Bounds, Locks, Pool, ShowPlan};
+use popup::{Popup, PopupLimiter};
+
+/// A page's address, title or loading state changed.
+pub const PAGE_EVENT: &str = "browser://page";
+/// A tab's webview was closed to stay under the live limit; the tab keeps its URL.
+pub const EVICTED_EVENT: &str = "browser://evicted";
+/// A page asked for a new window; the front end opens it as a tab.
+pub const POPUP_EVENT: &str = "browser://popup";
+/// A page asked for more new windows than the limit; sent once per tab, for its first drop.
+pub const POPUP_BLOCKED_EVENT: &str = "browser://popup-blocked";
+/// The front end's webview, the only one that hears these events.
+const MAIN: &str = "main";
+
+#[derive(Default)]
+pub struct BrowserPanes {
+    pool: Mutex<Pool>,
+    locks: Mutex<Locks>,
+    popups: Mutex<PopupLimiter>,
+}
+
+impl BrowserPanes {
+    /// The pool, locked for one decision; never held across an `await`.
+    fn pool(&self) -> MutexGuard<'_, Pool> {
+        self.pool.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The async lock of `tab`'s webview label.
+    fn lock_of(&self, tab: &str) -> Arc<AsyncMutex<()>> {
+        self.locks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .of(&pool::label_of(tab))
+    }
+}
+
+/// The payload of `PAGE_EVENT`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserPage {
+    pub tab: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub loading: Option<bool>,
+}
+
+/// The payload of `EVICTED_EVENT`, `POPUP_EVENT` and `POPUP_BLOCKED_EVENT`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserTabUrl {
+    pub tab: String,
+    pub url: String,
+}
+
+fn err(code: &'static str, detail: impl ToString) -> CmdError {
+    CmdError {
+        code,
+        detail: Some(detail.to_string()),
+    }
+}
+
+fn dev_origin(app: &AppHandle) -> Option<Url> {
+    if cfg!(debug_assertions) {
+        app.config().build.dev_url.clone()
+    } else {
+        None
+    }
+}
+
+fn webview_of(app: &AppHandle, tab: &str) -> Option<Webview> {
+    app.get_webview(&pool::label_of(tab))
+}
+
+fn rect(b: Bounds) -> Rect {
+    Rect {
+        position: LogicalPosition::new(b.x, b.y).into(),
+        size: LogicalSize::new(b.width, b.height).into(),
+    }
+}
+
+/// A URL a page may open, or `about:blank`.
+fn safe_url(raw: &str, dev: Option<&Url>) -> Url {
+    Url::parse(raw)
+        .ok()
+        .filter(|u| address::navigation_allowed(u, dev))
+        .unwrap_or_else(|| Url::parse(address::BLANK).expect("about:blank parses"))
+}
+
+fn page(app: &AppHandle, payload: BrowserPage) {
+    // Fails only while the app shuts down.
+    let _ = app.emit_to(MAIN, PAGE_EVENT, payload);
+}
+
+fn builder(app: &AppHandle, tab: &str, url: Url, dev: Option<Url>) -> WebviewBuilder<tauri::Wry> {
+    let label = pool::label_of(tab);
+    let (on_load, on_title, on_popup) = (app.clone(), app.clone(), app.clone());
+    let (tab_load, tab_title, tab_popup) = (tab.to_owned(), tab.to_owned(), tab.to_owned());
+    let dev_popup = dev.clone();
+    WebviewBuilder::new(label, WebviewUrl::External(url))
+        .focused(false)
+        .on_navigation(move |url| address::navigation_allowed(url, dev.as_ref()))
+        .on_page_load(move |_, load| {
+            page(
+                &on_load,
+                BrowserPage {
+                    tab: tab_load.clone(),
+                    url: Some(load.url().to_string()),
+                    title: None,
+                    loading: Some(matches!(load.event(), PageLoadEvent::Started)),
+                },
+            )
+        })
+        .on_document_title_changed(move |_, title| {
+            page(
+                &on_title,
+                BrowserPage {
+                    tab: tab_title.clone(),
+                    url: None,
+                    title: Some(title),
+                    loading: None,
+                },
+            )
+        })
+        .on_new_window(move |url, _| {
+            if address::navigation_allowed(&url, dev_popup.as_ref())
+                && url.as_str() != address::BLANK
+            {
+                let decision = on_popup
+                    .state::<BrowserPanes>()
+                    .popups
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .request(&tab_popup, Instant::now());
+                let event = match decision {
+                    Popup::Open => Some(POPUP_EVENT),
+                    Popup::Drop { notify: true } => Some(POPUP_BLOCKED_EVENT),
+                    Popup::Drop { notify: false } => None,
+                };
+                if let Some(event) = event {
+                    let _ = on_popup.emit_to(
+                        MAIN,
+                        event,
+                        BrowserTabUrl {
+                            tab: tab_popup.clone(),
+                            url: url.to_string(),
+                        },
+                    );
+                }
+            }
+            NewWindowResponse::Deny
+        })
+}
+
+/// Closes the webviews of `tabs` and tells the front end they sleep now. Each runs under its tab's
+/// lock, and a tab shown again meanwhile keeps its webview.
+async fn evict(app: &AppHandle, state: &BrowserPanes, tabs: Vec<String>) {
+    for tab in tabs {
+        let lock = state.lock_of(&tab);
+        let _turn = lock.lock().await;
+        if state.pool().is_live(&tab) {
+            continue;
+        }
+        if let Some(view) = webview_of(app, &tab) {
+            let url = view.url().map(|u| u.to_string()).unwrap_or_default();
+            let _ = view.close();
+            let _ = app.emit_to(MAIN, EVICTED_EVENT, BrowserTabUrl { tab, url });
+        }
+    }
+}
+
+fn hide_view(app: &AppHandle, tab: &str) -> Result<(), CmdError> {
+    match webview_of(app, tab) {
+        Some(view) => view.hide().map_err(|e| err("browser_unavailable", e)),
+        None => Ok(()),
+    }
+}
+
+/// Shows `tab`'s page over `bounds` (logical pixels in the window), making its webview when the
+/// tab has none, at `url`. Closes the least recently shown webview past the live limit. A tab
+/// closed before or while this runs gets no webview.
+#[tauri::command]
+pub async fn browser_show(
+    app: AppHandle,
+    caller: Webview,
+    state: State<'_, BrowserPanes>,
+    tab: String,
+    url: String,
+    bounds: Bounds,
+) -> Result<(), CmdError> {
+    let lock = state.lock_of(&tab);
+    let turn = lock.lock().await;
+    let Some(bounds) = pool::clamp_bounds(bounds) else {
+        return hide_view(&app, &tab);
+    };
+    let existing = webview_of(&app, &tab);
+    let plan = state.pool().plan_show(&tab, existing.is_some());
+    let (view, created) = match (plan, existing) {
+        (ShowPlan::Skip, _) => return Ok(()),
+        (ShowPlan::Reuse, Some(view)) => (view, false),
+        (ShowPlan::Reuse | ShowPlan::Create, _) => {
+            let dev = dev_origin(&app);
+            let start = safe_url(&url, dev.as_ref());
+            let view = caller
+                .window()
+                .add_child(
+                    builder(&app, &tab, start, dev),
+                    LogicalPosition::new(bounds.x, bounds.y),
+                    LogicalSize::new(bounds.width, bounds.height),
+                )
+                .map_err(|e| err("browser_unavailable", e))?;
+            (view, true)
+        }
+    };
+    // Tracked before it is placed, so no failure below leaves a webview the pool does not know.
+    let shown = state.pool().shown(&tab);
+    let Some(evicted) = shown else {
+        // Closed while the webview was being made.
+        let _ = view.close();
+        return Ok(());
+    };
+    let placed = view
+        .set_bounds(rect(bounds))
+        .and_then(|()| view.show())
+        .map_err(|e| err("browser_unavailable", e));
+    if placed.is_err() && created {
+        // A webview that never showed is closed; the front end says the tab cannot show pages.
+        let _ = view.close();
+        state.pool().remove(&tab);
+    }
+    drop(turn);
+    evict(&app, &state, evicted).await;
+    placed
+}
+
+/// Moves `tab`'s webview; an empty or broken rectangle hides it.
+#[tauri::command]
+pub async fn browser_set_bounds(
+    app: AppHandle,
+    state: State<'_, BrowserPanes>,
+    tab: String,
+    bounds: Bounds,
+) -> Result<(), CmdError> {
+    let lock = state.lock_of(&tab);
+    let _turn = lock.lock().await;
+    let Some(view) = webview_of(&app, &tab) else {
+        return Ok(());
+    };
+    match pool::clamp_bounds(bounds) {
+        Some(b) => view
+            .set_bounds(rect(b))
+            .map_err(|e| err("browser_unavailable", e)),
+        None => view.hide().map_err(|e| err("browser_unavailable", e)),
+    }
+}
+
+/// Hides `tab`'s webview; the page keeps running and keeps its state.
+#[tauri::command]
+pub async fn browser_hide(
+    app: AppHandle,
+    state: State<'_, BrowserPanes>,
+    tab: String,
+) -> Result<(), CmdError> {
+    let lock = state.lock_of(&tab);
+    let _turn = lock.lock().await;
+    hide_view(&app, &tab)
+}
+
+/// Closes `tab`'s webview for good. The tab is marked closed before this waits for its lock, so a
+/// show that is making the webview right then closes it, and a later show makes none.
+#[tauri::command]
+pub async fn browser_close(
+    app: AppHandle,
+    state: State<'_, BrowserPanes>,
+    tab: String,
+) -> Result<(), CmdError> {
+    state.pool().close(&tab);
+    state
+        .popups
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .forget(&tab);
+    let lock = state.lock_of(&tab);
+    let _turn = lock.lock().await;
+    match webview_of(&app, &tab) {
+        Some(view) => view.close().map_err(|e| err("browser_unavailable", e)),
+        None => Ok(()),
+    }
+}
+
+/// The URL the typed `input` names (see `address::normalize_address`), loaded in `tab`'s webview
+/// when it has one. A sleeping tab gets the URL on its next `browser_show`.
+#[tauri::command(async)]
+pub fn browser_navigate(app: AppHandle, tab: String, input: String) -> Result<String, CmdError> {
+    let template = settings_store::read(&app).browser.search_template;
+    let url = address::normalize_address(&input, &template).map_err(|e| err(e.code(), &input))?;
+    let parsed = Url::parse(&url).map_err(|e| err("browser_invalid", e))?;
+    if !address::navigation_allowed(&parsed, dev_origin(&app).as_ref()) {
+        return Err(err("browser_blocked", &url));
+    }
+    if let Some(view) = webview_of(&app, &tab) {
+        view.navigate(parsed)
+            .map_err(|e| err("browser_unavailable", e))?;
+    }
+    Ok(url)
+}
+
+/// The script that moves `step` through a page's history: back when below 0, forward when above.
+/// `0` moves nowhere.
+fn history_js(step: i32) -> Option<&'static str> {
+    match step.signum() {
+        -1 => Some("history.back()"),
+        1 => Some("history.forward()"),
+        _ => None,
+    }
+}
+
+/// Back (`-1`) or forward (`1`) in `tab`'s history. A `0` step does nothing.
+#[tauri::command(async)]
+pub fn browser_history(app: AppHandle, tab: String, step: i32) -> Result<(), CmdError> {
+    let Some(js) = history_js(step) else {
+        return Ok(());
+    };
+    let Some(view) = webview_of(&app, &tab) else {
+        return Ok(());
+    };
+    view.eval(js).map_err(|e| err("browser_unavailable", e))
+}
+
+/// Reloads `tab`'s page. `hard` loads its address again instead of reloading; the engine has no
+/// cache bypass the app can ask for.
+#[tauri::command(async)]
+pub fn browser_reload(app: AppHandle, tab: String, hard: bool) -> Result<(), CmdError> {
+    let Some(view) = webview_of(&app, &tab) else {
+        return Ok(());
+    };
+    let done = if hard {
+        view.url().and_then(|u| view.navigate(u))
+    } else {
+        view.reload()
+    };
+    done.map_err(|e| err("browser_unavailable", e))
+}
+
+/// Opens the developer tools of `tab`'s page.
+#[tauri::command(async)]
+pub fn browser_devtools(app: AppHandle, tab: String) {
+    if let Some(view) = webview_of(&app, &tab) {
+        view.open_devtools();
+    }
+}
+
+#[tauri::command(async)]
+pub fn browser_settings_get(app: AppHandle) -> settings::BrowserSettings {
+    settings_store::read(&app).browser
+}
+
+/// Saves Settings → Browser; a search address must be `http(s)` with `%s`, or empty.
+#[tauri::command(async)]
+pub fn browser_settings_put(
+    app: AppHandle,
+    settings: settings::BrowserSettings,
+) -> Result<settings::BrowserSettings, CmdError> {
+    let settings = settings::BrowserSettings {
+        search_template: settings.search_template.trim().to_owned(),
+        ..settings
+    };
+    if !address::template_valid(&settings.search_template) {
+        return Err(err("browser_template", &settings.search_template));
+    }
+    settings_store::write(&app, &[SettingsSection::Browser], |s| s.browser = settings)
+        .map(|s| s.browser)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_zero_history_step_moves_nowhere() {
+        assert_eq!(history_js(0), None);
+        assert_eq!(history_js(-1), Some("history.back()"));
+        assert_eq!(history_js(-3), Some("history.back()"));
+        assert_eq!(history_js(1), Some("history.forward()"));
+        assert_eq!(history_js(i32::MIN), Some("history.back()"));
+    }
+
+    #[test]
+    fn unsafe_start_urls_become_blank() {
+        let dev = Url::parse("http://localhost:1420").unwrap();
+        assert_eq!(
+            safe_url("https://example.com/a", Some(&dev)).as_str(),
+            "https://example.com/a"
+        );
+        assert_eq!(
+            safe_url("http://localhost:1420/", Some(&dev)).as_str(),
+            "about:blank"
+        );
+        assert_eq!(
+            safe_url("http://tauri.localhost/", None).as_str(),
+            "about:blank"
+        );
+        assert_eq!(
+            safe_url("javascript:alert(1)", None).as_str(),
+            "about:blank"
+        );
+        assert_eq!(safe_url("not a url", None).as_str(), "about:blank");
+    }
+
+    #[test]
+    fn browser_settings_read_leniently() {
+        let s: settings::BrowserSettings = serde_json::from_str(
+            r#"{"openLinksIn":"pane","searchTemplate":"https://s.example/?q=%s"}"#,
+        )
+        .unwrap();
+        assert_eq!(s.open_links_in, settings::LinksTarget::Pane);
+        let s: settings::BrowserSettings =
+            serde_json::from_str(r#"{"openLinksIn":"elsewhere"}"#).unwrap();
+        assert_eq!(s, settings::BrowserSettings::default());
+        assert_eq!(
+            serde_json::to_value(settings::BrowserSettings::default()).unwrap(),
+            serde_json::json!({"openLinksIn": "system", "searchTemplate": ""})
+        );
+    }
+}

@@ -30,7 +30,8 @@ keyring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 time = { version = "0.3", features = ["parsing", "formatting"] }
-tauri = { version = "2", features = ["devtools", "image-png"] }
+# `unstable`: `Window::add_child`, the child webviews of browser tabs.
+tauri = { version = "2", features = ["devtools", "image-png", "unstable"] }
 tauri-plugin-clipboard-manager = "=2.5.0"
 tauri-plugin-deep-link = "2.6.3"
 tauri-plugin-dialog = "2.8.4"

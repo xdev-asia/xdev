@@ -51,7 +51,7 @@ function view(initial?: string) {
 
 it("opens General first and switches to Vaults", () => {
   const v = view();
-  expect(SECTIONS.map((s) => s.id)).toEqual(["general", "repos", "git", "terminal", "editor", "code", "openIn", "agents", "orchestration", "automations", "usage", "appearance", "notifications", "keys", "qcmd", "capture", "account", "vaults", "ssh", "peers", "mcp", "cloud", "cli", "advanced", "diagnostics", "experimental"]);
+  expect(SECTIONS.map((s) => s.id)).toEqual(["general", "repos", "git", "terminal", "editor", "code", "openIn", "browser", "agents", "orchestration", "automations", "usage", "appearance", "notifications", "keys", "qcmd", "capture", "account", "vaults", "ssh", "peers", "mcp", "cloud", "cli", "advanced", "diagnostics", "experimental"]);
   expect(v.items().map((n) => n.props.children)).toEqual([
     en("settings.general.title"),
     en("settings.repos.title"),
@@ -60,6 +60,7 @@ it("opens General first and switches to Vaults", () => {
     en("files.settings.title"),
     en("settings.code.title"),
     en("openIn.title"),
+    en("settings.browser.title"),
     en("settings.agents.title"),
     en("settings.orchestration.title"),
     en("settings.automations.title"),
@@ -80,13 +81,13 @@ it("opens General first and switches to Vaults", () => {
     en("settings.diagnostics.title"),
     en("settings.experimental.title"),
   ]);
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(25).fill(undefined)]);
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(26).fill(undefined)]);
   expect(v.shown().type).toBe(GeneralPage);
   expect(v.shown().props.api).toBe(v.api);
   expect(v.shown().props.onChanged).toBe(v.onChanged);
 
-  v.items()[17].props.onClick();
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual([...Array(17).fill(undefined), "page", ...Array(8).fill(undefined)]);
+  v.items()[18].props.onClick();
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual([...Array(18).fill(undefined), "page", ...Array(8).fill(undefined)]);
   expect(v.shown().type).toBe(VaultsSettings);
   expect(v.body().props["aria-label"]).toBe(en("settings.vaults.title"));
 });
@@ -103,8 +104,8 @@ it("an unknown initial section falls back to the first", () => {
 
 it("lists notifications under Interface and opens its page", () => {
   const v = view();
-  v.items()[12].props.onClick();
-  expect(v.items()[12].props["aria-current"]).toBe("page");
+  v.items()[13].props.onClick();
+  expect(v.items()[13].props["aria-current"]).toBe("page");
   expect(v.shown().type).toBe(NotificationsPage);
   expect(v.body().props["aria-label"]).toBe(en("settings.notifications.title"));
   hooks.values = [];
@@ -221,7 +222,7 @@ it("contains a page that throws in a boundary reset by the section, so the nav s
   expect(v.boundary().props).toMatchObject({ id: "page.settings", resetKey: "general", titleKey: "boundary.page.title" });
   // The nav is a sibling of the body, outside the boundary.
   expect(v.items()).toHaveLength(SECTIONS.length);
-  v.items()[17].props.onClick();
+  v.items()[18].props.onClick();
   expect(v.boundary().props.resetKey).toBe("vaults");
 });
 

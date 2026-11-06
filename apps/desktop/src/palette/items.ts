@@ -121,6 +121,7 @@ export type ActionName =
   | "newWorktree"
   | "newAgentTab"
   | "newShellTab"
+  | "newBrowserTab"
   | "addRepo"
   | "openSettings"
   | "searchDocs"
@@ -149,13 +150,14 @@ export type ActionName =
   | "openTaskBoard"
   | "decomposeGoal";
 
-const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "captureScreen", "annotateClipboard", "resumeSession", "stageAll", "discardAll", "pinTab", "unpinTab", "moveTabRight", "clearTerminal", "resetTerminal", "copyTerminalContext", "newTask", "openTaskBoard", "decomposeGoal", "runTargets", "openServerShell", "getPro", "activatePro", "refreshLicense", "remoteAdd", "remoteReconnect", "replayTour"];
+const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "newBrowserTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "captureScreen", "annotateClipboard", "resumeSession", "stageAll", "discardAll", "pinTab", "unpinTab", "moveTabRight", "clearTerminal", "resetTerminal", "copyTerminalContext", "newTask", "openTaskBoard", "decomposeGoal", "runTargets", "openServerShell", "getPro", "activatePro", "refreshLicense", "remoteAdd", "remoteReconnect", "replayTour"];
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 const HINTS: Partial<Record<ActionName, string>> = {
   searchDocs: MAC ? "⌘ K" : "Ctrl K",
   // The same chords the keymap binds.
   newAgentTab: chordLabel("agent.new") ?? undefined,
   newShellTab: chordLabel("tab.new") ?? undefined,
+  newBrowserTab: chordLabel("browser.new") ?? undefined,
 };
 
 /** The app actions that have a handler; an action that cannot run now is not listed. */
