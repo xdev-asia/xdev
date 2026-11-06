@@ -39,6 +39,8 @@ export type TabSnapshot =
       /** Where that account came from. Absent in older snapshots, whose `account` is the tab's own pick. */
       accountSource?: AccountSource | null;
       cli?: TabCli;
+      /** The folder, relative to the worktree, the shell started in; absent for the root. */
+      dir?: string;
       title: string | null;
       renamed: boolean;
       /** `title` was made from the first prompt; absent in older snapshots. */
@@ -162,6 +164,7 @@ export function toSnapshot(
       account: tab.account,
       accountSource: tab.accountSource,
       cli: tab.cli,
+      ...(tab.dir ? { dir: tab.dir } : {}),
       title: tab.title,
       renamed: tab.renamed,
       ...(tab.autoTitled ? { autoTitled: true } : {}),

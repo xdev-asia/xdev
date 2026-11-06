@@ -79,6 +79,8 @@ export function FileTree(props: {
   onOpen: (file: string) => void;
   /** Shows the search panel; the link is off until something handles it. */
   onSearch?: () => void;
+  /** Opens a terminal tab in the folder `dir` (relative to the worktree, "" for its root). */
+  onOpenTerminal?: (dir: string) => void;
   /** The file in front in the editor tabs, relative to the worktree; the tree follows it when asked to. */
   activeFile?: string | null;
   /** The disk events of the shown worktree; each batch is applied once. Held while a name dialog is open. */
@@ -86,7 +88,7 @@ export function FileTree(props: {
   /** How watching the disk goes; `limit` shows why live updates stopped. */
   watchHealth?: WatchHealth;
 }): JSX.Element {
-  const { api, worktree, changes, onOpen, onSearch, activeFile = null, queue = null } = props;
+  const { api, worktree, changes, onOpen, onSearch, onOpenTerminal, activeFile = null, queue = null } = props;
   const { t } = useI18n();
   const [folders, setFolders] = useState<Record<string, Folder>>({});
   const [open, setOpen] = useState<string[]>([]);
@@ -257,6 +259,7 @@ export function FileTree(props: {
         findInFolder(dir);
         onSearch?.();
       },
+      openTerminal: (dir) => onOpenTerminal?.(dir),
       ask: setAsk,
       reveal: (rel) =>
         void api.fileReveal(worktree, rel).catch((e) => {

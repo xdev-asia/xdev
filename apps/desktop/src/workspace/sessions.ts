@@ -34,6 +34,8 @@ export interface Tab {
   remoteHost?: string;
   /** That host's alias, for the tab's title. */
   remoteLabel?: string;
+  /** The folder, relative to the worktree, the shell starts in; absent for the worktree root. */
+  dir?: string;
   profileId: PtyProfile;
   /** The account the profile runs under, if one was picked. */
   account: string | null;
@@ -210,10 +212,11 @@ export class Sessions {
    * adds the tab behind the pane's active one; `prompt` is the agent's first prompt, given on its
    * first launch only. `extraArgs` is an automation's extra agent arguments. The selected worktree is the caller's to keep.
    */
-  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean; prompt?: string; extraArgs?: string[]; overrides?: LaunchOverrides; remote?: { id: string; alias: string } } = {}): Tab {
+  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean; prompt?: string; extraArgs?: string[]; overrides?: LaunchOverrides; remote?: { id: string; alias: string }; dir?: string } = {}): Tab {
     if (opts.id && this.entries.has(opts.id)) throw new Error("tab id in use");
     const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, opts.title ?? null, opts.id, null, opts.prompt, opts.extraArgs, opts.overrides, opts.remote);
     if (opts.title !== undefined) entry.tab = { ...entry.tab, renamed: true };
+    if (opts.dir) entry.tab = { ...entry.tab, dir: opts.dir };
     this.entries.set(entry.tab.id, entry);
     this.cache.delete(worktree);
     const layout = this.layouts.get(worktree);
@@ -397,7 +400,7 @@ export class Sessions {
     const cli = snap.cli === undefined ? cliOf(snap.profileId) : snap.cli;
     const { account } = restoredAccount(snap, this.restoreKnown);
     const id = snap.agent ? snap.agentSession : null;
-    const tab = id ? this.resume(worktree, snap.profileId, account, id, snap.title, cli) : this.open(worktree, snap.profileId, account, cli);
+    const tab = id ? this.resume(worktree, snap.profileId, account, id, snap.title, cli) : this.open(worktree, snap.profileId, account, cli, ...(snap.dir ? [{ dir: snap.dir }] : []));
     const color = TAB_COLORS.includes(snap.color) ? snap.color : "none";
     this.update(this.entries.get(tab.id)!, { asleep: true, title: snap.title, renamed: snap.renamed === true, pinned: snap.pinned === true, color, openedAt: snap.openedAt, accountSource: snap.accountSource ?? null });
     report.asleep = (report.asleep ?? 0) + 1;
@@ -416,14 +419,14 @@ export class Sessions {
         tab = this.resume(worktree, snap.profileId, account, id, snap.title, cli);
         report.resumed++;
       } else if (mode === "all") {
-        tab = this.open(worktree, snap.profileId, account, cli);
+        tab = this.open(worktree, snap.profileId, account, cli, ...(snap.dir ? [{ dir: snap.dir }] : []));
         report.fresh++;
       } else {
         report.skipped.push({ worktree, reason: "noSession" });
         return null;
       }
     } else if (mode === "all") {
-      tab = this.open(worktree, snap.profileId, account, cli);
+      tab = this.open(worktree, snap.profileId, account, cli, ...(snap.dir ? [{ dir: snap.dir }] : []));
       report.fresh++;
     } else return null;
     const entry = this.entries.get(tab.id)!;

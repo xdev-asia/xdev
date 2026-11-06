@@ -2292,6 +2292,7 @@
   "files.tree.refresh": "Làm mới",
   "files.tree.collapseAll": "Thu gọn tất cả",
   "files.menu.findInFolder": "Tìm trong thư mục",
+  "files.menu.openInTerminal": "Mở trong terminal",
   "files.tree.filterToggle": "Lọc theo tên",
   "files.tree.filterPlaceholder": "Lọc tệp theo tên",
   "files.tree.filterEmpty": "Không có tệp nào khớp",

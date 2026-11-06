@@ -1232,7 +1232,7 @@ export function WorktreeTabs(props: {
                 api={api}
                 client={tab.client}
                 id={tab.id}
-                cwd={worktree}
+                cwd={tab.dir ? absolutePath(worktree, tab.dir) : worktree}
                 worktree={worktree}
                 onLinkMenu={(at, items, title) => setLinkMenu({ at, items, title })}
                 onLinkSettings={props.onLinkSettings}

@@ -1106,13 +1106,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   // A shell tab in a worktree, from the row menu: the default shell when it is on, else the first one.
-  async function newTerminalIn(wt: WorktreeView): Promise<void> {
+  async function newTerminalIn(wt: WorktreeView, dir?: string): Promise<void> {
     if (!sessions) return;
     try {
       const pv = await api.profiles();
       const shell = pv.shells.some((s) => s.id === pv.defaultShell) ? pv.defaultShell : pv.shells[0]?.id;
       if (!shell) return;
-      sessions.open(wt.path, shell);
+      sessions.open(wt.path, shell, null, undefined, dir ? { dir } : {});
       select(wt);
       show("workspace");
       focusTerminal(wt.path);
@@ -2373,6 +2373,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                       watchHealth={fsWatch.health}
                       onOpen={(file) => openFile(current.path, file)}
                       activeFile={fileTabRel(shownTab[current.path] ?? "")}
+                      onOpenTerminal={(dir) => void newTerminalIn(current, dir)}
                       onSearch={() => {
                         setPanelTab("search");
                         setSearchFocus((n) => n + 1);

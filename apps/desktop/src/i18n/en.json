@@ -2292,6 +2292,7 @@
   "files.tree.refresh": "Refresh",
   "files.tree.collapseAll": "Collapse all",
   "files.menu.findInFolder": "Find in folder",
+  "files.menu.openInTerminal": "Open in terminal",
   "files.tree.filterToggle": "Filter by name",
   "files.tree.filterPlaceholder": "Filter files by name",
   "files.tree.filterEmpty": "No file matches",
