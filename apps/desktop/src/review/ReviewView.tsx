@@ -20,6 +20,7 @@ import { AiStatus } from "./AiStatus";
 import { readAuto, writeAuto } from "./aiReview";
 import { useAiReview } from "./useAiReview";
 import { useReviewNotes } from "./useReviewNotes";
+import { FeatureTour } from "@/onboarding/FeatureTour";
 import { AgentChips } from "./attribution/AgentChips";
 import { LivePanel } from "./attribution/LivePanel";
 import { VersionsDialog } from "./attribution/VersionsDialog";
@@ -318,9 +319,10 @@ export function ReviewView(props: {
 
   return (
     <div className="rv" onKeyDown={key}>
+      <FeatureTour tour="review" />
       <div className="rv-bar">
         {data && <BasePicker api={api} worktree={worktree} base={data.base} baseRef={data.baseRef} onPick={(b) => void pickBase(b)} />}
-        <div className="rv-layout" role="group" aria-label={t("review.layout")}>
+        <div className="rv-layout" role="group" aria-label={t("review.layout")} data-tour="review-layout">
           {(["inline", "split"] as const).map((layout) => (
             <button key={layout} type="button" aria-pressed={opts.layout === layout} onClick={() => setOption({ layout })}>
               {t(`review.layout.${layout}`)}
@@ -341,7 +343,7 @@ export function ReviewView(props: {
         <button type="button" className="rv-base-button" data-act="save-default" disabled={!unsaved} onClick={() => void saveDefault()}>
           {t("review.opt.saveDefault")}
         </button>
-        <div className="rv-notes">
+        <div className="rv-notes" data-tour="review-notes">
           <button type="button" className="rv-base-button" aria-haspopup="dialog" aria-expanded={listing} onClick={() => setListing(!listing)}>
             {t("review.notes", { count: store.notes.length })}
           </button>
@@ -362,7 +364,7 @@ export function ReviewView(props: {
         <button type="button" className="rv-base-button" data-act="live" aria-expanded={live} onClick={() => setLive(!live)}>
           {t("review.attr.live")}
         </button>
-        <button type="button" className="rv-base-button" data-act="ai-review" disabled={ai.busy || !data || files.length === 0} onClick={() => data && void ai.run(data.base.id)}>
+        <button type="button" className="rv-base-button" data-act="ai-review" data-tour="review-ai" disabled={ai.busy || !data || files.length === 0} onClick={() => data && void ai.run(data.base.id)}>
           {t("review.ai.run")}
         </button>
         <label className="rv-check">

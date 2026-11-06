@@ -1721,7 +1721,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   function pickHelp(pick: HelpPick): void {
-    runHelpPick(pick, { openSettings: (page) => openSettings(page), openUpdates, openAbout, api });
+    runHelpPick(pick, { openSettings: (page) => openSettings(page), openUpdates, openAbout, toast: (key) => pushToast({ text: t(key) }), api });
   }
 
   // `toggle`: asking for the place Settings already shows closes it instead.

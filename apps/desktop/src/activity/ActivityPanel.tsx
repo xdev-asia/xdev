@@ -16,6 +16,7 @@ import type { ActivityFeed, FeedEntry } from "./feed";
 import { AgentDashboard } from "./AgentDashboard";
 import { clear as clearSelection, range, toggle, type Selection } from "./selection";
 import { loadActivityOptions, saveActivityOptions, type ActivityFilter, type ActivityGroupBy, type ActivityOptions } from "./options";
+import { FeatureTour } from "@/onboarding/FeatureTour";
 import { activityThreads, hasAgentThreads, type ThreadGroup, type WorktreeName } from "./threads";
 
 export type ActivityTab = "threads" | "feed" | "agents";
@@ -196,7 +197,8 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
         if (e.key === "Escape" && picked.length > 0) props.onSelection(clearSelection(), null);
       }}
     >
-      <div className="act-controls">
+      <FeatureTour tour="activity" />
+      <div className="act-controls" data-tour="activity-controls">
         <Segmented
           label={t("agentSessions.tab.activity")}
           value={tab}
@@ -272,7 +274,7 @@ export function ActivityView(props: ActivityViewProps): JSX.Element {
       ) : list.length === 0 ? (
         <EmptyState title={t(emptyKey)} />
       ) : (
-        <ul className="act-list" data-density={options.compact ? "compact" : undefined}>{list}</ul>
+        <ul className="act-list" data-tour="activity-list" data-density={options.compact ? "compact" : undefined}>{list}</ul>
       )}
       {props.menuAt && <ContextMenu at={props.menuAt} items={items} onClose={() => props.onMenu(null)} />}
       {rowTab && props.rowMenu && (
@@ -350,7 +352,7 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
       names={props.names}
       agents={
         <>
-          <div className="act-mission">
+          <div className="act-mission" data-tour="activity-mission">
             <Button variant="secondary" type="button" icon="workflow" onClick={() => openMissionControl("tabs")}>
               {t("mission.activity.open")}
             </Button>
