@@ -1,5 +1,10 @@
-//! `xdev file open <path>`: shows a file in the xDev window. The app resolves
-//! the path to a worktree; only parsing and the text of the answer live here.
+//! `xdev file open|open-changed|diff`: shows files in the xDev window. The
+//! app resolves the path to a worktree; parsing, the text of the answer and
+//! `diff --print`, which needs no app, live here.
+
+use std::io::{self, Write};
+use std::path::Path;
+use std::process::Command;
 
 use clap::Subcommand;
 use serde_json::{Value, json};
@@ -33,6 +38,24 @@ pub enum FileCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Shows a file's changes in the review tab of its worktree and brings
+    /// the window to the front. Prints `opened<TAB>worktree<TAB>path<TAB>base`.
+    /// `--print` writes the unified diff here instead; the app is not needed.
+    Diff {
+        /// Absolute, or relative to the current folder.
+        path: String,
+        /// Only what is staged: the index against `HEAD`.
+        #[arg(long)]
+        staged: bool,
+        /// The ref to compare with.
+        #[arg(long, value_name = "REF")]
+        against: Option<String>,
+        /// Print the unified diff (`git diff`) instead of opening the app.
+        #[arg(long, conflicts_with = "json")]
+        print: bool,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// What one `file` verb sends: method, params and whether to print JSON.
@@ -43,6 +66,17 @@ pub fn request(cmd: &FileCommand) -> (&'static str, Value, bool) {
             .map(|p| p.to_string_lossy().into_owned())
     };
     match cmd {
+        FileCommand::Diff {
+            path,
+            staged,
+            against,
+            json,
+            ..
+        } => (
+            "file.diff",
+            json!({ "path": path, "staged": staged, "against": against, "cwd": cwd() }),
+            *json,
+        ),
         FileCommand::OpenChanged { worktree, json } => (
             "file.open-changed",
             json!({ "worktree": worktree, "cwd": cwd() }),
@@ -71,6 +105,12 @@ pub fn plain(method: &str, result: &Value) -> Option<String> {
             text(&result["line"]),
             text(&result["column"])
         )),
+        "file.diff" => Some(format!(
+            "opened\t{}\t{}\t{}\n",
+            text(&result["worktree"]),
+            text(&result["path"]),
+            text(&result["base"])
+        )),
         "file.open-changed" => {
             let list = |k: &str| result[k].as_array().map(Vec::as_slice).unwrap_or_default();
             let opened = list("opened").iter().map(|p| {
@@ -91,6 +131,71 @@ pub fn plain(method: &str, result: &Value) -> Option<String> {
             Some(opened.chain(skipped).collect())
         }
         _ => None,
+    }
+}
+
+/// The arguments of `git` for `file diff --print`: `diff [--cached] [<ref>]
+/// -- <path>`. A ref that is empty, starts with `-` or holds a control
+/// character is refused, so it cannot pass as an option.
+pub fn diff_args(path: &str, staged: bool, against: Option<&str>) -> Result<Vec<String>, String> {
+    let mut args = vec![
+        "diff".to_owned(),
+        "--no-color".to_owned(),
+        "--no-ext-diff".to_owned(),
+    ];
+    if staged {
+        args.push("--cached".to_owned());
+    }
+    if let Some(name) = against.map(str::trim) {
+        if name.is_empty() || name.starts_with('-') || name.chars().any(char::is_control) {
+            return Err(format!("{name:?} is not a ref"));
+        }
+        args.push(name.to_owned());
+    }
+    if path.trim().is_empty() {
+        return Err("name a file to diff".to_owned());
+    }
+    args.push("--".to_owned());
+    args.push(path.to_owned());
+    Ok(args)
+}
+
+/// `file diff --print`: runs git in `cwd` and writes its diff to `out`. The
+/// exit code is git's; a refused argument is 2, git not found is 1.
+pub fn print_diff(
+    cwd: &Path,
+    path: &str,
+    staged: bool,
+    against: Option<&str>,
+    out: &mut dyn Write,
+) -> u8 {
+    let args = match diff_args(path, staged, against) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("error: bad_request: {e}");
+            return 2;
+        }
+    };
+    let run = Command::new("git").args(&args).current_dir(cwd).output();
+    let output = match run {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("error: git: {e}");
+            return 1;
+        }
+    };
+    let _ = io::stderr().write_all(&output.stderr);
+    if out
+        .write_all(&output.stdout)
+        .and_then(|()| out.flush())
+        .is_err()
+    {
+        return 1;
+    }
+    match output.status.code() {
+        Some(0) => 0,
+        Some(c) => u8::try_from(c).unwrap_or(1).max(1),
+        None => 1,
     }
 }
 
@@ -178,5 +283,114 @@ skipped	gone.rs	deleted
             "opened\t/w\tsrc/a.rs\t3\t-\n"
         );
         assert_eq!(plain("ports.list", &r), None);
+    }
+
+    #[test]
+    fn diff_maps_its_flags_and_print_shuts_out_json() {
+        let cli = |args: &[&str]| {
+            let mut argv = vec!["xdev", "diff"];
+            argv.extend_from_slice(args);
+            Cli::try_parse_from(argv).map(|c| c.command)
+        };
+        let (method, params, json) =
+            request(&cli(&["src/a.rs", "--staged", "--against", "main", "--json"]).unwrap());
+        assert_eq!(method, "file.diff");
+        assert!(json);
+        assert_eq!(params["path"], "src/a.rs");
+        assert_eq!(params["staged"], true);
+        assert_eq!(params["against"], "main");
+        assert!(params["cwd"].is_string());
+        let (_, params, json) = request(&cli(&["a.rs"]).unwrap());
+        assert!(!json);
+        assert_eq!(params["staged"], false);
+        assert_eq!(params["against"], Value::Null);
+        assert!(matches!(
+            cli(&["a.rs", "--print"]).unwrap(),
+            FileCommand::Diff { print: true, .. }
+        ));
+        assert!(cli(&[]).is_err());
+        assert!(cli(&["a.rs", "--print", "--json"]).is_err());
+    }
+
+    #[test]
+    fn diff_args_keep_a_ref_from_passing_as_an_option() {
+        assert_eq!(
+            diff_args("a.rs", false, None).unwrap(),
+            ["diff", "--no-color", "--no-ext-diff", "--", "a.rs"]
+        );
+        assert_eq!(
+            diff_args("a.rs", true, Some(" main ")).unwrap(),
+            [
+                "diff",
+                "--no-color",
+                "--no-ext-diff",
+                "--cached",
+                "main",
+                "--",
+                "a.rs"
+            ]
+        );
+        for bad in ["", "--output=x", "a\nb"] {
+            assert!(diff_args("a.rs", false, Some(bad)).is_err(), "{bad:?}");
+        }
+        assert!(diff_args(" ", false, None).is_err());
+    }
+
+    #[test]
+    fn print_writes_git_s_diff_without_the_app() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let ok = Command::new("git")
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .current_dir(dir.path())
+                .output()
+                .unwrap()
+                .status
+                .success();
+            assert!(ok, "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+        git(&["add", "a.txt"]);
+        git(&["commit", "-q", "-m", "first"]);
+        std::fs::write(dir.path().join("a.txt"), "two\n").unwrap();
+        let mut out = Vec::new();
+        assert_eq!(print_diff(dir.path(), "a.txt", false, None, &mut out), 0);
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("-one") && text.contains("+two"), "{text}");
+        // Nothing staged yet.
+        let mut out = Vec::new();
+        assert_eq!(print_diff(dir.path(), "a.txt", true, None, &mut out), 0);
+        assert!(out.is_empty());
+        git(&["add", "a.txt"]);
+        let mut out = Vec::new();
+        assert_eq!(
+            print_diff(dir.path(), "a.txt", true, Some("HEAD"), &mut out),
+            0
+        );
+        assert!(String::from_utf8(out).unwrap().contains("+two"));
+        let mut out = Vec::new();
+        assert_ne!(
+            print_diff(dir.path(), "a.txt", false, Some("no-such-ref"), &mut out),
+            0
+        );
+        assert_eq!(
+            print_diff(dir.path(), "a.txt", false, Some("-x"), &mut out),
+            2
+        );
+    }
+
+    #[test]
+    fn plain_diff_is_one_tab_separated_line() {
+        let r = json!({ "worktree": "/w", "path": "src/a.rs", "base": null });
+        assert_eq!(plain("file.diff", &r).unwrap(), "opened\t/w\tsrc/a.rs\t-\n");
     }
 }

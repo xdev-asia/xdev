@@ -327,7 +327,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const statusSettings = useStatusSettings();
   const automationsSettings = useAutomationsSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string): boolean => false, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, openPrTab: () => {}, openPrPage: () => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null, _o?: { id?: string; account?: string }) => {}, cliPoke: () => {}, automationSetup: async (_w: string, _r: string, _d: SetupDecision) => {} }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string): boolean => false, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, openDiff: (_w: string, _f: string, _b: string | null) => {}, openPrTab: () => {}, openPrPage: () => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null, _o?: { id?: string; account?: string }) => {}, cliPoke: () => {}, automationSetup: async (_w: string, _r: string, _d: SetupDecision) => {} }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -828,6 +828,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setFront((f) => ({ worktree: wt.path, id: fileTabId(req.rel), seq: (f?.seq ?? 0) + 1 }));
   };
   useEffect(() => onOpenFile((req) => live.openFileTab(req)), [live]);
+  live.openDiff = (worktree, file, base) => {
+    const wt = all.find((w) => w.path === worktree);
+    if (!wt) return;
+    select(wt);
+    show("workspace");
+    setReveal((r) => ({ worktree, file, seq: (r?.seq ?? 0) + 1, ...(base ? { base } : {}) }));
+  };
   // Settings asks for the tab of a running terminal; the latest render knows where it is.
   useEffect(() => onTabJump((id) => live.jump(id)), [live]);
   live.selected = current?.path ?? null;
@@ -866,6 +873,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     const stopEvents = startCliEvents(api, {
       reload: () => live.reload(),
       openTab: (w, p, prompt, o) => live.cliOpen(w, p, prompt, o),
+      openDiff: (w, f, b) => live.openDiff(w, f, b),
       markUnread: (w, unread) => (unread ? sessions.markUnread(w) : sessions.markRead(w)),
       t: (key, vars) => live.t(key, vars),
     });
@@ -2205,7 +2213,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                       visible={path === current?.path}
                       onShown={(id) => setShownTab((s) => (s[path] === id ? s : { ...s, [path]: id }))}
                       onPanes={(ids) => setPanes((s) => (s[path]?.join(" ") === ids.join(" ") ? s : { ...s, [path]: ids }))}
-                      reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq } : undefined}
+                      reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq, base: reveal.base } : undefined}
                       commit={commitAsk?.worktree === path ? { id: commitAsk.id, file: commitAsk.file, seq: commitAsk.seq } : undefined}
                       prPage={prPage?.worktree === path ? prPage.seq : undefined}
                       renderPrPage={(shown) => <PrPanel page api={api} worktree={path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={shown} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} onOpenFile={(rel) => openFile(path, rel)} />}

@@ -46,7 +46,7 @@ export function ReviewView(props: {
   api: Api;
   worktree: string;
   sessions?: Sessions | null;
-  reveal?: { file: string; seq: number };
+  reveal?: { file: string; seq: number; base?: string };
   /** Posts a note to the PR as an inline comment. Left out, the view uses the worktree's own open PR. */
   onPostToPr?: (note: ReviewNote) => Promise<void>;
 }): JSX.Element {
@@ -223,6 +223,14 @@ export function ReviewView(props: {
       loads.current++;
     };
   }, [api, worktree]);
+
+  // A reveal with a base (`xdev file diff`, the ref checked already) compares with it; set first so a focus load keeps it.
+  useEffect(() => {
+    if (!reveal?.base) return;
+    picked.current = reveal.base;
+    cursor.current = null;
+    void load();
+  }, [reveal?.seq]);
 
   // An agent that went quiet has likely written files.
   useEffect(() => {

@@ -1619,6 +1619,16 @@ it("reports its tabs to the app CLI and follows the endpoint's events", async ()
   // `agent launch` names the tab and the account.
   api.__cliOpenTab({ worktree: OAK, profile: "claude", prompt: null, id: "t-launch", account: "claude-2" });
   await vi.waitFor(() => expect(sessions.tab("t-launch")?.account).toBe("claude-2"));
+  // `file diff` reveals the file in that worktree's review, against the base it names.
+  const oak = () => view.of(WorktreeTabs).find((n) => n.props.worktree === OAK)!;
+  api.__cliOpenDiff({ worktree: OAK, path: "src/session.ts", base: "main" });
+  await vi.waitFor(() => expect(oak().props.reveal).toEqual({ file: "src/session.ts", seq: 1, base: "main" }));
+  api.__cliOpenDiff({ worktree: OAK, path: "src/status.ts", base: null });
+  await vi.waitFor(() => expect(oak().props.reveal).toEqual({ file: "src/status.ts", seq: 2, base: undefined }));
+  // A worktree the sidebar does not list is left alone.
+  api.__cliOpenDiff({ worktree: "/nowhere", path: "a.ts", base: null });
+  await settle();
+  expect(oak().props.reveal.seq).toBe(2);
 });
 
 it("tells the backend it is ready for automation runs only after the layout is restored", async () => {

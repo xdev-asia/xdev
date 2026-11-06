@@ -15,6 +15,8 @@ export interface CliEventHost {
    * `agent launch` also gives the tab's id and the account to run under.
    */
   openTab(worktree: string, profile: string, prompt: string | null, opts?: { id?: string; account?: string }): void;
+  /** Shows `path` in the review tab of `worktree`, compared with `base` when one is given. */
+  openDiff?(worktree: string, path: string, base: string | null): void;
   /** Marks `worktree` unread, or read, in the sidebar. */
   markUnread?(worktree: string, unread: boolean): void;
   t: T;
@@ -35,6 +37,7 @@ const VERB_KEYS: Record<string, string> = {
   "terminal.stop": "cli.ask.terminalStop",
   "terminal.close": "cli.ask.terminalClose",
   "agent.launch": "cli.ask.agentLaunch",
+  "file.diff": "cli.ask.fileDiff",
   "automation.run": "cli.ask.automation",
   "automation.enable": "cli.ask.automation",
   "automation.disable": "cli.ask.automation",
@@ -75,6 +78,7 @@ export function startCliEvents(api: Api, host: CliEventHost): () => void {
     ),
     api.onCliAsk((e) => void askToast(api, e, host.t)),
     api.onCliOpenFile((e) => openFile({ worktree: e.worktree, rel: e.path, line: e.line ?? undefined, column: e.column ?? undefined })),
+    api.onCliOpenDiff((e) => host.openDiff?.(e.worktree, e.path, e.base)),
     api.onCliWorktreeRead((e) => host.markUnread?.(e.worktree, e.unread)),
   ];
   return () => {

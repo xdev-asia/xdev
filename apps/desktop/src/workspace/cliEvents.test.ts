@@ -71,8 +71,9 @@ describe("CLI events", () => {
     ]);
     resetToastsForTests();
     api.__cliAsk({ request: 10, caller: "/w/lead", verb: "agent.launch", target: "/w/other" });
-    expect(getToasts().map((x) => x.text)).toEqual(["lead wants to start an agent in other."]);
-    for (const k of ["cli.ask.terminalOpen", "cli.ask.terminalStop", "cli.ask.terminalClose", "cli.ask.agentLaunch"]) expect(translate("vi", k)).not.toBe(k);
+    api.__cliAsk({ request: 11, caller: "/w/lead", verb: "file.diff", target: "/w/other" });
+    expect(getToasts().map((x) => x.text)).toEqual(["lead wants to start an agent in other.", "lead wants to show the changes of other."]);
+    for (const k of ["cli.ask.terminalOpen", "cli.ask.terminalStop", "cli.ask.terminalClose", "cli.ask.agentLaunch", "cli.ask.fileDiff"]) expect(translate("vi", k)).not.toBe(k);
   });
 
   it("names an outside caller and goes away after 60 s without an answer", async () => {
@@ -103,6 +104,23 @@ describe("CLI events", () => {
     ]);
     stop();
     off();
+  });
+
+  it("shows the diff the CLI names, with its base", async () => {
+    const api = createMockApi({});
+    const openDiff = vi.fn();
+    const stop = startCliEvents(api, { reload() {}, openTab() {}, openDiff, t });
+    await flush();
+    api.__cliOpenDiff({ worktree: "/w/lead", path: "src/a.ts", base: "main" });
+    api.__cliOpenDiff({ worktree: "/w/lead", path: "b.ts", base: null });
+    expect(openDiff.mock.calls).toEqual([
+      ["/w/lead", "src/a.ts", "main"],
+      ["/w/lead", "b.ts", null],
+    ]);
+    stop();
+    await flush();
+    api.__cliOpenDiff({ worktree: "/w/lead", path: "c.ts", base: null });
+    expect(openDiff).toHaveBeenCalledTimes(2);
   });
 
   it("marks a worktree unread or read when the CLI says so", async () => {

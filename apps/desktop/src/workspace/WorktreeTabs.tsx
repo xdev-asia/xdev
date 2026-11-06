@@ -124,7 +124,8 @@ const PR_TAB = "pr:";
 type Leaf = Extract<PaneNode, { kind: "leaf" }>;
 
 /** A file to show in the review tab; a new `seq` asks for it again. */
-export type Reveal = { file: string; seq: number };
+/** `base`, from `xdev file diff`, is the ref the review tab compares with. */
+export type Reveal = { file: string; seq: number; base?: string };
 
 /** How long the side preview waits after the last keystroke before it renders the live text. */
 export const PREVIEW_DEBOUNCE_MS = 200;

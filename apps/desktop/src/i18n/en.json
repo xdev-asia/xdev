@@ -4037,6 +4037,7 @@
   "cli.ask.terminalStop": "stop a terminal of",
   "cli.ask.terminalClose": "close a terminal of",
   "cli.ask.agentLaunch": "start an agent in",
+  "cli.ask.fileDiff": "show the changes of",
   "settings.orchestration.skill.uninstall": "Uninstall",
   "settings.orchestration.skill.uninstallTitle": "Uninstall the skill?",
   "settings.orchestration.skill.uninstallBody": "Removes the copies and links xDev wrote. Folders you edited or added stay.",

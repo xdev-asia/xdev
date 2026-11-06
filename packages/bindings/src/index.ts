@@ -55,6 +55,7 @@ export type { Check } from "./Check";
 export type { CheckBucket } from "./CheckBucket";
 export type { Cli } from "./Cli";
 export type { CliAsk } from "./CliAsk";
+export type { CliOpenDiff } from "./CliOpenDiff";
 export type { CliOpenFile } from "./CliOpenFile";
 export type { CliOpenTab } from "./CliOpenTab";
 export type { CliStatus } from "./CliStatus";

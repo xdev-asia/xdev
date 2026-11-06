@@ -1110,6 +1110,7 @@ pub fn dispatch(
         "terminal.close" => crate::cli_tab_ops::terminal_close(ctx, req, caller, gone),
         "file.open" => crate::cli_file::file_open(ctx, req, caller),
         "file.open-changed" => crate::cli_file::file_open_changed(ctx, req, caller),
+        "file.diff" => crate::cli_file::file_diff(ctx, req, caller),
         "agent.context" => crate::cli_context::agent_context(ctx, req, caller),
         "capture.start" => crate::capture::cli_start(ctx, req, caller),
         "ports.list" => crate::cli_ports::ports_list(ctx, req, caller),

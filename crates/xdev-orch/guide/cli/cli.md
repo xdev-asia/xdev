@@ -36,10 +36,13 @@ xdev agent launch claude --worktree <id> --account <name>
 ```sh
 xdev file open <path> --line 12
 xdev file open src/main.rs:12:3
+xdev file diff src/main.rs --against main
+xdev file diff src/main.rs --staged --print
 ```
 
 - `file open` shows a file in the xDev window and brings the window to the front. The path is absolute or relative to the current folder, and must be inside a worktree xDev knows. A `..` that leaves the worktree is refused.
 - `--line` and `--column` (1-based) win over a `:line:column` suffix. It prints `opened`, the worktree, the path, the line and the column.
+- `file diff` shows the file in its worktree's review tab, against `--against <ref>` or, with `--staged`, against `HEAD`. Another worktree asks first. `--print` writes `git diff` to stdout and needs no app.
 
 ## Ports
 
