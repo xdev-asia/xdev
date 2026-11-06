@@ -27,7 +27,7 @@ const waits = new Map<string, () => void>();
 const keyOf = (worktree: string, rel: string) => `${worktree}\0${rel}`;
 
 /** Images and media: their view reads the bytes itself, so there is no text to compare. */
-const readsItself = (rel: string) => viewerOf(rel) === "image" || viewerOf(rel) === "media";
+const readsItself = (rel: string) => viewerOf(rel) === "image" || viewerOf(rel) === "media" || viewerOf(rel) === "pdf";
 
 function cancel(map: Map<string, Pending>, k: string): void {
   const p = map.get(k);

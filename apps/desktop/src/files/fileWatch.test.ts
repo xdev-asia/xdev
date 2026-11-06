@@ -275,6 +275,15 @@ it("an update of an open image or media file reloads its view; an overflow leave
   expect(store.get(W, "a.png")!.version).toBe(1);
 });
 
+it("an update of an open pdf reloads its view without a text read", async () => {
+  const { store, clock, read, feed } = setup({});
+  store.open(W, "x.pdf");
+  feed(ev("update", "x.pdf"));
+  await clock.advance(RELOAD_DEBOUNCE_MS);
+  expect(store.get(W, "x.pdf")!.version).toBe(1);
+  expect(read).not.toHaveBeenCalled();
+});
+
 it("keep my edits on a file a save found gone makes the next save create it", async () => {
   const { api, store, open, io } = setup({});
   open("a.ts");

@@ -1,7 +1,7 @@
 import type { FileKind } from "@/api";
 
 /** Which view a file opens in. */
-export type Viewer = "markdown" | "csv" | "notebook" | "image" | "media" | "text" | "binary";
+export type Viewer = "markdown" | "csv" | "notebook" | "image" | "media" | "pdf" | "text" | "binary";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -23,6 +23,7 @@ const MIME: Record<string, string> = {
   webm: "video/webm",
   ogv: "video/ogg",
   mov: "video/quicktime",
+  pdf: "application/pdf",
 };
 const AUDIO = new Set(["mp3", "wav", "ogg", "oga", "m4a", "flac"]);
 const VIDEO = new Set(["mp4", "webm", "ogv", "mov"]);
@@ -44,6 +45,7 @@ function extOf(rel: string): string {
 export function viewerOf(rel: string, kind?: FileKind): Viewer {
   const ext = extOf(rel);
   if (ext === "svg") return kind === undefined || kind === "tooLarge" ? "text" : "image";
+  if (ext === "pdf") return "pdf";
   if (AUDIO.has(ext) || VIDEO.has(ext)) return "media";
   if (ext in MIME) return "image";
   if (kind === "binary") return "binary";
