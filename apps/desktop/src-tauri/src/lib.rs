@@ -32,6 +32,7 @@ mod config_io;
 mod conversation;
 mod crash;
 mod diag_bundle;
+mod disk_usage;
 mod endpoint;
 mod file_head;
 mod file_watch;
@@ -160,6 +161,7 @@ pub fn run() {
         .manage(pty::Ptys::pending())
         .manage(workspace::WorkspaceLock::default())
         .manage(workspace::Clones::default())
+        .manage(disk_usage::DiskScan::default())
         .manage(visibility::NestedScanState::default())
         .manage(review_notes::ReviewNotesLock::default())
         .manage(notes::NotesLock::default())
@@ -602,10 +604,14 @@ pub fn run() {
             review::worktree_review_file,
             review::worktree_stage,
             review::worktree_branches,
+            review::worktree_checkout_branch,
             review_notes::review_notes_get,
             review_notes::review_notes_put,
             workspace::worktree_commit,
             workspace::worktree_list_dir,
+            disk_usage::disk_usage_scan,
+            disk_usage::disk_usage_cancel,
+            disk_usage::disk_usage_clean,
             files::file_read,
             files::file_write,
             files::file_create,

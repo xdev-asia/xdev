@@ -83,6 +83,8 @@ import type {
   OpenAs,
   OpenInFound,
   OpenTarget,
+  WorktreeUsage,
+  HeavyDir,
   CloneProgress,
   NestedRepo,
   NestedScanResult,
@@ -645,6 +647,8 @@ export type {
   OpenAs,
   OpenInFound,
   OpenTarget,
+  WorktreeUsage,
+  HeavyDir,
   CloneProgress,
   NestedRepo,
   NestedScanResult,
@@ -797,6 +801,8 @@ export type ErrorCode =
   | "push_rejected"
   | "pull_diverged"
   | "update_dirty"
+  | "branch_in_use"
+  | "no_such_branch"
   | "update_untracked"
   | "update_conflicted"
   | "update_conflicts"
@@ -1391,6 +1397,13 @@ export interface Api {
   worktreeCommit(path: string, files: string[], message: string): Promise<string | null>;
   // Line counts against the start ref (against HEAD for the primary checkout), untracked files included.
   worktreeStat(path: string): Promise<WorktreeStat>;
+  // Sizes every known worktree and the heavy folders in it, the biggest first. A newer scan or
+  // `diskUsageCancel` makes it reject with `cancelled`.
+  diskUsageScan(): Promise<WorktreeUsage[]>;
+  diskUsageCancel(): Promise<void>;
+  // Removes the listed heavy folders and nothing else; resolves with the bytes freed. Rejects with
+  // `bad_path` for a folder that is not a heavy folder of a known worktree.
+  diskUsageClean(folders: string[]): Promise<number>;
   // Shipping: where the branch stands against its upstream and base. Push, pull, sync and fetch
   // resolve with the new state. Push rejects with `no_remote`, `detached` or `push_rejected`; pull
   // with `no_upstream` or `pull_diverged`; a commit or amend with `hook_failed` (detail is the hook output).
@@ -1513,6 +1526,9 @@ export interface Api {
   // Whole files: stage them, or put the index back to HEAD.
   worktreeStage(path: string, files: string[], staged: boolean): Promise<void>;
   worktreeBranches(path: string): Promise<ReviewBranch[]>;
+  // Switches the worktree to a local branch, or creates one tracking a remote-only branch. Rejects with
+  // `update_dirty`, `update_conflicted`, `branch_in_use` or `no_such_branch`.
+  worktreeCheckoutBranch(path: string, branch: string): Promise<void>;
   worktreeStageState(path: string): Promise<StageState[]>;
   worktreeDiscard(path: string, files: string[], stagedToo: boolean, confirmed: boolean): Promise<void>;
   // Renames the worktree's branch to `<prefix>/<name>` (`-2`, `-3`, … when taken); the folder stays.
@@ -2288,6 +2304,8 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "push_rejected",
   "pull_diverged",
   "update_dirty",
+  "branch_in_use",
+  "no_such_branch",
   "update_untracked",
   "update_conflicted",
   "update_conflicts",
@@ -2692,6 +2710,9 @@ const tauriApi: Api = {
   worktreeReviewAiHunk: (path, hunk) => call("worktree_review_ai_hunk", { path, hunk }),
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
   worktreeStat: (path) => call("worktree_stat", { path }),
+  diskUsageScan: () => call("disk_usage_scan"),
+  diskUsageCancel: () => call("disk_usage_cancel"),
+  diskUsageClean: (folders) => call("disk_usage_clean", { folders }),
   worktreeShip: (path) => call("worktree_ship", { path }),
   worktreePush: (path) => call("worktree_push", { path }),
   worktreePull: (path) => call("worktree_pull", { path }),
@@ -2752,6 +2773,7 @@ const tauriApi: Api = {
   worktreeReviewFile: (path, base, file) => call("worktree_review_file", { path, base, file }),
   worktreeStage: (path, files, staged) => call("worktree_stage", { path, files, staged }),
   worktreeBranches: (path) => call("worktree_branches", { path }),
+  worktreeCheckoutBranch: (path, branch) => call("worktree_checkout_branch", { path, branch }),
   worktreeStageState: (path) => call("worktree_stage_state", { path }),
   worktreeDiscard: (path, files, stagedToo, confirmed) => call("worktree_discard", { path, files, stagedToo, confirmed }),
   worktreeRenameBranch: (path, name) => call("worktree_rename_branch", { path, name }),

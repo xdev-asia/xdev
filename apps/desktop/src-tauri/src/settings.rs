@@ -2160,6 +2160,27 @@ impl<'de> serde::Deserialize<'de> for SourceControlGroupOrder {
     }
 }
 
+/// How Source Control lists the changed files: one flat list, or folders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum SourceControlViewMode {
+    #[default]
+    List,
+    Tree,
+}
+
+/// An unknown value is the default, as for `TabOrder`.
+impl<'de> serde::Deserialize<'de> for SourceControlViewMode {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("tree") => SourceControlViewMode::Tree,
+            _ => SourceControlViewMode::List,
+        })
+    }
+}
+
 /// Where the Issues panel opens.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -2223,6 +2244,8 @@ pub struct GitSettings {
     pub auto_rename_branch: bool,
     /// Which group Source Control draws first.
     pub source_control_group_order: SourceControlGroupOrder,
+    /// Whether Source Control lists the changed files flat or by folder.
+    pub source_control_view_mode: SourceControlViewMode,
     /// Logins (lowercase) treated as bots in a pull request's comments, on top
     /// of the ones GitHub marks as bots. A wrong type costs only this field.
     #[serde(deserialize_with = "lenient")]
@@ -2264,6 +2287,7 @@ impl Default for GitSettings {
             pr_open_after_create: false,
             auto_rename_branch: true,
             source_control_group_order: SourceControlGroupOrder::default(),
+            source_control_view_mode: SourceControlViewMode::default(),
             pr_bot_author_overrides: Vec::new(),
             pull_policy: PullPolicy::default(),
             issues_default_view: IssuesPreset::default(),
@@ -2653,6 +2677,7 @@ mod tests {
                 pr_open_after_create: true,
                 auto_rename_branch: false,
                 source_control_group_order: SourceControlGroupOrder::StagedFirst,
+                source_control_view_mode: SourceControlViewMode::Tree,
                 pr_bot_author_overrides: vec!["renovate".into()],
                 pull_policy: PullPolicy::GitConfig,
                 issues_default_view: IssuesPreset::MyPrs,
@@ -4087,6 +4112,19 @@ then sum up"
             bad.source_control_group_order,
             SourceControlGroupOrder::ChangesFirst
         );
+    }
+
+    #[test]
+    fn source_control_view_mode_defaults_to_list_and_round_trips() {
+        let git: GitSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(git.source_control_view_mode, SourceControlViewMode::List);
+        let git: GitSettings =
+            serde_json::from_str(r#"{ "sourceControlViewMode": "tree" }"#).unwrap();
+        assert_eq!(git.source_control_view_mode, SourceControlViewMode::Tree);
+        let text = serde_json::to_string(&git).unwrap();
+        assert!(text.contains(r#""sourceControlViewMode":"tree""#));
+        let bad: GitSettings = serde_json::from_str(r#"{ "sourceControlViewMode": 4 }"#).unwrap();
+        assert_eq!(bad.source_control_view_mode, SourceControlViewMode::List);
     }
 
     #[test]

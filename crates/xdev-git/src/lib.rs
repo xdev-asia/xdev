@@ -143,6 +143,11 @@ pub enum GitError {
     Untracked(&'static str),
     #[error("a merge, rebase, cherry-pick or revert is already in progress")]
     Conflicted,
+    /// Another worktree has the branch checked out; git cannot have it in two.
+    #[error("'{branch}' is already checked out at {path}")]
+    BranchInUse { branch: String, path: String },
+    #[error("no branch named {0}")]
+    NoSuchBranch(String),
     /// The update stopped with conflicts and is left in progress.
     #[error("the update stopped with conflicts")]
     StoppedOnConflicts,
@@ -227,6 +232,8 @@ impl GitError {
             GitError::Dirty(_) => "update_dirty",
             GitError::Untracked(_) => "update_untracked",
             GitError::Conflicted => "update_conflicted",
+            GitError::BranchInUse { .. } => "branch_in_use",
+            GitError::NoSuchBranch(_) => "no_such_branch",
             GitError::StoppedOnConflicts => "update_conflicts",
             GitError::BaseNotRemote => "base_not_remote",
             GitError::PullPolicy => "pull_policy",

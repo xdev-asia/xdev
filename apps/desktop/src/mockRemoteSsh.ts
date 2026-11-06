@@ -389,6 +389,7 @@ export const REMOTE_UNSUPPORTED = {
   worktreeReviewFile: "worktree_review_file",
   worktreeStage: "worktree_stage",
   worktreeBranches: "worktree_branches",
+  worktreeCheckoutBranch: "worktree_checkout_branch",
   worktreeStageState: "worktree_stage_state",
   worktreeDiscard: "worktree_discard",
   worktreeSuggestBranch: "worktree_suggest_branch",

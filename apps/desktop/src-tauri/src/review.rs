@@ -365,6 +365,25 @@ fn branches(data: &Path, path: &Path) -> Result<Vec<ReviewBranch>, CmdError> {
         .collect())
 }
 
+/// Checks `branch` out in the worktree: a local branch, or a remote-tracking
+/// one (`origin/x`), which gets a local branch that tracks it. Refused while
+/// tracked files have changes, and for a branch another worktree has.
+fn checkout_branch(data: &Path, path: &Path, branch: &str) -> Result<(), CmdError> {
+    known(data, path)?;
+    Repo::discover(path)?.switch_branch(branch)?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn worktree_checkout_branch(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    branch: String,
+) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_checkout_branch")?;
+    checkout_branch(data_dir(&state)?, &path, &branch)
+}
+
 /// Read-only: loads the registry without the save lock.
 #[tauri::command(async)]
 pub fn worktree_review(
@@ -706,6 +725,41 @@ mod tests {
         let fx = fixture();
         let list = branches(&fx.data, &fx.wt).unwrap();
         assert!(list.iter().any(|b| b.name == "main" && !b.remote));
+    }
+
+    #[test]
+    fn checkout_branch_switches_and_refuses_what_git_would_not_keep() {
+        let fx = fixture();
+        git(&fx.main, &["branch", "topic", &fx.start]);
+        checkout_branch(&fx.data, &fx.wt, "topic").unwrap();
+        assert_eq!(
+            git(&fx.wt, &["rev-parse", "--abbrev-ref", "HEAD"]).trim(),
+            "topic"
+        );
+        // `main` is the primary checkout's branch.
+        assert_eq!(
+            code(checkout_branch(&fx.data, &fx.wt, "main")),
+            "branch_in_use"
+        );
+        assert_eq!(
+            code(checkout_branch(&fx.data, &fx.wt, "nope")),
+            "no_such_branch"
+        );
+        fs::write(
+            fx.wt.join("a.txt"),
+            "dirty
+",
+        )
+        .unwrap();
+        git(&fx.main, &["branch", "more", &fx.start]);
+        assert_eq!(
+            code(checkout_branch(&fx.data, &fx.wt, "more")),
+            "update_dirty"
+        );
+        assert_eq!(
+            code(checkout_branch(&fx.data, &fx.main.join("nope"), "more")),
+            "worktree_unknown"
+        );
     }
 
     #[test]

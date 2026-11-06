@@ -1,4 +1,4 @@
-import { Button, Tag } from "@xdev-asia/ui";
+import { Button, Icon, pathRows, Tag, type TreeRow } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import { onChangesTouched, touchChanges } from "./changesBus";
 import type { JSX } from "react";
@@ -23,6 +23,11 @@ const LETTER: Record<WorktreeChange["kind"], string> = { added: "A", modified: "
 export type ChangesHandlers = { stageAll(): void; discardAll(): void };
 
 type Stats = { added: number; removed: number };
+
+type TreeKeyEvent = { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; target: unknown; currentTarget: unknown; preventDefault(): void };
+
+// Where a row sits in the tree view: its tree attributes, its name, and its arrow-key handler.
+type Placed = { attrs: Record<string, unknown>; name: string; nav(e: TreeKeyEvent): boolean };
 
 // A resolution refused because the row no longer matches git; the text names the file and says to refresh.
 const STALE_CODES = new Set(["conflict_gone", "conflict_changed", "not_a_conflict"]);
@@ -91,6 +96,8 @@ export function WorktreeChanges(props: {
   const [base, setBase] = useState<string | undefined>(undefined);
   // Settings → Git, read with the list so a change there shows on the next focus.
   const [git, setGit] = useState<GitSettings>(DEFAULT_GIT_SETTINGS);
+  // Folders closed in the tree view, as `<group>:<folder id>`.
+  const [closedDirs, setClosedDirs] = useState<string[]>([]);
   const field = useRef<HTMLTextAreaElement>(null);
   // Only the newest load may write, so a slow one never shows an older list.
   const loads = useRef(0);
@@ -216,6 +223,56 @@ export function WorktreeChanges(props: {
     const s = stateOf(c.path);
     return !s || s.unstaged || s.untracked || !s.staged;
   });
+
+  const tree = git.sourceControlViewMode === "tree";
+
+  // Flips the view and saves it in Settings > Git; the list changes at once and a failed save is reported.
+  async function flipView(): Promise<void> {
+    const next = tree ? "list" : "tree";
+    const before = git;
+    setGit({ ...git, sourceControlViewMode: next });
+    try {
+      setGit(await api.setGitSettings({ ...git, sourceControlViewMode: next }));
+    } catch (e) {
+      setGit(before);
+      setProblem(toApiError(e));
+    }
+  }
+
+  function toggleDir(group: string, id: string): void {
+    const key = `${group}:${id}`;
+    setClosedDirs((c) => (c.includes(key) ? c.filter((k) => k !== key) : [...c, key]));
+  }
+
+  // Arrow keys move between the rows of the tree; Left and Right close and open a folder, or step to the parent
+  // and the first child. Only on the row itself: keys typed into a control inside it are its own.
+  function treeNav(e: TreeKeyEvent, rows: TreeRow[], index: number, group: string): boolean {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.target !== e.currentTarget) return false;
+    const row = rows[index];
+    const items = (e.currentTarget as HTMLElement).parentElement?.children;
+    const focus = (i: number) => (items?.[i] as HTMLElement | undefined)?.focus();
+    let handled = true;
+    if (e.key === "ArrowDown") focus(Math.min(index + 1, rows.length - 1));
+    else if (e.key === "ArrowUp") focus(Math.max(index - 1, 0));
+    else if (e.key === "Home") focus(0);
+    else if (e.key === "End") focus(rows.length - 1);
+    else if (e.key === "ArrowRight" && row.kind === "dir") {
+      if (!row.open) toggleDir(group, row.id);
+      else if (rows[index + 1] && rows[index + 1].depth > row.depth) focus(index + 1);
+    } else if (e.key === "ArrowLeft") {
+      if (row.kind === "dir" && row.open) toggleDir(group, row.id);
+      else {
+        for (let i = index - 1; i >= 0; i--) {
+          if (rows[i].depth < row.depth) {
+            focus(i);
+            break;
+          }
+        }
+      }
+    } else handled = false;
+    if (handled) e.preventDefault();
+    return handled;
+  }
 
   // Runs a stage change, then reads again whatever happened.
   async function restage(files: string[], staged: boolean): Promise<void> {
@@ -413,11 +470,19 @@ export function WorktreeChanges(props: {
   }
 
   // A conflicted file with its kind, its hint and the resolutions it offers; they wrap below the path when narrow.
-  function conflictRow(c: WorktreeChange, entry: ConflictEntry): JSX.Element {
+  function conflictRow(c: WorktreeChange, entry: ConflictEntry, at?: Placed): JSX.Element {
     return (
-      <li key={c.path} className="ws-change ws-conflict-row" tabIndex={0} onKeyDown={(e) => rowKey(e, c.path, "conflicts")}>
+      <li
+        key={c.path}
+        className="ws-change ws-conflict-row"
+        tabIndex={0}
+        {...at?.attrs}
+        onKeyDown={(e) => {
+          if (!at?.nav(e)) rowKey(e, c.path, "conflicts");
+        }}
+      >
         <button type="button" className="ws-change-open" title={c.path} onClick={() => void open(c.path)}>
-          <span className="ws-change-path ws-mono">{c.path}</span>
+          <span className="ws-change-path ws-mono">{at ? at.name : c.path}</span>
         </button>
         <span className="ws-conflict-meta">
           <Tag tone="warn">{t(conflictKindKey(entry.kind))}</Tag>
@@ -443,14 +508,59 @@ export function WorktreeChanges(props: {
   }
 
   function list(files: WorktreeChange[], group: "staged" | "changes" | "conflicts"): JSX.Element {
+    const closed = new Set(closedDirs.filter((k) => k.startsWith(`${group}:`)).map((k) => k.slice(group.length + 1)));
+    const rows = tree ? pathRows(files.map((c) => ({ path: c.path, mark: c.kind })), closed, { compact: true }) : null;
+    const byPath = new Map(files.map((c) => [c.path, c]));
+    const place = (index: number): Placed | undefined => {
+      const row = rows?.[index];
+      if (!rows || !row) return undefined;
+      return {
+        name: row.name,
+        nav: (e) => treeNav(e, rows, index, group),
+        attrs: { role: "treeitem", "aria-level": row.depth + 1, style: { paddingLeft: 4 + row.depth * 14 } },
+      };
+    };
+    const items = rows ? rows.map((row, i) => ({ row, at: place(i), c: byPath.get(row.id) })) : files.map((c) => ({ row: null, at: undefined, c }));
     return (
-      <ul className="ws-change-list">
-        {files.map((c) => {
+      <ul className="ws-change-list" role={tree ? "tree" : undefined} data-view={tree ? "tree" : "list"} aria-label={tree ? t(group === "staged" ? "changes.group.staged" : "changes.group.changes") : undefined}>
+        {items.map(({ row, at, c }) => {
+          if (row && row.kind === "dir" && at) {
+            return (
+              <li
+                key={`dir:${row.id}`}
+                className="ws-change ws-change-dir"
+                tabIndex={0}
+                {...at.attrs}
+                aria-expanded={row.open}
+                onKeyDown={(e) => {
+                  if (!at.nav(e) && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    toggleDir(group, row.id);
+                  }
+                }}
+              >
+                <button type="button" className="ws-change-open" tabIndex={-1} onClick={() => toggleDir(group, row.id)}>
+                  <span className="ws-change-caret" aria-hidden="true">{row.open ? "▾" : "▸"}</span>
+                  <span className="ws-change-path ws-mono">{row.name}</span>
+                  <span className="ws-change-group-count ws-mono">{row.count}</span>
+                </button>
+              </li>
+            );
+          }
+          if (!c) return null;
           const entry = group === "conflicts" ? entryOf(c.path) : undefined;
-          if (entry) return conflictRow(c, entry);
+          if (entry) return conflictRow(c, entry, at);
           const s = stats[c.path];
           return (
-            <li key={c.path} className="ws-change" tabIndex={0} onKeyDown={(e) => rowKey(e, c.path, group)}>
+            <li
+              key={c.path}
+              className="ws-change"
+              tabIndex={0}
+              {...at?.attrs}
+              onKeyDown={(e) => {
+                if (!at?.nav(e)) rowKey(e, c.path, group);
+              }}
+            >
               {group !== "conflicts" && (
                 <input
                   type="checkbox"
@@ -463,7 +573,7 @@ export function WorktreeChanges(props: {
                 <span className="ws-change-kind ws-mono" data-kind={c.kind} title={t(`changes.kind.${c.kind}`)}>
                   {LETTER[c.kind]}
                 </span>
-                <span className="ws-change-path ws-mono">{c.path}</span>
+                <span className="ws-change-path ws-mono">{at ? at.name : c.path}</span>
                 {s && (
                   <span className="diff-stats ws-change-stats ws-mono">
                     <span className="diff-added" aria-hidden="true">+{s.added}</span>
@@ -537,9 +647,21 @@ export function WorktreeChanges(props: {
   );
   return (
     <div className="ws-changes" ref={root}>
-      <strong className="ws-changes-title">
-        {changes && changes.length > 0 ? t("workspace.changes.title", { count: changes.length }) : changes && t("workspace.changes.none")}
-      </strong>
+      <div className="ws-changes-head">
+        <strong className="ws-changes-title">
+          {changes && changes.length > 0 ? t("workspace.changes.title", { count: changes.length }) : changes && t("workspace.changes.none")}
+        </strong>
+        <button
+          type="button"
+          className="ws-change-act ws-change-view"
+          data-view-toggle={tree ? "tree" : "list"}
+          aria-label={tree ? t("changes.viewMode.toList") : t("changes.viewMode.toTree")}
+          title={tree ? t("changes.viewMode.toList") : t("changes.viewMode.toTree")}
+          onClick={() => void flipView()}
+        >
+          <Icon name={tree ? "list" : "folder"} size={14} />
+        </button>
+      </div>
       {props.prs && (
         <ShipBar
           api={api}

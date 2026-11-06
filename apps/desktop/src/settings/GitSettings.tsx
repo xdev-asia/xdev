@@ -225,6 +225,21 @@ export function GitSettings(props: SettingsSectionProps): JSX.Element {
         {t("settings.git.groupOrderHint")}
       </small>
       </SettingRow>
+      <SettingRow id="git.viewMode" filter={filter}>
+      <label className="settings-git-text">
+        <strong>{t("settings.git.viewMode")}</strong>
+        <Select
+          data-field="viewMode"
+          value={git.sourceControlViewMode}
+          options={[
+            { value: "list", label: t("settings.git.viewMode.list") },
+            { value: "tree", label: t("settings.git.viewMode.tree") },
+          ]}
+          onChange={(e) => change({ sourceControlViewMode: e.target.value === "tree" ? "tree" : "list" })}
+        />
+      </label>
+      <small className="settings-hint">{t("settings.git.viewModeHint")}</small>
+      </SettingRow>
       <SettingRow id="git.refresh" filter={filter}>
       <div className="settings-item settings-git-row">
         <div className="settings-git-text">

@@ -366,6 +366,12 @@ describe("mock review", () => {
     await expect(api.worktreeReview(FIRST, "--x")).rejects.toMatchObject({ code: "bad_ref" });
   });
 
+  it("checks out a branch, refusing an unknown one", async () => {
+    const api = createMockWorkspace();
+    await expect(api.worktreeCheckoutBranch(FIRST, "nope")).rejects.toMatchObject({ code: "no_such_branch" });
+    await expect(api.worktreeCheckoutBranch("/nowhere", "main")).rejects.toMatchObject({ code: "worktree_unknown" });
+  });
+
   it("reads one file's sides by base id", async () => {
     const api = createMockWorkspace();
     const r = await api.worktreeReview(FIRST, null);

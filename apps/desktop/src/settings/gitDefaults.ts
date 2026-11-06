@@ -15,6 +15,7 @@ export const DEFAULT_GIT_SETTINGS: GitSettings = {
   prOpenAfterCreate: false,
   autoRenameBranch: true,
   sourceControlGroupOrder: "changes-first",
+  sourceControlViewMode: "list",
   prBotAuthorOverrides: [],
   pullPolicy: "ff-only",
   issuesDefaultView: "all",

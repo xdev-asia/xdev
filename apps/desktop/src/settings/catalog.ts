@@ -188,6 +188,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("repos.issueCommand", "settings.repos.issue", ["issue", "prompt", "template", "agent", "github", "lệnh", "lenh", "mẫu", "mau"], "settings.repos.issue.hint"),
   e("repos.repoFile", "settings.repos.file", ["xdev.toml", "shared", "tabs", "unknown", "node_modules", "tab mặc định", "tab mac dinh"], "settings.repos.file.hint"),
   e("repos.mcpConfigs", "settings.repos.mcp.title", ["mcp", "server", "config", "json", "máy chủ", "may chu", "cấu hình", "cau hinh"], "settings.repos.mcp.hint"),
+  e("repos.diskUsage", "settings.repos.disk.title", ["disk", "storage", "size", "space", "clean", "node_modules", "target", "build", "dung lượng", "dung luong", "ổ đĩa", "o dia", "dọn", "don"], "settings.repos.disk.hint"),
   e("repos.sharedScripts", "settings.repos.scripts.shared", ["trust", "script", "tin cậy", "tin cay"], "settings.repos.scripts.trustNote"),
   // Account
   e("account.xdevId", "account.xdevId", ["account", "sign in", "sign out", "login", "xdev id", "tài khoản", "tai khoan", "đăng nhập", "dang nhap", "đăng xuất", "dang xuat"], "account.about"),
@@ -205,6 +206,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("git.compare", "settings.git.compare", ["diff", "upstream", "base", "so sánh", "so sanh"], "settings.git.compareHint"),
   e("git.pullPolicy", "settings.git.pullPolicy", ["pull", "merge", "rebase", "fast-forward", "ff"], "settings.git.pullPolicyHint"),
   e("git.groupOrder", "settings.git.groupOrder", ["staged", "changes", "order", "thứ tự", "thu tu"], "settings.git.groupOrderHint"),
+  e("git.viewMode", "settings.git.viewMode", ["list", "tree", "folders", "changes", "danh sách", "danh sach", "cây", "cay", "thư mục", "thu muc"], "settings.git.viewModeHint"),
   e("git.refresh", "settings.git.refresh", ["fetch", "pull", "base", "create", "làm mới", "lam moi"], "settings.git.refreshHint"),
   e("git.baseTip", "settings.git.baseTip", ["behind", "base", "upstream", "tip", "toast", "chậm", "cham", "nhánh gốc", "nhanh goc"], "settings.git.baseTipHint"),
   e("git.worktreeDir", "settings.git.worktreeDir", ["worktree", "folder", "directory", "path", "location", "thư mục", "thu muc", "đường dẫn", "duong dan"], "settings.git.worktreeDirHint"),

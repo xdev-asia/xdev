@@ -222,3 +222,13 @@ it("Move to status has five radio items with the current one checked, and is abs
   expect(ids(ctx({ worktree: wt({ primary: true }), onMoveStatus: move }).items)).not.toContain("moveStatus");
   expect(ids(ctx().items)).not.toContain("moveStatus");
 });
+
+it("offers Check out branch… when a handler is given, disabled while detached", () => {
+  const checkout = vi.fn();
+  const { items } = ctx({ onCheckoutBranch: checkout });
+  find(items, "checkoutBranch").run?.();
+  expect(checkout).toHaveBeenCalledOnce();
+  expect(find(items, "checkoutBranch").labelKey).toBe("checkout.menu");
+  expect(find(ctx({ onCheckoutBranch: checkout, worktree: wt({ detached: true, branch: null }) }).items, "checkoutBranch").disabled).toBe(true);
+  expect(ids(ctx().items)).not.toContain("checkoutBranch");
+});

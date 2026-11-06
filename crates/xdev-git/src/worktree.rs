@@ -289,6 +289,52 @@ impl Repo {
         Ok(parse_numstat(&out))
     }
 
+    /// Checks out `name` in this worktree: `git switch <branch>` for a local
+    /// branch, `git switch --track <remote>/<branch>` for one that exists
+    /// only as a remote-tracking ref (the local branch is created from it).
+    /// Refuses with `Dirty("checkout")` while a tracked file has changes,
+    /// with `Conflicted` in the middle of a merge or rebase, and with
+    /// `BranchInUse` for a branch another worktree has. Never fetches.
+    pub fn switch_branch(&self, name: &str) -> Result<(), GitError> {
+        let usable =
+            !name.is_empty() && !name.starts_with('-') && !name.chars().any(char::is_control);
+        let local = usable && self.branch_exists(name)?;
+        let remote = usable
+            && !local
+            && !name.ends_with("/HEAD")
+            && self.ref_exists(&format!("refs/remotes/{name}"))?;
+        if !local && !remote {
+            return Err(GitError::NoSuchBranch(name.to_owned()));
+        }
+        if self.conflict_state()?.is_some() {
+            return Err(GitError::Conflicted);
+        }
+        if !self.is_clean()? {
+            return Err(GitError::Dirty("checkout"));
+        }
+        let mut args = vec!["switch", "-q"];
+        if remote {
+            args.push("--track");
+        }
+        args.push(name);
+        let out = run::run_env(&self.workdir, &args, &[("LC_ALL", "C")])?;
+        if out.status == Some(0) {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+        if let Some(path) = in_use_path(&stderr) {
+            return Err(GitError::BranchInUse {
+                branch: name.to_owned(),
+                path,
+            });
+        }
+        Err(GitError::Failed {
+            args: args.join(" "),
+            status: out.status,
+            stderr,
+        })
+    }
+
     /// `git merge --no-ff` of `branch` into the current branch; returns the
     /// merge commit. On a conflict the merge is aborted and `None` returned,
     /// so the repo is as it was.
@@ -315,6 +361,18 @@ impl Repo {
             stderr: String::new(),
         })
     }
+}
+
+/// The folder in git's refusal to check out a branch another worktree has:
+/// `fatal: 'x' is already checked out at '/p'`, or, in newer git,
+/// `... is already used by worktree at '/p'`. Read only because the caller
+/// asked git for English.
+fn in_use_path(stderr: &str) -> Option<String> {
+    let line = stderr.lines().find(|l| {
+        l.contains("already checked out at") || l.contains("already used by worktree at")
+    })?;
+    let start = line.rfind(" at ")? + 4;
+    Some(line[start..].trim().trim_matches('\'').to_owned())
 }
 
 /// `Repo::valid_branch_name` for a branch that has no repo yet: git runs in

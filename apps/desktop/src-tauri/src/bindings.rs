@@ -251,6 +251,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     Note::export_all(cfg)?;
     ContextUsage::export_all(cfg)?;
     xdev_workspace::DirListing::export_all(cfg)?;
+    xdev_workspace::WorktreeUsage::export_all(cfg)?;
+    xdev_workspace::HeavyDir::export_all(cfg)?;
     xdev_workspace::FileText::export_all(cfg)?;
     xdev_workspace::MediaKind::export_all(cfg)?;
     xdev_workspace::WriteOutcome::export_all(cfg)?;
