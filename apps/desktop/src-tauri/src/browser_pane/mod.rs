@@ -229,34 +229,42 @@ pub async fn browser_show(
     };
     let existing = webview_of(&app, &tab);
     let plan = state.pool().plan_show(&tab, existing.is_some());
-    let view = match (plan, existing) {
+    let (view, created) = match (plan, existing) {
         (ShowPlan::Skip, _) => return Ok(()),
-        (ShowPlan::Reuse, Some(view)) => view,
+        (ShowPlan::Reuse, Some(view)) => (view, false),
         (ShowPlan::Reuse | ShowPlan::Create, _) => {
             let dev = dev_origin(&app);
             let start = safe_url(&url, dev.as_ref());
-            caller
+            let view = caller
                 .window()
                 .add_child(
                     builder(&app, &tab, start, dev),
                     LogicalPosition::new(bounds.x, bounds.y),
                     LogicalSize::new(bounds.width, bounds.height),
                 )
-                .map_err(|e| err("browser_unavailable", e))?
+                .map_err(|e| err("browser_unavailable", e))?;
+            (view, true)
         }
     };
-    view.set_bounds(rect(bounds))
-        .map_err(|e| err("browser_unavailable", e))?;
-    view.show().map_err(|e| err("browser_unavailable", e))?;
+    // Tracked before it is placed, so no failure below leaves a webview the pool does not know.
     let shown = state.pool().shown(&tab);
     let Some(evicted) = shown else {
         // Closed while the webview was being made.
         let _ = view.close();
         return Ok(());
     };
+    let placed = view
+        .set_bounds(rect(bounds))
+        .and_then(|()| view.show())
+        .map_err(|e| err("browser_unavailable", e));
+    if placed.is_err() && created {
+        // A webview that never showed is closed; the front end says the tab cannot show pages.
+        let _ = view.close();
+        state.pool().remove(&tab);
+    }
     drop(turn);
     evict(&app, &state, evicted).await;
-    Ok(())
+    placed
 }
 
 /// Moves `tab`'s webview; an empty or broken rectangle hides it.

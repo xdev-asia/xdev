@@ -225,6 +225,21 @@ mod tests {
     }
 
     #[test]
+    fn a_webview_is_tracked_before_it_is_placed() {
+        // `shown` runs before set_bounds and show; when they fail on a new webview the show
+        // closes it and forgets the tab, and the tabs it pushed out are still evicted.
+        let mut p = Pool::default();
+        for t in ["a", "b", "c"] {
+            assert_eq!(p.shown(t), Some(vec![]));
+        }
+        assert_eq!(p.shown("d"), Some(vec!["a".to_owned()]));
+        assert!(p.remove("d"));
+        assert_eq!(p.live(), ["b", "c"]);
+        // Not closed: the tab may try again.
+        assert_eq!(p.plan_show("d", false), ShowPlan::Create);
+    }
+
+    #[test]
     fn one_lock_per_label() {
         let mut locks = Locks::default();
         let a1 = locks.of("browser-a");
