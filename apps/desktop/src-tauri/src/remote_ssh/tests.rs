@@ -14,6 +14,8 @@ use xdev_ssh::{
     SshHost,
 };
 
+use xdev_workspace::Eol;
+
 use super::*;
 use crate::ssh_connect::SshChild;
 
@@ -83,6 +85,8 @@ struct Host {
     tmux: bool,
     /// `git status --porcelain=v1 -z` output.
     status: Vec<u8>,
+    /// Names the link check finds to be links.
+    links: Vec<String>,
 }
 
 fn u32_at(b: &[u8], at: &mut usize) -> u32 {
@@ -222,12 +226,20 @@ fn serve_shell(host: Arc<Mutex<Host>>, mut req: Pipe, resp: Pipe) {
                 let rest = &script[at + 7..];
                 let nonce = &rest[..rest.find("__").unwrap()];
                 let host = host.lock().unwrap();
+                let link = script.contains("[ -L ")
+                    && host
+                        .links
+                        .iter()
+                        .any(|l| script.contains(&format!("'{l}'")));
                 let mut out = if script.contains("status --porcelain") {
                     host.status.clone()
+                } else if script.contains("[ -L ") {
+                    Vec::new()
                 } else {
                     format!("/home/dev\ngit=1\ntmux={}", u8::from(host.tmux)).into_bytes()
                 };
-                out.extend(format!("\n__XDEV_{nonce}__0\n").into_bytes());
+                let code = if link { 4 } else { 0 };
+                out.extend(format!("\n__XDEV_{nonce}__{code}\n").into_bytes());
                 resp.push(&out);
             }
         }
@@ -650,6 +662,35 @@ fn bytes_check_the_kind_and_the_cap() {
     assert_eq!(got, [1, 2, 3]);
     let e = files::bytes(&rig.hub, rig.data.path(), &r(), "a.txt").unwrap_err();
     assert_eq!(e.code, "bad_name");
+}
+
+#[test]
+fn file_commands_refuse_links_and_git() {
+    let rig = rig();
+    {
+        let mut h = rig.spawner.host.lock().unwrap();
+        h.links.push("out".into());
+        h.files.insert(format!("{ROOT}/out/logo.png"), vec![1]);
+        h.files.insert(format!("{ROOT}/out/a.txt"), b"x".to_vec());
+    }
+    let (data, r) = (rig.data.path(), r());
+    let codes = [
+        files::read(&rig.hub, data, &r, "out/a.txt").map(|_| ()),
+        files::bytes(&rig.hub, data, &r, "out/logo.png").map(|_| ()),
+        files::write(&rig.hub, data, &r, "out/a.txt", "y", Eol::Lf, None).map(|_| ()),
+        files::create(&rig.hub, data, &r, "out/n.txt", false),
+        files::rename(&rig.hub, data, &r, "a.txt", "out/a.txt"),
+        files::trash(&rig.hub, data, &r, "out"),
+        files::read(&rig.hub, data, &r, ".git/config").map(|_| ()),
+        files::write(&rig.hub, data, &r, ".GIT/hooks/x", "", Eol::Lf, None).map(|_| ()),
+    ];
+    for (i, c) in codes.into_iter().enumerate() {
+        assert_eq!(c.unwrap_err().code, "bad_path", "call {i}");
+    }
+    assert_eq!(rig.spawner.host.lock().unwrap().files.len(), 3);
+    // A plain path still reads.
+    let t = files::read(&rig.hub, data, &r, "a.txt").unwrap();
+    assert_eq!(t.text.as_deref(), Some("hello\n"));
 }
 
 /// Each command with no remote form starts with a `local_only` guard.

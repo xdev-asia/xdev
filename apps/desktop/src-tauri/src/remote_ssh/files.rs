@@ -37,7 +37,7 @@ pub(crate) fn bytes(
         None => return Err(WorkspaceError::BadName(rel.to_owned()).into()),
     };
     hub.with_fs(&host, |fs| {
-        let path = join_rel(&r.path, rel)?;
+        let path = fs.checked(&r.path, rel)?;
         let attrs = fs.sftp.stat(&path)?;
         if attrs.is_dir() {
             return Err(RemoteError::BadPath(rel.to_owned()));
