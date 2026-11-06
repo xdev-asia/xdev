@@ -80,6 +80,18 @@ it("actions without a handler are left out", () => {
   expect(newWorktree).toHaveBeenCalled();
 });
 
+it("the floating workspace action sits after toggle sidebar, with its chord", () => {
+  const f = vi.fn();
+  const items = actionItems(t, { toggleFloating: f, showDocs: f, toggleSidebar: f });
+  expect(items.map((i) => i.id)).toEqual(["act:toggleSidebar", "act:toggleFloating", "act:showDocs"]);
+  const item = items[1];
+  expect(item.title).toBe(t("palette.action.toggleFloating"));
+  expect(item.keywords!.length).toBeGreaterThan(0);
+  expect(item.hint).toBe(chordLabel("floating.toggle") ?? undefined);
+  item.run();
+  expect(f).toHaveBeenCalledTimes(1);
+});
+
 it("stage and discard all are listed only when the worktree can run them", () => {
   const stageAll = vi.fn();
   const discardAll = vi.fn();

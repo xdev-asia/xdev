@@ -25,6 +25,7 @@ import { api, type BoardTask } from "@/api";
 import { openTaskEditor, repoOf } from "@/tasks/board/TaskEditorHost";
 import { requestTargets } from "@/targets/targetsEvents";
 import { replayTour } from "@/onboarding/tourStore";
+import { toggleFloating } from "@/floating/floatingStore";
 import { conversationItems } from "@/conversation/conversationStore";
 import { readFileList } from "@/search/QuickOpenDialog";
 import { rankFiles } from "@/search/quickOpen";
@@ -239,6 +240,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       replayTour: () => replayTour(),
       searchDocs: () => actions.searchDocs(),
       toggleSidebar: () => actions.toggleSidebar(),
+      toggleFloating: () => toggleFloating(),
       showDocs: () => actions.showDocs(),
       captureScreen: actions.captureScreen ? () => actions.captureScreen?.() : undefined,
       annotateClipboard: actions.annotateClipboard ? () => actions.annotateClipboard?.() : undefined,
