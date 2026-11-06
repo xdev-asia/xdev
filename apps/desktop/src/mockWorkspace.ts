@@ -4,7 +4,7 @@ import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { pushDirHistory } from "./settings/worktreeDir";
 import { mockImageBytes, mockReviewFindings, mockReviewPlan } from "./mockReviewAi";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, NestedRepo, Check, MergeBlock, PrComment, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, NestedRepo, Check, MergeBlock, PrComment, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeUsage, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 import { fromWork } from "@/workspace/branchName";
 import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
@@ -55,6 +55,9 @@ type WorkspaceApi = Pick<
   | "worktreeReviewAiHunk"
   | "worktreeCommit"
   | "worktreeStat"
+  | "diskUsageScan"
+  | "diskUsageCancel"
+  | "diskUsageClean"
   | "worktreeShip"
   | "worktreePush"
   | "worktreePull"
@@ -1604,6 +1607,18 @@ export function createMockWorkspace(
       const found = findWorktree(path);
       if (!found) return reject("worktree_unknown", path);
       return demoStat(found.wt.primary ? [] : (changes.get(path) ?? []));
+    },
+    async diskUsageScan() {
+      const rows = DEMO_WORKSPACE.repos.flatMap((r) => r.worktrees).map((wt, i): WorktreeUsage => {
+        const heavy = [{ path: `${wt.path}/node_modules`, size: (i + 1) * 40_000_000 }];
+        return { worktree: wt.path, total: heavy[0].size + 5_000_000, heavy };
+      });
+      return rows.sort((a, b) => b.total - a.total);
+    },
+    async diskUsageCancel() {},
+    async diskUsageClean(folders) {
+      if (folders.some((f) => !/\/(node_modules|target|dist|\.next|build)$/.test(f) || !findWorktree(f.slice(0, f.lastIndexOf("/"))))) return reject("bad_path", folders.join(", "));
+      return 0;
     },
     async worktreeListDir(path, dir) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

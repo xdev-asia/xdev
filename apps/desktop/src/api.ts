@@ -83,6 +83,8 @@ import type {
   OpenAs,
   OpenInFound,
   OpenTarget,
+  WorktreeUsage,
+  HeavyDir,
   CloneProgress,
   NestedRepo,
   NestedScanResult,
@@ -623,6 +625,8 @@ export type {
   OpenAs,
   OpenInFound,
   OpenTarget,
+  WorktreeUsage,
+  HeavyDir,
   CloneProgress,
   NestedRepo,
   NestedScanResult,
@@ -1365,6 +1369,13 @@ export interface Api {
   worktreeCommit(path: string, files: string[], message: string): Promise<string | null>;
   // Line counts against the start ref (against HEAD for the primary checkout), untracked files included.
   worktreeStat(path: string): Promise<WorktreeStat>;
+  // Sizes every known worktree and the heavy folders in it, the biggest first. A newer scan or
+  // `diskUsageCancel` makes it reject with `cancelled`.
+  diskUsageScan(): Promise<WorktreeUsage[]>;
+  diskUsageCancel(): Promise<void>;
+  // Removes the listed heavy folders and nothing else; resolves with the bytes freed. Rejects with
+  // `bad_path` for a folder that is not a heavy folder of a known worktree.
+  diskUsageClean(folders: string[]): Promise<number>;
   // Shipping: where the branch stands against its upstream and base. Push, pull, sync and fetch
   // resolve with the new state. Push rejects with `no_remote`, `detached` or `push_rejected`; pull
   // with `no_upstream` or `pull_diverged`; a commit or amend with `hook_failed` (detail is the hook output).
@@ -2625,6 +2636,9 @@ const tauriApi: Api = {
   worktreeReviewAiHunk: (path, hunk) => call("worktree_review_ai_hunk", { path, hunk }),
   worktreeCommit: (path, files, message) => call("worktree_commit", { path, files, message }),
   worktreeStat: (path) => call("worktree_stat", { path }),
+  diskUsageScan: () => call("disk_usage_scan"),
+  diskUsageCancel: () => call("disk_usage_cancel"),
+  diskUsageClean: (folders) => call("disk_usage_clean", { folders }),
   worktreeShip: (path) => call("worktree_ship", { path }),
   worktreePush: (path) => call("worktree_push", { path }),
   worktreePull: (path) => call("worktree_pull", { path }),

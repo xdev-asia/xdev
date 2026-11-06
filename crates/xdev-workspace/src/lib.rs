@@ -1,5 +1,6 @@
 //! The desktop app's list of repos and the worktrees made from them.
 
+mod cleanup;
 mod create;
 pub mod deploy;
 mod env;
@@ -23,6 +24,7 @@ use std::path::PathBuf;
 pub use xdev_git::GhAccount;
 use xdev_git::GitError;
 
+pub use cleanup::{HEAVY, HeavyDir, WorktreeUsage, disk_usage, remove_heavy};
 pub use create::{CreateProject, Created, PROJECT_NAME_MAX, ProjectKind, create_project};
 pub use env::{
     ENV_KEY_MAX, ENV_MAX, ENV_VALUE_MAX, EnvPreviewRow, MASK, RESERVED_PREFIX, RepoEnvVar,
@@ -172,6 +174,9 @@ pub enum WorkspaceError {
     /// An environment row with a key that is not usable.
     #[error("not a usable environment variable: {0}")]
     BadEnv(String),
+    /// A long run was stopped by the person.
+    #[error("cancelled")]
+    Cancelled,
 }
 
 impl WorkspaceError {
@@ -215,6 +220,7 @@ impl WorkspaceError {
             WorkspaceError::BadIcon(_) => "bad_icon",
             WorkspaceError::TooLarge(_) => "too_large",
             WorkspaceError::BadEnv(_) => "bad_env",
+            WorkspaceError::Cancelled => "cancelled",
         }
     }
 }

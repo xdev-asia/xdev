@@ -22,6 +22,7 @@ import { removeRepo } from "@/workspace/removeRepo";
 import { sparseDirs } from "@/workspace/createSource";
 import { addPreset, removePreset } from "@/workspace/sparsePresets";
 import { colorField, ghField, iconField, identityPatch, shown, type GhState, type IdentityDraft } from "./repoIdentityForm";
+import { DiskUsage } from "./DiskUsage";
 import { McpConfigs } from "./McpConfigs";
 import { RepoEnv } from "./RepoEnv";
 import { SettingGroup, SettingRow } from "./SettingRow";
@@ -61,6 +62,7 @@ function fieldOf(code: ApiError["code"]): Failure["field"] {
 const ISSUE_IDS = ["repos.issueCommand"];
 const IDENTITY_IDS = ["repos.color", "repos.icon", "repos.ghAccount"];
 const MCP_IDS = ["repos.mcpConfigs"];
+const DISK_IDS = ["repos.diskUsage"];
 const SCRIPT_IDS = ["repos.scriptPolicy", "repos.scriptSource", "repos.localScripts", "repos.sharedScripts", "repos.repoFile"];
 
 /** One form per repo: short name, base ref, worktree folder and setup scripts. Save sends only what changed. */
@@ -696,6 +698,12 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
           </form>
         );
       })}
+      <SettingGroup ids={DISK_IDS} filter={filter}>
+        <h4 className="settings-group">{t("settings.repos.disk.title")}</h4>
+        <SettingRow id="repos.diskUsage" filter={filter}>
+          <DiskUsage api={api} />
+        </SettingRow>
+      </SettingGroup>
       {forgetting && (
         <RemoveRepoDialog
           name={forgetting.repo.shortName}
