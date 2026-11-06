@@ -344,6 +344,7 @@ impl Store {
         now_ms: i64,
     ) -> Result<Message, OrchError> {
         check_ends(from, to)?;
+        self.check_hand_off(from, to)?;
         self.tab_note(
             &tab_address(from),
             to,

@@ -1,0 +1,195 @@
+/* Team charts: the list, the editor and the preview. Tokens only; state is a tint or a 1px border. */
+
+.charts-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  max-height: min(70vh, 720px);
+  overflow: auto;
+  min-width: 0;
+}
+
+.charts-status {
+  margin: 0;
+  min-height: 1.4em;
+  color: var(--x-color-muted);
+  font-size: 13px;
+}
+
+.charts-muted {
+  margin: 0;
+  color: var(--x-color-muted);
+  font-size: 13px;
+}
+
+.charts-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-2);
+}
+
+.charts-list,
+.charts-seats,
+.charts-routes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.charts-row { flex-wrap: wrap; min-width: 0; }
+
+.charts-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-1);
+}
+
+.charts-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  min-width: 0;
+}
+
+.charts-kind,
+.charts-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.charts-heading {
+  margin: 0;
+  color: var(--x-color-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.charts-label {
+  color: var(--x-color-ink);
+  font-size: 13px;
+}
+
+.charts-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  min-width: 0;
+}
+
+.charts-field .lang-select {
+  min-height: 28px;
+  max-width: 100%;
+}
+
+.charts-seat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  padding: var(--x-space-3);
+  border: 1px solid var(--x-color-line);
+  border-radius: 10px;
+  background: var(--x-color-surface);
+  min-width: 0;
+  cursor: grab;
+}
+
+.charts-seat[data-dragging] {
+  background: var(--x-color-accent-soft);
+  border-color: var(--x-color-focus);
+}
+
+.charts-seat-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.charts-seat-n {
+  min-width: 24px;
+  color: var(--x-color-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.charts-seat-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--x-color-ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.charts-seat-tools {
+  display: flex;
+  gap: var(--x-space-1);
+}
+
+.charts-seat-tools button { min-width: 24px; min-height: 24px; }
+
+.charts-seat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.charts-route {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--x-space-2);
+  padding: var(--x-space-2);
+  border: 1px solid var(--x-color-line);
+  border-radius: 8px;
+  background: var(--x-color-panel);
+}
+
+.charts-route > * { min-width: 0; }
+
+.charts-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  margin: 0;
+  min-width: 0;
+}
+
+/* The drawing scrolls inside the dialog; its width never sizes the dialog. */
+.charts-preview .mc-map-scroll { contain: inline-size; }
+
+.charts-node rect {
+  fill: var(--x-color-panel);
+  stroke: var(--x-color-line);
+  stroke-width: 1;
+}
+
+.charts-node text {
+  fill: var(--x-color-ink);
+  font-size: 13px;
+}
+
+.charts-problem {
+  margin: 0;
+  padding: var(--x-space-1) var(--x-space-2);
+  border: 1px solid var(--x-color-warn-line);
+  border-radius: 6px;
+  background: var(--x-color-warn-soft);
+  color: var(--x-color-ink);
+  font-size: 13px;
+}
+
+/* "Save as chart" above the team map. */
+.mc-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--x-space-2);
+}

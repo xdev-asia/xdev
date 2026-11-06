@@ -12,6 +12,7 @@ import { useI18n } from "@/i18n";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { CrashHost } from "@/crash/CrashHost";
 import { MissionHost } from "@/orchestration/MissionHost";
+import { ChartsHost } from "@/orchestration/charts/ChartsHost";
 import { ResourceHost } from "@/stats/ResourceHost";
 import { MergeDialog, type MergeSource } from "./MergeDialog";
 import { StartupBanner } from "@/startup/StartupBanner";
@@ -2526,6 +2527,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         onStop={(id) => sessions?.close(id) ?? Promise.resolve()}
       />
       <MissionHost api={api} focusTab={jumpTo} frontTab={() => (current ? shownTab[current.path] ?? null : null)} />
+      <ChartsHost
+        api={api}
+        host={
+          sessions
+            ? {
+                worktree: () => current?.path ?? null,
+                open: (worktree, seat, opts) => {
+                  live.ensureMounted(worktree);
+                  sessions.open(worktree, seat.agent, null, undefined, opts);
+                },
+                defer: (worktree, launch) => gate.defer(worktree, launch),
+                newId: () => crypto.randomUUID(),
+              }
+            : null
+        }
+      />
       <ForeignTermsHost
         api={api}
         onOpenFolder={(path) => void addPaths([path], true)}

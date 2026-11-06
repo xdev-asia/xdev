@@ -2,12 +2,14 @@ import { Button, Dialog, Disclosure, Field, Select, StatusDot, Switch, Tabs, Tag
 import type { SessionState } from "@xdev-asia/ui";
 import { useCallback, useEffect, useState } from "react";
 import type { JSX } from "react";
-import { toApiError, type Api, type LinkGrant, type MissionTab, type MissionView, type TabLink } from "@/api";
+import { toApiError, type Api, type Chart, type LinkGrant, type MissionTab, type MissionView, type TabLink } from "@/api";
 import { useI18n } from "@/i18n";
 import { ago } from "@/workspace/ago";
+import { chartFromTeam } from "./charts/chartModel";
 import { missionOrder, stuckReason } from "./stuck";
 import { TeamMap } from "./TeamMap";
 import "./orchestration.css";
+import "./charts/charts.css";
 
 export type MissionApi = Pick<
   Api,
@@ -32,6 +34,8 @@ export interface MissionControlProps {
   onHandoff(from: string): void;
   /** How often the list is read again. */
   pollMs?: number;
+  /** Opens team charts, on the editor when a draft is given ("Save as chart" from the team map). */
+  onOpenCharts?(draft: Chart | null): void;
 }
 
 const POLL_MS = 5_000;
@@ -52,7 +56,7 @@ export function tabName(t: Pick<MissionTab, "id" | "title">): string {
 
 /** Every worker and linked tab with its status, last activity, task and links; nudge, relink, focus and stop. */
 export function MissionControl(props: MissionControlProps): JSX.Element {
-  const { api, view, onView, onClose, onFocusTab, onHandoff } = props;
+  const { api, view, onView, onClose, onFocusTab, onHandoff, onOpenCharts } = props;
   const { t } = useI18n();
   const [data, setData] = useState<MissionView | null>(null);
   const [failed, setFailed] = useState(false);
@@ -244,6 +248,18 @@ export function MissionControl(props: MissionControlProps): JSX.Element {
             { id: "map", label: t("mission.view.map") },
           ]}
         />
+        {onOpenCharts ? (
+          <div className="mc-map-actions">
+            {view === "map" && data !== null && rows.some((r) => r.agent && !r.exited) ? (
+              <Button variant="secondary" type="button" onClick={() => onOpenCharts(chartFromTeam(t("charts.fromTeamName"), rows, links))}>
+                {t("charts.saveAsChart")}
+              </Button>
+            ) : null}
+            <Button variant="secondary" type="button" onClick={() => onOpenCharts(null)}>
+              {t("charts.palette.open")}
+            </Button>
+          </div>
+        ) : null}
         <div role="tabpanel" id={`mc-panel-${view}`} aria-labelledby={`mc-tab-${view}`} className="mc-panel">
           {failed && data === null ? (
             <p className="mc-empty">{t("mission.loadFailed")}</p>

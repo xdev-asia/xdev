@@ -7,6 +7,7 @@ import { HandoffDialog } from "./HandoffDialog";
 import { MissionControl, tabName } from "./MissionControl";
 import type { MentionTab } from "./mentions";
 import { onMissionOpen } from "./missionEvents";
+import { openTeamCharts } from "./charts/chartEvents";
 
 export interface MissionHostProps {
   api: Api;
@@ -58,7 +59,12 @@ export function MissionHost({ api, focusTab, frontTab }: MissionHostProps): JSX.
   return (
     <>
       {view !== null && handoff === null ? (
-        <MissionControl api={api} view={view} onView={setView} onClose={() => setView(null)} onFocusTab={focus} onHandoff={(from) => void startHandoff(from)} />
+        <MissionControl api={api} view={view} onView={setView} onClose={() => setView(null)} onFocusTab={focus} onHandoff={(from) => void startHandoff(from)}
+          onOpenCharts={(draft) => {
+            setView(null);
+            openTeamCharts(draft);
+          }}
+        />
       ) : null}
       {handoff ? (
         <HandoffDialog

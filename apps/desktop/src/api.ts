@@ -347,6 +347,8 @@ export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, Usag
 export type { ConfigExported, EnvPreviewRow, ImportApplied, ImportPreview, RepoEnvVar } from "@xdev/bindings";
 export type { AttributionChanged, AttributionEvent, AttributionSource, FileAttribution, FileVersion, Toucher } from "@xdev/bindings";
 export type { SectionPreview, ConfigChange } from "@xdev/bindings";
+import type { Chart, ChartRun, SeatTab } from "@xdev/bindings";
+export type { Chart, ChartEdge, ChartKind, ChartMember, ChartProblem, ChartRoute, ChartRun, ChartSeat, SeatTab } from "@xdev/bindings";
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind, PathEntry } from "@xdev/bindings";
 export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase, UpdateDeferral, ReleaseBuild, ReleaseList };
@@ -1807,6 +1809,18 @@ export interface Api {
   attributionRestore(worktree: string, path: string, id: string): Promise<void>;
   /** `attribution://changed`: the attributions of a worktree moved. */
   onAttributionChanged(cb: (e: AttributionChanged) => void): Promise<() => void>;
+  /** Team charts: every saved chart, oldest first. */
+  chartsList(): Promise<Chart[]>;
+  /** Saves a chart once it is valid; an empty id makes a new one. Rejects `orchestration` with detail `invalid_chart: <problem>`. */
+  chartsSave(chart: Chart): Promise<Chart>;
+  /** Removes a chart; false when there was none. */
+  chartsDelete(id: string): Promise<boolean>;
+  /** Saves a copy of a chart under `name`. Rejects `not_found`. */
+  chartsDuplicate(id: string, name: string): Promise<Chart>;
+  /** Saves the squad `id` as a hierarchy chart under its lead, and returns it. */
+  chartsSaveSquad(id: string): Promise<Chart>;
+  /** Records the tabs opened for a run of chart `id` (one per seat) and links them along its edges. */
+  chartsRunBind(id: string, tabs: SeatTab[]): Promise<ChartRun>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2541,6 +2555,12 @@ const tauriApi: Api = {
   attributionVersionRead: (worktree, path, id) => call("attribution_version_read", { worktree, path, id }),
   attributionRestore: (worktree, path, id) => call("attribution_restore", { worktree, path, id }),
   onAttributionChanged: (cb) => listen<AttributionChanged>("attribution://changed", (e) => cb(e.payload)),
+  chartsList: () => call("charts_list"),
+  chartsSave: (chart) => call("charts_save", { chart }),
+  chartsDelete: (id) => call("charts_delete", { id }),
+  chartsDuplicate: (id, name) => call("charts_duplicate", { id, name }),
+  chartsSaveSquad: (id) => call("charts_save_squad", { id }),
+  chartsRunBind: (id, tabs) => call("charts_run_bind", { id, tabs }),
 };
 
 const DEMO_CRASH: CrashReport = {
