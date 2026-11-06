@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import type { JSX, MouseEvent } from "react";
 import { Button, Dialog, ListRow, Spinner, Tag } from "@xdev-asia/ui";
 import { toApiError, type Api, type ApiError, type ReleaseBuild, type ReleaseList, type UpdateChannel, type UpdateDeferral } from "@/api";
 import { useI18n } from "@/i18n";
+import { LicenseUpsellContext } from "@/license/ProGate";
+import { useLicense } from "@/license/useLicense";
 import { phaseLine, useUpdateCheck, type CheckState } from "@/shell/useUpdateCheck";
 import { SettingRow } from "./SettingRow";
 import type { SettingsFilter } from "./sections";
@@ -26,6 +28,10 @@ export type UpdatesViewProps = {
   // The older build waiting for the person to confirm the downgrade.
   confirm: ReleaseBuild | null;
   busy: boolean;
+  /** Whether this device has `pro.early`; `null` while the licence is not read yet. Default true: only `UpdatesSetting` knows the license. */
+  proEarly?: boolean | null;
+  /** Asked for early builds without `pro.early`: open the upsell. */
+  onLocked?(): void;
   filter?: SettingsFilter;
   // `rc` is true on a Shift-click: that check follows the release candidate feed.
   onCheck(rc: boolean): void;
@@ -43,6 +49,10 @@ export type UpdatesViewProps = {
 /** The Updates rows without any state of their own, so a test can draw each phase. */
 export function UpdatesView(props: UpdatesViewProps): JSX.Element {
   const { state, filter, builds, t } = props;
+  // A saved `rc` stays without Pro: it is grandfathered, and shows no tag.
+  const locked = props.proEarly === false && props.channel !== "rc";
+  // While the licence is unknown: no tag, and choosing early builds waits instead of opening the upsell.
+  const unknown = props.proEarly === null && props.channel !== "rc";
   const line = phaseLine(state);
   const working = state.phase.kind === "checking" || state.phase.kind === "downloading";
   const ready = state.phase.kind === "ready";
@@ -85,7 +95,11 @@ export function UpdatesView(props: UpdatesViewProps): JSX.Element {
                 className="btn-secondary"
                 data-act="update-check"
                 disabled={working || state.restart === "restarting"}
-                onClick={(e: MouseEvent) => props.onCheck(e.shiftKey)}
+                onClick={(e: MouseEvent) => {
+                  if (e.shiftKey && unknown) return;
+                  if (e.shiftKey && locked) props.onLocked?.();
+                  else props.onCheck(e.shiftKey);
+                }}
               >
                 {t("settings.general.updates.check")}
               </button>
@@ -112,11 +126,17 @@ export function UpdatesView(props: UpdatesViewProps): JSX.Element {
               value={props.channel ?? "stable"}
               disabled={props.busy || props.channel === null}
               data-field="update-channel"
-              onChange={(e) => props.onChannel(e.target.value as UpdateChannel)}
+              onChange={(e) => {
+                const next = e.target.value as UpdateChannel;
+                if (next === "rc" && unknown) return;
+                if (next === "rc" && locked) props.onLocked?.();
+                else props.onChannel(next);
+              }}
             >
               {UPDATE_CHANNELS.map((c) => (
                 <option key={c} value={c}>
                   {t(`settings.general.updates.channel.${c}`)}
+                  {c === "rc" && locked ? ` · ${t("pro.tag")}` : ""}
                 </option>
               ))}
             </select>
@@ -227,7 +247,7 @@ export function UpdatesView(props: UpdatesViewProps): JSX.Element {
 
 type UpdatesApi = Pick<
   Api,
-  "appVersion" | "shellSettings" | "shellSettingsPut" | "updateCheck" | "updatePhase" | "onUpdatePhase" | "shellQuit" | "updateDeferred" | "updateReleases" | "updateInstallTag"
+  "licenseState" | "licenseRefresh" | "onLicenseChanged" | "appVersion" | "shellSettings" | "shellSettingsPut" | "updateCheck" | "updatePhase" | "onUpdatePhase" | "shellQuit" | "updateDeferred" | "updateReleases" | "updateInstallTag"
 >;
 
 /** Settings → General → Updates: the version, a manual check, the restart, the channel, the delay and the build picker. */
@@ -235,6 +255,8 @@ export function UpdatesSetting(props: { api: UpdatesApi; filter?: SettingsFilter
   const { api, filter, onError } = props;
   const { t, locale } = useI18n();
   const { state, check, restart } = useUpdateCheck(api);
+  const { allows, state: licenseState } = useLicense(api);
+  const upsell = useContext(LicenseUpsellContext);
   const [version, setVersion] = useState<string | null>(null);
   const [channel, setChannel] = useState<UpdateChannel | null>(null);
   const [delay, setDelay] = useState<number | null>(null);
@@ -323,6 +345,8 @@ export function UpdatesSetting(props: { api: UpdatesApi; filter?: SettingsFilter
       buildFailed={buildFailed}
       confirm={confirm}
       busy={busy}
+      proEarly={licenseState === null ? null : allows("pro.early")}
+      onLocked={() => upsell("pro.early")}
       filter={filter}
       onCheck={onCheck}
       onRestart={restart}

@@ -333,6 +333,7 @@ export type { SimDevice, SimLaunch, SimList, SimPlatform, SimRef, SimState };
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 import type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView } from "@xdev/bindings";
 import type { CloudSettings, DeviceRow, LicenseState } from "@xdev/bindings";
+import type { DayTotals, UserPreset } from "@xdev/bindings";
 import type { GateKind, Matched, MatchRow, Pipeline, RevealTab, RouteTarget, StageRun, StageSpec, StageStatus, SwarmRow, SwarmStart, SwarmStopped } from "@xdev/bindings";
 import type { RemoteConnState, RemoteDir, RemoteDirListing, RemoteHostView, RemoteProject, RemoteProjectView, RemoteTarget } from "@xdev/bindings";
 export type { RemoteConnState, RemoteDir, RemoteDirListing, RemoteHostView, RemoteProject, RemoteProjectView, RemoteTarget };
@@ -878,6 +879,7 @@ export type ErrorCode =
   | "remote_unsupported"
   | "license_checkout_timeout"
   | "license_bad_product"
+  | "license_required"
   | "cloud_bad_url"
   | "cloud_bad_root"
   | "cloud_need_root"
@@ -2025,6 +2027,14 @@ export interface Api {
   licenseAllows(feature: string): Promise<boolean>;
   /** `license://changed`, with the full state, after every change. */
   onLicenseChanged(cb: (s: LicenseState) => void): Promise<() => void>;
+  /** Per-day token totals from `fromDay` to `toDay` (`YYYY-MM-DD`, inclusive). A range before the CLI logs' horizon rejects `license_required` without `pro.usage_history`. */
+  usageArchive(fromDay: string, toDay: string): Promise<DayTotals[]>;
+  /** The layouts the person saved. Free to read. */
+  layoutPresetsUser(): Promise<UserPreset[]>;
+  /** Saves, or replaces by name, a layout. Rejects `license_required` without `pro.layouts`, `bad_arg` (name 1-40 characters), `too_large` (20 presets). */
+  layoutPresetSave(name: string, layout: unknown): Promise<void>;
+  /** Removes a saved layout; free. */
+  layoutPresetDelete(name: string): Promise<void>;
   /** Remote projects: folders on saved SSH hosts. Their `worktree` (`ssh://<host id><path>`) goes to the `file*`, `filesList` and `worktreeChanges` calls like a local one. */
   remoteProjectsList(): Promise<RemoteProjectView[]>;
   /** Resolves `path` on the host and checks it is a folder. Rejects `not_found` (host), `remote_path`, `remote_offline`, `remote_auth`, `remote_no_sftp`. */
@@ -2314,6 +2324,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "remote_unsupported",
   "license_checkout_timeout",
   "license_bad_product",
+  "license_required",
   "cloud_bad_url",
   "cloud_bad_root",
   "cloud_need_root",
@@ -2958,6 +2969,10 @@ const tauriApi: Api = {
   licenseBuyCancel: () => call("license_buy_cancel"),
   licenseAllows: (feature) => call("license_allows", { feature }),
   onLicenseChanged: (cb) => listen<LicenseState>("license://changed", (e) => cb(e.payload)),
+  usageArchive: (fromDay, toDay) => call("usage_archive", { fromDay, toDay }),
+  layoutPresetsUser: () => call("layout_presets_user"),
+  layoutPresetSave: (name, layout) => call("layout_preset_save", { name, layout }),
+  layoutPresetDelete: (name) => call("layout_preset_delete", { name }),
   remoteProjectsList: () => call("remote_projects_list"),
   remoteProjectAdd: (hostId, path, name) => call("remote_project_add", { hostId, path, name: name ?? null }),
   remoteProjectRemove: (id) => call("remote_project_remove", { id }),

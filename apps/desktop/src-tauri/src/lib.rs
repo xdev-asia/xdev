@@ -44,6 +44,7 @@ mod keybindings;
 mod keyboard;
 mod kit;
 mod layout;
+mod layout_user;
 mod license;
 mod links;
 mod links_open;
@@ -226,6 +227,8 @@ pub fn run() {
             xdev_id::start(app.handle());
             // The license: the cached token is checked now, the network later.
             license::start(app.handle());
+            // Per-day usage totals for the usage history; on every plan.
+            app_stats::start_archive(app.handle().clone());
             // Paired computers: the listener runs only when Settings turn it on.
             peers::cmd::start(app.handle());
             // After the settings store: the capture shortcut is read from it.
@@ -505,6 +508,10 @@ pub fn run() {
             power::keep_awake_agents,
             app_stats::app_stats_get,
             app_stats::app_stats_busy,
+            app_stats::usage_archive,
+            layout_user::layout_presets_user,
+            layout_user::layout_preset_save,
+            layout_user::layout_preset_delete,
             term_tail::term_tail_read,
             term_tail::transcript_save,
             resources::resources_snapshot,

@@ -317,6 +317,19 @@ impl Ctx {
         ))
     }
 
+    /// The usage index, read again from the logs first when `refresh`, at the offset it was built
+    /// with. For the usage archive, which has no window to ask for an offset.
+    pub(crate) fn usage_index(&self, refresh: bool) -> Result<UsageIndex, CmdError> {
+        let _guard = USAGE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut index = UsageIndex::load(&self.data);
+        if refresh {
+            let offset = index.utc_offset_minutes;
+            index.refresh(&self.homes(), offset);
+            index.save(&self.data)?;
+        }
+        Ok(index)
+    }
+
     /// The Stats page: the report of the agents whose scan switch is on. A
     /// refresh reads only their homes; with both off no log is opened.
     fn usage_report(

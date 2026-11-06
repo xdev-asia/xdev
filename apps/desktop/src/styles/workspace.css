@@ -4238,3 +4238,25 @@ button.ws-tree-row[data-active="true"] {
   background: var(--danger);
   color: var(--text-1);
 }
+
+.ws-license-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--x-color-warn);
+  border-radius: var(--x-radius-sm);
+  background: color-mix(in srgb, var(--x-color-warn) 14%, transparent);
+  font: inherit;
+  color: var(--text-1);
+  cursor: pointer;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-license-btn:focus-visible {
+  outline: 2px solid var(--x-color-warn);
+  outline-offset: 1px;
+}

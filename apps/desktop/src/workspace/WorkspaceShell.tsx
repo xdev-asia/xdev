@@ -117,6 +117,7 @@ import { restartTabs } from "./accountSwitchFlow";
 import { watchQuotaAlerts } from "./quotaAlerts";
 import { watchFailovers } from "./failoverToasts";
 import { QuitDialog } from "./QuitDialog";
+import { UpsellHost } from "@/license/Upsell";
 import { AboutDialog } from "./AboutDialog";
 import { checkForUpdates, HelpButton, type HelpPick, runHelpPick } from "./HelpMenu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -1857,6 +1858,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   return (
     <ProfilesProvider api={api}>
+    <UpsellHost api={api}>
     <div className="ws-shell">
       <Titlebar />
       <header className="ws-header">
@@ -1917,7 +1919,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           </button>
           {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onToggleRead={(tab) => (tab.unread ? sessions?.markTabRead(tab.id) : sessions?.markTabUnread(tab.id))} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
         </div>
-        {view === "workspace" && <LayoutControls sessions={sessions} worktree={current?.path ?? null} />}
+        {view === "workspace" && <LayoutControls api={api} sessions={sessions} worktree={current?.path ?? null} />}
         <HelpButton onPick={pickHelp} />
         <button
           type="button"
@@ -2462,6 +2464,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         onUseAccount={pickAccount}
         ports={<PortsItem store={ports} active={current?.path ?? null} onOpen={() => panelKey("ports")} />}
         onManageSsh={() => openSettings("ssh")}
+        onOpenLicense={() => openSettings("account")}
         onOpenSshTerminal={current && sessions ? (alias) => void sessions.open(current.path, `${SSH_SHELL_PREFIX}${alias}`, null, null) : undefined}
         hidden={view === "docs"}
       />
@@ -2605,7 +2608,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         <AccountSwitchDialog provider={switching.provider} to={switching.to} tab={switching.tab} onApply={answerSwitch} onCancel={() => setSwitching(null)} />
       )}
       {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}
-      {about !== null && <AboutDialog version={about} onLink={(link) => void api.helpOpen(link)} onClose={() => setAbout(null)} />}
+      {about !== null && <AboutDialog version={about} buildDate={import.meta.env.VITE_BUILD_DATE} onLink={(link) => void api.helpOpen(link)} onClose={() => setAbout(null)} />}
       <ConfirmDialog
         open={confirmEndAll}
         title={t("shell.quitEndAll.title")}
@@ -2798,6 +2801,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
       )}
     </div>
+    </UpsellHost>
     </ProfilesProvider>
   );
 }

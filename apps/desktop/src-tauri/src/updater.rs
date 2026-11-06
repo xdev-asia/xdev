@@ -523,8 +523,17 @@ pub fn update_status(pending: State<'_, Pending>) -> Option<UpdateInfo> {
 /// channel, which the later checks keep following. Resolves with where the
 /// check ended, or the phase of the check that was already running.
 #[tauri::command(async)]
-pub async fn update_check(app: AppHandle, rc: bool) -> Result<UpdatePhase, CmdError> {
+pub async fn update_check(
+    app: AppHandle,
+    hub: State<'_, crate::license::LicenseHub>,
+    rc: bool,
+) -> Result<UpdatePhase, CmdError> {
     if rc && settings_store::read(&app).shell.update_channel != UpdateChannel::Rc {
+        crate::settings::check_channel(
+            settings_store::read(&app).shell.update_channel,
+            UpdateChannel::Rc,
+            hub.allows(crate::settings::EARLY_FEATURE),
+        )?;
         settings_store::write(&app, &[SettingsSection::Shell], |s| {
             s.shell.update_channel = UpdateChannel::Rc;
         })?;

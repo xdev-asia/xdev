@@ -415,6 +415,7 @@ pub fn apply_import(
     file: &Value,
     chosen: &[String],
     current: &mut Settings,
+    pro_early: bool,
 ) -> Result<Vec<String>, ConfigError> {
     let (_, sections) = parse_file(file)?;
     let mut applied = Vec::new();
@@ -432,7 +433,17 @@ pub fn apply_import(
         }
         applied.push(name.clone());
     }
-    if let Ok(next) = serde_json::from_value::<Settings>(doc) {
+    if let Ok(mut next) = serde_json::from_value::<Settings>(doc) {
+        // The `rc` channel is Pro-only for a new choice, so a file cannot pick it round the gate.
+        if crate::settings::check_channel(
+            current.shell.update_channel,
+            next.shell.update_channel,
+            pro_early,
+        )
+        .is_err()
+        {
+            next.shell.update_channel = current.shell.update_channel;
+        }
         *current = next;
     }
     Ok(applied)
@@ -518,14 +529,16 @@ pub fn config_import_preview(
 #[tauri::command(async)]
 pub fn config_import_apply(
     app: tauri::AppHandle,
+    hub: tauri::State<'_, crate::license::LicenseHub>,
     path: String,
     sections: Vec<String>,
 ) -> Result<ImportApplied, CmdError> {
+    let pro_early = hub.allows(crate::settings::EARLY_FEATURE);
     let file = read_file(Path::new(&path))?;
     let events: Vec<SettingsSection> = sections.iter().filter_map(|s| event_section(s)).collect();
     let mut applied = Vec::new();
     crate::settings_store::write(&app, &events, |s| {
-        applied = apply_import(&file, &sections, s).unwrap_or_default();
+        applied = apply_import(&file, &sections, s, pro_early).unwrap_or_default();
     })?;
     Ok(ImportApplied { applied })
 }
@@ -533,6 +546,7 @@ pub fn config_import_apply(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::UpdateChannel;
     use serde_json::json;
 
     fn current() -> Settings {
@@ -733,7 +747,8 @@ mod tests {
         }});
         let mut s = current();
         s.network.node_mirror = "https://keep.example".into();
-        let applied = apply_import(&file, &["network".into(), "mystery".into()], &mut s).unwrap();
+        let applied =
+            apply_import(&file, &["network".into(), "mystery".into()], &mut s, true).unwrap();
         assert_eq!(applied, ["network"]);
         assert_eq!(s.network.proxy_url, "http://p:1");
         assert_eq!(s.network.machine_name, "box");
@@ -749,7 +764,7 @@ mod tests {
             "network": { "proxyUrl": "http://p:1", "token": "leak", "apiKey": "leak" }
         }});
         let mut s = current();
-        apply_import(&file, &["network".into()], &mut s).unwrap();
+        apply_import(&file, &["network".into()], &mut s, true).unwrap();
         let text = serde_json::to_string(&s).unwrap();
         assert!(!text.contains("leak"));
         assert_eq!(s.network.proxy_url, "http://p:1");
@@ -759,7 +774,7 @@ mod tests {
     fn an_invalid_section_is_skipped_by_apply() {
         let file = json!({ "xdev": 1, "sections": { "network": { "proxyUrl": "ftp://x" } } });
         let mut s = current();
-        let applied = apply_import(&file, &["network".into()], &mut s).unwrap();
+        let applied = apply_import(&file, &["network".into()], &mut s, true).unwrap();
         assert!(applied.is_empty());
         assert_eq!(s, current());
     }
@@ -775,7 +790,7 @@ mod tests {
         let plan = plan_import(&doc, &current()).unwrap();
         assert!(plan.sections.iter().all(|p| !p.invalid), "{plan:?}");
         let mut fresh = current();
-        apply_import(&doc, &all, &mut fresh).unwrap();
+        apply_import(&doc, &all, &mut fresh, true).unwrap();
         assert_eq!(fresh.network, s.network);
     }
 
@@ -783,5 +798,36 @@ mod tests {
     fn long_values_are_cut_in_the_preview() {
         let long = "x".repeat(200);
         assert_eq!(shown(&json!(long)).chars().count(), SHOWN_MAX + 1);
+    }
+
+    fn rc_file() -> Value {
+        json!({ "xdev": 1, "sections": { "shell": { "updateChannel": "rc" } } })
+    }
+
+    #[test]
+    fn an_import_cannot_pick_rc_without_pro() {
+        let mut s = current();
+        apply_import(&rc_file(), &["shell".into()], &mut s, false).unwrap();
+        assert_eq!(s.shell.update_channel, UpdateChannel::Stable);
+    }
+
+    #[test]
+    fn an_import_may_pick_rc_with_pro() {
+        let mut s = current();
+        apply_import(&rc_file(), &["shell".into()], &mut s, true).unwrap();
+        assert_eq!(s.shell.update_channel, UpdateChannel::Rc);
+    }
+
+    #[test]
+    fn an_import_keeps_rc_for_a_grandfathered_person() {
+        let mut s = current();
+        s.shell.update_channel = UpdateChannel::Rc;
+        let file = json!({ "xdev": 1, "sections": { "shell": { "updateChannel": "stable" } } });
+        apply_import(&file, &["shell".into()], &mut s, false).unwrap();
+        assert_eq!(s.shell.update_channel, UpdateChannel::Stable);
+        let mut s = current();
+        s.shell.update_channel = UpdateChannel::Rc;
+        apply_import(&rc_file(), &["shell".into()], &mut s, false).unwrap();
+        assert_eq!(s.shell.update_channel, UpdateChannel::Rc);
     }
 }

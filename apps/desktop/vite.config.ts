@@ -21,6 +21,8 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, "e2e/**"],
     server: { deps: { inline: ["@xdev-asia/ui"] } },
   },
+  // The About dialog shows the day this bundle was built; CI can set VITE_BUILD_DATE to pin it.
+  define: { "import.meta.env.VITE_BUILD_DATE": JSON.stringify(process.env.VITE_BUILD_DATE ?? new Date().toISOString().slice(0, 10)) },
   // Tauri expects a fixed port and prints its own output.
   clearScreen: false,
   server: { port: 1420, strictPort: true },

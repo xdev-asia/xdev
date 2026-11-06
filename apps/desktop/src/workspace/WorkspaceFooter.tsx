@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { JSX, ReactNode, Ref } from "react";
 import type { Accounts, Api, Provider, Quota, StatusBarItems, UsageDisplay, UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
+import { LicenseStatus } from "@/components/StatusBar";
+import { useLicense } from "@/license/useLicense";
 import { setUsageSettings, useUsageSettings } from "@/settings/usageSettings";
 import { ContextMenu } from "@/ui/ContextMenu";
 import { ALL_ITEMS, useStatusBarItems } from "@/ui/statusBarItems";
@@ -119,6 +121,8 @@ export function WorkspaceFooter(props: {
   keepAwake?: ReactNode;
   /** The SSH connections segment; it renders nothing while no host is connected or connecting. */
   ssh?: ReactNode;
+  /** The licence notice, for paying people; it renders nothing otherwise. */
+  license?: ReactNode;
   /** The Computers segment (paired computers), after the SSH one. */
   peers?: ReactNode;
   hidden?: boolean;
@@ -202,6 +206,7 @@ export function WorkspaceFooter(props: {
           </span>
         </>
       )}
+      {props.license}
       {props.ssh}
       {props.peers}
       {items.ports && props.ports}
@@ -232,12 +237,15 @@ export function LiveWorkspaceFooter(props: {
   onManageSsh?: () => void;
   /** Opens a terminal tab on an SSH host, by alias. */
   onOpenSshTerminal?: (alias: string) => void;
+  /** Opens Settings on Account; the licence notice acts on it. */
+  onOpenLicense?: () => void;
   hidden?: boolean;
 }): JSX.Element {
-  const { api, hidden, onManageAccounts, onUseAccount, onUsageSettings, onManageSsh, onOpenSshTerminal, ...rest } = props;
+  const { api, hidden, onOpenLicense, onManageAccounts, onUseAccount, onUsageSettings, onManageSsh, onOpenSshTerminal, ...rest } = props;
   const { t } = useI18n();
   const { quota, loading, refresh } = useQuota(api, hidden === true);
   const update = useUpdate(api);
+  const { notice, state: licenseState } = useLicense(api);
   const [open, setOpen] = useState(false);
   const [accounts, setAccounts] = useState<Accounts | null>(null);
   const [menuAt, setMenuAt] = useState<{ x: number; y: number; kind: "meters" | "empty" } | null>(null);
@@ -311,6 +319,7 @@ export function LiveWorkspaceFooter(props: {
   return (
     <WorkspaceFooter
       {...rest}
+      license={<LicenseStatus notice={notice} state={licenseState} onOpen={onOpenLicense} />}
       hidden={hidden}
       items={items}
       quota={quota === null ? null : footerQuota(quota, accounts, usage.footer)}

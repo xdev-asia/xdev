@@ -137,7 +137,7 @@ export function LicensePanel({ api, filter, signedIn, now = Date.now() }: Props)
               <Button type="button" variant="secondary" onClick={activate}>
                 {t("license.activate")}
               </Button>
-              <Button type="button" disabled={buying} onClick={buy}>
+              <Button type="button" variant={signedIn ? undefined : "secondary"} disabled={buying} onClick={buy}>
                 {t("license.getPro")}
               </Button>
             </>

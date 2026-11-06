@@ -3,3 +3,8 @@
 # other file under apps/desktop/src-tauri/src or crates/*/src calls it.
 apps/desktop/src-tauri/src/license.rs
 apps/desktop/src-tauri/src/lib.rs
+apps/desktop/src-tauri/src/settings.rs
+apps/desktop/src-tauri/src/commands.rs
+apps/desktop/src-tauri/src/updater.rs
+apps/desktop/src-tauri/src/layout_user.rs
+apps/desktop/src-tauri/src/app_stats.rs

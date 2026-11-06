@@ -367,6 +367,26 @@ impl OrchestrationSettings {
     }
 }
 
+/// The Pro feature the `rc` update channel needs.
+pub const EARLY_FEATURE: &str = "pro.early";
+
+/// Whether the channel may change from `stored` to `next`. Choosing `rc` needs `pro_early`, except
+/// where the stored value is already `rc` (grandfathered: that person keeps it). `stable` is always
+/// allowed. The error is `license_required`.
+pub fn check_channel(
+    stored: UpdateChannel,
+    next: UpdateChannel,
+    pro_early: bool,
+) -> Result<(), crate::commands::CmdError> {
+    if next == UpdateChannel::Rc && stored != UpdateChannel::Rc && !pro_early {
+        return Err(crate::commands::CmdError {
+            code: "license_required",
+            detail: Some(EARLY_FEATURE.to_owned()),
+        });
+    }
+    Ok(())
+}
+
 impl ShellSettings {
     /// What `shell_settings_put` stores: the person's switches, with the
     /// notice flag kept from `stored`.
@@ -4875,5 +4895,32 @@ then sum up"
         let loaded = load(&path).capture;
         assert!(loaded.enabled && loaded.annotate_paste);
         assert_eq!(loaded.shortcut, "Ctrl+Shift+P");
+    }
+}
+
+#[cfg(test)]
+mod channel_gate_tests {
+    use super::*;
+
+    #[test]
+    fn free_to_rc_is_rejected() {
+        let e = check_channel(UpdateChannel::Stable, UpdateChannel::Rc, false).unwrap_err();
+        assert_eq!(e.code, "license_required");
+    }
+
+    #[test]
+    fn pro_to_rc_is_allowed() {
+        assert!(check_channel(UpdateChannel::Stable, UpdateChannel::Rc, true).is_ok());
+    }
+
+    #[test]
+    fn an_existing_rc_is_kept_without_pro() {
+        assert!(check_channel(UpdateChannel::Rc, UpdateChannel::Rc, false).is_ok());
+    }
+
+    #[test]
+    fn stable_is_always_allowed() {
+        assert!(check_channel(UpdateChannel::Rc, UpdateChannel::Stable, false).is_ok());
+        assert!(check_channel(UpdateChannel::Stable, UpdateChannel::Stable, false).is_ok());
     }
 }
