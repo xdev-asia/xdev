@@ -142,6 +142,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.fastScrollSensitivity", "settings.terminal.interaction.fastScroll", ["scroll", "fast", "alt", "speed", "cuộn", "cuon", "nhanh"]),
   only(["linux"], e("terminal.middleClickPaste", "settings.terminal.interaction.middleClickPaste", ["middle", "click", "paste", "selection", "primary", "x11", "linux", "chuột giữa", "chuot giua", "dán", "dan", "vùng chọn", "vung chon"], "settings.terminal.interaction.middleClickPasteHint")),
   e("terminal.focusFollowsMouse", "settings.terminal.interaction.focusFollowsMouse", ["focus", "mouse", "hover", "pointer", "tiêu điểm", "tieu diem", "chuột", "chuot"], "settings.terminal.interaction.focusFollowsMouseHint"),
+  e("terminal.shellIntegration", "settings.terminal.interaction.shellIntegration", ["shell", "integration", "prompt", "exit code", "osc 133", "osc 7", "bash", "zsh", "fish", "powershell", "dấu nhắc", "dau nhac", "mã thoát", "ma thoat"], "settings.terminal.interaction.shellIntegrationHint"),
   e("terminal.linkClick", "settings.terminal.links.click", ["link", "url", "path", "click", "open", "actions", "liên kết", "lien ket", "nhấp", "nhap"], "settings.terminal.links.hint"),
   e("terminal.urlMiddleClick", "settings.terminal.links.middleClick", ["link", "url", "middle", "click", "open", "liên kết", "lien ket", "chuột giữa", "chuot giua", "nhấp", "nhap"]),
   e("terminal.bell", "settings.terminal.bell.label", ["bell", "beep", "flash", "sound", "visual", "chuông", "chuong", "âm thanh", "am thanh"], "settings.terminal.bell.hint"),

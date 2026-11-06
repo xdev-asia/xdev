@@ -1643,6 +1643,10 @@ pub struct TerminalSettings {
     /// 0.5..=1.0; 1 is opaque.
     #[serde(deserialize_with = "lenient_bg_opacity")]
     pub background_opacity: f32,
+    /// bash, zsh, fish and PowerShell started by xDev report their prompts, exit codes and folder
+    /// (OSC 133 and 7) through a script xDev loads; the owner's rc files are never changed.
+    #[serde(deserialize_with = "lenient_shell_integration")]
+    pub shell_integration: bool,
 }
 
 /// The theme id used in light mode when none is set.
@@ -1692,6 +1696,7 @@ impl Default for TerminalSettings {
             scroll_on_input: true,
             padding_px: 8,
             background_opacity: 1.0,
+            shell_integration: true,
         }
     }
 }
@@ -2429,6 +2434,10 @@ fn lenient_scroll_on_input<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bo
     lenient_or(de, true)
 }
 
+fn lenient_shell_integration<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::Error> {
+    lenient_or(de, true)
+}
+
 fn lenient_words<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
     lenient_or(de, DEFAULT_WORD_SEPARATORS.to_owned())
 }
@@ -2656,6 +2665,15 @@ mod tests {
         assert!(!read(r#"{"saveScrollback": false}"#).save_scrollback);
         assert!(read(r#"{"saveScrollback": "no"}"#).save_scrollback);
         assert!(read(r#"{"saveScrollback": null}"#).save_scrollback);
+    }
+
+    #[test]
+    fn shell_integration_defaults_true_and_reads_lenient() {
+        assert!(TerminalSettings::default().shell_integration);
+        let read = |json: &str| serde_json::from_str::<TerminalSettings>(json).unwrap();
+        assert!(read("{}").shell_integration);
+        assert!(!read(r#"{"shellIntegration": false}"#).shell_integration);
+        assert!(read(r#"{"shellIntegration": "off"}"#).shell_integration);
     }
 
     #[test]
@@ -3256,6 +3274,7 @@ mod tests {
             scroll_on_input: false,
             padding_px: 12,
             background_opacity: 0.8,
+            shell_integration: false,
         };
         let settings = Settings {
             terminal: terminal.clone(),

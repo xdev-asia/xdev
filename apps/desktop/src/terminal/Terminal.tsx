@@ -20,6 +20,7 @@ import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettin
 import { decodeOsc52Write, themeIdFor, xtermOptions } from "./terminalOptions";
 import { TerminalFind } from "./TerminalFind";
 import { installStatusOsc, type ProgramReport } from "./statusOsc";
+import { installShellMarks, promptLines, targetPromptLine } from "./shellMarks";
 import { createBell } from "./terminalBell";
 import { attachRenderer } from "./terminalRenderer";
 import { appIsLight, followAppTheme } from "./terminalColors";
@@ -307,6 +308,14 @@ export function Terminal(props: {
         case "terminal.paste":
           void handle.current.paste();
           break;
+        case "terminal.prevPrompt":
+        case "terminal.nextPrompt": {
+          const dir = action === "terminal.prevPrompt" ? -1 : 1;
+          const line = targetPromptLine(promptLines(props.id), term.buffer.active.viewportY, dir);
+          if (line !== undefined) term.scrollToLine(line);
+          else if (dir > 0) term.scrollToBottom();
+          break;
+        }
         default:
           return false;
       }
@@ -333,6 +342,8 @@ export function Terminal(props: {
       onProgramStatus: (r) => handlers.current.onProgramStatus?.(r),
       onProgress: (p) => handlers.current.onProgress?.(p),
     });
+    // OSC 133 from the shell integration: where each prompt is and how the last command ended.
+    const offMarks = installShellMarks(term, props.id);
     // A program may write the clipboard (OSC 52) when the setting allows it; a read request is always refused.
     term.parser.registerOscHandler(52, (data) => {
       if (!getTerminalSettings().osc52Clipboard) return true;
@@ -492,6 +503,7 @@ export function Terminal(props: {
 
     return () => {
       alive = false;
+      offMarks();
       offDrop();
       offSettings();
       offTheme();

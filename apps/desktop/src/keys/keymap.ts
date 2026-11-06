@@ -40,7 +40,7 @@ export type ActionId =
   // Bound to nothing by default: opens the dialog that shows or hides worktrees in the sidebar.
   | "sidebar.visibility.open"
   | "panel.explorer" | "panel.search" | "panel.sourceControl" | "panel.issues" | "panel.ports"
-  | "terminal.clear" | "terminal.copy" | "terminal.paste" | "terminal.selectAll" | "terminal.find"
+  | "terminal.clear" | "terminal.copy" | "terminal.paste" | "terminal.selectAll" | "terminal.find" | "terminal.prevPrompt" | "terminal.nextPrompt"
   | "zoom.in" | "zoom.out" | "zoom.reset"
   | "tab.reopenClosed"
   // The next / previous tab of the same kind (file or terminal) as the front one.

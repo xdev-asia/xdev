@@ -122,4 +122,9 @@ paddingPx: number,
 /**
  * 0.5..=1.0; 1 is opaque.
  */
-backgroundOpacity: number, };
+backgroundOpacity: number, 
+/**
+ * bash, zsh, fish and PowerShell started by xDev report their prompts, exit codes and folder
+ * (OSC 133 and 7) through a script xDev loads; the owner's rc files are never changed.
+ */
+shellIntegration: boolean, };

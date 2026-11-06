@@ -6,12 +6,13 @@ import { translate } from "@/i18n";
 import { resetBindingsForTests, setKeySettings } from "@/keys/bindingsStore";
 import { PtyClient } from "./ptyClient";
 import { Terminal } from "./Terminal";
+import { getShellMarks } from "./shellMarks";
 import { TERMINAL_SCHEMES } from "./terminalThemes";
 import { resetCustomSchemesForTests, setCustomSchemes } from "./customSchemes";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, osc7: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown, platform: "win" as string, csi: {} as Record<string, (p: unknown[]) => boolean>, bufType: "normal", bracketedMode: true, providers: [] as unknown[], linkHandler: null as null | { activate(e: unknown, text: string, range: unknown): void; allowNonHttpProtocols?: boolean }, webLinks: null as null | { handler: (e: unknown, uri: string) => void; options: { hover?: unknown; leave?: unknown } | undefined } }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, osc7: null as ((d: string) => boolean) | null, osc133: null as ((d: string) => boolean) | null, cursorLine: 0, viewportY: 0, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown, platform: "win" as string, csi: {} as Record<string, (p: unknown[]) => boolean>, bufType: "normal", bracketedMode: true, providers: [] as unknown[], linkHandler: null as null | { activate(e: unknown, text: string, range: unknown): void; allowNonHttpProtocols?: boolean }, webLinks: null as null | { handler: (e: unknown, uri: string) => void; options: { hover?: unknown; leave?: unknown } | undefined } }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -85,6 +86,8 @@ vi.mock("@xterm/xterm", () => ({
       registerOscHandler(id: number, cb: (d: string) => boolean) {
         if (id === 52) hooks.osc = cb;
         if (id === 7) hooks.osc7 = cb;
+        if (id === 133) hooks.osc133 = cb;
+        return { dispose() {} };
       },
       registerCsiHandler(id: { prefix?: string; intermediates?: string; final: string }, cb: (p: unknown[]) => boolean) {
         hooks.csi[`${id.prefix ?? ""}${id.intermediates ?? ""}${id.final}`] = cb;
@@ -106,8 +109,17 @@ vi.mock("@xterm/xterm", () => ({
         get type() {
           return hooks.bufType;
         },
+        get viewportY() {
+          return hooks.viewportY;
+        },
       },
     };
+    registerMarker() {
+      return { line: hooks.cursorLine, isDisposed: false, dispose() {} };
+    }
+    scrollToLine(line: number) {
+      hooks.calls.push(`scrollToLine:${line}`);
+    }
     scrollToTop() {
       hooks.calls.push("scrollToTop");
     }
@@ -192,6 +204,9 @@ beforeEach(() => {
   hooks.selection = "";
   hooks.osc = null;
   hooks.osc7 = null;
+  hooks.osc133 = null;
+  hooks.cursorLine = 0;
+  hooks.viewportY = 0;
   hooks.options = {};
   hooks.keyHandler = null;
   hooks.platform = "win";
@@ -536,6 +551,35 @@ it("Ctrl+K clears the terminal and sends nothing to the program", () => {
   expect(handler(e)).toBe(false);
   expect(hooks.calls).toEqual(["clear"]);
   expect(e.preventDefault).toHaveBeenCalled();
+});
+
+it("OSC 133 marks the prompts and the exit code; Ctrl+Alt+Up and Down jump between prompts", () => {
+  vi.stubGlobal("navigator", { userAgent: "Windows" });
+  const { effect } = mount({ api: createMockApi({}), id: "marks-1" });
+  const cleanup = effect() as () => void;
+  const handler = hooks.keyHandler!;
+  for (const line of [3, 40, 90]) {
+    hooks.cursorLine = line;
+    hooks.osc133!("A");
+  }
+  hooks.osc133!("C");
+  expect(getShellMarks("marks-1").running).toBe(true);
+  hooks.osc133!("D;2");
+  expect(getShellMarks("marks-1")).toEqual({ exitCode: 2, running: false, prompts: 3 });
+  const up = key({ ctrlKey: true, altKey: true, code: "ArrowUp" });
+  const down = key({ ctrlKey: true, altKey: true, code: "ArrowDown" });
+  hooks.viewportY = 60;
+  expect(handler(up)).toBe(false);
+  expect(handler(down)).toBe(false);
+  hooks.viewportY = 95;
+  handler(down);
+  handler(up);
+  hooks.viewportY = 2;
+  handler(up);
+  expect(hooks.calls).toEqual(["scrollToLine:40", "scrollToLine:90", "scrollToBottom", "scrollToLine:90"]);
+  expect(up.preventDefault).toHaveBeenCalled();
+  cleanup();
+  expect(getShellMarks("marks-1").prompts).toBe(0);
 });
 
 it("select all and paste run in the terminal; copy writes the selection", async () => {

@@ -91,6 +91,7 @@ mod session;
 mod settings;
 mod settings_store;
 mod shell;
+mod shell_integration;
 mod ship;
 mod squads;
 mod ssh;

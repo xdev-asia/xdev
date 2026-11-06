@@ -38,6 +38,7 @@ export const TERMINAL_DEFAULTS: TerminalSettings = {
   scrollOnInput: true,
   paddingPx: 8,
   backgroundOpacity: 1,
+  shellIntegration: true,
 };
 
 // The double-click word separators when none are set (`DEFAULT_WORD_SEPARATORS` in Rust).

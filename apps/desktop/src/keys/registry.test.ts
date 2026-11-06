@@ -23,6 +23,7 @@ const ALL: Record<ActionId, true> = {
   "sidebar.left.toggle": true, "sidebar.right.toggle": true, "sidebar.sleepingOnly.toggle": true, "sidebar.visibility.open": true,
   "panel.explorer": true, "panel.search": true, "panel.sourceControl": true, "panel.issues": true, "panel.ports": true,
   "terminal.clear": true, "terminal.copy": true, "terminal.paste": true, "terminal.selectAll": true, "terminal.find": true,
+  "terminal.prevPrompt": true, "terminal.nextPrompt": true,
   "zoom.in": true, "zoom.out": true, "zoom.reset": true,
   "tab.reopenClosed": true, "tab.nextSameKind": true, "tab.prevSameKind": true, "tab.moveLeft": true, "tab.moveRight": true, "file.closeAll": true, "tab.closeAll": true,
   "browser.new": true,
@@ -72,7 +73,7 @@ it("no two defaults in one scope share a chord on any platform", () => {
 
 it("the keys a TUI also uses are the ones that yield under terminal first", () => {
   expect(SHORTCUTS.filter((d) => d.yieldsToTerminal).map((d) => d.id).sort()).toEqual(
-    ["pane.close", "pane.next", "pane.prev", "pane.splitDown", "pane.splitRight", "terminal.clear", "terminal.find", "terminal.selectAll", "worktree.history.back", "worktree.history.forward"],
+    ["pane.close", "pane.next", "pane.prev", "pane.splitDown", "pane.splitRight", "terminal.clear", "terminal.find", "terminal.nextPrompt", "terminal.prevPrompt", "terminal.selectAll", "worktree.history.back", "worktree.history.forward"],
   );
 });
 

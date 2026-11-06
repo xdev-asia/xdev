@@ -11,7 +11,13 @@ import { parseNumber, type TerminalSectionProps } from "./sectionProps";
 export const BELL_MODES: TerminalBell[] = ["none", "visual", "sound"];
 export const LINK_CLICK_MODES: TerminalLinkClick[] = ["actions", "open", "none"];
 const LINK_IDS = ["terminal.linkClick", "terminal.urlMiddleClick"];
-const INTERACTION_IDS = ["terminal.scrollSensitivity", "terminal.fastScrollSensitivity", "terminal.focusFollowsMouse", "terminal.middleClickPaste"];
+const INTERACTION_IDS = [
+  "terminal.scrollSensitivity",
+  "terminal.fastScrollSensitivity",
+  "terminal.focusFollowsMouse",
+  "terminal.middleClickPaste",
+  "terminal.shellIntegration",
+];
 const BELL_IDS = ["terminal.bell"];
 const WORD_IDS = ["terminal.wordSeparators"];
 type SpeedField = "scrollSensitivity" | "fastScrollSensitivity";
@@ -109,6 +115,23 @@ export function TerminalBehaviourSection(props: TerminalSectionProps): JSX.Eleme
                 aria-label={t("settings.terminal.interaction.middleClickPaste")}
                 disabled={busy}
                 onClick={() => void patch({ middleClickPaste: !current.middleClickPaste })}
+              />
+            </li>
+          )}
+          {settingShown(filter, "terminal.shellIntegration") && (
+            <li className="settings-item" data-switch="shellIntegration" data-setting-id="terminal.shellIntegration">
+              <div className="settings-item-text">
+                <strong>{t("settings.terminal.interaction.shellIntegration")}</strong>
+                <span className="settings-path">{t("settings.terminal.interaction.shellIntegrationHint")}</span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                className="agent-switch"
+                aria-checked={current.shellIntegration}
+                aria-label={t("settings.terminal.interaction.shellIntegration")}
+                disabled={busy}
+                onClick={() => void patch({ shellIntegration: !current.shellIntegration })}
               />
             </li>
           )}
