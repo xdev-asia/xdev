@@ -158,7 +158,7 @@ describe("mock workspace", () => {
     expect(await names("docs")).toEqual(["guide.md"]);
     expect(await api.worktreeListDir(FIRST, "")).toMatchObject({ truncated: false });
     // The primary checkout has a tree too.
-    expect(await api.worktreeListDir("/demo/xdev", "src/lib")).toEqual({ entries: [{ name: "format.ts", dir: false }], truncated: false });
+    expect(await api.worktreeListDir("/demo/xdev", "src/lib")).toEqual({ entries: [{ name: "format.ts", dir: false, ignored: false }], truncated: false });
   });
 
   it("refuses unknown worktrees, odd folders and missing ones", async () => {
