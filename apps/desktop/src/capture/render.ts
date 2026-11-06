@@ -17,7 +17,7 @@ const TOKENS: Record<ColorKey | "halo", string> = {
   halo: "--bg-0",
 };
 
-/** Relative brightness of a `#rgb`, `#rrggbb` or `rgb()` colour; null when it is none of those. */
+/** Relative brightness of a hex (3 or 6 digits) or functional RGB colour; null when it is none of those. */
 function brightness(css: string): number | null {
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(css);
   let rgb: number[] | null = null;
