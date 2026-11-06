@@ -6942,11 +6942,14 @@ dependencies = [
 name = "xdev-ssh"
 version = "0.7.0"
 dependencies = [
+ "getrandom 0.4.3",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "ts-rs",
+ "xdev-git",
+ "xdev-workspace",
 ]
 
 [[package]]

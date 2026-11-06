@@ -10,10 +10,13 @@ publish.workspace = true
 ts = ["dep:ts-rs"]
 
 [dependencies]
+getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 ts-rs = { workspace = true, optional = true }
+xdev-git.workspace = true
+xdev-workspace.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
