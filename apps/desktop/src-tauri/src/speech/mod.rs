@@ -3,6 +3,7 @@
 //! the renderer.
 
 mod pcm;
+mod permission;
 
 #[cfg(test)]
 mod tests {
