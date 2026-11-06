@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, PointerEvent as ReactPointerEvent } from "react";
-import { Tag } from "@xdev-asia/ui";
+import { Checkbox, FilterChip, IconButton, Popover, SearchInput, Segmented, Tag } from "@xdev-asia/ui";
 import type { Api, PtyProfile, WorkStatus, WorktreeView } from "@/api";
 import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
@@ -8,8 +8,16 @@ import { ContextMenu } from "@/ui/ContextMenu";
 import { syncTaskStatus } from "@/tasks/board/boardModel";
 import { StatusGlyph } from "./StatusGlyph";
 import type { TabStatus } from "./status";
-import { dropColumn, groupByStatus, moveCard, moveItems, pastThreshold, statusOf, type ColumnBox, type ColumnId } from "./kanbanModel";
+import { COLUMN_IDS, NO_FILTER, dropColumn, filterCards, groupByStatus, moveCard, moveItems, pastThreshold, statusOf, type CardFilter, type ColumnBox, type ColumnId } from "./kanbanModel";
+import { loadSettings, saveSettings, toggleColumn, type Density, type KanbanSettings } from "./kanbanSettings";
 import "@/styles/kanban.css";
+
+/** What the toolbar holds: search, chips and board settings. */
+export interface KanbanView {
+  query: string;
+  filter: CardFilter;
+  settings: KanbanSettings;
+}
 
 export interface KanbanBoardProps {
   /** The worktrees of the current project. */
@@ -26,6 +34,10 @@ export interface KanbanBoardProps {
   /** A move failed and the card went back. */
   onMoveError(): void;
   onClose(): void;
+  /** The "New worktree" button of a column: the shell opens the create dialog with that status (null for No status). Without it the buttons are not drawn. */
+  onNew?(status: WorkStatus | null): void;
+  /** Where search, chips and settings start; the board keeps them for as long as it is open. Settings default to the stored ones. */
+  view?: Partial<KanbanView>;
   /** With the repo path, lets a move of a task's worktree write the task's status as well. */
   api?: Pick<Api, "boardUpdate">;
   repoPath?: string | null;
@@ -54,6 +66,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [overrides, setOverrides] = useState<Record<string, WorkStatus | null>>({});
   const [drag, setDrag] = useState<Drag | null>(null);
   const [menu, setMenu] = useState<{ wt: WorktreeView; at: { x: number; y: number } } | null>(null);
+  const [query, setQuery] = useState(props.view?.query ?? "");
+  const [chips, setChips] = useState<Omit<CardFilter, "query">>(() => ({ pinned: props.view?.filter?.pinned ?? false, agents: props.view?.filter?.agents ?? false, tasks: props.view?.filter?.tasks ?? false }));
+  const [settings, setSettings] = useState<KanbanSettings>(() => props.view?.settings ?? loadSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     const d = dialog.current;
@@ -183,7 +199,13 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     );
   };
 
-  const board = groupByStatus(props.worktrees, overrides);
+  const shown = filterCards(props.worktrees, { ...NO_FILTER, ...chips, query }, props.profiles);
+  const board = groupByStatus(shown, overrides).filter((col) => !settings.hidden.includes(col.id));
+  const change = (next: KanbanSettings) => {
+    setSettings(next);
+    saveSettings(next);
+  };
+  const flip = (key: keyof typeof chips) => setChips((c) => ({ ...c, [key]: !c[key] }));
   const name = (id: ColumnId) => (id === "none" ? t("workspace.groupBy.status.none") : t(`workspace.work.${id}`));
   const ghost = drag && props.worktrees.find((w) => w.path === drag.path);
 
@@ -193,6 +215,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       className="dialog ws-dialog kb"
       aria-labelledby="kb-title"
       data-dragging={drag ? "true" : undefined}
+      data-density={settings.density}
       onCancel={(e) => {
         e.preventDefault();
         props.onClose();
@@ -211,6 +234,60 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       {props.worktrees.length === 0 ? (
         <p className="kb-none">{t("kanban.none")}</p>
       ) : (
+        <>
+        <div className="kb-tools">
+          <SearchInput
+            size="sm"
+            value={query}
+            placeholder={t("kanban.search")}
+            aria-label={t("kanban.search")}
+            onChange={(e) => setQuery(e.target.value)}
+            onClear={() => setQuery("")}
+            count={query.trim() !== "" ? shown.length : undefined}
+            labels={{ count: (n) => t("kanban.searchCount", { count: n }) }}
+          />
+          <FilterChip pressed={chips.pinned} onClick={() => flip("pinned")}>
+            {t("kanban.filter.pinned")}
+          </FilterChip>
+          <FilterChip pressed={chips.agents} onClick={() => flip("agents")}>
+            {t("kanban.filter.agents")}
+          </FilterChip>
+          <FilterChip pressed={chips.tasks} onClick={() => flip("tasks")}>
+            {t("kanban.filter.tasks")}
+          </FilterChip>
+          <Popover
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            portal={false}
+            placement="bottom-end"
+            label={t("kanban.settings")}
+            className="kb-settings"
+            trigger={(trigger) => <IconButton icon="sliders" label={t("kanban.settings")} onClick={() => setSettingsOpen((o) => !o)} {...trigger} />}
+          >
+            <fieldset className="kb-settings-group">
+              <legend>{t("kanban.settings.columns")}</legend>
+              {COLUMN_IDS.map((id) => (
+                <Checkbox
+                  key={id}
+                  label={name(id)}
+                  checked={!settings.hidden.includes(id)}
+                  disabled={!settings.hidden.includes(id) && settings.hidden.length >= COLUMN_IDS.length - 1}
+                  onChange={() => change(toggleColumn(settings, id))}
+                />
+              ))}
+            </fieldset>
+            <Segmented
+              label={t("kanban.settings.density")}
+              value={settings.density}
+              options={[
+                { value: "comfortable", label: t("kanban.settings.comfortable") },
+                { value: "compact", label: t("kanban.settings.compact") },
+              ]}
+              onChange={(v) => change({ ...settings, density: v as Density })}
+            />
+          </Popover>
+        </div>
+        {shown.length === 0 && <p className="kb-none" role="status">{t("kanban.noMatch")}</p>}
         <div className="kb-board">
           {board.map((col) => (
             <section
@@ -227,6 +304,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               <h3 className="kb-col-head">
                 <span className="kb-col-name">{name(col.id)}</span>
                 <span className="ws-group-count">{col.items.length}</span>
+                {props.onNew && (
+                  <IconButton className="kb-new" icon="plus" size="sm" label={t("kanban.new", { status: name(col.id) })} onClick={() => props.onNew?.(statusOf(col.id))} />
+                )}
               </h3>
               {col.items.length === 0 ? (
                 <p className="kb-empty">{t("kanban.empty")}</p>
@@ -236,6 +316,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             </section>
           ))}
         </div>
+        </>
       )}
       {ghost && drag && (
         <div className="kb-ghost" aria-hidden="true" style={{ left: drag.x, top: drag.y }}>

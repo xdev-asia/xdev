@@ -30,17 +30,17 @@ export function parseSettings(raw: string | null): KanbanSettings {
   }
 }
 
-export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): KanbanSettings {
+export function loadSettings(storage?: Pick<Storage, "getItem">): KanbanSettings {
   try {
-    return parseSettings(storage?.getItem(SETTINGS_KEY) ?? null);
+    return parseSettings((storage ?? globalThis.localStorage)?.getItem(SETTINGS_KEY) ?? null);
   } catch {
     return DEFAULT_SETTINGS;
   }
 }
 
-export function saveSettings(settings: KanbanSettings, storage: Pick<Storage, "setItem"> | undefined = globalThis.localStorage): void {
+export function saveSettings(settings: KanbanSettings, storage?: Pick<Storage, "setItem">): void {
   try {
-    storage?.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    (storage ?? globalThis.localStorage)?.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch {
     // A view preference: losing it is fine.
   }
