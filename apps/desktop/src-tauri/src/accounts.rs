@@ -32,6 +32,14 @@ pub struct Account {
     provider: Provider,
     dir: PathBuf,
     status: AccountStatus,
+    /// Unix ms the sign-in file last changed; none when unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    signed_in_at: Option<i64>,
+    /// `true` for a Codex home whose `config.toml` differs from the CLI's own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    config_drift: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -168,6 +176,8 @@ fn account(entry: &AccountEntry) -> Account {
         provider: entry.provider,
         dir: entry.dir.clone(),
         status: xdev_ai::status(entry),
+        signed_in_at: xdev_ai::signed_in_at(entry),
+        config_drift: xdev_ai::config_drift(entry).then_some(true),
     }
 }
 
@@ -333,6 +343,21 @@ fn import(
     let entry = registry.add(name, provider, dir)?.clone();
     registry.save(data)?;
     Ok(account(&entry))
+}
+
+/// Copies the CLI's own `config.toml`, and nothing else, into a Codex
+/// account's folder.
+#[tauri::command(async)]
+pub fn account_sync_config(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), CmdError> {
+    let registry = Registry::load(data_dir(&state)?)?;
+    let entry = registry.get(&name).ok_or(AiError::NotFound)?;
+    xdev_ai::sync_config(entry).map_err(AiError::from)?;
+    let _ = app.emit(CHANGED_EVENT, ());
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -519,6 +544,8 @@ mod tests {
                         plan: None,
                         org: None,
                     },
+                    signed_in_at: Some(5),
+                    config_drift: None,
                 },
                 Account {
                     name: "c".into(),
@@ -530,6 +557,8 @@ mod tests {
                         plan: None,
                         org: None,
                     },
+                    signed_in_at: None,
+                    config_drift: Some(true),
                 },
             ],
         };
@@ -537,10 +566,12 @@ mod tests {
             serde_json::to_value(accounts).unwrap(),
             serde_json::json!({ "reservePercent": 30, "accounts": [{
                 "name": "a", "provider": "claude", "dir": "d",
-                "status": { "state": "logged_out", "email": null, "plan": null, "org": null }
+                "status": { "state": "logged_out", "email": null, "plan": null, "org": null },
+                "signedInAt": 5
             }, {
                 "name": "c", "provider": "codex", "dir": "e",
-                "status": { "state": "no_codex", "email": null, "plan": null, "org": null }
+                "status": { "state": "no_codex", "email": null, "plan": null, "org": null },
+                "configDrift": true
             }], "active": [{ "provider": "claude", "name": "a" }] })
         );
         let login = LoginStart {

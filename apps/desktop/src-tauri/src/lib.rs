@@ -473,6 +473,7 @@ pub fn run() {
             accounts::account_add,
             accounts::account_login,
             accounts::account_remove,
+            accounts::account_sync_config,
             accounts::account_activate,
             accounts::account_carry_session,
             accounts::routing_get,

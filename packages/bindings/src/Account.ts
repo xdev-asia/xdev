@@ -2,4 +2,12 @@
 import type { AccountStatus } from "./AccountStatus";
 import type { Provider } from "./Provider";
 
-export type Account = { name: string, provider: Provider, dir: string, status: AccountStatus, };
+export type Account = { name: string, provider: Provider, dir: string, status: AccountStatus, 
+/**
+ * Unix ms the sign-in file last changed; none when unknown.
+ */
+signedInAt?: number, 
+/**
+ * `true` for a Codex home whose `config.toml` differs from the CLI's own.
+ */
+configDrift?: boolean, };

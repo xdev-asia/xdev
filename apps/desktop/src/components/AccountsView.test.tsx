@@ -229,6 +229,16 @@ describe("active account", () => {
     expect(byText(view, "Use CLI default")).toHaveLength(1);
     if (typeof cleanup === "function") cleanup();
   });
+  it("warns about a drifted Codex config, syncs it and shows the last sign-in", async () => {
+    const view = harness(); view.draw(); const cleanup = hooks.effects[0](); await tick();
+    expect(view.html()).toContain("Last sign-in");
+    expect(view.html()).toContain(translate("en", "accounts.configDrift"));
+    const sync = vi.spyOn(view.api, "syncAccountConfig");
+    await view.button("Sync from default").props.onClick(); await tick();
+    expect(sync).toHaveBeenCalledWith("codex-1");
+    expect(view.html()).not.toContain("accounts.configDrift");
+    if (typeof cleanup === "function") cleanup();
+  });
   it("Use this account activates it and reloads", async () => {
     const api = createMockApi({});
     const activate = vi.spyOn(api, "accountActivate");

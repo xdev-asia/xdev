@@ -1013,6 +1013,8 @@ export interface Api {
   addAccount(name: string, provider: Provider, dir?: string): Promise<Account>;
   loginAccount(name: string): Promise<LoginStart>;
   removeAccount(name: string): Promise<void>;
+  // Copies the CLI's own Codex config.toml, and nothing else, into the account's folder.
+  syncAccountConfig(name: string): Promise<void>;
   // Makes `name` the active account of `provider`; null goes back to the CLI's own home.
   // Running tabs are left as they are; see `workspace/accountSwitch.ts`.
   accountActivate(provider: Provider, name: string | null): Promise<void>;
@@ -2488,6 +2490,7 @@ const tauriApi: Api = {
   quota: () => call("accounts_quota"),
   addAccount: (name, provider, dir) => call("account_add", { name, provider, dir: dir ?? null }),
   loginAccount: (name) => call("account_login", { name }),
+  syncAccountConfig: (name) => call("account_sync_config", { name }),
   removeAccount: (name) => call("account_remove", { name }),
   accountActivate: (provider, name) => call("account_activate", { provider, name }),
   accountCarrySession: (provider, from, to, session, cwd) => call("account_carry_session", { provider, from, to, session, cwd }),

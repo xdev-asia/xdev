@@ -240,6 +240,15 @@ export function AccountsView({ api }: { api: Api }) {
   function who(account: Account) {
     return [account.status.email, account.status.plan, account.status.org].filter(Boolean).join(" · ");
   }
+  // When the sign-in file last changed, and a Codex config that drifted from the CLI's own.
+  function details(account: Account) {
+    return <>
+      {account.signedInAt !== undefined && <p className="doc-path account-signed-in">{t("accounts.signedInAt", { time: new Date(account.signedInAt).toLocaleString() })}</p>}
+      {account.configDrift && <p className="account-reason account-drift" data-drift="true">{t("accounts.configDrift")}{" "}
+        <Button type="button" style={COMPACT} disabled={busy} aria-label={t("accounts.configSyncAria", { name: account.name })} onClick={() => run(async () => { await api.syncAccountConfig(account.name); setRevision(n => n + 1); })}>{t("accounts.configSync")}</Button>
+      </p>}
+    </>;
+  }
   function card(account: Account) {
     const quota = quotaOf(account);
     const state = stateOf(account);
@@ -255,6 +264,7 @@ export function AccountsView({ api }: { api: Api }) {
         <span className="badge account-state" data-state={state}>{t(`accounts.state.${state}`)}</span>
       </div>
       <p className="doc-path">{who(account)}</p>
+      {details(account)}
       {(state === "unknown" || quota?.reason === "expired") && <p className="account-reason">{t(`accounts.reason.${quota?.reason ?? "unavailable"}`)}</p>}
       {quota?.asOf && <p className="doc-path account-as-of">{asOfText(quota.asOf)}</p>}
       {quota?.windows.map(window => {
@@ -290,7 +300,7 @@ export function AccountsView({ api }: { api: Api }) {
       <div role="row" className="account-tr" key={account.name} data-state={state}>
         <div role="cell" className="account-cell-name">
           <span className="account-dot" data-state={state} aria-hidden="true" />
-          <span className="account-name-text"><strong>{account.name}</strong>{activeChip(account)}<span className="doc-path">{who(account) || t(`accounts.status.${account.status.state}`)}</span>{badge.state === "reauth" && <><span className="badge" data-state={badge.state}>{t(badge.key)}</span><span className="doc-path account-reason">{t("accounts.reason.expired")}</span></>}</span>
+          <span className="account-name-text"><strong>{account.name}</strong>{activeChip(account)}<span className="doc-path">{who(account) || t(`accounts.status.${account.status.state}`)}</span>{badge.state === "reauth" && <><span className="badge" data-state={badge.state}>{t(badge.key)}</span><span className="doc-path account-reason">{t("accounts.reason.expired")}</span></>}{details(account)}</span>
         </div>
         <div role="cell"><span className="badge account-provider" data-provider={account.provider}>{t(`accounts.provider.${account.provider}`)}</span>{singleChip(account)}</div>
         {cell(account, "five_hour")}
