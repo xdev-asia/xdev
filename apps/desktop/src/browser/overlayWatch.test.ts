@@ -58,9 +58,10 @@ describe("the overlay rule", () => {
 });
 
 // A page at x 100..500, y 100..400, and floating parts placed around it.
-type Floating = { box: [number, number, number, number]; inPage?: boolean; hidden?: boolean; invisible?: boolean };
+type Floating = { box: [number, number, number, number]; inPage?: boolean; hidden?: boolean; invisible?: boolean; holds?: string };
 const rect = ([left, top, width, height]: [number, number, number, number]) => ({ left, top, width, height, right: left + width, bottom: top + height }) as DOMRect;
 const page = (tab: string, box: [number, number, number, number]) => ({
+  tab,
   getAttribute: (name: string) => (name === "data-tab" ? tab : null),
   getBoundingClientRect: () => rect(box),
 });
@@ -68,6 +69,7 @@ const floating = (f: Floating) => ({
   closest: (q: string) => (q === "[hidden]" && f.hidden) || (q === ".browser-page" && f.inPage) ? {} : null,
   getBoundingClientRect: () => rect(f.box),
   checkVisibility: () => !f.invisible,
+  ...(f.holds === undefined ? {} : { contains: (p: { tab: string }) => p.tab === f.holds }),
 });
 const screen = (pages: ReturnType<typeof page>[], parts: Floating[]): ParentNode =>
   ({
@@ -109,6 +111,28 @@ describe("floating parts", () => {
     expect(coveredPages(screen(pages, [{ box: over, invisible: true }])).size).toBe(0);
     expect(coveredPages(screen(pages, [{ box: [200, 200, 1, 1] }])).size).toBe(0);
     expect(coveredPages(screen([], [{ box: over }])).size).toBe(0);
+  });
+
+  it("the selector names the floating workspace panel", () => {
+    expect(FLOATING_SELECTOR).toContain(".floating-ws");
+  });
+
+  it("a page under the panel is covered, a page inside it is not", () => {
+    const pages = [page("browser:a", [100, 100, 400, 300]), page("browser:b", [100, 100, 400, 300])];
+    expect([...coveredPages(screen(pages, [{ box: [0, 0, 1000, 1000], holds: "none" }]))].sort()).toEqual(["browser:a", "browser:b"]);
+    expect([...coveredPages(screen(pages, [{ box: [0, 0, 1000, 1000], holds: "browser:b" }]))]).toEqual(["browser:a"]);
+  });
+
+  it("a hidden panel covers nothing", () => {
+    const pages = [page("browser:a", [100, 100, 400, 300])];
+    expect(coveredPages(screen(pages, [{ box: [0, 0, 1000, 1000], hidden: true, holds: "none" }])).size).toBe(0);
+  });
+
+  it("a region panel is not an overlay", () => {
+    const el = { closest: () => null, getAttribute: () => null, matches: (q: string) => q.includes('[role="region"]') };
+    expect(OVERLAY_SELECTOR).not.toContain("region");
+    expect(hasOverlay({ querySelectorAll: () => [] } as unknown as ParentNode)).toBe(false);
+    expect(el.matches(OVERLAY_SELECTOR)).toBe(false);
   });
 
   it("a modal overlay still hides every page", () => {

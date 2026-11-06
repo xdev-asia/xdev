@@ -7,8 +7,9 @@ import { useSyncExternalStore } from "react";
 // the DOM cannot show (a native picker, say).
 export const OVERLAY_SELECTOR = 'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [data-overlay]';
 // A toast, a tooltip or a status line floats without blocking the app, so it hides only the pages
-// it lies over. One inside a page's body is the tab's own note and never counts.
-export const FLOATING_SELECTOR = '[role="status"], [role="tooltip"], .ws-toasts';
+// it lies over. One inside a page's body is the tab's own note and never counts. The floating
+// workspace panel is one too; the pages inside it are not covered by it.
+export const FLOATING_SELECTOR = '[role="status"], [role="tooltip"], .ws-toasts, .floating-ws';
 /** A tab's page body, which the webview covers; `data-tab` holds the tab id. */
 export const PAGE_SELECTOR = ".browser-page[data-tab]";
 const ATTRIBUTES = ["open", "role", "aria-modal", "hidden", "data-overlay", "data-open"];
@@ -43,17 +44,21 @@ function unseen(el: Element, box: DOMRect): boolean {
 /** The tabs under `root` whose page lies under a floating part that is on screen. */
 export function coveredPages(root: ParentNode): Set<string> {
   const covered = new Set<string>();
-  const pages: Array<{ tab: string; box: DOMRect }> = [];
+  const pages: Array<{ tab: string; box: DOMRect; el: Element }> = [];
   for (const el of root.querySelectorAll(PAGE_SELECTOR)) {
     const tab = el.getAttribute("data-tab");
-    if (tab) pages.push({ tab, box: el.getBoundingClientRect() });
+    if (tab) pages.push({ tab, box: el.getBoundingClientRect(), el });
   }
   if (pages.length === 0) return covered;
   for (const el of root.querySelectorAll(FLOATING_SELECTOR)) {
     if (el.closest("[hidden]") || el.closest(".browser-page")) continue;
     const box = el.getBoundingClientRect();
     if (unseen(el, box)) continue;
-    for (const p of pages) if (overlaps(box, p.box)) covered.add(p.tab);
+    for (const p of pages) {
+      // A page inside the floating workspace is part of it and stays shown.
+      if (typeof el.contains === "function" && el.contains(p.el)) continue;
+      if (overlaps(box, p.box)) covered.add(p.tab);
+    }
   }
   return covered;
 }
