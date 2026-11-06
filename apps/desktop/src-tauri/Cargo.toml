@@ -55,6 +55,7 @@ xdev-core.workspace = true
 xdev-git.workspace = true
 xdev-id.workspace = true
 xdev-license.workspace = true
+xdev-tracker.workspace = true
 xdev-input-source.workspace = true
 xdev-ipc.workspace = true
 xdev-kit.workspace = true
@@ -118,6 +119,7 @@ xdev-ssh = { workspace = true, features = ["ts"] }
 xdev-pty = { workspace = true, features = ["ts"] }
 xdev-workspace = { workspace = true, features = ["ts"] }
 xdev-license = { workspace = true, features = ["ts", "test-util"] }
+xdev-tracker = { workspace = true, features = ["ts", "test-util"] }
 
 [lints.rust]
 # The process table on Windows needs the ToolHelp calls; they are allowed one by one.

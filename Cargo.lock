@@ -7260,6 +7260,7 @@ dependencies = [
  "xdev-pty",
  "xdev-ssh",
  "xdev-store",
+ "xdev-tracker",
  "xdev-workspace",
 ]
 
