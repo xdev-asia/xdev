@@ -34,7 +34,10 @@ pub enum Auth {
     /// The token as the whole header value (Linear personal keys).
     Raw(Secret),
     Bearer(Secret),
-    Basic { user: String, secret: Secret },
+    Basic {
+        user: String,
+        secret: Secret,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
