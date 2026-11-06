@@ -4,6 +4,7 @@ import type { GitRecipes } from "./GitRecipes";
 import type { IssuesPreset } from "./IssuesPreset";
 import type { PullPolicy } from "./PullPolicy";
 import type { SourceControlGroupOrder } from "./SourceControlGroupOrder";
+import type { SourceControlViewMode } from "./SourceControlViewMode";
 
 /**
  * Settings → Git. Every field has a default, so a file from an older
@@ -51,6 +52,10 @@ autoRenameBranch: boolean,
  * Which group Source Control draws first.
  */
 sourceControlGroupOrder: SourceControlGroupOrder, 
+/**
+ * Whether Source Control lists the changed files flat or by folder.
+ */
+sourceControlViewMode: SourceControlViewMode, 
 /**
  * Logins (lowercase) treated as bots in a pull request's comments, on top
  * of the ones GitHub marks as bots. A wrong type costs only this field.

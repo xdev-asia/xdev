@@ -4260,3 +4260,28 @@ button.ws-tree-row[data-active="true"] {
   outline: 2px solid var(--x-color-warn);
   outline-offset: 1px;
 }
+
+.ws-changes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ws-change-view {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.ws-change-dir .ws-change-open {
+  cursor: pointer;
+}
+
+.ws-change-caret {
+  width: 10px;
+  flex-shrink: 0;
+  color: var(--text-2);
+}

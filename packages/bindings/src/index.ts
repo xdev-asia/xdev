@@ -457,6 +457,7 @@ export type { Skip } from "./Skip";
 export type { SkippedLogs } from "./SkippedLogs";
 export type { SoundName } from "./SoundName";
 export type { SourceControlGroupOrder } from "./SourceControlGroupOrder";
+export type { SourceControlViewMode } from "./SourceControlViewMode";
 export type { SparsePreset } from "./SparsePreset";
 export type { Squad } from "./Squad";
 export type { SquadItem } from "./SquadItem";

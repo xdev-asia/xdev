@@ -1160,3 +1160,54 @@ it("hands the history panel the base the ship bar reports, so a base change relo
   view.find((n) => n.type === ShipBar)!.props.onBase("origin/dev");
   expect(panel().props.base).toBe("origin/dev");
 });
+
+const treeApi = async () => {
+  const api = createMockApi({});
+  await api.setGitSettings({ ...(await api.gitSettings()), sourceControlViewMode: "tree" });
+  vi.spyOn(api, "worktreeStageState").mockResolvedValue(mixed);
+  return api;
+};
+const treeRows = (view: ReturnType<typeof changes>) => view.all().filter((n) => n.type === "li");
+const names = (view: ReturnType<typeof changes>) => treeRows(view).map((r) => r.props.role === "treeitem" ? `${r.props["aria-level"]}:${(r.props.className as string).includes("dir") ? "dir" : "file"}` : "plain");
+
+it("draws a flat list by default and folders in tree mode, keeping the groups", async () => {
+  const flat = changes(createMockApi({}));
+  await tick();
+  expect(flat.all().some((n) => n.props.role === "tree")).toBe(false);
+
+  const view = changes(await treeApi());
+  await tick();
+  expect(view.all().some((n) => n.props.role === "tree")).toBe(true);
+  expect(groupNames(view)).toEqual(["changes", "staged"]);
+  // Changes: src/ with two files; Staged: docs/ and src/ each with one.
+  expect(names(view).filter((n) => n.endsWith("dir"))).toHaveLength(3);
+  expect(group(view, "changes")).toBeDefined();
+  expect(group(view, "staged")).toBeDefined();
+});
+
+it("collapses and expands a folder with the arrow keys", async () => {
+  const view = changes(await treeApi());
+  await tick();
+  const dir = () => treeRows(view).find((r) => (r.props.className as string).includes("ws-change-dir") && r.props["aria-expanded"] !== undefined)!;
+  const before = treeRows(view).length;
+  expect(dir().props["aria-expanded"]).toBe(true);
+  const target = {};
+  const press = (k: string) => dir().props.onKeyDown({ key: k, ctrlKey: false, metaKey: false, altKey: false, target, currentTarget: target, preventDefault: vi.fn() });
+  press("ArrowLeft");
+  expect(treeRows(view).length).toBeLessThan(before);
+  expect(dir().props["aria-expanded"]).toBe(false);
+  press("ArrowRight");
+  expect(treeRows(view).length).toBe(before);
+});
+
+it("flips the view from the header button and saves it", async () => {
+  const api = createMockApi({});
+  const view = changes(api);
+  await tick();
+  const toggle = () => view.find((n) => n.props["data-view-toggle"] !== undefined)!;
+  expect(toggle().props["data-view-toggle"]).toBe("list");
+  toggle().props.onClick();
+  await tick();
+  expect((await api.gitSettings()).sourceControlViewMode).toBe("tree");
+  expect(toggle().props["data-view-toggle"]).toBe("tree");
+});

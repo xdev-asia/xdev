@@ -201,6 +201,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("git.compare", "settings.git.compare", ["diff", "upstream", "base", "so sánh", "so sanh"], "settings.git.compareHint"),
   e("git.pullPolicy", "settings.git.pullPolicy", ["pull", "merge", "rebase", "fast-forward", "ff"], "settings.git.pullPolicyHint"),
   e("git.groupOrder", "settings.git.groupOrder", ["staged", "changes", "order", "thứ tự", "thu tu"], "settings.git.groupOrderHint"),
+  e("git.viewMode", "settings.git.viewMode", ["list", "tree", "folders", "changes", "danh sách", "danh sach", "cây", "cay", "thư mục", "thu muc"], "settings.git.viewModeHint"),
   e("git.refresh", "settings.git.refresh", ["fetch", "pull", "base", "create", "làm mới", "lam moi"], "settings.git.refreshHint"),
   e("git.baseTip", "settings.git.baseTip", ["behind", "base", "upstream", "tip", "toast", "chậm", "cham", "nhánh gốc", "nhanh goc"], "settings.git.baseTipHint"),
   e("git.worktreeDir", "settings.git.worktreeDir", ["worktree", "folder", "directory", "path", "location", "thư mục", "thu muc", "đường dẫn", "duong dan"], "settings.git.worktreeDirHint"),
