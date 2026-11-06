@@ -128,11 +128,13 @@ it("tab keys: close all, cycle by kind, next and previous across every tab", () 
   expect(on("tab.next", "mac")).toContain("Ctrl+PageDown");
 });
 
-it("Mod+W stays with Close tab; Close pane has no second claim on it", () => {
+it("Mod+W stays with Close tab; Close pane takes Mod+Shift+W", () => {
   for (const p of PLATFORMS) {
     expect(on("tab.close", p)).toEqual([normalizeChord("Mod+W", p)]);
-    expect(on("pane.close", p)).toEqual([]);
+    expect(on("pane.close", p)).toEqual([normalizeChord("Mod+Shift+W", p)]);
   }
+  expect(on("pane.close", "win")).toEqual(["Ctrl+Shift+W"]);
+  expect(on("pane.close", "mac")).toEqual(["Shift+Cmd+W"]);
 });
 
 it("the KB-3 keys and the macOS terminal copy and paste", () => {

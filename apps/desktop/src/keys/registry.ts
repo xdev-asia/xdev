@@ -75,7 +75,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("pane.prev", "panes", ["Mod+["], TUI),
   def("pane.expand", "panes", ["Mod+Shift+Enter"]),
   def("pane.equalize", "panes", ["Mod+Shift+="]),
-  def("pane.close", "panes", [], TUI),
+  def("pane.close", "panes", ["Mod+Shift+W"], TUI),
   def("pane.clearTitle", "panes", []),
   // Worktrees.
   def("worktree.prev", "worktrees", ["Mod+Shift+Up"]),
