@@ -72,8 +72,16 @@ describe("CLI events", () => {
     resetToastsForTests();
     api.__cliAsk({ request: 10, caller: "/w/lead", verb: "agent.launch", target: "/w/other" });
     api.__cliAsk({ request: 11, caller: "/w/lead", verb: "file.diff", target: "/w/other" });
-    expect(getToasts().map((x) => x.text)).toEqual(["lead wants to start an agent in other.", "lead wants to show the changes of other."]);
-    for (const k of ["cli.ask.terminalOpen", "cli.ask.terminalStop", "cli.ask.terminalClose", "cli.ask.agentLaunch", "cli.ask.fileDiff"]) expect(translate("vi", k)).not.toBe(k);
+    api.__cliAsk({ request: 12, caller: "/w/lead", verb: "terminal.set-pane-title", target: "/w/other" });
+    expect(getToasts().map((x) => x.text)).toEqual([
+      "lead wants to start an agent in other.",
+      "lead wants to show the changes of other.",
+      "lead wants to rename a terminal of other.",
+    ]);
+    resetToastsForTests();
+    api.__cliAsk({ request: 13, caller: "/w/lead", verb: "terminal.switch", target: "/w/other" });
+    expect(getToasts().map((x) => x.text)).toEqual(["lead wants to show a terminal of other."]);
+    for (const k of ["cli.ask.terminalOpen", "cli.ask.terminalStop", "cli.ask.terminalClose", "cli.ask.terminalSwitch", "cli.ask.terminalRename", "cli.ask.agentLaunch", "cli.ask.fileDiff"]) expect(translate("vi", k)).not.toBe(k);
   });
 
   it("names an outside caller and goes away after 60 s without an answer", async () => {

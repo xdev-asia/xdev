@@ -1,6 +1,7 @@
-//! `terminal.create | split | stop | close` and `agent.launch`: the CLI
-//! opening, splitting, stopping and closing tabs. The window owns the tabs,
-//! so all but `stop` go to it as an event (`cli://terminal`, or for an agent
+//! `terminal.create | split | stop | close | switch | rename |
+//! set-pane-title` and `agent.launch`: the CLI opening, splitting, stopping,
+//! closing, showing and naming tabs. The window owns the tabs, so all but
+//! `stop` go to it as an event (`cli://terminal`, or for an agent
 //! the `cli://open-tab` of `worktree create --agent`); an open then waits for
 //! the new tab on the board, a close for it to go.
 
@@ -30,6 +31,12 @@ pub enum TerminalOp {
     /// A new shell tab in a new pane beside the source tab's.
     Split,
     Close,
+    /// Bring the tab, its pane and its worktree to the front.
+    Switch,
+    /// Name the tab by hand; no title gives back the program's.
+    Rename,
+    /// Set the title the tab's pane shows, as the program's own would.
+    Title,
 }
 
 /// Where a split puts the new pane.
@@ -59,7 +66,7 @@ pub struct CliTerminal {
     pub cwd: Option<String>,
     /// create: typed into the shell once it runs, then Enter.
     pub cmd: Option<String>,
-    /// create: the tab's name.
+    /// create, rename and title: the tab's name.
     pub title: Option<String>,
 }
 
@@ -327,6 +334,63 @@ pub(crate) fn terminal_close(
         |tabs| (!tabs.iter().any(|t| t.id == id)).then_some(()),
     )?;
     Ok(json!({ "id": t.id, "closed": true }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ArrangeParams {
+    /// Default: the caller's own tab.
+    tab: Option<String>,
+    /// rename: the name; empty gives back the program's title.
+    name: Option<String>,
+    /// set-pane-title: the title.
+    title: Option<String>,
+}
+
+/// `terminal.switch | rename | set-pane-title`: the window brings the tab
+/// (default: the caller's) to the front, names it by hand, or sets the title
+/// its pane shows as a program's own title (OSC 2) does, which a name by hand
+/// still beats. Gated as a `set`: the caller's worktree and its family pass.
+pub(crate) fn terminal_arrange(
+    ctx: &Ctx<'_>,
+    req: &Request,
+    caller: &Caller,
+    op: TerminalOp,
+) -> Result<Value, AppError> {
+    let p: ArrangeParams = params(req)?;
+    let (verb, title) = match op {
+        TerminalOp::Switch => ("terminal.switch", None),
+        TerminalOp::Rename => {
+            let name = p.name.ok_or_else(|| bad_request("name the tab"))?;
+            ("terminal.rename", Some(clean_title(&name)?))
+        }
+        TerminalOp::Title => {
+            let title = clean_title(p.title.as_deref().unwrap_or_default())?;
+            if title.is_empty() {
+                return Err(bad_request("name a title"));
+            }
+            ("terminal.set-pane-title", Some(title))
+        }
+        _ => return Err(bad_request("not a tab arrangement")),
+    };
+    let t = tab_of(ctx, p.tab.as_deref(), caller)?;
+    gate(ctx, caller, verb, "set", Path::new(&t.worktree))?;
+    let title = title.filter(|t| !t.is_empty());
+    let ev = CliTerminal {
+        op,
+        id: t.id.clone(),
+        worktree: t.worktree.clone(),
+        source: None,
+        dir: None,
+        cwd: None,
+        cmd: None,
+        title: title.clone(),
+    };
+    (ctx.emit)(TERMINAL_EVENT, json!(ev));
+    if op == TerminalOp::Switch {
+        (ctx.focus_window)();
+    }
+    Ok(json!({ "id": t.id, "worktree": t.worktree, "title": title }))
 }
 
 #[derive(Deserialize)]
@@ -674,6 +738,110 @@ mod tests {
             .call(Some("p-lead"), "terminal.close", json!({"tab": "p-child"}))
             .unwrap_err();
         assert_eq!(e.code, "timeout");
+    }
+
+    #[test]
+    fn switch_brings_the_callers_tab_to_the_front() {
+        let f = fixture();
+        f.board
+            .replace(vec![tab("p-lead", &f.lead, false, "idle")], None);
+        let r = f
+            .call(Some("p-lead"), "terminal.switch", json!({}))
+            .unwrap();
+        assert_eq!(r["id"], "p-lead");
+        assert_eq!(r["worktree"], f.lead.display().to_string());
+        let ev = &sent(&f)[0];
+        assert_eq!(ev["op"], "switch");
+        assert_eq!(ev["id"], "p-lead");
+        assert_eq!(f.focused.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(asked(&f), 0);
+        let e = f.call(None, "terminal.switch", json!({})).unwrap_err();
+        assert_eq!(e.code, "no_terminal");
+    }
+
+    #[test]
+    fn rename_and_pane_title_send_a_clean_title() {
+        let f = fixture();
+        f.board.replace(
+            vec![
+                tab("p-lead", &f.lead, false, "idle"),
+                tab("p-child", &f.child, false, "idle"),
+            ],
+            None,
+        );
+        let call = |verb: &str, p: Value| f.call(Some("p-lead"), verb, p);
+        let r = call("terminal.rename", json!({ "name": "  build " })).unwrap();
+        assert_eq!(r["title"], "build");
+        // Empty gives the program's title back.
+        let r = call("terminal.rename", json!({ "name": " " })).unwrap();
+        assert_eq!(r["title"], Value::Null);
+        // A child is family: no question.
+        let r = call(
+            "terminal.set-pane-title",
+            json!({ "tab": "p-child", "title": "tests" }),
+        )
+        .unwrap();
+        assert_eq!(r["id"], "p-child");
+        let ops: Vec<_> = sent(&f)
+            .iter()
+            .map(|e| (e["op"].clone(), e["title"].clone()))
+            .collect();
+        assert_eq!(
+            ops,
+            [
+                (json!("rename"), json!("build")),
+                (json!("rename"), Value::Null),
+                (json!("title"), json!("tests")),
+            ]
+        );
+        assert_eq!(asked(&f), 0);
+        assert_eq!(f.focused.load(std::sync::atomic::Ordering::SeqCst), 0);
+        for (verb, p) in [
+            ("terminal.rename", json!({})),
+            ("terminal.rename", json!({ "name": "a\nb" })),
+            (
+                "terminal.rename",
+                json!({ "name": "x".repeat(TITLE_MAX_CHARS + 1) }),
+            ),
+            ("terminal.set-pane-title", json!({ "title": " " })),
+            ("terminal.set-pane-title", json!({})),
+        ] {
+            assert_eq!(
+                call(verb, p.clone()).unwrap_err().code,
+                "bad_request",
+                "{p}"
+            );
+        }
+        assert_eq!(sent(&f).len(), 3);
+    }
+
+    #[test]
+    fn arranging_a_tab_of_another_family_asks_first() {
+        let mut f = fixture();
+        f.board
+            .replace(vec![tab("p-other", &f.other, false, "idle")], None);
+        f.answer = Some(false);
+        for (verb, p) in [
+            ("terminal.switch", json!({ "tab": "p-other" })),
+            ("terminal.rename", json!({ "tab": "p-other", "name": "x" })),
+            (
+                "terminal.set-pane-title",
+                json!({ "tab": "p-other", "title": "x" }),
+            ),
+        ] {
+            let e = f.call(Some("p-lead"), verb, p).unwrap_err();
+            assert_eq!(e.code, "denied", "{verb}");
+        }
+        assert_eq!(asked(&f), 3);
+        assert!(sent(&f).is_empty());
+        f.answer = Some(true);
+        f.call(
+            Some("p-lead"),
+            "terminal.switch",
+            json!({ "tab": "p-other" }),
+        )
+        .unwrap();
+        assert_eq!(sent(&f).len(), 1);
     }
 
     fn opened_tabs(f: &Fixture) -> Vec<Value> {

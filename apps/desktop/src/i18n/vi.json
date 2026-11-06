@@ -4036,6 +4036,8 @@
   "cli.ask.terminalOpen": "mở một terminal trong",
   "cli.ask.terminalStop": "dừng một terminal của",
   "cli.ask.terminalClose": "đóng một terminal của",
+  "cli.ask.terminalSwitch": "hiện một terminal của",
+  "cli.ask.terminalRename": "đổi tên một terminal của",
   "cli.ask.agentLaunch": "khởi động một agent trong",
   "cli.ask.fileDiff": "xem thay đổi của",
   "settings.orchestration.skill.uninstall": "Gỡ cài đặt",

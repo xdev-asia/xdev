@@ -3,4 +3,4 @@
 /**
  * What the window does with a `cli://terminal` event.
  */
-export type TerminalOp = "create" | "split" | "close";
+export type TerminalOp = "create" | "split" | "close" | "switch" | "rename" | "title";

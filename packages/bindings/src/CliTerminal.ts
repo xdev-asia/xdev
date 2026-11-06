@@ -28,6 +28,6 @@ cwd: string | null,
  */
 cmd: string | null, 
 /**
- * create: the tab's name.
+ * create, rename and title: the tab's name.
  */
 title: string | null, };

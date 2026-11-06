@@ -72,6 +72,37 @@ describe("cli terminal", () => {
     await runCliTerminal(api, host, ev({ op: "close" }));
   });
 
+  it("switch selects the tab in its pane and asks the shell to show it", async () => {
+    const { api, live, host } = setup();
+    const shell = (await defaultShell(api))!;
+    const a = live.open(WT, shell);
+    live.open(WT, shell);
+    const jumped: string[] = [];
+    await runCliTerminal(api, { ...host, jump: (id: string) => void jumped.push(id) }, ev({ op: "switch", id: a.id }));
+    const layout = live.layout(WT)!;
+    const pane = paneOf(layout, a.id);
+    expect(leaves(layout).find((n) => n.kind === "leaf" && n.id === pane)).toMatchObject({ active: a.id });
+    expect(jumped).toEqual([a.id]);
+    // A tab that is gone is nothing.
+    await runCliTerminal(api, { ...host, jump: (id: string) => void jumped.push(id) }, ev({ op: "switch", id: "gone" }));
+    expect(jumped).toEqual([a.id]);
+  });
+
+  it("rename names the tab by hand; a pane title is the program's and loses to it", async () => {
+    const { api, live, host } = setup();
+    const shell = (await defaultShell(api))!;
+    const a = live.open(WT, shell);
+    await runCliTerminal(api, host, ev({ op: "title", id: a.id, title: "tests" }));
+    expect(live.tab(a.id)).toMatchObject({ title: "tests", renamed: false });
+    await runCliTerminal(api, host, ev({ op: "rename", id: a.id, title: "build" }));
+    expect(live.tab(a.id)).toMatchObject({ title: "build", renamed: true });
+    await runCliTerminal(api, host, ev({ op: "title", id: a.id, title: "later" }));
+    expect(live.tab(a.id)!.title).toBe("build");
+    // No name gives the program's title back.
+    await runCliTerminal(api, host, ev({ op: "rename", id: a.id, title: null }));
+    expect(live.tab(a.id)).toMatchObject({ title: "later", renamed: false });
+  });
+
   it("follows the events until stopped", async () => {
     const { api, live, host } = setup();
     const stop = startCliTerminal(api, host);

@@ -1,12 +1,14 @@
 import type { Api, CliTerminal } from "@/api";
 import { terminalBytes } from "@/quickCommands/run";
-import { paneOf, removeTab, splitPane } from "./paneTree";
+import { paneOf, removeTab, selectTab, splitPane } from "./paneTree";
 import type { Sessions } from "./sessions";
 
 export interface CliTerminalHost {
-  sessions: Pick<Sessions, "open" | "close" | "tab" | "layout" | "setLayout">;
+  sessions: Pick<Sessions, "open" | "close" | "tab" | "layout" | "setLayout" | "setTitle" | "noteTitle">;
   /** Makes sure the worktree's tabs are mounted, so a tab opened there gets its pty. */
   ensureMounted?(worktree: string): void;
+  /** Brings an open tab and its worktree to the front. */
+  jump?(id: string): unknown;
 }
 
 /** The default shell when it is on, else the first one; null with no shell. */
@@ -17,12 +19,25 @@ export async function defaultShell(api: Pick<Api, "profiles">): Promise<string |
 
 /**
  * Does what one `cli://terminal` asks. Create and split open a shell tab with the backend's id, which
- * waits for it in the tab report; a split puts it in a new pane beside the source tab's pane.
+ * waits for it in the tab report; a split puts it in a new pane beside the source tab's pane. Switch,
+ * rename and title act on an open tab: a rename is a name by hand (none gives back the program's title),
+ * a title is what the program's own title (OSC 2) would be.
  */
 export async function runCliTerminal(api: Pick<Api, "profiles">, host: CliTerminalHost, e: CliTerminal): Promise<void> {
   const { sessions } = host;
   if (e.op === "close") {
     if (sessions.tab(e.id)) await sessions.close(e.id);
+    return;
+  }
+  if (e.op === "switch" || e.op === "rename" || e.op === "title") {
+    if (!sessions.tab(e.id)) return;
+    if (e.op === "rename") sessions.setTitle(e.id, e.title);
+    else if (e.op === "title") sessions.noteTitle(e.id, e.title ?? "");
+    else {
+      const layout = sessions.layout(e.worktree);
+      if (layout) sessions.setLayout(e.worktree, selectTab(layout, e.id));
+      host.jump?.(e.id);
+    }
     return;
   }
   if (sessions.tab(e.id)) return;

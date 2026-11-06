@@ -877,7 +877,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       markUnread: (w, unread) => (unread ? sessions.markUnread(w) : sessions.markRead(w)),
       t: (key, vars) => live.t(key, vars),
     });
-    const stopTerminal = startCliTerminal(api, { sessions, ensureMounted: (w) => live.ensureMounted(w) });
+    const stopTerminal = startCliTerminal(api, { sessions, ensureMounted: (w) => live.ensureMounted(w), jump: (id) => live.jump(id) });
     // Worker tabs the backend asks for, closes and reads (orchestration).
     const stopOrchestration = startOrchestrationEvents(api, {
       sessions,

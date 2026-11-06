@@ -43,3 +43,16 @@ xdev terminal close --terminal <id>
 - `stop` ends the tab's process; the tab stays. Exit 5 means it had already ended.
 - `close` closes the tab and prints its id. A tab id may be a unique prefix.
 - Your own worktree passes. Opening in a child worktree passes. Anything else asks the person first; exit 7 means they said no.
+
+## Show and name
+
+```sh
+xdev terminal switch --terminal <id>
+xdev terminal rename build
+xdev terminal set-pane-title tests --terminal <id>
+```
+
+- `switch` brings a tab (default: this terminal), its pane and its worktree to the front.
+- `rename` names a tab by hand; titles its program sets no longer change it. An empty name gives the program's title back.
+- `set-pane-title` sets the title the pane shows, as the program's own title would. The program's next title, or a name given by hand, wins.
+- Your own worktree and its family pass. Anything else asks the person first.

@@ -4036,6 +4036,8 @@
   "cli.ask.terminalOpen": "open a terminal in",
   "cli.ask.terminalStop": "stop a terminal of",
   "cli.ask.terminalClose": "close a terminal of",
+  "cli.ask.terminalSwitch": "show a terminal of",
+  "cli.ask.terminalRename": "rename a terminal of",
   "cli.ask.agentLaunch": "start an agent in",
   "cli.ask.fileDiff": "show the changes of",
   "settings.orchestration.skill.uninstall": "Uninstall",

@@ -405,6 +405,36 @@ pub enum TerminalCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Bring a tab (default: this terminal) to the front: its worktree, its
+    /// pane and the window.
+    Switch {
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Name a tab by hand (default: this terminal); titles the program sets
+    /// no longer change it. An empty name gives the program's title back.
+    Rename {
+        name: String,
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set the title a tab's pane shows (default: this terminal), as the
+    /// program's own title does; the program's next title or a name given by
+    /// hand wins.
+    SetPaneTitle {
+        title: String,
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// `xdev agent launch`.
@@ -609,6 +639,19 @@ pub fn request(
         AppCommand::Terminal(TerminalCommand::Close { tab, json }) => {
             ("terminal.close", json!({ "tab": tab }), *json)
         }
+        AppCommand::Terminal(TerminalCommand::Switch { tab, json }) => {
+            ("terminal.switch", json!({ "tab": tab }), *json)
+        }
+        AppCommand::Terminal(TerminalCommand::Rename { name, tab, json }) => (
+            "terminal.rename",
+            json!({ "tab": tab, "name": name }),
+            *json,
+        ),
+        AppCommand::Terminal(TerminalCommand::SetPaneTitle { title, tab, json }) => (
+            "terminal.set-pane-title",
+            json!({ "tab": tab, "title": title }),
+            *json,
+        ),
     })
 }
 
@@ -740,7 +783,13 @@ pub fn plain(method: &str, result: &Value) -> String {
             out
         }
         "terminal.read" => result["tail"].as_str().unwrap_or_default().to_owned(),
-        "terminal.create" | "terminal.split" | "terminal.stop" | "terminal.close"
+        "terminal.create"
+        | "terminal.split"
+        | "terminal.stop"
+        | "terminal.close"
+        | "terminal.switch"
+        | "terminal.rename"
+        | "terminal.set-pane-title"
         | "agent.launch" => {
             format!(
                 "{}
@@ -1020,6 +1069,29 @@ mod tests {
             (m, p, json),
             ("terminal.close", json!({ "tab": null }), true)
         );
+
+        let (m, p, _) = request(&parse(&["switch", "--terminal", "t1"]).unwrap(), none).unwrap();
+        assert_eq!((m, p), ("terminal.switch", json!({ "tab": "t1" })));
+        let (m, p, _) = request(&parse(&["rename", "build"]).unwrap(), none).unwrap();
+        assert_eq!(
+            (m, p),
+            ("terminal.rename", json!({ "tab": null, "name": "build" }))
+        );
+        let (_, p, _) = request(&parse(&["rename", ""]).unwrap(), none).unwrap();
+        assert_eq!(p["name"], "");
+        let title = parse(&["set-pane-title", "tests", "--tab", "t1", "--json"]).unwrap();
+        let (m, p, json) = request(&title, none).unwrap();
+        assert_eq!(
+            (m, p, json),
+            (
+                "terminal.set-pane-title",
+                json!({ "tab": "t1", "title": "tests" }),
+                true
+            )
+        );
+        for bad in [&["rename"][..], &["set-pane-title"]] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[derive(clap::Parser)]
@@ -1113,6 +1185,9 @@ mod tests {
             "terminal.split",
             "terminal.stop",
             "terminal.close",
+            "terminal.switch",
+            "terminal.rename",
+            "terminal.set-pane-title",
             "agent.launch",
         ] {
             assert_eq!(
