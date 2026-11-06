@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PtyClient } from "./ptyClient";
-import { CONTEXT_LINES, copyContext, copyText, createTerminalHandle, terminalContext, type XTermLike } from "./terminalActions";
+import { CONTEXT_LINES, copyContext, copyText, createTerminalHandle, sanitizeForTerminal, terminalContext, type XTermLike } from "./terminalActions";
 
 // A stand-in xterm: a buffer of lines and spies for every call the handle makes.
 function fakeTerm(over: Partial<XTermLike> = {}, buffer: string[] = []) {
@@ -219,4 +219,27 @@ it("reset before the pty client exists only resets the xterm", () => {
   const h = createTerminalHandle({ term: () => term, client: () => null, find: vi.fn() });
   h.reset();
   expect(term.reset).toHaveBeenCalledTimes(1);
+});
+
+it("sanitizeForTerminal drops control characters and turns line breaks into spaces", () => {
+  expect(sanitizeForTerminal("ls\u001b[2J -la\r\nfoo\u0007")).toBe("ls[2J -la foo");
+  expect(sanitizeForTerminal("a\u009bb\u007fc")).toBe("abc");
+  expect(sanitizeForTerminal("one\ntwo\rthree\tfour")).toBe("one two three four");
+});
+
+it("insertText pastes the cleaned text once and never sends Enter", () => {
+  const { term } = fakeTerm();
+  const { h, client } = handleFor(term);
+  h.insertText!("echo hi\n");
+  expect(term.paste).toHaveBeenCalledTimes(1);
+  expect(term.paste).toHaveBeenCalledWith("echo hi ");
+  expect(client.input).not.toHaveBeenCalled();
+  for (const [text] of vi.mocked(term.paste).mock.calls) expect(text).not.toMatch(/[\r\n]/);
+});
+
+it("insertText does nothing without an xterm or with nothing left to send", () => {
+  const { term } = fakeTerm();
+  handleFor(null).h.insertText!("hi");
+  handleFor(term).h.insertText!("\u0007");
+  expect(term.paste).not.toHaveBeenCalled();
 });

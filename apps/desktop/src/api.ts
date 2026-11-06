@@ -388,6 +388,8 @@ import type { LspCompletionList, LspDocState, LspEvent, LspHover, LspLocation, L
 export type { LspCompletionItem, LspCompletionList, LspDiagnostic, LspDocState, LspEvent, LspFileEdit, LspHover, LspLanguage, LspLocation, LspPos, LspRange, LspRunning, LspServerInfo, LspSettings, LspState, LspSymbol, LspTextEdit, LspWorkspaceEdit } from "@xdev/bindings";
 import type { CaptureFailed, CapturePermission, CaptureReady, CaptureSettings, ShortcutStatus } from "@xdev/bindings";
 export type { CaptureFailed, CapturePermission, CaptureReady, CaptureSettings, ShortcutStatus };
+import type { MicDevice, MicPermission, SpeechLevel, SpeechMode, SpeechSettings, SpeechStarted, SpeechText } from "@xdev/bindings";
+export type { MicDevice, MicPermission, SpeechLevel, SpeechMode, SpeechSettings, SpeechStarted, SpeechText };
 import type { BrowserBounds, BrowserPage, BrowserSettings, BrowserTabUrl, LinksTarget } from "@xdev/bindings";
 export type { BrowserBounds, BrowserPage, BrowserSettings, BrowserTabUrl, LinksTarget };
 export type { Chart, ChartEdge, ChartKind, ChartMember, ChartProblem, ChartRoute, ChartRun, ChartSeat, SeatTab } from "@xdev/bindings";
@@ -941,6 +943,18 @@ export type ErrorCode =
   | "capture_no_tool"
   | "capture_timeout"
   | "capture_busy"
+  | "speech_no_key"
+  | "speech_no_mic"
+  | "speech_mic_denied"
+  | "speech_mic_failed"
+  | "speech_too_short"
+  | "speech_bad_key"
+  | "speech_rate_limited"
+  | "speech_offline"
+  | "speech_engine"
+  | "speech_empty"
+  | "speech_busy"
+  | "speech_not_recording"
   | "browser_empty"
   | "browser_scheme"
   | "browser_invalid"
@@ -2212,6 +2226,24 @@ export interface Api {
   onCaptureReady(cb: (e: CaptureReady) => void): Promise<() => void>;
   onCaptureFailed(cb: (e: CaptureFailed) => void): Promise<() => void>;
 
+  // Voice dictation. The clip and the OpenAI key stay in the backend; the window gets the text.
+  /** Opens the microphone; `speech_no_key`, `speech_no_mic`, `speech_mic_denied`, `speech_mic_failed` or `speech_busy`. */
+  speechStart(): Promise<SpeechStarted>;
+  /** Stops and transcribes; `speech_too_short`, `speech_bad_key`, `speech_offline`, `speech_empty` and the like. */
+  speechStop(): Promise<SpeechText>;
+  /** Drops the recording; nothing is uploaded. */
+  speechCancel(): Promise<void>;
+  speechDevices(): Promise<MicDevice[]>;
+  speechPermission(): Promise<MicPermission>;
+  /** Shows the OS prompt where there is one, then the state. */
+  speechPermissionRequest(): Promise<MicPermission>;
+  /** Opens the OS microphone privacy settings (macOS, Windows). */
+  speechOpenPrivacy(): Promise<void>;
+  speechSettingsGet(): Promise<SpeechSettings>;
+  speechSettingsPut(v: SpeechSettings): Promise<SpeechSettings>;
+  /** `speech://level`, every 100 ms while recording. */
+  onSpeechLevel(cb: (e: SpeechLevel) => void): Promise<() => void>;
+
   // Browser tabs. Each live tab is a child webview of the window, placed over the tab body
   // (logical pixels from the window's top left). At most three are live; the backend closes the
   // least recently shown one and says so with `browser://evicted`. Rejects `browser_unavailable`
@@ -2497,6 +2529,18 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "capture_no_tool",
   "capture_timeout",
   "capture_busy",
+  "speech_no_key",
+  "speech_no_mic",
+  "speech_mic_denied",
+  "speech_mic_failed",
+  "speech_too_short",
+  "speech_bad_key",
+  "speech_rate_limited",
+  "speech_offline",
+  "speech_engine",
+  "speech_empty",
+  "speech_busy",
+  "speech_not_recording",
   "browser_empty",
   "browser_scheme",
   "browser_invalid",
@@ -3202,6 +3246,16 @@ const tauriApi: Api = {
   captureSettingsPut: (settings) => call("capture_settings_put", { settings }),
   onCaptureReady: (cb) => listen<CaptureReady>("capture://ready", (e) => cb(e.payload)),
   onCaptureFailed: (cb) => listen<CaptureFailed>("capture://failed", (e) => cb(e.payload)),
+  speechStart: () => call("speech_start"),
+  speechStop: () => call("speech_stop"),
+  speechCancel: () => call("speech_cancel"),
+  speechDevices: () => call("speech_devices"),
+  speechPermission: () => call("speech_permission"),
+  speechPermissionRequest: () => call("speech_permission_request"),
+  speechOpenPrivacy: () => call("speech_open_privacy"),
+  speechSettingsGet: () => call("speech_settings_get"),
+  speechSettingsPut: (settings) => call("speech_settings_put", { settings }),
+  onSpeechLevel: (cb) => listen<SpeechLevel>("speech://level", (e) => cb(e.payload)),
   browserShow: (tab, url, bounds) => call("browser_show", { tab, url, bounds }),
   browserSetBounds: (tab, bounds) => call("browser_set_bounds", { tab, bounds }),
   browserHide: (tab) => call("browser_hide", { tab }),

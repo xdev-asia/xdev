@@ -96,6 +96,7 @@ mod settings_store;
 mod shell;
 mod shell_integration;
 mod ship;
+mod speech;
 mod squads;
 mod ssh;
 mod ssh_connect;
@@ -177,6 +178,7 @@ pub fn run() {
         .manage(file_watch::FileWatches::default())
         .manage(attribution::Attribution::default())
         .manage(status::Shown::default())
+        .manage(speech::SpeechState::default())
         .manage(power::Awake::default())
         .manage(app_stats::AppStatsHub::default())
         .manage(ports::Ports::default())
@@ -931,6 +933,15 @@ pub fn run() {
             capture::capture_shortcut_apply,
             capture::capture_settings_get,
             capture::capture_settings_put,
+            speech::speech_start,
+            speech::speech_stop,
+            speech::speech_cancel,
+            speech::speech_devices,
+            speech::speech_permission,
+            speech::speech_permission_request,
+            speech::speech_open_privacy,
+            speech::speech_settings_get,
+            speech::speech_settings_put,
             browser_pane::browser_show,
             browser_pane::browser_set_bounds,
             browser_pane::browser_hide,

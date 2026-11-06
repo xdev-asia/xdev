@@ -15,6 +15,7 @@ import type { MenuItem } from "@/ui/ContextMenu";
 import { pushToast } from "@/workspace/toastStore";
 import { PtyClient } from "./ptyClient";
 import { createTerminalHandle } from "./terminalActions";
+import { registerTerminalHandle, unregisterTerminalHandle } from "./handleRegistry";
 import { getCustomSchemes, subscribeCustomSchemes } from "./customSchemes";
 import { getTerminalSettings, subscribeTerminalSettings } from "./terminalSettings";
 import { decodeOsc52Write, themeIdFor, xtermOptions } from "./terminalOptions";
@@ -53,6 +54,8 @@ export interface TerminalHandle {
   /** The selected text; "" when nothing is selected. Absent in a stand-in handle. */
   selectionText?(): string;
   focus(): void;
+  /** Types dictated text at the prompt through xterm's paste, line breaks and control characters removed. Absent in a stand-in handle. */
+  insertText?(text: string): void;
   /** The last `max` lines of the buffer, blank tail lines dropped (for Copy Context). */
   lines(max: number): string[];
 }
@@ -152,6 +155,15 @@ export function Terminal(props: {
     }),
   );
   useImperativeHandle(props.handleRef, () => handle.current, []);
+
+  // Dictation finds the terminal the focus sits in through its host element.
+  useEffect(() => {
+    const el = host.current;
+    const own = handle.current;
+    if (!el) return;
+    registerTerminalHandle(el, own);
+    return () => unregisterTerminalHandle(el, own);
+  }, []);
 
   // Declared before the pty effect, which owns the xterm this one focuses.
   useEffect(() => {

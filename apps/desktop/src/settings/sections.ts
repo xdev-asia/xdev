@@ -7,6 +7,7 @@ import { AppearancePage } from "./AppearancePage";
 import { AutomationsSettingsPage } from "./AutomationsSettingsPage";
 import { BrowserPage } from "./BrowserPage";
 import { CaptureSettings } from "./capture/CaptureSettings";
+import { VoicePage } from "./voice/VoicePage";
 import { CodeIntelPage } from "./CodeIntelPage";
 import { CliPage } from "./cli/CliPage";
 import { DiagnosticsPage } from "./DiagnosticsPage";
@@ -89,6 +90,7 @@ export const SECTIONS: SettingsSection[] = [
   { id: "keys", group: "interface", labelKey: "keys.title", Component: ShortcutsPage },
   { id: "qcmd", group: "interface", labelKey: "qcmd.title", Component: QuickCommandsPage },
   { id: "capture", group: "interface", labelKey: "settings.capture.title", Component: CaptureSettings },
+  { id: "voice", group: "interface", labelKey: "settings.voice.title", Component: VoicePage },
   { id: "account", group: "integrations", labelKey: "account.title", Component: AccountPage },
   { id: "vaults", group: "integrations", labelKey: "settings.vaults.title", Component: VaultsSettings },
   { id: "ssh", group: "integrations", labelKey: "ssh.title", Component: SshPage },

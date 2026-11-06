@@ -1,0 +1,38 @@
+/* The dictation pill: bottom centre, above the panes, narrow enough for a 360px window. */
+.dictation-pill {
+  position: fixed;
+  inset-block-end: var(--x-space-4);
+  inset-inline: 0;
+  margin-inline: auto;
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--x-space-4));
+  z-index: var(--x-z-toast);
+  display: flex;
+  gap: var(--x-space-2);
+  align-items: center;
+  padding-block: var(--x-space-1);
+  padding-inline: var(--x-space-3) var(--x-space-1);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-lg);
+  background: var(--x-color-surface);
+  color: var(--x-color-ink);
+  white-space: nowrap;
+}
+
+.dictation-time {
+  font-family: var(--x-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.dictation-hint {
+  color: var(--x-color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+@media (max-width: 400px) {
+  .dictation-hint {
+    display: none;
+  }
+}

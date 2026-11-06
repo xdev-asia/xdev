@@ -32,6 +32,7 @@ const ALL: Record<ActionId, true> = {
   "quickCommands.open": true, "quickOpen.open": true,
   "composer.open": true,
   "floating.toggle": true,
+  "dictation.toggle": true,
 };
 
 it("every ActionId has exactly one def", () => {
@@ -170,6 +171,16 @@ it("floating.toggle is Mod+Alt+A, global, and does not yield to the terminal", (
   expect(on("floating.toggle", "linux")).toEqual(["Ctrl+Alt+A"]);
   expect(on("floating.toggle", "mac")).toEqual(["Alt+Cmd+A"]);
   const d = shortcutDef("floating.toggle")!;
+  expect(d.scope).toBe("global");
+  expect(d.yieldsToTerminal).toBeFalsy();
+});
+
+it("dictation.toggle is Cmd+E on macOS, Ctrl+Shift+Space elsewhere, global, and does not yield", () => {
+  expect(on("dictation.toggle", "mac")).toEqual(["Cmd+E"]);
+  expect(on("dictation.toggle", "win")).toEqual(["Ctrl+Shift+Space"]);
+  expect(on("dictation.toggle", "linux")).toEqual(["Ctrl+Shift+Space"]);
+  const d = shortcutDef("dictation.toggle")!;
+  expect(d.group).toBe("app");
   expect(d.scope).toBe("global");
   expect(d.yieldsToTerminal).toBeFalsy();
 });

@@ -121,6 +121,10 @@ pub struct Settings {
     /// Settings → Browser; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub browser: BrowserSettings,
+    /// Settings → Voice; lenient the same way. The OpenAI key is not here:
+    /// it lives in the OS keychain only.
+    #[serde(default, deserialize_with = "lenient")]
+    pub speech: SpeechSettings,
 }
 
 /// Settings → Cloud: which xDev ID server the license talks to, and the keys its tokens are
@@ -595,6 +599,57 @@ impl Default for CaptureSettings {
             enabled: true,
             shortcut: "CmdOrCtrl+Alt+Shift+S".to_owned(),
             annotate_paste: false,
+        }
+    }
+}
+
+/// How the dictation key records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum SpeechMode {
+    /// Press to start, press again to stop.
+    #[default]
+    Toggle,
+    /// Record while the key is held.
+    Hold,
+}
+
+/// An unknown value is the default, as for `LinksTarget`.
+impl<'de> serde::Deserialize<'de> for SpeechMode {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("hold") => SpeechMode::Hold,
+            _ => SpeechMode::Toggle,
+        })
+    }
+}
+
+/// The transcription model used when none is stored.
+pub const DEFAULT_SPEECH_MODEL: &str = "gpt-4o-mini-transcribe";
+
+/// Settings → Voice.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct SpeechSettings {
+    pub mode: SpeechMode,
+    /// The input device name; `None` is the system default.
+    pub device: Option<String>,
+    /// ISO-639-1 code; `None` lets the model detect it.
+    pub language: Option<String>,
+    /// The OpenAI transcription model id.
+    pub model: String,
+}
+
+impl Default for SpeechSettings {
+    fn default() -> Self {
+        SpeechSettings {
+            mode: SpeechMode::Toggle,
+            device: None,
+            language: None,
+            model: DEFAULT_SPEECH_MODEL.to_owned(),
         }
     }
 }
@@ -1924,6 +1979,7 @@ pub enum SettingsSection {
     Cloud,
     Capture,
     Browser,
+    Speech,
 }
 
 /// What a `settings://changed` event carries.
@@ -5059,6 +5115,61 @@ then sum up"
         let loaded = load(&path).capture;
         assert!(loaded.enabled && loaded.annotate_paste);
         assert_eq!(loaded.shortcut, "Ctrl+Shift+P");
+    }
+}
+
+#[cfg(test)]
+mod speech_settings_tests {
+    use super::*;
+
+    #[test]
+    fn speech_settings_default() {
+        let s = SpeechSettings::default();
+        assert_eq!(s.mode, SpeechMode::Toggle);
+        assert_eq!(s.device, None);
+        assert_eq!(s.language, None);
+        assert_eq!(s.model, "gpt-4o-mini-transcribe");
+    }
+
+    #[test]
+    fn speech_settings_stay_lenient() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            r#"{ "speech": { "mode": "bogus", "device": "USB Mic", "language": "vi", "model": "whisper-1" } }"#,
+        )
+        .unwrap();
+        let s = load(&path).speech;
+        assert_eq!(s.mode, SpeechMode::Toggle);
+        assert_eq!(s.device.as_deref(), Some("USB Mic"));
+        assert_eq!(s.language.as_deref(), Some("vi"));
+        assert_eq!(s.model, "whisper-1");
+        fs::write(&path, r#"{ "speech": { "mode": "hold" } }"#).unwrap();
+        assert_eq!(load(&path).speech.mode, SpeechMode::Hold);
+        fs::write(&path, r#"{ "speech": 3 }"#).unwrap();
+        assert_eq!(load(&path).speech, SpeechSettings::default());
+    }
+
+    #[test]
+    fn settings_roundtrip_has_no_key() {
+        let settings = Settings {
+            speech: SpeechSettings {
+                mode: SpeechMode::Hold,
+                device: Some("Mic".to_owned()),
+                language: Some("en".to_owned()),
+                model: "whisper-1".to_owned(),
+            },
+            ..Settings::default()
+        };
+        let json = serde_json::to_value(&settings).unwrap();
+        let speech = json["speech"].as_object().unwrap();
+        let mut fields: Vec<&str> = speech.keys().map(String::as_str).collect();
+        fields.sort_unstable();
+        assert_eq!(fields, ["device", "language", "mode", "model"]);
+        let text = json["speech"].to_string().to_lowercase();
+        assert!(!text.contains("key"));
+        assert!(!text.contains("apikey"));
     }
 }
 
