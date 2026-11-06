@@ -1080,6 +1080,8 @@
   "settings.terminal.interaction.group": "Tương tác",
   "settings.terminal.interaction.scroll": "Tốc độ cuộn",
   "settings.terminal.interaction.fastScroll": "Tốc độ cuộn nhanh (giữ Alt)",
+  "settings.terminal.interaction.middleClickPaste": "Dán bằng chuột giữa",
+  "settings.terminal.interaction.middleClickPasteHint": "Nhấp chuột giữa sẽ dán văn bản đang chọn vào terminal. Không dùng khi một chương trình đang nhận chuột.",
   "settings.terminal.interaction.focusFollowsMouse": "Tiêu điểm theo chuột",
   "settings.terminal.interaction.focusFollowsMouseHint": "Ô nhận tiêu điểm bàn phím khi con trỏ đi vào.",
   "settings.terminal.bell.group": "Chuông",
@@ -3907,6 +3909,8 @@
   "settings.advanced.nodeMirror.hint": "Kho gói cho terminal mới (npm_config_registry). Để trống để dùng mặc định.",
   "settings.advanced.mirror.scheme": "Dùng địa chỉ http hoặc https, ví dụ https://registry.npmmirror.com.",
   "settings.advanced.mirror.invalid": "Nhập địa chỉ đầy đủ có máy chủ, ví dụ https://registry.npmmirror.com.",
+  "settings.advanced.http1": "Dùng HTTP/1.1",
+  "settings.advanced.http1.hint": "Chỉ gửi yêu cầu cập nhật qua HTTP/1.1. Bật nếu proxy của bạn lỗi với HTTP/2.",
   "settings.advanced.machineName": "Tên máy",
   "settings.advanced.machineName.hint": "Hiện trong phần Giới thiệu và tệp chẩn đoán. Để trống để dùng tên máy của hệ điều hành.",
   "settings.advanced.save": "Lưu thay đổi",
@@ -5711,5 +5715,11 @@
   "files.notebook.image": "Ảnh kết quả của sổ tay",
   "files.notebook.error": "Không đọc được sổ tay này",
   "files.notebook.error.json": "Tệp không phải JSON hợp lệ.",
-  "files.notebook.error.shape": "Tệp là JSON nhưng không có danh sách ô."
+  "files.notebook.error.shape": "Tệp là JSON nhưng không có danh sách ô.",
+  "update.card.title": "xDev IDE {version} đã sẵn sàng",
+  "update.card.body": "Khởi động lại để cập nhật. Bản cập nhật cũng được cài khi bạn thoát.",
+  "update.card.restart": "Khởi động lại để cập nhật",
+  "update.card.notes": "Ghi chú phát hành",
+  "update.card.dismiss": "Đóng",
+  "about.machine": "Máy: {name}"
 }

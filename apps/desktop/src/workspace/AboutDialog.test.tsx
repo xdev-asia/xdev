@@ -37,3 +37,10 @@ it("shows the build date and the updates line for Pro", () => {
   const ended = renderToStaticMarkup(<AboutDialog version="1" license={{ state: proState(1), plan: ["pro"] }} onLink={() => {}} onClose={() => {}} />);
   expect(ended).toContain(en("license.updatesEnded", { date: day(1) }));
 });
+
+it("shows the machine name when there is one", () => {
+  const named = renderToStaticMarkup(<AboutDialog version="1" machine="dev box" license={{ state: null, plan: [] }} onLink={() => {}} onClose={() => {}} />);
+  expect(named).toContain(en("about.machine", { name: "dev box" }));
+  const bare = renderToStaticMarkup(<AboutDialog version="1" license={{ state: null, plan: [] }} onLink={() => {}} onClose={() => {}} />);
+  expect(bare).not.toContain("about-machine");
+});

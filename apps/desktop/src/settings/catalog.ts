@@ -140,6 +140,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.minimumContrast", "settings.terminal.render.contrast", ["contrast", "readable", "accessibility", "tương phản", "tuong phan", "màu", "mau"], "settings.terminal.render.contrastHint"),
   e("terminal.scrollSensitivity", "settings.terminal.interaction.scroll", ["scroll", "speed", "wheel", "cuộn", "cuon", "tốc độ", "toc do"]),
   e("terminal.fastScrollSensitivity", "settings.terminal.interaction.fastScroll", ["scroll", "fast", "alt", "speed", "cuộn", "cuon", "nhanh"]),
+  only(["linux"], e("terminal.middleClickPaste", "settings.terminal.interaction.middleClickPaste", ["middle", "click", "paste", "selection", "primary", "x11", "linux", "chuột giữa", "chuot giua", "dán", "dan", "vùng chọn", "vung chon"], "settings.terminal.interaction.middleClickPasteHint")),
   e("terminal.focusFollowsMouse", "settings.terminal.interaction.focusFollowsMouse", ["focus", "mouse", "hover", "pointer", "tiêu điểm", "tieu diem", "chuột", "chuot"], "settings.terminal.interaction.focusFollowsMouseHint"),
   e("terminal.linkClick", "settings.terminal.links.click", ["link", "url", "path", "click", "open", "actions", "liên kết", "lien ket", "nhấp", "nhap"], "settings.terminal.links.hint"),
   e("terminal.urlMiddleClick", "settings.terminal.links.middleClick", ["link", "url", "middle", "click", "open", "liên kết", "lien ket", "chuột giữa", "chuot giua", "nhấp", "nhap"]),
@@ -237,6 +238,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("advanced.noProxy", "settings.advanced.noProxy", ["proxy", "bypass", "no_proxy", "exclude", "hosts", "bỏ qua", "bo qua", "loại trừ", "loai tru"], "settings.advanced.noProxy.hint"),
   e("advanced.nodeMirror", "settings.advanced.nodeMirror", ["node", "npm", "registry", "mirror", "package", "gương", "guong", "kho gói", "kho goi"], "settings.advanced.nodeMirror.hint"),
   e("advanced.export", "settings.config.export", ["export", "import", "backup", "restore", "settings", "save", "load", "json", "xuất", "xuat", "nhập", "nhap", "sao lưu", "sao luu"], "settings.config.export.hint"),
+  e("advanced.http1", "settings.advanced.http1", ["http", "http1", "http/1.1", "http2", "proxy", "network", "protocol", "giao thức", "giao thuc", "mạng", "mang"], "settings.advanced.http1.hint"),
   e("advanced.machineName", "settings.advanced.machineName", ["machine", "name", "host", "hostname", "computer", "device", "tên máy", "ten may", "máy tính", "may tinh"], "settings.advanced.machineName.hint"),
   // Account: agent account routing
   e("account.routing.policy", "settings.account.routing.policy", ["account", "routing", "policy", "quota", "round robin", "priority", "most quota", "new tab", "tài khoản", "tai khoan", "định tuyến", "dinh tuyen", "hạn mức", "han muc", "luân phiên", "luan phien", "ưu tiên", "uu tien"], "settings.account.routing.lead"),

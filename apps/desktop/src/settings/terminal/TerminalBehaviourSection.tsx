@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { JSX } from "react";
 import type { TerminalBell, TerminalLinkClick } from "@/api";
 import { useI18n } from "@/i18n";
+import { PLATFORM } from "@/platform";
 import { DEFAULT_WORD_SEPARATORS } from "@/settings/terminalDefaults";
 import { TERMINAL_LIMITS } from "@/terminal/terminalSettings";
 import { SettingGroup, SettingRow, settingShown } from "../SettingRow";
@@ -10,7 +11,7 @@ import { parseNumber, type TerminalSectionProps } from "./sectionProps";
 export const BELL_MODES: TerminalBell[] = ["none", "visual", "sound"];
 export const LINK_CLICK_MODES: TerminalLinkClick[] = ["actions", "open", "none"];
 const LINK_IDS = ["terminal.linkClick", "terminal.urlMiddleClick"];
-const INTERACTION_IDS = ["terminal.scrollSensitivity", "terminal.fastScrollSensitivity", "terminal.focusFollowsMouse"];
+const INTERACTION_IDS = ["terminal.scrollSensitivity", "terminal.fastScrollSensitivity", "terminal.focusFollowsMouse", "terminal.middleClickPaste"];
 const BELL_IDS = ["terminal.bell"];
 const WORD_IDS = ["terminal.wordSeparators"];
 type SpeedField = "scrollSensitivity" | "fastScrollSensitivity";
@@ -91,6 +92,23 @@ export function TerminalBehaviourSection(props: TerminalSectionProps): JSX.Eleme
                 aria-label={t("settings.terminal.interaction.focusFollowsMouse")}
                 disabled={busy}
                 onClick={() => void patch({ focusFollowsMouse: !current.focusFollowsMouse })}
+              />
+            </li>
+          )}
+          {PLATFORM === "linux" && settingShown(filter, "terminal.middleClickPaste") && (
+            <li className="settings-item" data-switch="middleClickPaste" data-setting-id="terminal.middleClickPaste">
+              <div className="settings-item-text">
+                <strong>{t("settings.terminal.interaction.middleClickPaste")}</strong>
+                <span className="settings-path">{t("settings.terminal.interaction.middleClickPasteHint")}</span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                className="agent-switch"
+                aria-checked={current.middleClickPaste}
+                aria-label={t("settings.terminal.interaction.middleClickPaste")}
+                disabled={busy}
+                onClick={() => void patch({ middleClickPaste: !current.middleClickPaste })}
               />
             </li>
           )}

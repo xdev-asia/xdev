@@ -329,6 +329,20 @@ pub(crate) fn apply_to_client(
     }
 }
 
+/// `builder` with HTTP/1.1 forced when the setting asks for it. Every
+/// reqwest client xDev builds goes through this and `apply_to_client`; the
+/// ureq clients in `xdev-id` and `xdev-ai` do not yet.
+pub(crate) fn apply_http_version(
+    builder: reqwest::ClientBuilder,
+    s: &NetworkSettings,
+) -> reqwest::ClientBuilder {
+    if s.http1_only {
+        builder.http1_only()
+    } else {
+        builder
+    }
+}
+
 /// The name shown in About and the diagnostics file: the chosen one, else the OS host name.
 pub(crate) fn machine_name(s: &NetworkSettings) -> String {
     let own = clean_machine_name(&s.machine_name);
@@ -368,6 +382,7 @@ mod tests {
             no_proxy: bypass.iter().map(|s| (*s).into()).collect(),
             node_mirror: mirror.into(),
             machine_name: String::new(),
+            http1_only: false,
         }
     }
 
@@ -527,6 +542,26 @@ mod tests {
     }
 
     #[test]
+    fn http_version_builds_either_way_and_defaults_off() {
+        assert!(!NetworkSettings::default().http1_only);
+        for on in [false, true] {
+            let s = NetworkSettings {
+                http1_only: on,
+                ..NetworkSettings::default()
+            };
+            // No `build()`: it needs a TLS provider the unit tests do not install.
+            let _ = apply_http_version(reqwest::Client::builder(), &s);
+        }
+    }
+
+    #[test]
+    fn old_network_json_loads_without_http1_only() {
+        let s: NetworkSettings = serde_json::from_str(r#"{"proxyUrl":"http://p:1"}"#).unwrap();
+        assert_eq!(s.proxy_url, "http://p:1");
+        assert!(!s.http1_only);
+    }
+
+    #[test]
     fn machine_name_prefers_the_chosen_one() {
         let s = NetworkSettings {
             machine_name: " dev box ".into(),
@@ -542,6 +577,7 @@ mod tests {
             no_proxy: vec!["a, b".into(), "a".into()],
             node_mirror: " https://m ".into(),
             machine_name: "  n ".into(),
+            http1_only: false,
         }
         .normalized();
         assert_eq!(s.proxy_url, "http://p:1");

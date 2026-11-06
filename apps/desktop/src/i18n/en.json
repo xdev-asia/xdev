@@ -1080,6 +1080,8 @@
   "settings.terminal.interaction.group": "Interaction",
   "settings.terminal.interaction.scroll": "Scroll speed",
   "settings.terminal.interaction.fastScroll": "Fast scroll speed (hold Alt)",
+  "settings.terminal.interaction.middleClickPaste": "Paste on middle click",
+  "settings.terminal.interaction.middleClickPasteHint": "Middle click pastes the selected text into the terminal. Not used while a program takes the mouse.",
   "settings.terminal.interaction.focusFollowsMouse": "Focus follows mouse",
   "settings.terminal.interaction.focusFollowsMouseHint": "A pane takes the keyboard focus when the pointer enters it.",
   "settings.terminal.bell.group": "Bell",
@@ -3907,6 +3909,8 @@
   "settings.advanced.nodeMirror.hint": "Package registry for new terminals (npm_config_registry). Leave empty to use the default.",
   "settings.advanced.mirror.scheme": "Use an http or https address, such as https://registry.npmmirror.com.",
   "settings.advanced.mirror.invalid": "Enter a full address with a host, such as https://registry.npmmirror.com.",
+  "settings.advanced.http1": "Use HTTP/1.1",
+  "settings.advanced.http1.hint": "Send update requests over HTTP/1.1 only. Turn it on if your proxy breaks HTTP/2.",
   "settings.advanced.machineName": "Machine name",
   "settings.advanced.machineName.hint": "Shown in About and the diagnostics file. Leave empty to use this computer's host name.",
   "settings.advanced.save": "Save changes",
@@ -5711,5 +5715,11 @@
   "files.notebook.image": "Notebook output image",
   "files.notebook.error": "This notebook could not be read",
   "files.notebook.error.json": "The file is not valid JSON.",
-  "files.notebook.error.shape": "The file is JSON but has no list of cells."
+  "files.notebook.error.shape": "The file is JSON but has no list of cells.",
+  "update.card.title": "xDev IDE {version} is ready",
+  "update.card.body": "Restart to update. It also updates when you quit.",
+  "update.card.restart": "Restart to update",
+  "update.card.notes": "Release notes",
+  "update.card.dismiss": "Dismiss",
+  "about.machine": "Machine: {name}"
 }

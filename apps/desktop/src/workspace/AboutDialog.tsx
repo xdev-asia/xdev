@@ -18,6 +18,8 @@ export function AboutDialog(props: {
   version: string;
   /** `YYYY-MM-DD` of the build, when known. */
   buildDate?: string;
+  /** What this computer is called (Settings > Advanced > Machine name). */
+  machine?: string;
   license?: Pick<License, "state" | "plan">;
   onLink(link: HelpLink): void;
   onClose(): void;
@@ -49,6 +51,11 @@ export function AboutDialog(props: {
       </h2>
       <p className="dialog-body">{t("shell.help.aboutVersion", { version: props.version })}</p>
       {props.buildDate && <p className="dialog-body">{t("about.buildDate", { date: props.buildDate })}</p>}
+      {props.machine && (
+        <p className="dialog-body" data-field="about-machine">
+          {t("about.machine", { name: props.machine })}
+        </p>
+      )}
       <p className="dialog-body" data-field="about-plan">
         {t("about.plan", { plan: planNames(plan, t) })}
       </p>

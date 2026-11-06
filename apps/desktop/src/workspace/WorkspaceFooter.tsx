@@ -8,6 +8,7 @@ import { setUsageSettings, useUsageSettings } from "@/settings/usageSettings";
 import { ContextMenu } from "@/ui/ContextMenu";
 import { ALL_ITEMS, useStatusBarItems } from "@/ui/statusBarItems";
 import { useQuota } from "@/shell/useQuota";
+import { UpdateCard } from "@/components/UpdateCard";
 import { useUpdate, type Update } from "@/shell/useUpdate";
 import { KeepAwakeItem } from "./KeepAwakeItem";
 import { SshStatusItem } from "./SshStatusItem";
@@ -317,7 +318,9 @@ export function LiveWorkspaceFooter(props: {
     />
   );
   return (
-    <WorkspaceFooter
+    <>
+      <UpdateCard update={update.state} onRestart={update.restart} />
+      <WorkspaceFooter
       {...rest}
       license={<LicenseStatus notice={notice} state={licenseState} onOpen={onOpenLicense} />}
       hidden={hidden}
@@ -370,6 +373,7 @@ export function LiveWorkspaceFooter(props: {
       keepAwake={<KeepAwakeItem api={api} />}
       ssh={onManageSsh && <SshStatusItem api={api} onOpenTerminal={onOpenSshTerminal} onManage={onManageSsh} />}
       peers={<PeersStatusItem api={api} />}
-    />
+      />
+    </>
   );
 }

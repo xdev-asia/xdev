@@ -25,6 +25,7 @@ import { attachRenderer } from "./terminalRenderer";
 import { appIsLight, followAppTheme } from "./terminalColors";
 import { createFileLinkProvider, createLinkResolver, createOscLinkHandler, cwdFromOsc7, urlLinkOptions, type TermLinksEnv } from "./termLinks";
 import { annotatePasted } from "@/capture/annotateBridge";
+import { middlePasteText } from "./middlePaste";
 import { pasteClipboard, type PasteResult } from "./clipboardPaste";
 import { registerDropTarget } from "./fileDrop";
 import { trackInputModes } from "./inputModes";
@@ -364,6 +365,21 @@ export function Terminal(props: {
       term.focus();
     };
     el.addEventListener("mouseenter", onMouseEnter);
+    // Linux, when set: a middle click pastes the selection. The browser's own paste is stopped so it
+    // does not paste a second time.
+    const onMiddle = (e: MouseEvent) => {
+      const text = middlePasteText({
+        enabled: getTerminalSettings().middleClickPaste,
+        platform: PLATFORM,
+        button: e.button,
+        tracking: term.modes.mouseTrackingMode !== "none",
+        selection: term.getSelection(),
+      });
+      if (text === null) return;
+      e.preventDefault();
+      if (e.type === "mouseup") term.paste(text);
+    };
+    for (const type of ["mousedown", "mouseup", "auxclick"]) el.addEventListener(type, onMiddle as EventListener, true);
     // A change in Settings applies to this pane at once, with no restart.
     const applySettings = () => {
       const next = xtermOptions(getTerminalSettings(), mono, color, getCustomSchemes(), appIsLight());
@@ -475,6 +491,7 @@ export function Terminal(props: {
       bell.dispose();
       el.removeEventListener("contextmenu", onContextMenu, true);
       el.removeEventListener("mouseenter", onMouseEnter);
+      for (const type of ["mousedown", "mouseup", "auxclick"]) el.removeEventListener(type, onMiddle as EventListener, true);
       observer.disconnect();
       setTip(null);
       if (owned) void client.dispose();

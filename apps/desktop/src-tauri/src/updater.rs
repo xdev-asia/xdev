@@ -209,10 +209,13 @@ async fn fetch_releases(app: &AppHandle, rc: bool) -> ReleaseList {
     } else {
         crate::network::client_proxy_logged(&net)
     };
-    let client = match crate::network::apply_to_client(reqwest::Client::builder(), &proxy)
-        .user_agent(format!("xdev-desktop/{running}"))
-        .timeout(RELEASES_TIMEOUT)
-        .build()
+    let client = match crate::network::apply_http_version(
+        crate::network::apply_to_client(reqwest::Client::builder(), &proxy),
+        &net,
+    )
+    .user_agent(format!("xdev-desktop/{running}"))
+    .timeout(RELEASES_TIMEOUT)
+    .build()
     {
         Ok(c) => c,
         Err(e) => return failed(ReleaseListError::Failed, e.to_string()),
@@ -427,14 +430,15 @@ async fn check_once(
     tag: Option<&str>,
 ) -> tauri_plugin_updater::Result<UpdatePhase> {
     let net = settings_store::read(app).network;
-    let with_proxy =
-        |builder: tauri_plugin_updater::UpdaterBuilder| match crate::network::proxy_for_host(
-            &net,
-            UPDATE_HOST,
-        ) {
+    let http1 = net.clone();
+    let with_proxy = |builder: tauri_plugin_updater::UpdaterBuilder| {
+        let builder =
+            builder.configure_client(move |b| crate::network::apply_http_version(b, &http1));
+        match crate::network::proxy_for_host(&net, UPDATE_HOST) {
             Some(proxy) => builder.proxy(proxy),
             None => builder,
-        };
+        }
+    };
     let updater = match (tag, channel) {
         (Some(tag), _) => {
             let url = tag_endpoint(tag).expect("a validated tag");
