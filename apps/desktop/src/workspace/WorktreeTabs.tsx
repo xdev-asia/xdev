@@ -88,7 +88,7 @@ import { onOpenFile, openFile } from "@/files/openFile";
 import { absolutePath, relativePath } from "@/search/resultCopy";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { toTabStatus } from "@/terminal/programStatus";
-import { titleStatus } from "./titles";
+import { titleCliOf, titleStatus } from "./titles";
 import { PtydBanner } from "@/terminal/PtydBanner";
 import { WorkerStrip } from "./WorkerStrip";
 import { TerminalSetsDialog } from "@/terminalSets/TerminalSetsDialog";
@@ -1251,7 +1251,7 @@ export function WorktreeTabs(props: {
                 onProgress={(p) => sessions.noteProgress(tab.id, p)}
                 onTitle={(title) => {
                   sessions.noteTitle(tab.id, title);
-                  const status = titleStatus(tab.cli, title);
+                  const status = titleStatus(titleCliOf(tab.cli, tab.profileId), title);
                   if (status) sessions.noteTitleStatus(tab.id, status);
                 }}
                 focusSeq={tab.id === shown ? (props.focusSeq ?? 0) + kick : undefined}
