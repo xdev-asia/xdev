@@ -5043,5 +5043,10 @@
   "swarm.announce.started": "{count} workers started.",
   "swarm.announce.partial": "{count} workers started, {failed} did not.",
   "swarm.announce.stopped": "{count} workers stopped.",
-  "swarm.announce.opened": "{worker} opened as a tab."
+  "swarm.announce.opened": "{worker} opened as a tab.",
+  "tabMenu.closeView": "Close view",
+  "files.view.tooltip": "Second view of {rel}",
+  "keys.action.file.splitRight": "Split editor right",
+  "keys.action.file.splitDown": "Split editor down",
+  "search.quickOpen.sideHint": "{key}+Enter opens to the side"
 }

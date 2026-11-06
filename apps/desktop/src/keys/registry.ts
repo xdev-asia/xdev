@@ -110,6 +110,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   // Editor: a file tab in front; the tabs view declines the key otherwise.
   def("file.save", "editor", ["Mod+S"]),
   def("file.markdownPreview", "editor", ["Mod+Shift+V"]),
+  def("file.splitRight", "editor", ["Mod+\\"]),
+  def("file.splitDown", "editor", ["Mod+Alt+\\"]),
   def("file.closeAll", "editor", []),
   // App.
   def("palette.jump", "app", ["Mod+J"]),

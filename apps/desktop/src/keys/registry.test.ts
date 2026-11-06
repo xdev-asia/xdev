@@ -26,7 +26,7 @@ const ALL: Record<ActionId, true> = {
   "zoom.in": true, "zoom.out": true, "zoom.reset": true,
   "tab.reopenClosed": true, "tab.nextSameKind": true, "tab.prevSameKind": true, "file.closeAll": true, "tab.closeAll": true,
   "settings.open": true, "settings.shortcuts": true,
-  "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true,
+  "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true, "file.splitRight": true, "file.splitDown": true,
   "quickCommands.open": true, "quickOpen.open": true,
   "composer.open": true,
 };
@@ -145,4 +145,15 @@ it("the KB-3 keys and the macOS terminal copy and paste", () => {
   expect(on("terminal.clear", "win")).toEqual(["Ctrl+K"]);
   expect(on("settings.open", "win")).toEqual(["Ctrl+,"]);
   expect(on("quickCommands.open", "win")).toEqual(["Ctrl+Shift+;"]);
+});
+
+it("the split-editor keys have their defaults and clash with nothing", () => {
+  const right = SHORTCUTS.find((d) => d.id === "file.splitRight")!;
+  const down = SHORTCUTS.find((d) => d.id === "file.splitDown")!;
+  expect(right.defaults.all).toEqual(["Mod+\\"]);
+  expect(down.defaults.all).toEqual(["Mod+Alt+\\"]);
+  for (const d of [right, down]) {
+    const clash = SHORTCUTS.filter((o) => o.id !== d.id && (o.defaults.all ?? []).some((c) => d.defaults.all!.includes(c)));
+    expect(clash.map((o) => o.id)).toEqual([]);
+  }
 });

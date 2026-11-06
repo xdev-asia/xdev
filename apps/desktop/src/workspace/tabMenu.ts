@@ -112,6 +112,8 @@ export interface FileTabMenuContext {
   canMoveToSplit: boolean;
   /** Set for a Markdown file that can open as a preview; absent for any other file. */
   openPreview?: () => void;
+  /** Shows the file a second time, in a new pane on that side. */
+  splitView(dir: "right" | "down"): void;
   moveToSplit(dir: MoveDir): void;
   setPinned(pinned: boolean): void;
   copyPath(): void;
@@ -149,6 +151,9 @@ export function fileTabMenuItems(ctx: FileTabMenuContext): MenuItem[] {
   const has = (kind: FileCloseKind) => fileCloseTargets(ctx.files, ctx.rel, kind).length > 0;
   return [
     ...(ctx.openPreview ? [{ id: "openPreview", labelKey: "tabMenu.openPreview", run: ctx.openPreview }, SEP("sep-preview")] : []),
+    { id: "splitRight", labelKey: "tabMenu.splitRight", run: () => ctx.splitView("right") },
+    { id: "splitDown", labelKey: "tabMenu.splitDown", run: () => ctx.splitView("down") },
+    SEP("sep-split"),
     {
       id: "moveToSplit",
       labelKey: "tabMenu.moveToSplit",
@@ -168,6 +173,23 @@ export function fileTabMenuItems(ctx: FileTabMenuContext): MenuItem[] {
     { id: "closeToRight", labelKey: "tabMenu.closeToRight", disabled: !has("right"), run: ctx.closeToRight },
     { id: "closeSaved", labelKey: "tabMenu.closeSaved", disabled: !has("saved"), run: ctx.closeSaved },
     { id: "closeAll", labelKey: "tabMenu.closeAll", disabled: !has("all"), run: ctx.closeAll },
+  ];
+}
+
+/** What the menu of a view tab (the second view of a file) acts on. */
+export interface ViewTabMenuContext {
+  close(): void;
+  copyPath(): void;
+  copyRelativePath(): void;
+}
+
+/** The right-click items of a view tab: Close view, then the path copies. */
+export function viewTabMenuItems(ctx: ViewTabMenuContext): MenuItem[] {
+  return [
+    { id: "closeView", labelKey: "tabMenu.closeView", run: ctx.close },
+    SEP("sep1"),
+    { id: "copyPath", labelKey: "tabMenu.copyPath", run: ctx.copyPath },
+    { id: "copyRelativePath", labelKey: "tabMenu.copyRelativePath", run: ctx.copyRelativePath },
   ];
 }
 

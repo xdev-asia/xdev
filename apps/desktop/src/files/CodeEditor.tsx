@@ -1,5 +1,5 @@
 import { indentUnit, syntaxHighlighting } from "@codemirror/language";
-import { Compartment, EditorState, Prec } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, Prec, Transaction } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { basicSetup, EditorView } from "codemirror";
 import { useEffect, useRef } from "react";
@@ -10,14 +10,22 @@ import { useI18n } from "@/i18n";
 import type { Goto } from "./fileTabs";
 import { conflictDecorations } from "./conflictDecorations";
 import { selectionOf, type GutterSelection } from "./gutterMenu";
+import { useEditorPlugins } from "./editorPlugins";
+import { minimalChange } from "./textDiff";
 import { languageOf, loadLanguage } from "./languages";
+
+// Marks a change pushed in from props: it is not an edit, and it stays out of the undo history.
+const remote = Annotation.define<boolean>();
 
 const wrap = (on: boolean) => (on ? EditorView.lineWrapping : []);
 const tabs = (size: number) => [EditorState.tabSize.of(size), indentUnit.of(" ".repeat(size))];
 
 /** A CodeMirror view of one file's text. The text is owned by the caller; edits come out of `onChange`. */
 export function CodeEditor(props: {
+  worktree: string;
   rel: string;
+  /** The second view of a file: it shows the same text, and the caret jump (`goto`) is left to the file tab. */
+  secondary?: boolean;
   value: string;
   settings: EditorSettings;
   goto?: Goto;
@@ -36,6 +44,8 @@ export function CodeEditor(props: {
   const indent = useRef(new Compartment());
   const label = useRef(new Compartment());
   const conflicts = useRef(new Compartment());
+  const pluginSlot = useRef(new Compartment());
+  const plugins = useEditorPlugins({ worktree: props.worktree, rel: props.rel, secondary: !!props.secondary });
 
   useEffect(() => {
     const s = latest.current.settings;
@@ -53,6 +63,7 @@ export function CodeEditor(props: {
           indent.current.of(tabs(s.tabSize)),
           label.current.of([]),
           conflicts.current.of([]),
+          pluginSlot.current.of([]),
           EditorView.domEventHandlers({
             contextmenu(e, view) {
               const open = latest.current.onGutterMenu;
@@ -64,7 +75,7 @@ export function CodeEditor(props: {
             },
           }),
           EditorView.updateListener.of((update) => {
-            if (!update.docChanged) return;
+            if (!update.docChanged || update.transactions.some((tr) => tr.annotation(remote))) return;
             const text = update.state.doc.toString();
             // A change pushed in from props (a reload) is not an edit.
             if (text !== latest.current.value) latest.current.onChange(text);
@@ -96,8 +107,14 @@ export function CodeEditor(props: {
     const v = view.current;
     if (!v) return;
     const current = v.state.doc.toString();
-    if (current !== props.value) v.dispatch({ changes: { from: 0, to: current.length, insert: props.value } });
+    // The smallest change keeps this view's caret and scroll where they are while another view types.
+    const change = minimalChange(current, props.value);
+    if (change) v.dispatch({ changes: change, annotations: [Transaction.addToHistory.of(false), remote.of(true)] });
   }, [props.value]);
+
+  useEffect(() => {
+    view.current?.dispatch({ effects: pluginSlot.current.reconfigure(plugins) });
+  }, [plugins]);
 
   useEffect(() => {
     view.current?.dispatch({ effects: wrapping.current.reconfigure(wrap(props.settings.wordWrap)) });
@@ -124,7 +141,7 @@ export function CodeEditor(props: {
   useEffect(() => {
     const v = view.current;
     const g = latest.current.goto;
-    if (!v || !g) return;
+    if (!v || !g || latest.current.secondary) return;
     const line = v.state.doc.line(Math.max(1, Math.min(g.line, v.state.doc.lines)));
     const anchor = line.from + Math.max(0, Math.min((g.column ?? 1) - 1, line.length));
     v.dispatch({ selection: { anchor }, effects: EditorView.scrollIntoView(anchor, { y: "center" }) });
