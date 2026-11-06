@@ -395,8 +395,15 @@ pub fn shell_settings_get(app: AppHandle) -> settings::ShellSettings {
 #[tauri::command(async)]
 pub fn shell_settings_put(
     app: AppHandle,
+    hub: State<'_, crate::license::LicenseHub>,
     settings: settings::ShellSettings,
 ) -> Result<settings::ShellSettings, CmdError> {
+    // Gated here, not in the webview: only the early channel needs Pro.
+    settings::check_channel(
+        settings_store::read(&app).shell.update_channel,
+        settings.update_channel,
+        hub.allows(settings::EARLY_FEATURE),
+    )?;
     let stored = settings_store::write(&app, &[SettingsSection::Shell], |s| {
         s.shell = settings.for_put(&s.shell)
     })
