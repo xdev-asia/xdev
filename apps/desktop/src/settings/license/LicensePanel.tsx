@@ -119,7 +119,7 @@ export function LicensePanel({ api, filter, signedIn, now = Date.now() }: Props)
         )}
         {error && <Banner title={t(`error.${error}`)} />}
         {buying && (
-          <div className="settings-item-text" role="status">
+          <div className="settings-item-text">
             <Spinner label={t("license.checkout.waiting")} />
             <span>{t("license.checkout.waiting")}</span>
             <Button type="button" variant="secondary" onClick={stopWaiting}>

@@ -101,7 +101,8 @@ it("checkout: Get xDev Pro shows the waiting status and Stop waiting; completing
   const v = await view("free");
   v.button(en("license.getPro")).props.onClick();
   await v.settle();
-  expect(v.all().some((n) => n.props.role === "status" && nodes(n.props.children).some((c) => c.type === Spinner))).toBe(true);
+  expect(v.all().some((n) => n.type === Spinner)).toBe(true);
+  expect(v.texts()).toContain(en("license.checkout.waiting"));
   expect(v.button(en("license.getPro")).props.disabled).toBe(true);
   expect(v.button(en("license.checkout.stop"))).toBeDefined();
   (v.api as any).__licenseCheckoutComplete();

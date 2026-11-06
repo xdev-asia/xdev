@@ -23,6 +23,8 @@ export type MockLicense = LicenseApi & {
   __licenseCheckoutComplete(): void;
   /** Replaces the state and emits `license://changed`. */
   __licenseSet(state: LicenseState): void;
+  /** How many times `licenseRefresh` was called, for tests of the callers. */
+  __licenseRefreshes(): number;
 };
 
 export type LicenseMockMode = "free" | "pro" | "grace" | "expired" | "noseat";
@@ -115,6 +117,7 @@ export function createMockLicense(
   let devices = initialDevices(mode);
   const listeners = new Set<(s: LicenseState) => void>();
   // The account owns a Pro grant: bought in the mock, or already held by a device in the mode.
+  let refreshes = 0;
   let purchased = devices.some((d) => d.proGrant !== null);
   let checkout: { resolve: () => void; reject: (e: ApiError) => void } | null = null;
 
@@ -129,7 +132,10 @@ export function createMockLicense(
 
   return {
     licenseState: () => Promise.resolve(structuredClone(state)),
-    licenseRefresh: () => Promise.resolve(structuredClone(state)),
+    licenseRefresh() {
+      refreshes += 1;
+      return Promise.resolve(structuredClone(state));
+    },
     licenseActivate() {
       if (state.state === "active") return Promise.resolve(structuredClone(state));
       // The one seat is on another device until that device is moved off.
@@ -174,5 +180,6 @@ export function createMockLicense(
       checkout = null;
     },
     __licenseSet: set,
+    __licenseRefreshes: () => refreshes,
   };
 }
