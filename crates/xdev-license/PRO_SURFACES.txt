@@ -2,3 +2,4 @@
 # Repo-relative, one per line. `features::tests::free_features_never_gated` fails when any
 # other file under apps/desktop/src-tauri/src or crates/*/src calls it.
 apps/desktop/src-tauri/src/license.rs
+apps/desktop/src-tauri/src/lib.rs

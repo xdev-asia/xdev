@@ -324,6 +324,8 @@ mod tests {
         let mut h = host("web");
         h.host_name = "web".into();
         let dir = Path::new("/data/ssh");
+        // The socket path uses the OS separator (`\` on Windows).
+        let control = format!("ControlPath={}", dir.join("cm-%C").display());
         assert_eq!(
             strs(&exec_argv(&h, Some(dir))),
             [
@@ -334,7 +336,7 @@ mod tests {
                 "-o",
                 "ControlMaster=auto",
                 "-o",
-                "ControlPath=/data/ssh/cm-%C",
+                control.as_str(),
                 "-o",
                 "ControlPersist=60",
                 "-T",
