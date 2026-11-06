@@ -777,6 +777,9 @@ export type ErrorCode =
   | "ptyd_start_failed"
   | "bad_arg"
   | "unknown_profile"
+  | "wsl_distro"
+  | "wsl_path"
+  | "wsl_unchecked"
   | "registry_corrupt"
   | "repo_exists"
   | "repo_unknown"
@@ -2319,6 +2322,9 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "ptyd_start_failed",
   "bad_arg",
   "unknown_profile",
+  "wsl_distro",
+  "wsl_path",
+  "wsl_unchecked",
   "registry_corrupt",
   "repo_exists",
   "repo_unknown",

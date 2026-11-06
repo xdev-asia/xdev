@@ -1,4 +1,4 @@
-import type { Account, Approvals, Permissions, Profile, ProfileView } from "@/api";
+import type { Account, Approvals, Permissions, Profile, ProfileView, ShellView } from "@/api";
 
 type EnvVar = Profile["env"][number];
 
@@ -14,6 +14,8 @@ export interface Draft {
   args: string;
   env: string;
   startup: string;
+  /** The WSL distro the agent runs in; `""` runs it on Windows. */
+  wsl: string;
 }
 
 /** Non-empty trimmed lines. */
@@ -48,6 +50,7 @@ export function draftOf(p: Profile | null): Draft {
     args: (p?.args ?? []).join("\n"),
     env: (p?.env ?? []).map((e) => `${e.name}=${e.value}`).join("\n"),
     startup: (p?.startup ?? []).join("\n"),
+    wsl: p?.wsl ?? "",
   };
 }
 
@@ -60,6 +63,7 @@ export function profileOf(draft: Draft, base: Profile | null, id: string): Profi
   const program = draft.program.trim();
   if (custom && !program) return null;
   const opt = (s: string) => s.trim() || null;
+  const wsl = draft.wsl.trim();
   return {
     id,
     name,
@@ -74,6 +78,8 @@ export function profileOf(draft: Draft, base: Profile | null, id: string): Profi
     account: opt(draft.account),
     startup: lines(draft.startup),
     enabled: base?.enabled ?? true,
+    // Windows is the default: the key is left out, as on disk.
+    ...(wsl ? { wsl } : {}),
   };
 }
 
@@ -82,6 +88,12 @@ export function accountsFor(view: ProfileView | null, accounts: Account[]): Acco
   const cli = view?.profile.cli;
   if (cli !== "claude" && cli !== "codex") return [];
   return accounts.filter((a) => a.provider === cli);
+}
+
+/** The WSL distros found, from the `shell:wsl:<distro>` shell ids. */
+export function wslDistros(shells: ShellView[]): string[] {
+  const prefix = "shell:wsl:";
+  return shells.filter((s) => s.kind === "wsl" && s.id.startsWith(prefix)).map((s) => s.id.slice(prefix.length));
 }
 
 /** Ids no profile takes: the default shell and the default agent values. */

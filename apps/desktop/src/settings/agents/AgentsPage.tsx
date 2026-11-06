@@ -23,7 +23,7 @@ import { pushToast } from "@/workspace/toastStore";
 import { SettingGroup, SettingRow } from "@/settings/SettingRow";
 import type { SettingsSectionProps } from "@/settings/sections";
 import { ago } from "@/workspace/ago";
-import { freeId } from "./agentForm";
+import { freeId, wslDistros } from "./agentForm";
 
 import { ProfileEditor } from "./ProfileEditor";
 import { HookInstallSection } from "./HookInstallSection";
@@ -249,7 +249,11 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
             <Tag>{t("settings.agents.perm.custom")}</Tag>
           </span>
         )}
-        <span className="ws-mono settings-path">{p.path ?? t("settings.agents.notFound")}</span>
+        {p.profile.wsl ? (
+          <Tag>{t("settings.agents.wslTag", { distro: p.profile.wsl })}</Tag>
+        ) : (
+          <span className="ws-mono settings-path">{p.path ?? t("settings.agents.notFound")}</span>
+        )}
         {p.permissions === "skip" && <span className="agent-skip">{t("settings.agents.skip")}</span>}
         {p.permissions === "auto" && <span className="settings-path">{t("settings.agents.perm.auto")}</span>}
         {p.followsApprovals && <span className="settings-path">{t("settings.agents.follows")}</span>}
@@ -285,6 +289,7 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
       view={editingView}
       newId={freeId("", taken, "custom")}
       accounts={accounts}
+      distros={wslDistros(current.shells)}
       approvals={current.approvals}
       busy={busy}
       error={error}

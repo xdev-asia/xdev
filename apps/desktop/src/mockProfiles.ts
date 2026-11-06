@@ -220,6 +220,8 @@ export function createMockProfiles(): MockProfiles {
     async agentProbe(id) {
       const found = profiles.find((p) => p.id === id);
       if (!found?.cli) return reject("unknown_profile");
+      // The version check does not run inside a WSL distro.
+      if (found.wsl) return reject("wsl_unchecked");
       return state.verdicts[id] ?? (viewOf(found).installed ? { kind: "ok", version: "1.0.0" } : { kind: "notInstalled" });
     },
     async agentDocsOpen(id) {
