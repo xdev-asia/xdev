@@ -25,12 +25,13 @@ it("shows progress as step n of m and marks the current step", () => {
   expect(html.match(/data-state="done"/g)).toHaveLength(1);
 });
 
-it("first step: Back is disabled, Next shows, and no primary button yet", () => {
+it("first step: Back is disabled and Next is the one primary button", () => {
   const html = view(initialFlow());
   expect(html).toContain(en("onboarding.next"));
   expect(html).not.toContain(en("onboarding.finish"));
   expect(html).toMatch(/disabled=""[^>]*>[^<]*Back|Back[^<]*<\/button>/);
-  expect(primaries(html)).toBe(0);
+  expect(primaries(html)).toBe(1);
+  expect(html).toMatch(new RegExp(`class="btn"[^>]*>${en("onboarding.next")}<`));
 });
 
 it("last step: Finish is the one primary button and Next is gone", () => {

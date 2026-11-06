@@ -16,7 +16,7 @@ import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
 import { childrenOf, parentCandidates, parentOf } from "./lineage";
 import { folderMenuItems, groupMenuItems, projectMenuItems, worktreeMenuItems } from "./worktreeMenu";
-import { activeProjects, dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, projectListRepeatsCards, sectionHeadless, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
+import { activeProjects, dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, projectListRepeatsCards, repeatedRepos, sectionHeadless, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
 import { RepoBadge } from "./RepoBadge";
 import { useKeymap } from "@/keys/keymap";
 import { SidebarFilters } from "./SidebarFilters";
@@ -643,10 +643,12 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   };
 
   // One entry of the project list: a repo with its archived list, a plain folder, or a group with its members.
+  // Repos whose project row would only repeat their cards; their menu rides on the card instead.
+  const repeated = repeatedRepos(tree ?? [], shownPaths);
   const projectItem = (item: SidebarItem): JSX.Element[] => {
     if (item.kind === "repo") {
       const { repo, kept } = item;
-      if (repo.missing) return [];
+      if (repo.missing || repeated.has(repo.id)) return [];
       return [
         <li key={repo.id} className="ws-repo" data-repo={repo.id} title={repo.path} tabIndex={0} data-dragging={dragging === repo.id ? "true" : undefined} onContextMenu={projectMenu(repo)} {...reorder(repo.id)}>
           <RepoBadge repo={repo} />
@@ -672,6 +674,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     }
     const { group } = item;
     const open = !shut.includes(group.id);
+    const rows = item.items.flatMap(projectItem);
     return [
       <li key={group.id} className="ws-project-group" data-project-group={group.id}>
         <div className="ws-repo ws-group-row" tabIndex={0} data-dragging={dragging === group.id ? "true" : undefined} onContextMenu={menuAt("group", group.id)} {...reorder(group.id)}>
@@ -684,11 +687,11 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           </button>
           {moreButton("group", group.id, group.name)}
         </div>
-        {open && <ul className="ws-repos ws-repos-nested">{item.items.flatMap(projectItem)}</ul>}
+        {open && rows.length > 0 && <ul className="ws-repos ws-repos-nested">{rows}</ul>}
       </li>,
     ];
   };
-  // One project with nothing archived is already the card above: its own row would say the same again.
+  // A project with nothing archived is already its cards above: its own row would say the same again.
   const hasProjects = (tree ?? []).some((i) => i.kind !== "repo" || !i.repo.missing) && !projectListRepeatsCards(tree ?? [], shownPaths);
 
   // The menu of the open row or repo; null when what it was opened on has gone from the list.
@@ -756,8 +759,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         nestedSleepable: [wt, ...childrenOf(wt, entries.find((e) => e.path === menu.key)!.repo.worktrees)].some((w) => props.sleepable?.[w.path] !== false),
         onWake: props.onWake && (() => props.onWake?.(wt)),
       });
-      // A lone project has no row of its own (see `hasProjects`), so its menu rides on the card.
-      const lone = !hasProjects ? repoList.find((r) => r.worktrees.some((w) => w.path === wt.path)) : undefined;
+      // A project without a row of its own (see `repeated`) has its menu ride on the card.
+      const owner = repoList.find((r) => r.worktrees.some((w) => w.path === wt.path));
+      const lone = owner && (!hasProjects || repeated.has(owner.id)) ? owner : undefined;
       if (lone) items = [...items, { id: "projectSep", labelKey: "", kind: "separator" as const }, { id: "project", labelKey: "project.menu", children: projectItems(lone) }];
     } else if (menu.kind === "folder") {
       const folder = folderOf(menu.key);

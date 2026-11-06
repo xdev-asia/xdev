@@ -11,6 +11,27 @@ const legacy = (parser: () => Promise<StreamParser<unknown>>): Loader => async (
   const [{ StreamLanguage }, p] = await Promise.all([import("@codemirror/language"), parser()]);
   return StreamLanguage.define(p);
 };
+/**
+ * C# names its types in PascalCase, but the clike mode only knows the built-in ones, so `List`,
+ * `HttpClient` or a project's own classes read as plain names. A capitalised name that is not a
+ * member (`x.Name`), a method call (`Run(`) or an ALL_CAPS constant is styled as a type.
+ */
+export function pascalTypes<S>(parser: StreamParser<S>): StreamParser<S> {
+  return {
+    ...parser,
+    token(stream, state) {
+      const style = parser.token(stream, state);
+      if (style !== "variable") return style;
+      const word = stream.current();
+      if (!/^[A-Z]/.test(word) || /^[A-Z0-9_]{2,}$/.test(word)) return style;
+      const before = stream.string.slice(0, stream.start);
+      if (/\.\s*$/.test(before)) return style;
+      if (/^\s*\(/.test(stream.string.slice(stream.pos)) && !/\bnew\s+$/.test(before)) return style;
+      return "type";
+    },
+  };
+}
+
 const LOADERS = {
   js: javascript({ jsx: true }),
   ts: javascript({ typescript: true, jsx: true }),
@@ -27,7 +48,7 @@ const LOADERS = {
   php: () => import("@codemirror/lang-php").then((m) => m.php()),
   sql: () => import("@codemirror/lang-sql").then((m) => m.sql()),
   xml: () => import("@codemirror/lang-xml").then((m) => m.xml()),
-  csharp: legacy(() => import("@codemirror/legacy-modes/mode/clike").then((m) => m.csharp)),
+  csharp: legacy(() => import("@codemirror/legacy-modes/mode/clike").then((m) => pascalTypes(m.csharp))),
   kotlin: legacy(() => import("@codemirror/legacy-modes/mode/clike").then((m) => m.kotlin)),
   shell: legacy(() => import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell)),
   toml: legacy(() => import("@codemirror/legacy-modes/mode/toml").then((m) => m.toml)),

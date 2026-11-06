@@ -197,11 +197,31 @@ export function dropMove(items: SidebarItem[], dragged: string, target: string):
 /** The Remote group lives in `@/remote/model`; the sidebar reads it from here with the rest of its model. */
 export { remoteRows, stateDot, type RemoteRow } from "@/remote/model";
 
+/** True when a repo's row in the project list would only repeat its cards: nothing archived, its folder there, a worktree drawn as a card. */
+function rowRepeatsCards(item: SidebarItem, drawn: ReadonlySet<string>): boolean {
+  return item.kind === "repo" && !item.repo.missing && item.kept.length === 0 && item.repo.worktrees.some((wt) => drawn.has(wt.path));
+}
+
+/**
+ * The repos inside groups whose project-list row would only repeat their cards. The list leaves those
+ * rows out; the group keeps its heading, so it can still be renamed, removed or dropped onto. Top-level
+ * repo rows stay: they are the headings the projects are reordered by.
+ */
+export function repeatedRepos(tree: readonly SidebarItem[], drawn: ReadonlySet<string>): Set<string> {
+  const out = new Set<string>();
+  const walk = (items: readonly SidebarItem[]) => {
+    for (const i of items) {
+      if (i.kind === "group") walk(i.items);
+      else if (i.kind === "repo" && rowRepeatsCards(i, drawn)) out.add(i.repo.id);
+    }
+  };
+  for (const i of tree) if (i.kind === "group") walk(i.items);
+  return out;
+}
+
 /** True when the project list under the cards would only repeat them: one project, nothing archived, its worktrees drawn as cards. */
 export function projectListRepeatsCards(tree: readonly SidebarItem[], drawn: ReadonlySet<string>): boolean {
-  if (tree.length !== 1) return false;
-  const only = tree[0]!;
-  return only.kind === "repo" && !only.repo.missing && only.kept.length === 0 && only.repo.worktrees.some((wt) => drawn.has(wt.path));
+  return tree.length === 1 && rowRepeatsCards(tree[0]!, drawn);
 }
 
 /** True when a section needs no heading: it is the only one, nothing is pinned, and it is the catch-all "Other" of the activity grouping. */

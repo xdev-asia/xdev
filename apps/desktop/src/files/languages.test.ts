@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
-import { languageOf, loadLanguage, type Language } from "./languages";
+import { StringStream } from "@codemirror/language";
+import { csharp } from "@codemirror/legacy-modes/mode/clike";
+import { languageOf, loadLanguage, pascalTypes, type Language } from "./languages";
 
 it("picks a language by extension, plain text for the rest", () => {
   expect(languageOf("src/App.tsx")).toBe("ts");
@@ -101,4 +103,25 @@ it("loads every language it names", async () => {
     "lua", "ruby", "swift", "kotlin", "diff", "properties", "groovy", "cmake", "perl", "r", "powershell", "protobuf", "scala", "dart",
   ];
   for (const lang of all) expect(await loadLanguage(lang), lang).toBeTruthy();
+});
+
+it("C# styles PascalCase names as types, but not members, calls or constants", () => {
+  const parser = pascalTypes(csharp);
+  const state = parser.startState!(4);
+  const styles: Record<string, string | null> = {};
+  for (const line of ["var client = new HttpClient();", "List<Patient> rows = Repo.Load(MAX_ROWS);", "IService svc = x.Name;"]) {
+    const stream = new StringStream(line, 4, 2);
+    while (!stream.eol()) {
+      const style = parser.token(stream, state);
+      if (stream.start === stream.pos) stream.next();
+      const word = stream.current().trim();
+      if (word) styles[word] = style;
+      stream.start = stream.pos;
+    }
+  }
+  expect(styles).toMatchObject({ HttpClient: "type", List: "type", Patient: "type", Repo: "type", IService: "type" });
+  expect(styles.Load).not.toBe("type");
+  expect(styles.MAX_ROWS).not.toBe("type");
+  expect(styles.Name).not.toBe("type");
+  expect(styles.client).not.toBe("type");
 });

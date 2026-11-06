@@ -31,7 +31,7 @@ export function Progress(props: { step: number }): JSX.Element {
   );
 }
 
-/** The wizard's frame: progress, the step, and Back / Next / Finish with Skip beside them. Finish is the only primary button. */
+/** The wizard's frame: progress, the step, and Back / Next / Finish with Skip beside them. Next, or Finish on the last step, is the one primary button. */
 export function FlowView(props: { flow: FlowState; busy: boolean; failed: boolean; body: JSX.Element; onBack(): void; onNext(): void; onFinish(): void; onSkip(): void; onConfirmSkip(): void; onCancelSkip(): void }): JSX.Element {
   const { t } = useI18n();
   const { flow } = props;
@@ -64,7 +64,7 @@ export function FlowView(props: { flow: FlowState; busy: boolean; failed: boolea
               {t("onboarding.finish")}
             </Button>
           ) : (
-            <Button type="button" variant="secondary" disabled={props.busy} onClick={props.onNext}>
+            <Button type="button" disabled={props.busy} onClick={props.onNext}>
               {t("onboarding.next")}
             </Button>
           )}

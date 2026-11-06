@@ -488,6 +488,9 @@ it("a plain folder shows as a row and a group lists its members", () => {
   const html = harness(DOTS, repos, { items }).html();
   expect(html).toContain("ws-folder");
   expect(html).toContain("Team");
+  // The member's worktrees are cards above, so the group does not list it again.
+  expect(html).not.toContain(`data-repo="${xdev.id}"`);
+  expect(html).not.toContain("ws-repos-nested");
 });
 
 it("alt+arrow on a repo row asks for a new order", () => {

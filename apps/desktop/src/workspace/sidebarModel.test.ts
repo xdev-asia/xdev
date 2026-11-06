@@ -3,7 +3,7 @@ import type { RepoView, SidebarItem, SidebarPrefs, WorkItem, WorktreeView } from
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { NO_DETAILS } from "./worktreeDetails";
 import { groupWorktrees } from "./groups";
-import { activeProjects, filterByProject, flattenRepos, itemLabel, moveTarget, nestRows, pinnedEntries, projectListRepeatsCards, sectionHeadless, topIds, visibleEntries, type WtEntry } from "./sidebarModel";
+import { activeProjects, filterByProject, flattenRepos, itemLabel, moveTarget, nestRows, pinnedEntries, projectListRepeatsCards, repeatedRepos, sectionHeadless, topIds, visibleEntries, type WtEntry } from "./sidebarModel";
 
 const OFF: SidebarPrefs = SIDEBAR_PREFS_DEFAULTS;
 
@@ -178,6 +178,21 @@ it("the project list repeats the card of a lone project with nothing archived", 
   expect(projectListRepeatsCards([{ kind: "repo", repo: r, kept: [{ branch: "old" } as never] }], drawn)).toBe(false);
   expect(projectListRepeatsCards([asRepo({ ...r, missing: true })], drawn)).toBe(false);
   expect(projectListRepeatsCards([asRepo(r), asRepo(repo("other", [wt("o")]))], drawn)).toBe(false);
+});
+
+it("repos in a group whose cards are drawn have no project row; the group and top-level repos keep theirs", () => {
+  const a = repo("a", [wt("a1")]);
+  const b = repo("b", [wt("b1")]);
+  const c = repo("c", [wt("c1")]);
+  const group = { kind: "group", group: { id: "g", name: "G", members: ["a", "b"] }, items: [asRepo(a), asRepo(b)] } as never;
+  const drawn = new Set(["a", "b", "c"].map((id) => `/wt/${id}1`));
+  expect([...repeatedRepos([group, asRepo(c)], drawn)].sort()).toEqual(["a", "b"]);
+  // A group is more than its cards, so the list stays.
+  expect(projectListRepeatsCards([group, asRepo(c)], drawn)).toBe(false);
+  // Hidden cards or something archived keep the row.
+  expect([...repeatedRepos([group], new Set(["/wt/a1"]))]).toEqual(["a"]);
+  const keeps = { kind: "group", group: { id: "k", name: "K", members: ["c"] }, items: [{ kind: "repo", repo: c, kept: [{ branch: "old" } as never] }] } as never;
+  expect([...repeatedRepos([keeps], drawn)]).toEqual([]);
 });
 
 it("a lone Other section has no heading; named sections and pinned rows keep theirs", () => {
