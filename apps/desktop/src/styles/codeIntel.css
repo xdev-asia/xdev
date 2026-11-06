@@ -1,0 +1,30 @@
+/* Settings → Code intelligence. */
+
+.code-intel-row {
+  align-items: flex-start;
+}
+
+.code-intel-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  min-width: 0;
+}
+
+/* A long install path wraps at 360px rather than pushing the switch off screen. */
+.code-intel-status {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.code-intel-trusted {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+}
+
+.code-intel-trusted .settings-hint {
+  margin: 0;
+}

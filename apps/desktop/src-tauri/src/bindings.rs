@@ -384,6 +384,24 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_link::PeerActivity::export_all(cfg)?;
     xdev_link::PeerConfirm::export_all(cfg)?;
     xdev_link::PeerTermClosed::export_all(cfg)?;
+    crate::lsp::LspSettings::export_all(cfg)?;
+    crate::lsp::LspServerInfo::export_all(cfg)?;
+    crate::lsp::LspEvent::export_all(cfg)?;
+    crate::lsp::LspDocState::export_all(cfg)?;
+    crate::lsp::LspRunning::export_all(cfg)?;
+    xdev_lsp::LspLanguage::export_all(cfg)?;
+    xdev_lsp::Pos::export_all(cfg)?;
+    xdev_lsp::Range::export_all(cfg)?;
+    xdev_lsp::Location::export_all(cfg)?;
+    xdev_lsp::Hover::export_all(cfg)?;
+    xdev_lsp::CompletionItem::export_all(cfg)?;
+    xdev_lsp::CompletionList::export_all(cfg)?;
+    xdev_lsp::TextEdit::export_all(cfg)?;
+    xdev_lsp::FileEdit::export_all(cfg)?;
+    xdev_lsp::WorkspaceEdit::export_all(cfg)?;
+    xdev_lsp::Symbol::export_all(cfg)?;
+    xdev_lsp::Diagnostic::export_all(cfg)?;
+    xdev_lsp::State::export_all(cfg)?;
     Ok(())
 }
 

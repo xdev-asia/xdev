@@ -162,6 +162,15 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("editor.fontSize", "files.settings.fontSize", ["font", "cỡ chữ", "co chu", "phông", "phong"]),
   e("editor.fontFamily", "files.settings.fontFamily.catalog", ["font", "family", "typeface", "monospace", "terminal", "phông", "phong", "phông chữ", "phong chu"], "files.settings.fontFamily.hint"),
   e("editor.tabSize", "files.settings.tabSize", ["tab", "indent", "thụt lề", "thut le"], "files.settings.tabSizeHint"),
+  // Code intelligence
+  e("code.enabled", "settings.code.enabled", ["language server", "lsp", "definition", "hover", "completion", "rename", "diagnostics", "máy chủ ngôn ngữ", "may chu ngon ngu", "gợi ý", "goi y"], "settings.code.intro"),
+  e("code.lang.typescript", "settings.code.lang.typescript", ["language server", "lsp", "definition", "hover", "completion", "rename", "diagnostics", "máy chủ ngôn ngữ", "may chu ngon ngu", "gợi ý", "goi y", "typescript", "javascript", "typescript-language-server"]),
+  e("code.lang.rust", "settings.code.lang.rust", ["language server", "lsp", "definition", "hover", "completion", "rename", "diagnostics", "máy chủ ngôn ngữ", "may chu ngon ngu", "gợi ý", "goi y", "rust", "rust-analyzer"]),
+  e("code.lang.python", "settings.code.lang.python", ["language server", "lsp", "definition", "hover", "completion", "rename", "diagnostics", "máy chủ ngôn ngữ", "may chu ngon ngu", "gợi ý", "goi y", "python", "pyright", "pylsp"]),
+  e("code.lang.go", "settings.code.lang.go", ["language server", "lsp", "definition", "hover", "completion", "rename", "diagnostics", "máy chủ ngôn ngữ", "may chu ngon ngu", "gợi ý", "goi y", "go", "golang", "gopls"]),
+  e("code.lang.csharp", "settings.code.lang.csharp", ["language server", "lsp", "definition", "hover", "completion", "rename", "diagnostics", "máy chủ ngôn ngữ", "may chu ngon ngu", "gợi ý", "goi y", "c#", "csharp", "dotnet", "omnisharp"]),
+  e("code.idle", "settings.code.idle", ["language server", "lsp", "definition", "hover", "completion", "rename", "diagnostics", "máy chủ ngôn ngữ", "may chu ngon ngu", "gợi ý", "goi y", "idle", "stop", "minutes", "dừng", "dung", "phút", "phut"]),
+  e("code.trusted", "settings.code.forget", ["language server", "lsp", "definition", "hover", "completion", "rename", "diagnostics", "máy chủ ngôn ngữ", "may chu ngon ngu", "gợi ý", "goi y", "trust", "trusted", "repo", "forget", "tin cậy", "tin cay", "quên", "quen"]),
   // Repositories (the same fields on every repo card)
   e("repos.color", "settings.repos.identity.color", ["colour", "color", "badge", "tag", "hex", "màu", "mau", "nhãn", "nhan"], "settings.repos.identity.color.hint"),
   e("repos.icon", "settings.repos.identity.icon", ["icon", "emoji", "letter", "badge", "biểu tượng", "bieu tuong"]),

@@ -42,6 +42,7 @@ mod kit;
 mod layout;
 mod links;
 mod links_open;
+mod lsp;
 mod mcp_tools;
 mod network;
 mod notch;
@@ -160,6 +161,7 @@ pub fn run() {
         .manage(orchestration::OrchHub::default())
         .manage(keybindings::LastSent::default())
         .manage(notch::Notch::default())
+        .manage(lsp::LspHub::default())
         .manage(startup::Startup::from_env())
         .on_window_event(|window, event| {
             if window.label() == "main"
@@ -788,6 +790,22 @@ pub fn run() {
             swarm::swarm_workers,
             swarm::swarm_stop_all,
             swarm::swarm_open_tab,
+            lsp::lsp_servers,
+            lsp::lsp_settings_get,
+            lsp::lsp_settings_put,
+            lsp::lsp_subscribe,
+            lsp::lsp_trust,
+            lsp::lsp_open,
+            lsp::lsp_change,
+            lsp::lsp_close,
+            lsp::lsp_hover,
+            lsp::lsp_definition,
+            lsp::lsp_completion,
+            lsp::lsp_prepare_rename,
+            lsp::lsp_rename,
+            lsp::lsp_workspace_symbols,
+            lsp::lsp_restart,
+            lsp::lsp_status,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
@@ -801,6 +819,7 @@ pub fn run() {
                 let on_quit = shell::on_quit_for(mode, settings_store::read(app).terminal.on_quit);
                 automations::stop(app);
                 app.state::<app_stats::AppStatsHub>().close_all();
+                app.state::<lsp::LspHub>().stop_all();
                 app.state::<pty::Ptys>().quit(on_quit);
                 app.state::<power::Awake>().release();
                 if let Some(ssh) = app.try_state::<ssh_connect::SshConnections>() {
