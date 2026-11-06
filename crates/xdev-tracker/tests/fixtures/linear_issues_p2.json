@@ -1,0 +1,5 @@
+{"data":{"issues":{"nodes":[
+{"id":"i15","identifier":"ENG-15","title":"Add export","url":"https://linear.app/example/issue/ENG-15/add-export","updatedAt":"2026-11-06T09:30:00.000Z","state":{"name":"Todo","type":"unstarted"},"assignee":{"name":"Ada"}},
+{"id":"i20","identifier":"ENG-20","title":"Elsewhere","url":"https://evil.example/issue/ENG-20","updatedAt":"2026-11-06T09:00:00.000Z","state":{"name":"Todo","type":"unstarted"},"assignee":null},
+{"id":"i21","identifier":"ENG-21","title":"Dropped idea","url":"https://linear.app/example/issue/ENG-21/dropped-idea","updatedAt":"2026-10-30T09:00:00.000Z","state":{"name":"Canceled","type":"canceled"},"assignee":null}
+],"pageInfo":{"hasNextPage":false,"endCursor":"cursor-2"}}}}

@@ -113,6 +113,29 @@ pub fn retry_after(raw: &str) -> Option<u64> {
     raw.trim().parse().ok()
 }
 
+/// Maps a reply to the error its status means, or `Ok` for 2xx. `not_found` is what a 404 is
+/// for this API (Jira: `NotFound`; Linear: `Unavailable`).
+pub(crate) fn status_error(
+    res: &HttpResponse,
+    not_found: crate::TrackerError,
+) -> Result<(), crate::TrackerError> {
+    use crate::TrackerError as E;
+    match res.status {
+        200..=299 => {
+            if res.body.len() > BODY_MAX {
+                Err(E::BadReply)
+            } else {
+                Ok(())
+            }
+        }
+        300..=399 => Err(E::Redirected),
+        401 | 403 => Err(E::Auth),
+        404 => Err(not_found),
+        429 => Err(E::RateLimited(res.retry_after)),
+        _ => Err(E::Unavailable),
+    }
+}
+
 #[cfg(any(test, feature = "test-util"))]
 pub use fake::FakeHttp;
 
