@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import type { HookEvent, PtyInfo } from "@/api";
 import { INTERRUPT_MS, STALE_MS } from "./status";
-import { addTab, leaves, paneOf, removeTab, splitPane, toggleExpand } from "./paneTree";
+import { addTab, leaves, paneOf, removeTab, single, splitPane, toggleExpand } from "./paneTree";
 import { CLOSED_KEPT, DONE_QUIET_MS, Sessions } from "./sessions";
+import { browserTab, openBrowserTab, resetBrowserTabs } from "@/browser/browserTabs";
 
 const A = "/demo/wt/xdev-oak";
 const B = "/demo/wt/xdev-elm";
@@ -141,6 +142,29 @@ describe("Sessions", () => {
     expect(exited.sort()).toEqual([a1.id, a2.id].sort());
     expect(live.tabs(A)).toEqual([]);
     expect(live.tabs(B).map((t) => t.id)).toEqual([b1.id]);
+  });
+
+  it("removing a worktree closes its browser tabs and their webviews", async () => {
+    const api = createMockApi({});
+    const live = (sessions = new Sessions(api));
+    await spawn(live, A, "shell");
+    const pageA = openBrowserTab(A);
+    const pageB = openBrowserTab(B);
+    live.setLayout(A, addTab(live.layout(A)!, pageA));
+    live.setLayout(B, single(pageB));
+    const close = vi.spyOn(api, "browserClose");
+    try {
+      await live.closeWorktree(A);
+
+      expect(close.mock.calls.map((c) => c[0])).toEqual([pageA]);
+      expect(browserTab(pageA)).toBeUndefined();
+      expect(browserTab(pageB)).toBeDefined();
+      expect(live.layout(A)).toBeNull();
+      expect(live.tabs(A)).toEqual([]);
+      expect(live.layout(B)).toEqual(single(pageB));
+    } finally {
+      resetBrowserTabs();
+    }
   });
 
   it("gives up waiting for an exit after 5 seconds", async () => {

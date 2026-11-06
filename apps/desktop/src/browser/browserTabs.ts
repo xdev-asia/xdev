@@ -100,6 +100,15 @@ export function closeBrowserTab(id: string): void {
   emit();
 }
 
+/** Drops every tab of `worktree` (it was removed) and returns their ids, for the backend to close. */
+export function closeBrowserTabsOf(worktree: string): string[] {
+  const gone = entries.filter((e) => e.worktree === worktree).map((e) => e.id);
+  if (gone.length === 0) return gone;
+  entries = entries.filter((e) => e.worktree !== worktree);
+  emit();
+  return gone;
+}
+
 export function browserTab(id: string): BrowserTabEntry | undefined {
   return entries.find((e) => e.id === id);
 }

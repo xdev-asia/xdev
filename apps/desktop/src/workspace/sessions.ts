@@ -2,7 +2,7 @@ import { toApiError, type AccountSource, type Api, type HookDetail, type LaunchO
 import { PtyClient } from "@/terminal/ptyClient";
 import { setPrime, takePrime } from "@/terminal/restorePrime";
 import { translate } from "@/i18n";
-import { browserTab, restoreBrowserTab } from "@/browser/browserTabs";
+import { browserTab, closeBrowserTabsOf, isBrowserTab, restoreBrowserTab } from "@/browser/browserTabs";
 import { ownAccount, runAccount } from "./ownAccount";
 
 // Where `ownAccount` lives to keep it free of the api import; callers may still take it from here.
@@ -604,6 +604,7 @@ export class Sessions {
 
   /** Kills every tab of a worktree; resolves when each reported its exit, or after 5 s. */
   async closeWorktree(worktree: string): Promise<void> {
+    this.closeBrowserTabs(worktree);
     const entries = [...this.entries.values()].filter((e) => e.tab.worktree === worktree);
     const live = entries.filter((e) => !ended(e.tab));
     for (const e of entries) this.closing.add(e.tab.id);
@@ -1168,6 +1169,21 @@ export class Sessions {
     };
     // Caps stay off until the pty says whether it got hook flags.
     return { tab, state: start(), caps: NO_CAPS, programTitle: null, autoTitle: null };
+  }
+
+  /** Closes the browser tabs of a removed worktree: their entries, their webviews and their place in the layout. */
+  private closeBrowserTabs(worktree: string): void {
+    const ids = new Set(closeBrowserTabsOf(worktree));
+    let layout = this.layouts.get(worktree) ?? null;
+    if (layout) for (const leaf of leaves(layout)) if (leaf.kind === "leaf") for (const id of leaf.tabs) if (isBrowserTab(id)) ids.add(id);
+    if (ids.size === 0) return;
+    for (const id of ids) {
+      void this.api.browserClose(id).catch(() => {});
+      if (layout) layout = removeTab(layout, id);
+    }
+    if (layout) this.layouts.set(worktree, layout);
+    else this.layouts.delete(worktree);
+    this.emit();
   }
 
   private remove(entries: Entry[]): void {
