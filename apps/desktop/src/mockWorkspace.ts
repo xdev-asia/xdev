@@ -88,6 +88,8 @@ type WorkspaceApi = Pick<
   | "worktreePrEdit"
   | "worktreePrReviewers"
   | "worktreePrReviewerCandidates"
+  | "worktreePrViewed"
+  | "worktreePrFileViewed"
   | "worktreeCheckLog"
   | "worktreeDraftCommit"
   | "worktreeDraftPr"
@@ -133,6 +135,8 @@ export type MockWorkspaceSeed = {
   prHeads?: Record<string, string>;
   // The collaborators offered as reviewers; the list is closed (`gh_failed`) when absent.
   reviewerCandidates?: string[];
+  // The files of each worktree's PR marked viewed; the read fails (`gh_failed`, as offline) when the worktree is absent.
+  prViewed?: Record<string, string[]>;
   // The next commit or amend in that worktree is rejected with `hook_failed`; the text is the hook output.
   hookFailure?: Record<string, string>;
   // Worktrees that already track a remote branch, with how far they have drifted.
@@ -281,6 +285,9 @@ export const DEMO_WORKSPACE: MockWorkspaceSeed = {
       demoComment(5, { kind: "review", author: "maya", body: "Looks good overall, two small notes." }),
       demoComment(6, { kind: "conversation", author: "sam", body: "Can we ship this today?" }),
     ],
+  },
+  prViewed: {
+    "/demo/wt/xdev-elm": ["src/status.ts"],
   },
   changes: {
     "/demo/wt/xdev-oak": [
@@ -525,6 +532,7 @@ export function createMockWorkspace(
   const prComments = new Map<string, PrComment[]>(Object.entries(structuredClone(seed.prComments ?? {})));
   const mergeInfo = new Map<string, PrMergeInfo>(Object.entries(structuredClone(seed.mergeInfo ?? {})));
   const prDetails = new Map<string, PrDetail>(Object.entries(structuredClone(seed.prDetails ?? {})));
+  const prViewed = new Map<string, Set<string>>(Object.entries(seed.prViewed ?? {}).map(([k, v]) => [k, new Set(v)]));
   const hooks = new Map<string, string>(Object.entries(seed.hookFailure ?? {}));
   const remotes = new Map<string, Remote>();
   // Worktrees whose local commits were rewritten after they were pushed, by an amend or a rebase.
@@ -1634,6 +1642,20 @@ export function createMockWorkspace(
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       if (!seed.reviewerCandidates) return reject("gh_failed");
       return [...seed.reviewerCandidates];
+    },
+    async worktreePrViewed(path, number) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const files = prViewed.get(path);
+      if (!files) return reject("gh_failed");
+      if (prs.get(path)?.number !== number) return reject("pr_not_found");
+      return { id: `PR_mock${number}`, viewed: [...files] };
+    },
+    async worktreePrFileViewed(path, prId, file, viewed) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const files = prViewed.get(path);
+      if (!files || prId !== `PR_mock${prs.get(path)?.number}`) return reject("pr_not_found");
+      if (viewed) files.add(file);
+      else files.delete(file);
     },
     async worktreeCheckLog(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

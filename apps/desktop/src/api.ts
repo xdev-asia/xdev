@@ -172,6 +172,7 @@ import type {
   MergeBlock,
   PrMergeInfo,
   PrDetail,
+  PrViewed,
   PrEntry,
   PrEntryKind,
   PrFile,
@@ -556,6 +557,7 @@ export type {
   MergeBlock,
   PrMergeInfo,
   PrDetail,
+  PrViewed,
   PrEntry,
   PrEntryKind,
   PrFile,
@@ -1444,6 +1446,10 @@ export interface Api {
   worktreePrAutoMerge(path: string, number: number, method: MergeMethod | null): Promise<void>;
   // Sets the title and body; the body goes to `gh` on stdin. Rejects with `bad_pr_edit` for an empty or long title or a long body.
   worktreePrEdit(path: string, number: number, title: string, body: string): Promise<void>;
+  // The node id of PR `number` and the files the signed-in login marked viewed.
+  worktreePrViewed(path: string, number: number): Promise<PrViewed>;
+  // Marks `file` of the PR with node id `prId` viewed, or not.
+  worktreePrFileViewed(path: string, prId: string, file: string, viewed: boolean): Promise<void>;
   // Asks `add` for a review and drops the request of `remove` (logins or `org/team`). Rejects with `bad_reviewer`.
   worktreePrReviewers(path: string, number: number, add: string[], remove: string[]): Promise<void>;
   // The collaborators of the worktree's repo, read once per repo per session. Rejects when the list is closed.
@@ -2686,6 +2692,8 @@ const tauriApi: Api = {
   worktreePrComment: (path, number, body) => call("worktree_pr_comment", { path, number, body }),
   worktreePrAutoMerge: (path, number, method) => call("worktree_pr_auto_merge", { path, number, method }),
   worktreePrEdit: (path, number, title, body) => call("worktree_pr_edit", { path, number, title, body }),
+  worktreePrViewed: (path, number) => call("worktree_pr_viewed", { path, number }),
+  worktreePrFileViewed: (path, prId, file, viewed) => call("worktree_pr_file_viewed", { path, prId, file, viewed }),
   worktreePrReviewers: (path, number, add, remove) => call("worktree_pr_reviewers", { path, number, add, remove }),
   worktreePrReviewerCandidates: (path) => call("worktree_pr_reviewer_candidates", { path }),
   issuesList: (repoId, query) => call("issues_list", { repoId, query }),

@@ -1,5 +1,6 @@
 //! The pull request panel of a worktree: the PR of its branch in full, a
-//! comment, auto-merge on or off, its title and body, and its reviewers. Every command runs `gh`
+//! comment, auto-merge on or off, its title and body, its reviewers, and the
+//! files the signed-in login marked viewed. Every command runs `gh`
 //! as the login the repo is bound to, in the registered worktree.
 
 use std::collections::HashMap;
@@ -8,8 +9,9 @@ use std::sync::{Mutex, PoisonError};
 
 use tauri::State;
 use xdev_git::{
-    GhExec, MergeMethod, PrDetail, SystemGh, pr_auto_merge_disable, pr_auto_merge_enable,
-    pr_comment_add, pr_detail, pr_edit, pr_reviewer_candidates, pr_reviewers_edit,
+    GhExec, MergeMethod, PrDetail, PrViewed, SystemGh, pr_auto_merge_disable, pr_auto_merge_enable,
+    pr_comment_add, pr_detail, pr_edit, pr_file_viewed, pr_reviewer_candidates, pr_reviewers_edit,
+    pr_viewed_files,
 };
 use xdev_workspace::{Registry, path_key};
 
@@ -88,6 +90,20 @@ fn edit_with(
     body: &str,
 ) -> Result<(), CmdError> {
     Ok(pr_edit(gh, path, number, title, body)?)
+}
+
+fn viewed_with(gh: &dyn GhExec, path: &Path, number: u64) -> Result<PrViewed, CmdError> {
+    Ok(pr_viewed_files(gh, path, number)?)
+}
+
+fn file_viewed_with(
+    gh: &dyn GhExec,
+    path: &Path,
+    pr_id: &str,
+    file: &str,
+    viewed: bool,
+) -> Result<(), CmdError> {
+    Ok(pr_file_viewed(gh, path, pr_id, file, viewed)?)
 }
 
 fn reviewers_with(
@@ -170,6 +186,34 @@ pub fn worktree_pr_reviewers(
     let account = gh_account_for(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, account, |gh| {
         reviewers_with(gh, &path, number, &add, &remove)
+    })
+}
+
+/// The node id of PR `number` and the files the signed-in login marked viewed.
+#[tauri::command(async)]
+pub fn worktree_pr_viewed(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    number: u64,
+) -> Result<PrViewed, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_viewed")?;
+    let account = gh_account_for(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, account, |gh| viewed_with(gh, &path, number))
+}
+
+/// Marks `file` of the PR with node id `pr_id` viewed, or not.
+#[tauri::command(async)]
+pub fn worktree_pr_file_viewed(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    pr_id: String,
+    file: String,
+    viewed: bool,
+) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_file_viewed")?;
+    let account = gh_account_for(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, account, |gh| {
+        file_viewed_with(gh, &path, &pr_id, &file, viewed)
     })
 }
 
@@ -278,6 +322,21 @@ mod tests {
             ["pr", "edit", "9", "--title=New", "--body-file", "-"]
         );
         assert_eq!(calls[0].1.as_deref(), Some("Body"));
+    }
+
+    #[test]
+    fn file_viewed_marks_and_unmarks_by_node_id() {
+        let fake = Fake {
+            calls: RefCell::default(),
+        };
+        file_viewed_with(&fake, Path::new("."), "PR_1", "a.rs", true).unwrap();
+        file_viewed_with(&fake, Path::new("."), "PR_1", "a.rs", false).unwrap();
+        assert!(file_viewed_with(&fake, Path::new("."), "PR 1", "a.rs", true).is_err());
+        let calls = fake.calls.borrow();
+        assert_eq!(calls.len(), 2);
+        assert!(calls[0].0[3].contains("markFileAsViewed"));
+        assert!(calls[1].0[3].contains("unmarkFileAsViewed"));
+        assert_eq!(calls[0].0[4..], ["-f", "id=PR_1", "-f", "path=a.rs"]);
     }
 
     #[test]

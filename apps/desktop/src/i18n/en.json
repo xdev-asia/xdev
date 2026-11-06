@@ -4815,6 +4815,8 @@
   "review.attr.multi": "Touched by {count} agents",
   "review.attr.filter": "Touched by several agents",
   "review.attr.versions": "Versions",
+  "review.viewed": "Viewed",
+  "review.viewedFile": "Viewed {path}",
   "review.attr.versions.title": "Versions of {path}",
   "review.attr.versions.none": "No versions are kept for this file.",
   "review.attr.versions.list": "Versions an agent wrote",

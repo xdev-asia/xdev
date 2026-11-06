@@ -12,6 +12,7 @@ mod gh;
 mod gh_issue;
 mod gh_pr;
 mod gh_pr_edit;
+mod gh_pr_viewed;
 mod gh_review;
 mod gitlab;
 mod history;
@@ -51,6 +52,7 @@ pub use gh_pr::{
     pr_comment_add, pr_detail,
 };
 pub use gh_pr_edit::{pr_edit, pr_reviewer_candidates, pr_reviewers_edit, valid_reviewer};
+pub use gh_pr_viewed::{PrViewed, pr_file_viewed, pr_viewed_files};
 pub use gh_review::{
     COMMENT_BODY_MAX, COMMENTS_PER_SOURCE, MergeBlock, MergeMethod, PrComment, PrCommentDraft,
     PrCommentKind, PrComments, PrMergeInfo, PrReaction, Reaction, RerunReport, pr_checks_rerun,

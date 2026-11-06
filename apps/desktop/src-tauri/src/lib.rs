@@ -665,6 +665,8 @@ pub fn run() {
             pr_panel::worktree_pr_edit,
             pr_panel::worktree_pr_reviewers,
             pr_panel::worktree_pr_reviewer_candidates,
+            pr_panel::worktree_pr_viewed,
+            pr_panel::worktree_pr_file_viewed,
             ship::worktree_pr_open,
             issues::issues_list,
             issues::issue_view,

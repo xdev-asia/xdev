@@ -4815,6 +4815,8 @@
   "review.attr.multi": "{count} agent đã sửa",
   "review.attr.filter": "Nhiều agent đã sửa",
   "review.attr.versions": "Phiên bản",
+  "review.viewed": "Đã xem",
+  "review.viewedFile": "Đã xem {path}",
   "review.attr.versions.title": "Các phiên bản của {path}",
   "review.attr.versions.none": "Chưa lưu phiên bản nào của tệp này.",
   "review.attr.versions.list": "Các phiên bản agent đã ghi",

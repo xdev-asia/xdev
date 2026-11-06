@@ -313,6 +313,7 @@ export type { PrReviewer } from "./PrReviewer";
 export type { PrState } from "./PrState";
 export type { PrSummary } from "./PrSummary";
 export type { PrView } from "./PrView";
+export type { PrViewed } from "./PrViewed";
 export type { Precheck } from "./Precheck";
 export type { PrecheckResult } from "./PrecheckResult";
 export type { PresetSource } from "./PresetSource";
