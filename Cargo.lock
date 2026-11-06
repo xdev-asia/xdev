@@ -6801,6 +6801,7 @@ dependencies = [
  "xdev-ai",
  "xdev-automations",
  "xdev-awake",
+ "xdev-board",
  "xdev-core",
  "xdev-git",
  "xdev-id",

@@ -66,6 +66,12 @@ use ::xdev_id::XdevIdState;
 /// Each type's dependencies are written with it, so only the roots are here.
 fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     CmdError::export_all(cfg)?;
+    xdev_board::BoardList::export_all(cfg)?;
+    xdev_board::BoardTask::export_all(cfg)?;
+    xdev_board::TaskDraft::export_all(cfg)?;
+    xdev_board::TaskFull::export_all(cfg)?;
+    xdev_board::TaskPatch::export_all(cfg)?;
+    crate::board::TaskLink::export_all(cfg)?;
     XdevIdState::export_all(cfg)?;
     ::xdev_id::XdevIdServer::export_all(cfg)?;
     ::xdev_id::ServerSource::export_all(cfg)?;

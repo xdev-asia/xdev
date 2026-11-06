@@ -38,7 +38,7 @@ impl TaskStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "TaskPriority"))]
 #[serde(rename_all = "lowercase")]
 pub enum Priority {
     P0,
