@@ -14,7 +14,7 @@ pub fn tmux_session_name(tab_id: &str) -> String {
 }
 
 /// A name `env` takes: a letter or `_`, then letters, digits or `_`.
-fn valid_env_name(name: &str) -> bool {
+pub fn valid_env_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars
         .next()

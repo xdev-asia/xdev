@@ -125,6 +125,9 @@ pub struct Settings {
     /// it lives in the OS keychain only.
     #[serde(default, deserialize_with = "lenient")]
     pub speech: SpeechSettings,
+    /// Settings → Host settings: per SSH host overrides; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub hosts: HostsSettings,
 }
 
 /// Settings → Cloud: which xDev ID server the license talks to, and the keys its tokens are
@@ -651,6 +654,143 @@ impl Default for SpeechSettings {
             language: None,
             model: DEFAULT_SPEECH_MODEL.to_owned(),
         }
+    }
+}
+
+/// Per SSH host overrides; key = `SshHost` id. An absent key inherits every value.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct HostsSettings(pub std::collections::BTreeMap<String, HostSettings>);
+
+/// A map; an entry whose id is not a host id, or whose value does not parse,
+/// is dropped on its own. A value that is not a map reads as empty.
+impl<'de> serde::Deserialize<'de> for HostsSettings {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        let serde_json::Value::Object(map) = value else {
+            return Ok(HostsSettings::default());
+        };
+        let mut out = std::collections::BTreeMap::new();
+        for (id, entry) in map {
+            if !xdev_ssh::valid_host_id(&id) {
+                applog::warn("settings", "dropped a host entry with a bad id");
+                continue;
+            }
+            match serde_json::from_value::<HostSettings>(entry) {
+                Ok(host) => {
+                    out.insert(id, host);
+                }
+                Err(e) => applog::warn(
+                    "settings",
+                    &format!("dropped a host entry that does not parse: {e}"),
+                ),
+            }
+        }
+        Ok(HostsSettings(out))
+    }
+}
+
+/// One SSH host's overrides. Every value is optional or empty: absent = inherit.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", default)]
+pub struct HostSettings {
+    /// Display name in the picker; trimmed, 1..=64 chars.
+    pub label: Option<String>,
+    /// Remote login shell for shell tabs; absolute path.
+    pub shell: Option<String>,
+    /// Added to every remote launch on the host.
+    pub env: Vec<HostEnvVar>,
+    pub history: HostHistory,
+}
+
+/// Session history of the host's agents.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", default)]
+pub struct HostHistory {
+    /// `None` = on.
+    pub enabled: Option<bool>,
+    /// `None` = `~/.claude`; `~/…` or absolute.
+    pub claude_home: Option<String>,
+    /// `None` = `~/.codex`.
+    pub codex_home: Option<String>,
+    /// `None` = the default window; 1..=3650.
+    pub days: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct HostEnvVar {
+    pub name: String,
+    pub value: String,
+}
+
+pub const HOST_LABEL_MAX: usize = 64;
+pub const HOST_PATH_MAX: usize = 256;
+pub const HOST_ENV_MAX: usize = 64;
+pub const HOST_ENV_VALUE_MAX: usize = 4096;
+pub const HOST_DAYS_RANGE: RangeInclusive<u32> = 1..=3650;
+
+type HostCheck = (&'static str, String);
+
+/// `[A-Za-z0-9._/+-]`, absolute (or `~/…` when `home`), at most `HOST_PATH_MAX`.
+fn host_path(raw: Option<String>, home: bool, what: &str) -> Result<Option<String>, HostCheck> {
+    let Some(raw) = raw else { return Ok(None) };
+    let path = raw.trim();
+    if path.is_empty() {
+        return Ok(None);
+    }
+    let anchored = path.starts_with('/') || (home && path.starts_with("~/"));
+    let body = path.strip_prefix("~/").filter(|_| home).unwrap_or(path);
+    let safe = body
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '+' | '-'));
+    if !anchored || !safe || path.len() > HOST_PATH_MAX {
+        return Err(("bad_path", format!("{what}: {path}")));
+    }
+    Ok(Some(path.to_owned()))
+}
+
+impl HostSettings {
+    /// True when every value is inherited.
+    pub fn is_empty(&self) -> bool {
+        self.label.is_none()
+            && self.shell.is_none()
+            && self.env.is_empty()
+            && self.history == HostHistory::default()
+    }
+
+    /// The normalised value, or `(code, detail)`: `bad_name` for the label,
+    /// `bad_path` for a path, `bad_env` for the variables, `bad_arg` for days.
+    pub fn validated(mut self) -> Result<Self, HostCheck> {
+        self.label = match self.label.take().map(|l| l.trim().to_owned()) {
+            Some(l) if l.is_empty() => None,
+            Some(l) if l.chars().count() > HOST_LABEL_MAX => {
+                return Err(("bad_name", "label is too long".to_owned()));
+            }
+            other => other,
+        };
+        self.shell = host_path(self.shell.take(), false, "shell")?;
+        if self.env.len() > HOST_ENV_MAX {
+            return Err(("bad_env", "too many variables".to_owned()));
+        }
+        for v in &self.env {
+            if !xdev_ssh::valid_env_name(&v.name) {
+                return Err(("bad_env", format!("name: {}", v.name)));
+            }
+            if v.value.contains('\0') || v.value.len() > HOST_ENV_VALUE_MAX {
+                return Err(("bad_env", format!("value of {}", v.name)));
+            }
+        }
+        self.history.claude_home = host_path(self.history.claude_home.take(), true, "claudeHome")?;
+        self.history.codex_home = host_path(self.history.codex_home.take(), true, "codexHome")?;
+        if let Some(days) = self.history.days {
+            if !HOST_DAYS_RANGE.contains(&days) {
+                return Err(("bad_arg", format!("days: {days}")));
+            }
+        }
+        Ok(self)
     }
 }
 
@@ -1980,6 +2120,8 @@ pub enum SettingsSection {
     Capture,
     Browser,
     Speech,
+    /// `hosts`.
+    Hosts,
 }
 
 /// What a `settings://changed` event carries.
@@ -5170,6 +5312,169 @@ mod speech_settings_tests {
         let text = json["speech"].to_string().to_lowercase();
         assert!(!text.contains("key"));
         assert!(!text.contains("apikey"));
+    }
+}
+
+#[cfg(test)]
+mod hosts_settings_tests {
+    use super::*;
+
+    fn loaded(json: &str) -> Settings {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(&path, json).unwrap();
+        load(&path)
+    }
+
+    fn env(name: &str, value: &str) -> HostEnvVar {
+        HostEnvVar {
+            name: name.to_owned(),
+            value: value.to_owned(),
+        }
+    }
+
+    fn code(h: HostSettings) -> &'static str {
+        h.validated().unwrap_err().0
+    }
+
+    #[test]
+    fn an_old_file_without_hosts_loads_with_none() {
+        let s = loaded(r#"{ "version": 1, "speech": { "mode": "hold" } }"#);
+        assert!(s.hosts.0.is_empty());
+        assert_eq!(s.speech.mode, SpeechMode::Hold);
+        assert_eq!(VERSION, 1);
+        assert!(MIGRATIONS.is_empty());
+    }
+
+    #[test]
+    fn a_bad_entry_drops_only_itself() {
+        let s = loaded(
+            r#"{ "speech": { "mode": "hold" },
+                 "hosts": { "ssh-a": { "label": "Box" }, "bad id": { "label": "X" }, "ssh-b": 7 } }"#,
+        );
+        let ids: Vec<&String> = s.hosts.0.keys().collect();
+        assert_eq!(ids, ["ssh-a"]);
+        assert_eq!(s.hosts.0["ssh-a"].label.as_deref(), Some("Box"));
+        assert_eq!(s.speech.mode, SpeechMode::Hold);
+        assert!(loaded(r#"{ "hosts": 3 }"#).hosts.0.is_empty());
+    }
+
+    #[test]
+    fn an_unknown_top_level_key_still_loads() {
+        let s = loaded(r#"{ "futureKey": 1, "hosts": { "ssh-a": { "shell": "/bin/zsh" } } }"#);
+        assert_eq!(s.hosts.0["ssh-a"].shell.as_deref(), Some("/bin/zsh"));
+    }
+
+    #[test]
+    fn hosts_survive_a_save_and_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let mut s = Settings::default();
+        s.hosts.0.insert(
+            "ssh-a".to_owned(),
+            HostSettings {
+                label: Some("Box".to_owned()),
+                env: vec![env("A", "1")],
+                history: HostHistory {
+                    days: Some(30),
+                    ..HostHistory::default()
+                },
+                ..HostSettings::default()
+            },
+        );
+        save(&path, &s).unwrap();
+        let back = load(&path);
+        assert_eq!(back.hosts, s.hosts);
+        assert_eq!(back.version, VERSION);
+    }
+
+    #[test]
+    fn validation_rejects_bad_values_with_the_right_code() {
+        let h = HostSettings {
+            label: Some("x".repeat(65)),
+            ..HostSettings::default()
+        };
+        assert_eq!(code(h), "bad_name");
+        for shell in ["zsh", "/bin/z sh", "/bin/zsh;ls", "~/zsh"] {
+            let h = HostSettings {
+                shell: Some(shell.to_owned()),
+                ..HostSettings::default()
+            };
+            assert_eq!(code(h), "bad_path", "{shell}");
+        }
+        for (name, value) in [("1A", "x"), ("A=B", "x"), ("A", "a\0b"), ("", "x")] {
+            let h = HostSettings {
+                env: vec![env(name, value)],
+                ..HostSettings::default()
+            };
+            assert_eq!(code(h), "bad_env", "{name}");
+        }
+        for days in [0, 3651] {
+            let h = HostSettings {
+                history: HostHistory {
+                    days: Some(days),
+                    ..HostHistory::default()
+                },
+                ..HostSettings::default()
+            };
+            assert_eq!(code(h), "bad_arg");
+        }
+        let h = HostSettings {
+            history: HostHistory {
+                claude_home: Some("rel/dir".to_owned()),
+                ..HostHistory::default()
+            },
+            ..HostSettings::default()
+        };
+        assert_eq!(code(h), "bad_path");
+    }
+
+    #[test]
+    fn validation_trims_and_normalises() {
+        let h = HostSettings {
+            label: Some("  Box  ".to_owned()),
+            shell: Some(" /usr/bin/fish ".to_owned()),
+            history: HostHistory {
+                claude_home: Some("~/.claude-work".to_owned()),
+                codex_home: Some("  ".to_owned()),
+                days: Some(3650),
+                ..HostHistory::default()
+            },
+            ..HostSettings::default()
+        }
+        .validated()
+        .unwrap();
+        assert_eq!(h.label.as_deref(), Some("Box"));
+        assert_eq!(h.shell.as_deref(), Some("/usr/bin/fish"));
+        assert_eq!(h.history.claude_home.as_deref(), Some("~/.claude-work"));
+        assert_eq!(h.history.codex_home, None);
+        let blank = HostSettings {
+            label: Some("   ".to_owned()),
+            ..HostSettings::default()
+        }
+        .validated()
+        .unwrap();
+        assert_eq!(blank.label, None);
+        assert!(blank.is_empty());
+    }
+
+    #[test]
+    fn is_empty_tracks_every_value() {
+        assert!(HostSettings::default().is_empty());
+        let mut h = HostSettings {
+            history: HostHistory {
+                enabled: Some(false),
+                ..HostHistory::default()
+            },
+            ..HostSettings::default()
+        };
+        assert!(!h.is_empty());
+        h.history.enabled = None;
+        assert!(h.is_empty());
+        h.env.push(env("A", "1"));
+        assert!(!h.is_empty());
+        h.env.clear();
+        assert!(h.is_empty());
     }
 }
 
