@@ -51,6 +51,21 @@ pub(crate) fn load(dir: &Path) -> Vec<UserPreset> {
         .unwrap_or_default()
 }
 
+/// The saved presets for a change: a missing file is an empty list, but a file that cannot be
+/// read is an error, so the next save does not overwrite what the person had.
+fn load_for_change(dir: &Path) -> Result<Vec<UserPreset>, CmdError> {
+    match std::fs::read(dir.join(FILE)) {
+        Ok(b) => serde_json::from_slice::<Saved>(&b)
+            .map(|s| s.presets)
+            .map_err(|_| err("io", "layout presets file is unreadable")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(err("io", &e.to_string())),
+    }
+}
+
+/// One change at a time: a save and a delete both read the file, then write it.
+static CHANGE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn store(dir: &Path, presets: Vec<UserPreset>) -> Result<(), CmdError> {
     let bytes =
         serde_json::to_vec_pretty(&Saved { presets }).map_err(|e| err("io", &e.to_string()))?;
@@ -84,7 +99,10 @@ pub(crate) fn save_in(
     if !layout.is_object() {
         return Err(err("bad_arg", "layout"));
     }
-    let mut presets = load(dir);
+    let _one = CHANGE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut presets = load_for_change(dir)?;
     match presets.iter_mut().find(|p| p.name == name) {
         Some(found) => found.layout = layout,
         None => {
@@ -98,7 +116,10 @@ pub(crate) fn save_in(
 }
 
 pub(crate) fn delete_in(dir: &Path, name: &str) -> Result<(), CmdError> {
-    let mut presets = load(dir);
+    let _one = CHANGE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut presets = load_for_change(dir)?;
     let before = presets.len();
     presets.retain(|p| p.name != name);
     if presets.len() == before {
@@ -198,9 +219,33 @@ mod tests {
     }
 
     #[test]
-    fn a_broken_file_reads_as_empty() {
+    fn a_broken_file_reads_as_empty_but_is_never_overwritten() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(FILE), b"{nope").unwrap();
         assert!(load(dir.path()).is_empty());
+        assert_eq!(
+            save_in(dir.path(), true, "A", layout()).unwrap_err().code,
+            "io"
+        );
+        assert_eq!(delete_in(dir.path(), "A").unwrap_err().code, "io");
+        assert_eq!(std::fs::read(dir.path().join(FILE)).unwrap(), b"{nope");
+    }
+
+    #[test]
+    fn saves_from_several_threads_all_land() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_path_buf();
+        let threads: Vec<_> = (0..8)
+            .map(|i| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    save_in(&path, true, &format!("p{i}"), layout()).unwrap();
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert_eq!(load(&path).len(), 8);
     }
 }
