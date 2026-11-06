@@ -55,6 +55,7 @@ vi.mock("react", async (original) => {
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
     useRef: (initial: any) => (hooks.active ? (state({ current: initial }) as [{ current: unknown }])[0] : react.useRef(initial)),
     useCallback: (fn: any, deps: any) => (hooks.active ? fn : react.useCallback(fn, deps)),
+    useMemo: (fn: any, deps: any) => (hooks.active ? fn() : react.useMemo(fn, deps)),
     useSyncExternalStore: (subscribe: any, get: any, server?: any) => (hooks.active ? get() : react.useSyncExternalStore(subscribe, get, server)),
   };
 });
@@ -101,8 +102,8 @@ async function harness(api = createMockApi({})) {
   const of = (type: unknown) => all().filter(n => n.type === type);
   const list = () => of(WorktreeList)[0];
   const nav = (label: string) => all().find(n => n.type === "button" && n.props.className?.includes("ws-nav-item") && text(n).includes(label))!;
-  // The shell's first two effects: the sessions store, then the worktree list.
-  const [start, load] = (draw(), hooks.effects.slice(0, 2));
+  // The shell's first three effects: the remote projects list, the sessions store, then the worktree list.
+  const [, start, load] = (draw(), hooks.effects.slice(0, 3));
   start();
   load();
   await tick();
@@ -751,7 +752,7 @@ function attend(view: Awaited<ReturnType<typeof harness>>) {
   vi.stubGlobal("document", { ...target, visibilityState: "visible", hasFocus: () => true, querySelector: () => null, querySelectorAll: () => [] });
   hooks.effects = [];
   view.draw();
-  for (const effect of hooks.effects.slice(2)) {
+  for (const effect of hooks.effects.slice(3)) {
     const cleanup = effect();
     if (typeof cleanup === "function") cleanups.push(cleanup);
   }
@@ -863,7 +864,7 @@ it("the bell and the sound follow the settings", async () => {
 async function rerun(view: Awaited<ReturnType<typeof harness>>) {
   hooks.effects = [];
   view.draw();
-  for (const effect of hooks.effects.slice(2)) {
+  for (const effect of hooks.effects.slice(3)) {
     const cleanup = effect();
     if (typeof cleanup === "function") cleanups.push(cleanup);
   }
@@ -1314,7 +1315,7 @@ it("the toast host is mounted, and its Open Shortcuts button opens that page fil
   expect(view.of(Toasts)).toHaveLength(1);
   view.draw();
   // Every effect of a render; the one that registers the terminal key host is among them.
-  for (const effect of hooks.effects.slice(2)) {
+  for (const effect of hooks.effects.slice(3)) {
     try { effect(); } catch { /* the others need a window */ }
   }
   expect(termKey.host).not.toBeNull();
@@ -1632,7 +1633,7 @@ it("tells the backend it is ready for automation runs only after the layout is r
   await settle();
   hooks.effects = [];
   view.draw();
-  for (const effect of hooks.effects.slice(2)) {
+  for (const effect of hooks.effects.slice(3)) {
     const cleanup = effect();
     if (typeof cleanup === "function") cleanups.push(cleanup);
   }
