@@ -108,6 +108,38 @@ pub struct Settings {
     /// name; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub network: NetworkSettings,
+    /// Settings → Paired computers: the encrypted link listener; lenient the
+    /// same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub link: LinkSettings,
+}
+
+/// The port the link listener tries first.
+pub const LINK_PORT: u16 = 47821;
+
+/// Settings → Paired computers. Changing `enabled` or `bind` restarts the
+/// listener.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct LinkSettings {
+    /// Off until the person turns it on: nothing listens before that.
+    pub enabled: bool,
+    pub bind: xdev_link::LinkBind,
+    pub port: u16,
+    /// Ask on this computer before every action a paired computer takes.
+    pub confirm_each: bool,
+}
+
+impl Default for LinkSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bind: xdev_link::LinkBind::Localhost,
+            port: LINK_PORT,
+            confirm_each: false,
+        }
+    }
 }
 
 /// Settings → xDev ID.
@@ -1685,6 +1717,7 @@ pub enum SettingsSection {
     Network,
     /// `terminalSets` and `startupPresets`.
     TerminalSets,
+    Link,
 }
 
 /// What a `settings://changed` event carries.
@@ -2288,6 +2321,21 @@ pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
 mod tests {
     use super::*;
     use crate::quick_commands::{QuickAction, QuickScope};
+
+    #[test]
+    fn link_defaults_off_and_reads_lenient() {
+        let d = LinkSettings::default();
+        assert!(!d.enabled);
+        assert_eq!(d.bind, xdev_link::LinkBind::Localhost);
+        assert_eq!(d.port, 47821);
+        assert!(!d.confirm_each);
+        assert_eq!(Settings::default().link, d);
+        let read = |json: &str| -> Settings { serde_json::from_str(json).unwrap() };
+        assert_eq!(read(r#"{"link":{"bind":"nope"}}"#).link, d);
+        let on = read(r#"{"link":{"enabled":true,"bind":"lan","confirmEach":true}}"#).link;
+        assert!(on.enabled && on.confirm_each);
+        assert_eq!(on.bind, xdev_link::LinkBind::Lan);
+    }
 
     #[test]
     fn sound_name_defaults_from_sound_file() {

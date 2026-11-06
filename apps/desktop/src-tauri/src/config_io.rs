@@ -64,6 +64,7 @@ fn event_section(key: &str) -> Option<SettingsSection> {
         "shell" => SettingsSection::Shell,
         "automations" => SettingsSection::Automations,
         "network" => SettingsSection::Network,
+        "link" => SettingsSection::Link,
         _ => return None,
     })
 }
