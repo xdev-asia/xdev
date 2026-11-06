@@ -97,6 +97,9 @@ pub(crate) fn wrap(mut launch: Launch, spec: &RemoteSpec, tab_id: &str) -> Launc
     launch.prompt_argv = Vec::new();
     launch.startup = Vec::new();
     launch.env = Vec::new();
+    // The hook CLI and its settings files are on this machine, not the host.
+    launch.hooks = false;
+    launch.hook_events = Vec::new();
     launch
 }
 
@@ -220,6 +223,16 @@ mod tests {
         let mut want = ssh_head();
         want.push("tmux new-session -A -s 'xdev-t2' -c '/home/dev/app'".into());
         assert_eq!(on.args, want);
+    }
+
+    #[test]
+    fn a_hooked_agent_has_no_local_hooks_on_the_host() {
+        let mut hooked = launch(true);
+        hooked.hooks = true;
+        hooked.hook_events = vec![xdev_agent::HookEvent::Prompt];
+        let out = wrap(hooked, &spec(false, DECLARED), "t1");
+        assert!(!out.hooks);
+        assert!(out.hook_events.is_empty());
     }
 
     #[test]
