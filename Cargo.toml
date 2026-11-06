@@ -29,6 +29,7 @@ default-members = [
     "crates/xdev-cli",
     "crates/xdev-link",
     "crates/xdev-lsp",
+    "crates/xdev-license",
 ]
 
 [workspace.package]
@@ -62,11 +63,15 @@ xdev-ssh = { path = "crates/xdev-ssh" }
 xdev-store = { path = "crates/xdev-store" }
 xdev-vault = { path = "crates/xdev-vault" }
 xdev-workspace = { path = "crates/xdev-workspace" }
+xdev-license = { path = "crates/xdev-license" }
 
 # base64url for PKCE; already in the build.
 base64 = "0.23.1"
 blake3 = "1.8.7"
 dirs = "7.0.0"
+# Ed25519 for the signed license token, its key certificates and the device key
+# (xdev-license). Not in the build before; the license contract requires Ed25519.
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize"] }
 # Token bytes from the OS; already in the build through uuid.
 getrandom = "0.4.3"
 ignore = "0.4.34"
@@ -118,6 +123,9 @@ url = "2.5.8"
 widestring = "1.2.1"
 # A file's link count and identity on Windows, without unsafe code here.
 winapi-util = "0.1.11"
+# X25519 for the device box key the server stores for Sync (xdev-license). Not in the
+# build before; the license contract requires X25519.
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets", "zeroize"] }
 # Win32 calls the named pipe API does not wrap (xdev-ipc); already in the build
 # through interprocess.
 windows-sys = "0.61.2"
