@@ -1,4 +1,4 @@
-import type { Account, Quota } from "@/api";
+import { isIsolated, type Account, type Quota } from "@/api";
 
 /** A login the app still holds, whose quota read says the token expired: it must be signed in again. */
 export function needsReauth(account: Account, quota: Quota | undefined): boolean {
@@ -13,6 +13,8 @@ export function statusBadge(account: Account, quota: Quota | undefined): { key: 
 
 /** Whether a row offers the sign-in action, and which label it carries. */
 export function loginAction(account: Account, quota: Quota | undefined): { key: string } | null {
+  // A single-account CLI is signed in with the CLI itself, outside xDev.
+  if (!isIsolated(account.provider)) return null;
   if (needsReauth(account, quota)) return { key: "accounts.signInAgain" };
   if (account.status.state !== "logged_in" || quota?.reason === "expired") return { key: "accounts.login" };
   return null;

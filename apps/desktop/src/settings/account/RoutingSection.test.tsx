@@ -35,7 +35,7 @@ const fields = (v: View) => claude(v).filter((n) => n.type === Field);
 it("shows each provider with the policy, pool, alerts and auto-switch, Manual by default", async () => {
   const v = await open();
   const all = v.m.all();
-  expect(all.filter((n) => n.type === "section").map((n) => n.props["data-provider"])).toEqual(["claude", "codex"]);
+  expect(all.filter((n) => n.type === "section").map((n) => n.props["data-provider"])).toEqual(["claude", "codex", "gemini"]);
   const select = claude(v).find((n) => n.type === Select)!;
   expect(select.props.value).toBe("manual");
   expect(select.props.options.map((o: { label: string }) => o.label)).toEqual(["manual", "most_quota", "round_robin", "priority"].map((p) => tr(`settings.account.routing.policy.${p}`)));
@@ -163,4 +163,13 @@ it("has the routing strings in both languages", () => {
   const keys = Object.keys(en).filter((k) => k.startsWith("settings.account.routing."));
   expect(keys.length).toBeGreaterThan(20);
   for (const key of keys) expect(vi_).toHaveProperty([key]);
+});
+
+it("a provider without a quota source offers no Most quota left and says why", async () => {
+  const v = await open();
+  const gemini = part(v.m.all(), "gemini");
+  const select = gemini.find((n) => n.type === Select)!;
+  expect(select.props.options.map((o: { value: string }) => o.value)).toEqual(["manual", "round_robin", "priority"]);
+  expect(gemini.some((n) => n.props["data-field"] === "no-quota" && textOf(n) === tr("settings.account.routing.noQuotaSource", { provider: "Gemini CLI" }))).toBe(true);
+  expect(claude(v).some((n) => n.props["data-field"] === "no-quota")).toBe(false);
 });

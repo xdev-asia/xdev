@@ -94,6 +94,16 @@
 .account-add-hint { flex-basis: 100%; margin: 0; color: var(--x-color-muted); }
 .account-add-folder { flex: 1 1 100%; }
 .account-add-folder input { flex: 1; min-width: 0; }
+/* Provider picker: native radios, each with the agent's letter mark. Wraps to fit a narrow window. */
+.account-providers { display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: var(--x-space-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+.account-providers legend { margin-bottom: var(--x-space-2); padding: 0; color: var(--x-color-muted); }
+.account-add .account-provider-option { min-height: 32px; padding: var(--x-space-1) var(--x-space-3); color: var(--x-color-ink); background: var(--x-color-bg); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); cursor: pointer; }
+.account-add .account-provider-option:has(input:checked) { background: var(--x-color-accent-soft); border-color: var(--x-color-accent); }
+.account-add .account-provider-option:has(input:focus-visible) { outline: 2px solid var(--x-color-focus); outline-offset: 2px; }
+.account-add .account-provider-option[data-disabled] { color: var(--x-color-muted); cursor: not-allowed; }
+.account-add .account-provider-option input { margin: 0; padding: 0; accent-color: var(--x-color-accent); }
+.account-provider-note { color: var(--x-color-muted); }
+.account-single-hint { margin: 0; }
 .account-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-space-2); margin-top: var(--x-space-3); }
 .account-confirm p { flex-basis: 100%; margin: 0; }
 .account-command { display: grid; gap: var(--x-space-2); }
