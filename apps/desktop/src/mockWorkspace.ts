@@ -85,6 +85,8 @@ type WorkspaceApi = Pick<
   | "worktreePrDetail"
   | "worktreePrComment"
   | "worktreePrAutoMerge"
+  | "worktreePrReviewers"
+  | "worktreePrReviewerCandidates"
   | "worktreeCheckLog"
   | "worktreeDraftCommit"
   | "worktreeDraftPr"
@@ -128,6 +130,8 @@ export type MockWorkspaceSeed = {
   prDetails?: Record<string, PrDetail>;
   // The PR head on GitHub by worktree path; the mock's own HEAD when absent.
   prHeads?: Record<string, string>;
+  // The collaborators offered as reviewers; the list is closed (`gh_failed`) when absent.
+  reviewerCandidates?: string[];
   // The next commit or amend in that worktree is rejected with `hook_failed`; the text is the hook output.
   hookFailure?: Record<string, string>;
   // Worktrees that already track a remote branch, with how far they have drifted.
@@ -212,6 +216,8 @@ type Remote = { tracked: boolean; ahead: number; behind: number; commits: Commit
 
 // Like `COMMENT_BODY_MAX` in Rust.
 const COMMENT_BODY_MAX = 64 * 1024;
+// A GitHub login, or `org/team`.
+const REVIEWER = /^(?!-)[A-Za-z0-9-]{1,39}(\/(?!-)[A-Za-z0-9_-]{1,100})?$/;
 
 /** The commit every mock worktree is on, and the PR head unless a seed says otherwise. */
 export const MOCK_HEAD = "1".repeat(40);
@@ -1602,6 +1608,22 @@ export function createMockWorkspace(
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       const own = prDetails.get(path);
       if (own) own.autoMerge = method === null ? null : { method, enabledBy: "you" };
+    },
+    async worktreePrReviewers(path, _number, add, remove) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const bad = [...add, ...remove].find((r) => !REVIEWER.test(r));
+      if (bad !== undefined) return reject("bad_reviewer", bad);
+      const own = prDetails.get(path);
+      if (!own) return;
+      own.reviewers = own.reviewers.filter((r) => !remove.includes(r.login));
+      for (const login of add) {
+        if (!own.reviewers.some((r) => r.login === login)) own.reviewers.push({ login, state: "requested" });
+      }
+    },
+    async worktreePrReviewerCandidates(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (!seed.reviewerCandidates) return reject("gh_failed");
+      return [...seed.reviewerCandidates];
     },
     async worktreeCheckLog(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

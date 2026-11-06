@@ -11,6 +11,7 @@ mod fork;
 mod gh;
 mod gh_issue;
 mod gh_pr;
+mod gh_pr_edit;
 mod gh_review;
 mod gitlab;
 mod history;
@@ -49,6 +50,7 @@ pub use gh_pr::{
     PrReviewer, ReviewDecision, ReviewerState, pr_auto_merge_disable, pr_auto_merge_enable,
     pr_comment_add, pr_detail,
 };
+pub use gh_pr_edit::{pr_reviewer_candidates, pr_reviewers_edit, valid_reviewer};
 pub use gh_review::{
     COMMENT_BODY_MAX, COMMENTS_PER_SOURCE, MergeBlock, MergeMethod, PrComment, PrCommentDraft,
     PrCommentKind, PrComments, PrMergeInfo, PrReaction, Reaction, RerunReport, pr_checks_rerun,
@@ -107,6 +109,9 @@ pub enum GitError {
     BadDraft,
     #[error("no such pull request")]
     PrNotFound,
+    /// Not a GitHub login or `org/team`; the text is the name.
+    #[error("not a reviewer name: {0}")]
+    BadReviewer(String),
     #[error("glab not found")]
     GlabMissing,
     #[error("glab is not logged in")]
@@ -204,6 +209,7 @@ impl GitError {
             GitError::GhScope(_) => "gh_scope",
             GitError::BadDraft => "bad_draft",
             GitError::PrNotFound => "pr_not_found",
+            GitError::BadReviewer(_) => "bad_reviewer",
             GitError::GlabMissing => "glab_missing",
             GitError::GlabAuth => "glab_auth",
             GitError::NotGitlab => "not_gitlab",

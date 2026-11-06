@@ -196,3 +196,20 @@ button.pr-file:hover {
   flex-direction: column;
   gap: 6px;
 }
+
+.pr-reviewers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

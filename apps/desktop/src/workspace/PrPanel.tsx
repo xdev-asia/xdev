@@ -9,6 +9,7 @@ import { ago } from "./ago";
 import { ChecksPanel } from "./ChecksPanel";
 import { CreatePrDialog } from "./CreatePrDialog";
 import type { PrCommentStore } from "./prCommentStore";
+import { PrReviewers } from "./PrReviewers";
 import type { SendChoice } from "./agentPrompt";
 import type { CommentGroup } from "./prComments";
 import type { SendOutcome } from "./PrSendBar";
@@ -21,14 +22,6 @@ type T = (key: string, vars?: Record<string, string | number>) => string;
 const REASONS: readonly string[] = ["gh_missing", "gh_auth", "not_github"];
 const NO_LINKS = () => null;
 const METHODS: MergeMethod[] = ["squash", "merge", "rebase"];
-
-const VERDICT_TONE: Record<ReviewerState, "ok" | "danger" | "neutral" | "warn"> = {
-  approved: "ok",
-  "changes-requested": "danger",
-  commented: "neutral",
-  dismissed: "neutral",
-  requested: "warn",
-};
 
 function errorText(error: ApiError, t: T): string {
   const base = REASONS.includes(error.code) ? t(`checks.reason.${error.code}`) : t(`error.${error.code}`);
@@ -241,19 +234,15 @@ export function PrPanel(props: {
           ) : (
             <p className="ws-empty">{t("prPanel.noBody")}</p>
           )}
-          <h3 className="pr-h">{t("prPanel.reviewers")}</h3>
-          {detail.reviewers.length === 0 ? (
-            <p className="ws-empty">{t("prPanel.noReviewers")}</p>
-          ) : (
-            <ul className="pr-list">
-              {detail.reviewers.map((r) => (
-                <li key={r.login} className="pr-row">
-                  <span className="pr-grow">{r.login}</span>
-                  <StatusDot tone={VERDICT_TONE[r.state]} label={verdict(r.state)} />
-                </li>
-              ))}
-            </ul>
-          )}
+          <PrReviewers
+            api={api}
+            worktree={worktree}
+            number={detail.number}
+            reviewers={detail.reviewers}
+            editable={detail.state === "open" || detail.state === "draft"}
+            onChanged={load}
+            onError={setError}
+          />
           <h3 className="pr-h">{t("prPanel.activity")}</h3>
           {detail.entries.length === 0 ? (
             <p className="ws-empty">{t("prPanel.noActivity")}</p>

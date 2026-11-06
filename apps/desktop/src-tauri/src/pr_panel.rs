@@ -1,14 +1,17 @@
 //! The pull request panel of a worktree: the PR of its branch in full, a
-//! comment, and auto-merge on or off. Every command runs `gh` as the login the
-//! repo is bound to, in the registered worktree.
+//! comment, auto-merge on or off, and its reviewers. Every command runs `gh`
+//! as the login the repo is bound to, in the registered worktree.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 use tauri::State;
 use xdev_git::{
     GhExec, MergeMethod, PrDetail, SystemGh, pr_auto_merge_disable, pr_auto_merge_enable,
-    pr_comment_add, pr_detail,
+    pr_comment_add, pr_detail, pr_reviewer_candidates, pr_reviewers_edit,
 };
+use xdev_workspace::{Registry, path_key};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
@@ -33,6 +36,58 @@ fn auto_with(
         None => pr_auto_merge_disable(gh, path, number)?,
     }
     Ok(())
+}
+
+/// The reviewer candidates of each repo, read once per session.
+static CANDIDATES: Mutex<Option<HashMap<String, Vec<String>>>> = Mutex::new(None);
+
+/// The repo a worktree belongs to, so its worktrees share one candidate list.
+/// An unregistered path stands for itself.
+fn repo_key(data: &Path, path: &Path) -> Result<String, CmdError> {
+    let key = path_key(path);
+    let reg = Registry::load(data)?;
+    let id = reg
+        .worktrees
+        .iter()
+        .find(|m| path_key(&m.path) == key)
+        .map(|m| m.repo_id.clone())
+        .or_else(|| {
+            reg.repos
+                .iter()
+                .find(|r| path_key(&r.path) == key)
+                .map(|r| r.id.clone())
+        });
+    Ok(id.unwrap_or(key))
+}
+
+/// The cached list of `key`, or a fresh read that is kept only when it worked.
+fn candidates_with(
+    cache: &Mutex<Option<HashMap<String, Vec<String>>>>,
+    key: &str,
+    read: impl FnOnce() -> Result<Vec<String>, CmdError>,
+) -> Result<Vec<String>, CmdError> {
+    let held =
+        |c: &Option<HashMap<String, Vec<String>>>| c.as_ref().and_then(|m| m.get(key).cloned());
+    if let Some(found) = held(&cache.lock().unwrap_or_else(PoisonError::into_inner)) {
+        return Ok(found);
+    }
+    let list = read()?;
+    cache
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get_or_insert_with(HashMap::new)
+        .insert(key.to_owned(), list.clone());
+    Ok(list)
+}
+
+fn reviewers_with(
+    gh: &dyn GhExec,
+    path: &Path,
+    number: u64,
+    add: &[String],
+    remove: &[String],
+) -> Result<(), CmdError> {
+    Ok(pr_reviewers_edit(gh, path, number, add, remove)?)
 }
 
 #[tauri::command(async)]
@@ -74,6 +129,40 @@ pub fn worktree_pr_auto_merge(
     })
 }
 
+/// Asks `add` for a review and drops the request of `remove`. Logins and
+/// `org/team` only; anything else rejects with `bad_reviewer`.
+#[tauri::command(async)]
+pub fn worktree_pr_reviewers(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    number: u64,
+    add: Vec<String>,
+    remove: Vec<String>,
+) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_reviewers")?;
+    let account = gh_account_for(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, account, |gh| {
+        reviewers_with(gh, &path, number, &add, &remove)
+    })
+}
+
+/// The collaborators of the worktree's repo, read once per repo per session.
+#[tauri::command(async)]
+pub fn worktree_pr_reviewer_candidates(
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<Vec<String>, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_reviewer_candidates")?;
+    let data = data_dir(&state)?;
+    let key = repo_key(data, &path)?;
+    candidates_with(&CANDIDATES, &key, || {
+        let account = gh_account_for(data, &path)?;
+        run_gh(&SystemGh, account, |gh| {
+            Ok(pr_reviewer_candidates(gh, &path)?)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
@@ -110,6 +199,41 @@ mod tests {
         let calls = fake.calls.borrow();
         assert_eq!(calls[0].0, ["pr", "merge", "9", "--disable-auto"]);
         assert_eq!(calls[1].0, ["pr", "merge", "9", "--auto", "--merge"]);
+    }
+
+    #[test]
+    fn reviewers_pass_through_and_refuse_a_bad_name() {
+        let fake = Fake {
+            calls: RefCell::default(),
+        };
+        reviewers_with(&fake, Path::new("."), 9, &["ada".into()], &[]).unwrap();
+        let err = reviewers_with(&fake, Path::new("."), 9, &["-x".into()], &[]).unwrap_err();
+        assert_eq!(err.code, "bad_reviewer");
+        let calls = fake.calls.borrow();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, ["pr", "edit", "9", "--add-reviewer=ada"]);
+    }
+
+    #[test]
+    fn candidates_are_read_once_per_key_and_a_failure_is_not_kept() {
+        let cache = Mutex::new(None);
+        let reads = RefCell::new(0);
+        let fail = || {
+            *reads.borrow_mut() += 1;
+            Err(CmdError {
+                code: "gh_failed",
+                detail: None,
+            })
+        };
+        assert!(candidates_with(&cache, "r1", fail).is_err());
+        let ok = || {
+            *reads.borrow_mut() += 1;
+            Ok(vec!["ada".to_owned()])
+        };
+        assert_eq!(candidates_with(&cache, "r1", ok).unwrap(), ["ada"]);
+        assert_eq!(candidates_with(&cache, "r1", fail).unwrap(), ["ada"]);
+        assert_eq!(*reads.borrow(), 2);
+        assert!(candidates_with(&cache, "r2", fail).is_err());
     }
 
     #[test]
