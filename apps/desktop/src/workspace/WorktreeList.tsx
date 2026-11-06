@@ -226,7 +226,10 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       <span
         className="ws-pr"
         role="img"
-        onClick={() => props.onOpenPr?.()}
+        onClick={(e) => {
+          if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+          props.onOpenPr?.();
+        }}
         aria-label={
           summary
             ? t("ship.chip.labelChecks", { number: pr.number, state: t(`checks.state.${pr.state}`).toLowerCase(), checks: t(`checks.summary.${summary}`) })
