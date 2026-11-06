@@ -31,6 +31,7 @@ import { trackInputModes } from "./inputModes";
 import { shellKindFor, type ShellKind } from "./pathPaste";
 import { effectiveOptionAsAlt, getDetectedLayout, subscribeDetectedLayout } from "./optionAsAlt";
 import { createOptionSideTracker, resolveTerminalKey } from "./terminalKeys";
+import { getBrowserSettings } from "@/browser/browserSettings";
 
 /** What a menu, the palette or a shortcut can do to one terminal. Acts on the xterm; nothing goes to the pty unless said. */
 export interface TerminalHandle {
@@ -94,6 +95,8 @@ export function Terminal(props: {
   onLinkMenu?: (at: { x: number; y: number }, items: MenuItem[], title: string) => void;
   /** The menu's "Terminal link settings" row. */
   onLinkSettings?: () => void;
+  /** Loads a terminal link in the worktree's browser tab (`browser.openLinksIn`). */
+  onOpenInBrowser?: (url: string, keepFocus: boolean) => void;
 }): JSX.Element {
   const { t } = useI18n();
   // The hover tip of a link, drawn at the pane's bottom left.
@@ -189,6 +192,12 @@ export function Terminal(props: {
         t: (key, vars) => tRef.current(key, vars),
         mac: IS_MAC,
         onSettings: () => handlers.current.onLinkSettings?.(),
+        openInPane: (url, keepFocus) => {
+          const open = handlers.current.onOpenInBrowser;
+          if (open) open(url, keepFocus);
+          else void handlers.current.api.openUrl(url).catch(() => {});
+        },
+        linksTarget: () => getBrowserSettings().openLinksIn,
         focusTerminal: () => xterm.current?.focus(),
       },
       showMenu: (at, menu) => {

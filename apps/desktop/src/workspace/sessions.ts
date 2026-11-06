@@ -2,6 +2,7 @@ import { toApiError, type AccountSource, type Api, type HookDetail, type LaunchO
 import { PtyClient } from "@/terminal/ptyClient";
 import { setPrime, takePrime } from "@/terminal/restorePrime";
 import { translate } from "@/i18n";
+import { browserTab, restoreBrowserTab } from "@/browser/browserTabs";
 import { ownAccount, runAccount } from "./ownAccount";
 
 // Where `ownAccount` lives to keep it free of the api import; callers may still take it from here.
@@ -254,7 +255,7 @@ export class Sessions {
   snapshot(): LayoutSnapshot {
     const worktrees: LayoutSnapshot["worktrees"] = {};
     for (const [path, layout] of this.layouts) {
-      const one = toSnapshot(layout, (id) => this.entries.get(id)?.tab ?? null);
+      const one = toSnapshot(layout, (id) => this.entries.get(id)?.tab ?? null, browserTab);
       if (one) worktrees[path] = one;
     }
     // Worktrees that were not loaded keep their saved entry, unless they have tabs now.
@@ -309,6 +310,9 @@ export class Sessions {
           if (!keep) continue;
           if (snap.kind === "review") files.add(key);
           else if (await (options.openFile?.(worktree, snap.rel) ?? Promise.resolve(false)).catch(() => false)) files.add(key);
+        } else if (snap.kind === "browser") {
+          if (!keep || typeof snap.url !== "string") continue;
+          ids.set(key, restoreBrowserTab(worktree, snap.url, typeof snap.title === "string" ? snap.title : null));
         } else if (snap.kind === "terminal" && snap.asleep === true) {
           const tab = this.restoreAsleep(worktree, snap, report);
           ids.set(key, tab.id);

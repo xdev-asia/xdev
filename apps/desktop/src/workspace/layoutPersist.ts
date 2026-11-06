@@ -1,5 +1,6 @@
 import type { Api, RestoreMode } from "@/api";
 import type { FileTabs } from "@/files/fileTabs";
+import { subscribeBrowserTabs } from "@/browser/browserTabs";
 import { LAYOUT_VERSION, type RestoreOptions, type RestoreReport, type SessionFallback } from "./layoutSnapshot";
 import type { Sessions } from "./sessions";
 import { markStartup } from "@/startup/startupSteps";
@@ -27,10 +28,17 @@ export function startLayoutSave(api: Pick<Api, "layoutSave">, sessions: Sessions
   };
   // Layout changes and tab changes both emit; a change of nothing the snapshot keeps is written too,
   // which is cheap (one small file) and keeps this free of a comparison.
-  const off = sessions.subscribe(() => {
+  const schedule = () => {
     if (timer !== null) clearTimeout(timer);
     timer = setTimeout(write, debounceMs);
-  });
+  };
+  const offSessions = sessions.subscribe(schedule);
+  // A page that moves on changes no layout, but its URL is part of the snapshot.
+  const offBrowser = subscribeBrowserTabs(schedule);
+  const off = () => {
+    offSessions();
+    offBrowser();
+  };
   return {
     flush(force = false) {
       if (timer === null && !force) return;

@@ -1,4 +1,5 @@
-import type { Api } from "@/api";
+import type { Api, LinksTarget } from "@/api";
+import { linkKeepsFocus, routeLink } from "@/browser/linkRouting";
 import { toApiError } from "@/api";
 import type { OpenFileRequest } from "@/files/openFile";
 import type { MenuItem } from "@/ui/ContextMenu";
@@ -18,6 +19,10 @@ export interface LinkDeps {
   onSettings(): void;
   /** Gives the keyboard back to the terminal once a row has run. */
   focusTerminal(): void;
+  /** Loads a web link in the worktree's browser tab; without it every link goes to the system. */
+  openInPane?(url: string, keepFocus: boolean): void;
+  /** The setting `browser.openLinksIn`. */
+  linksTarget?(): LinksTarget;
 }
 
 /** A file link as the backend resolved it, with the text the terminal printed. */
@@ -55,7 +60,13 @@ export function openDefaultLink(target: FileTarget, deps: LinkDeps): Promise<voi
 }
 
 /** Opens an http(s) URL in the system browser. */
-export function openUrlLink(url: string, deps: LinkDeps): Promise<void> {
+/** Opens a web link where `browser.openLinksIn` says; `shift` (a Shift click) sends it to the other place. */
+export function openUrlLink(url: string, deps: LinkDeps, shift = false): Promise<void> {
+  const setting = deps.linksTarget?.() ?? "system";
+  if (deps.openInPane && routeLink(setting, shift, url) === "pane") {
+    deps.openInPane(url, linkKeepsFocus(setting, shift));
+    return Promise.resolve();
+  }
   return deps.api.openUrl(url).catch((e: unknown) => failed(deps, e, url));
 }
 

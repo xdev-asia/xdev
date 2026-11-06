@@ -118,6 +118,9 @@ pub struct Settings {
     /// Settings → Screenshots; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub capture: CaptureSettings,
+    /// Settings → Browser; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub browser: BrowserSettings,
 }
 
 /// Settings → Cloud: which xDev ID server the license talks to, and the keys its tokens are
@@ -561,6 +564,40 @@ impl Default for CaptureSettings {
             annotate_paste: false,
         }
     }
+}
+
+/// Where a link clicked in a terminal opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum LinksTarget {
+    /// A browser tab of the worktree.
+    Pane,
+    /// The system's default browser.
+    #[default]
+    System,
+}
+
+/// An unknown value is the default, as for `TabOrder`.
+impl<'de> serde::Deserialize<'de> for LinksTarget {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(de)?;
+        Ok(match value.as_str() {
+            Some("pane") => LinksTarget::Pane,
+            _ => LinksTarget::System,
+        })
+    }
+}
+
+/// Settings → Browser.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct BrowserSettings {
+    /// Where a terminal link opens; Shift while clicking picks the other place.
+    pub open_links_in: LinksTarget,
+    /// The search address, with `%s` for the words. Empty: text is read as an address.
+    pub search_template: String,
 }
 
 /// Prompt cache lifetime, 5 minutes.
@@ -1840,6 +1877,7 @@ pub enum SettingsSection {
     /// `cloud`.
     Cloud,
     Capture,
+    Browser,
 }
 
 /// What a `settings://changed` event carries.

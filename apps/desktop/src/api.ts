@@ -365,6 +365,8 @@ import type { LspCompletionList, LspDocState, LspEvent, LspHover, LspLocation, L
 export type { LspCompletionItem, LspCompletionList, LspDiagnostic, LspDocState, LspEvent, LspFileEdit, LspHover, LspLanguage, LspLocation, LspPos, LspRange, LspRunning, LspServerInfo, LspSettings, LspState, LspSymbol, LspTextEdit, LspWorkspaceEdit } from "@xdev/bindings";
 import type { CaptureFailed, CapturePermission, CaptureReady, CaptureSettings, ShortcutStatus } from "@xdev/bindings";
 export type { CaptureFailed, CapturePermission, CaptureReady, CaptureSettings, ShortcutStatus };
+import type { BrowserBounds, BrowserPage, BrowserSettings, BrowserTabUrl, LinksTarget } from "@xdev/bindings";
+export type { BrowserBounds, BrowserPage, BrowserSettings, BrowserTabUrl, LinksTarget };
 export type { Chart, ChartEdge, ChartKind, ChartMember, ChartProblem, ChartRoute, ChartRun, ChartSeat, SeatTab } from "@xdev/bindings";
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind, PathEntry } from "@xdev/bindings";
@@ -887,6 +889,12 @@ export type ErrorCode =
   | "capture_no_tool"
   | "capture_timeout"
   | "capture_busy"
+  | "browser_empty"
+  | "browser_scheme"
+  | "browser_invalid"
+  | "browser_blocked"
+  | "browser_unavailable"
+  | "browser_template"
   | "shortcut_taken";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
@@ -2088,6 +2096,35 @@ export interface Api {
   captureSettingsPut(v: CaptureSettings): Promise<CaptureSettings>;
   onCaptureReady(cb: (e: CaptureReady) => void): Promise<() => void>;
   onCaptureFailed(cb: (e: CaptureFailed) => void): Promise<() => void>;
+
+  // Browser tabs. Each live tab is a child webview of the window, placed over the tab body
+  // (logical pixels from the window's top left). At most three are live; the backend closes the
+  // least recently shown one and says so with `browser://evicted`. Rejects `browser_unavailable`
+  // when the platform cannot make the webview.
+  /** Shows the tab's page over `bounds`, making its webview at `url` when it has none. */
+  browserShow(tab: string, url: string, bounds: BrowserBounds): Promise<void>;
+  /** Moves the tab's webview; an empty rectangle hides it. */
+  browserSetBounds(tab: string, bounds: BrowserBounds): Promise<void>;
+  browserHide(tab: string): Promise<void>;
+  /** Closes the tab's webview for good. */
+  browserClose(tab: string): Promise<void>;
+  /**
+   * The URL typed text names (a URL, a host, or a search through the template) and loads it in the
+   * tab's webview when it has one. Rejects `browser_empty`, `browser_scheme`, `browser_invalid`,
+   * `browser_blocked` (the app's own pages).
+   */
+  browserNavigate(tab: string, input: string): Promise<string>;
+  /** Back (`-1`) or forward (`1`). */
+  browserHistory(tab: string, step: -1 | 1): Promise<void>;
+  /** `hard` loads the address again instead of a reload. */
+  browserReload(tab: string, hard: boolean): Promise<void>;
+  browserDevtools(tab: string): Promise<void>;
+  browserSettings(): Promise<BrowserSettings>;
+  /** Rejects `browser_template` for a search address without `%s` or not `http(s)`. */
+  browserSettingsPut(v: BrowserSettings): Promise<BrowserSettings>;
+  onBrowserPage(cb: (e: BrowserPage) => void): Promise<() => void>;
+  onBrowserEvicted(cb: (e: BrowserTabUrl) => void): Promise<() => void>;
+  onBrowserPopup(cb: (e: BrowserTabUrl) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2332,6 +2369,12 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "capture_no_tool",
   "capture_timeout",
   "capture_busy",
+  "browser_empty",
+  "browser_scheme",
+  "browser_invalid",
+  "browser_blocked",
+  "browser_unavailable",
+  "browser_template",
   "shortcut_taken",
 ];
 
@@ -3000,6 +3043,19 @@ const tauriApi: Api = {
   captureSettingsPut: (settings) => call("capture_settings_put", { settings }),
   onCaptureReady: (cb) => listen<CaptureReady>("capture://ready", (e) => cb(e.payload)),
   onCaptureFailed: (cb) => listen<CaptureFailed>("capture://failed", (e) => cb(e.payload)),
+  browserShow: (tab, url, bounds) => call("browser_show", { tab, url, bounds }),
+  browserSetBounds: (tab, bounds) => call("browser_set_bounds", { tab, bounds }),
+  browserHide: (tab) => call("browser_hide", { tab }),
+  browserClose: (tab) => call("browser_close", { tab }),
+  browserNavigate: (tab, input) => call("browser_navigate", { tab, input }),
+  browserHistory: (tab, step) => call("browser_history", { tab, step }),
+  browserReload: (tab, hard) => call("browser_reload", { tab, hard }),
+  browserDevtools: (tab) => call("browser_devtools", { tab }),
+  browserSettings: () => call("browser_settings_get"),
+  browserSettingsPut: (settings) => call("browser_settings_put", { settings }),
+  onBrowserPage: (cb) => listen<BrowserPage>("browser://page", (e) => cb(e.payload)),
+  onBrowserEvicted: (cb) => listen<BrowserTabUrl>("browser://evicted", (e) => cb(e.payload)),
+  onBrowserPopup: (cb) => listen<BrowserTabUrl>("browser://popup", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {

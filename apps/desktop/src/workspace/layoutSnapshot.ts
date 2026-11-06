@@ -57,7 +57,9 @@ export type TabSnapshot =
       seq?: number;
     }
   | { kind: "review" }
-  | { kind: "file"; rel: string };
+  | { kind: "file"; rel: string }
+  /** A browser tab: it loads `url` again when it is first shown. */
+  | { kind: "browser"; url: string; title?: string | null };
 
 /**
  * The newest resumable session of `cli` in `worktree` that started at or after `since` (ms), for an
@@ -114,6 +116,7 @@ export function restoredAccount(snap: { account: string | null; accountSource?: 
 
 const REVIEW_ID = "review:";
 const FILE_ID = "file:";
+const BROWSER_ID = "browser:";
 
 /** Tabs that are not terminal sessions: they keep their pane id as their snapshot id. */
 const isPlace = (id: string) => id === REVIEW_ID || id.startsWith(FILE_ID);
@@ -125,7 +128,11 @@ const isSetup = (tab: Tab) => tab.profileId.startsWith("xdev:");
  * reading order; the review and file tabs keep their ids. A terminal that exited, is unknown or is a
  * setup tab is left out and its pane collapses. Null when nothing is left to keep.
  */
-export function toSnapshot(layout: PaneLayout, tabOf: (id: string) => Tab | null): WorktreeSnapshot | null {
+export function toSnapshot(
+  layout: PaneLayout,
+  tabOf: (id: string) => Tab | null,
+  browserOf: (id: string) => { url: string; title: string | null } | undefined = () => undefined,
+): WorktreeSnapshot | null {
   const ids = leaves(layout).flatMap((n) => (n.kind === "leaf" ? n.tabs : []));
   let next: PaneLayout | null = layout;
   const tabs: Record<string, TabSnapshot> = {};
@@ -133,7 +140,11 @@ export function toSnapshot(layout: PaneLayout, tabOf: (id: string) => Tab | null
   for (const id of ids) {
     if (id === REVIEW_ID) tabs[id] = { kind: "review" };
     else if (id.startsWith(FILE_ID)) tabs[id] = { kind: "file", rel: id.slice(FILE_ID.length) };
-    else {
+    else if (id.startsWith(BROWSER_ID)) {
+      const page = browserOf(id);
+      if (page) tabs[id] = { kind: "browser", url: page.url, ...(page.title ? { title: page.title } : {}) };
+      else next = next && removeTab(next, id);
+    } else {
       const tab = tabOf(id);
       if (tab && tab.exitCode === undefined && !isSetup(tab)) live.push({ id, tab });
       else next = next && removeTab(next, id);

@@ -6,6 +6,7 @@ import type { AgentSessionsStore } from "@/agentSessions/store";
 import { useI18n } from "@/i18n";
 import { getQuickCommands, selectCommands, subscribeQuickCommands } from "@/quickCommands/store";
 import { copyContext } from "@/terminal/terminalActions";
+import { openBrowserTab } from "@/browser/browserTabs";
 import { terminalOf } from "@/terminal/terminalRegistry";
 import type { Sessions } from "@/workspace/sessions";
 import { openCrashDialog } from "@/crash/crashEvents";
@@ -190,6 +191,12 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       newWorktree: usable ? () => actions.newWorktree() : undefined,
       newAgentTab: sessions && current ? () => openTab(view?.defaultAgent ?? FALLBACK_AGENT) : undefined,
       newShellTab: sessions && current ? () => openTab(view?.shells[0]?.id ?? FALLBACK_SHELL) : undefined,
+      newBrowserTab: current
+        ? () => {
+            actions.showWorkspace();
+            openBrowserTab(current.path);
+          }
+        : undefined,
       addRepo: () => actions.addRepo(),
       remoteAdd: actions.remoteAdd ? () => actions.remoteAdd?.() : undefined,
       remoteReconnect: actions.remoteReconnect ? () => actions.remoteReconnect?.() : undefined,

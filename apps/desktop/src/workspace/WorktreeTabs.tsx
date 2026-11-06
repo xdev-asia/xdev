@@ -14,6 +14,8 @@ import { isPreviewTab, previewTabId, previewTabRel } from "@/files/previewTabs";
 import { isViewTab, viewTabId, viewTabRel } from "@/files/viewTabs";
 import { PeerTerminalTab } from "@/peers/PeerTerminalTab";
 import { claimPeerTabs, closePeerTab, isPeerTab, usePeerTabs } from "@/peers/peerTabs";
+import { BrowserTab } from "@/browser/BrowserTab";
+import { BLANK, closeBrowserTab, frontInLayout, isBrowserTab, latestBrowserTab, openBrowserTab, placeBrowserTab, sendToBrowserTab, useBrowserTabs } from "@/browser/browserTabs";
 import { viewerOf } from "@/files/viewer";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
@@ -286,12 +288,25 @@ export function WorktreeTabs(props: {
   useEffect(() => {
     if (visible) claimPeerTabs(worktree);
   }, [visible, allPeerTabs, worktree]);
+  // Browser tabs: the store holds each tab's page; a closed one leaves its pane, a new one joins.
+  const allBrowserTabs = useBrowserTabs();
+  const browserTabs = allBrowserTabs.filter((e) => e.worktree === worktree);
+  const browserIds = new Set(browserTabs.map((e) => e.id));
+  const browserTitle = (e: { title: string | null; url: string }) => e.title ?? (e.url === BLANK ? t("browser.tab.new") : e.url);
+  // A terminal link for the browser tab: the tab used last takes it, else a new one opens beside the pane.
+  const openInBrowser = (url: string, keepFocus: boolean) => {
+    const last = latestBrowserTab(worktree);
+    if (last) sendToBrowserTab(last.id, url, keepFocus);
+    else openBrowserTab(worktree, { url, split: true, keepFocus });
+  };
   let layout: PaneLayout | null = withReview;
   for (const leaf of layout ? (leaves(layout) as Leaf[]) : []) {
     for (const id of leaf.tabs) {
       // A preview goes with its source: a file that is closed, or never opened, leaves no preview behind.
       const gone = isPeerTab(id)
         ? !peerIds.has(id)
+        : isBrowserTab(id)
+        ? !browserIds.has(id)
         : isFileTab(id)
         ? !fileIds.has(id)
         : isPreviewTab(id)
@@ -302,6 +317,7 @@ export function WorktreeTabs(props: {
   }
   for (const id of fileIds) layout = layout ? addTab(layout, id) : single(id);
   for (const id of peerIds) layout = layout ? addTab(layout, id) : single(id);
+  for (const entry of browserTabs) layout = placeBrowserTab(layout, entry);
   // Canvas mode: every pane has a card, and a pane that is gone leaves none.
   if (layout?.canvas?.on) {
     const cards = syncCanvas(layout.canvas, (leaves(layout) as Leaf[]).map((n) => n.id));
@@ -329,7 +345,7 @@ export function WorktreeTabs(props: {
   const [everFront] = useState(() => new Set<string>());
   for (const id of frontIds) everFront.add(id);
   // A string, so the shell hears only when the set on screen changes.
-  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && id !== COMMIT_TAB && !isFileTab(id) && !isPreviewTab(id) && !isViewTab(id) && !isPeerTab(id)).join(" ");
+  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && id !== COMMIT_TAB && !isFileTab(id) && !isPreviewTab(id) && !isViewTab(id) && !isPeerTab(id) && !isBrowserTab(id)).join(" ");
   const { onShown, onPanes, front } = props;
   useEffect(() => onShown?.(shown), [shown]);
   // The focus order for MRU; a walk records only where it ends, not the tabs it passed.
@@ -357,6 +373,15 @@ export function WorktreeTabs(props: {
     const newest = peerTabs.find((e) => e.seq === peerSeq);
     if (newest && layout && paneOf(layout, newest.id)) sessions.setLayout(worktree, selectTab(layout, newest.id));
   }, [peerSeq, peerTabs.length]);
+  // A browser tab asked for (opened, or sent a link) comes to the front; with keepFocus its pane does not take the focus.
+  const browserSeq = browserTabs.reduce((m, e) => Math.max(m, e.seq), 0);
+  const [browserFronted] = useState(() => ({ current: browserSeq }));
+  useEffect(() => {
+    if (browserSeq <= browserFronted.current) return;
+    browserFronted.current = browserSeq;
+    const newest = browserTabs.find((e) => e.seq === browserSeq);
+    if (newest && layout && paneOf(layout, newest.id)) sessions.setLayout(worktree, frontInLayout(layout, newest.id, newest.keepFocus));
+  }, [browserSeq]);
   useEffect(() => {
     if (reveal && layout && paneOf(layout, REVIEW_TAB)) sessions.setLayout(worktree, selectTab(layout, REVIEW_TAB));
   }, [reveal?.seq]);
@@ -462,7 +487,7 @@ export function WorktreeTabs(props: {
 
   // The tab menu's Move to Split: a terminal goes through the sessions store, the other tabs through the tree.
   function moveTab(pane: string, id: string, dir: MoveDir): void {
-    if (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id) || isViewTab(id) || isPeerTab(id)) return splitTab(pane, id, dir);
+    if (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id) || isViewTab(id) || isPeerTab(id) || isBrowserTab(id)) return splitTab(pane, id, dir);
     if (dir === "right" || dir === "down") return sessions.moveToSplit(id, dir);
     sessions.dropToSplit(worktree, id, pane, moveEdge(dir));
   }
@@ -529,7 +554,7 @@ export function WorktreeTabs(props: {
   // The next / previous tab of the front tab's kind: files with files, terminals with terminals.
   function stepSameKind(step: 1 | -1): boolean {
     const kindOf = (id: string) =>
-      isFileTab(id) || isViewTab(id) ? "file" : isPreviewTab(id) ? "preview" : isPeerTab(id) ? "peer" : id === REVIEW_TAB || id === COMMIT_TAB ? id : "terminal";
+      isFileTab(id) || isViewTab(id) ? "file" : isPreviewTab(id) ? "preview" : isPeerTab(id) ? "peer" : isBrowserTab(id) ? "browser" : id === REVIEW_TAB || id === COMMIT_TAB ? id : "terminal";
     const to = cycleSameKind(focusedLeaf?.tabs ?? [], shown, step, kindOf);
     if (to === null) return false;
     go(to);
@@ -540,7 +565,7 @@ export function WorktreeTabs(props: {
   // Save / Don't save dialog; a running agent asks as a single close does.
   function closeAllTabs(): boolean {
     const kindOf = (id: string): "terminal" | "file" | "other" =>
-      isFileTab(id) ? "file" : isPreviewTab(id) || isViewTab(id) || isPeerTab(id) || id === REVIEW_TAB || id === COMMIT_TAB ? "other" : "terminal";
+      isFileTab(id) ? "file" : isPreviewTab(id) || isViewTab(id) || isPeerTab(id) || isBrowserTab(id) || id === REVIEW_TAB || id === COMMIT_TAB ? "other" : "terminal";
     const pinnedOf = (id: string) => {
       const rel = fileTabRel(id);
       return rel !== null ? !!fileTabs.get(worktree, rel)?.pinned : !!byId.get(id)?.pinned;
@@ -558,6 +583,10 @@ export function WorktreeTabs(props: {
     if (rel !== null) return closeFiles([rel]);
     // A preview or a view leaves its pane; the file stays open, so there is nothing unsaved to ask about.
     if (isPeerTab(id)) return closePeerTab(id);
+    if (isBrowserTab(id)) {
+      closeBrowserTab(id);
+      return void api.browserClose(id).catch(() => {});
+    }
     if (isPreviewTab(id) || isViewTab(id)) return void (layout && setLayout(removeTab(layout, id)));
     if (id === COMMIT_TAB) {
       setCommitAsk(null);
@@ -689,6 +718,8 @@ export function WorktreeTabs(props: {
       if (id === COMMIT_TAB) return { id, title: t("commitView.tab", { id: (commitOpen?.id ?? "").slice(0, 7) }), icon: <Icon name="diff" /> };
       const peerEntry = peerTabs.find((e) => e.id === id);
       if (peerEntry) return { id, title: t("peers.term.tabTitle", { tab: peerEntry.title, computer: peerEntry.peerName }), icon: <Icon name="terminal" /> };
+      const browserEntry = browserTabs.find((e) => e.id === id);
+      if (browserEntry) return { id, title: browserTitle(browserEntry), icon: <Icon name="globe" /> };
       const previewRel = previewTabRel(id);
       if (previewRel !== null) return { id, title: t("files.preview.tab", { name: fileName(previewRel) }), icon: <Icon name="eye" />, path: previewRel };
       const rel = fileTabRel(id) ?? viewTabRel(id);
@@ -760,6 +791,10 @@ export function WorktreeTabs(props: {
     {
       "agent.new": () => agentNew(),
       "tab.new": () => newShell(),
+      "browser.new": () => {
+        openBrowserTab(worktree);
+        return true;
+      },
       "tab.reopenClosed": () => reopenClosed(),
       "tab.nextSameKind": () => stepSameKind(1),
       "tab.prevSameKind": () => stepSameKind(-1),
@@ -926,6 +961,10 @@ export function WorktreeTabs(props: {
       if (id === REVIEW_TAB) return [{ id, tab: null }];
       const peerEntry = peerTabs.find((e) => e.id === id);
       if (isPeerTab(id)) return peerEntry ? [{ id, tab: null, peer: { title: t("peers.term.tabTitle", { tab: peerEntry.title, computer: peerEntry.peerName }) } }] : [];
+      if (isBrowserTab(id)) {
+        const entry = browserTabs.find((e) => e.id === id);
+        return entry ? [{ id, tab: null, browser: { title: browserTitle(entry), loading: entry.loading } }] : [];
+      }
       const previewRel = previewTabRel(id);
       if (previewRel !== null) return [{ id, tab: null, preview: { rel: previewRel } }];
       const viewRel = viewTabRel(id);
@@ -966,6 +1005,19 @@ export function WorktreeTabs(props: {
               }}
             />
           )}
+          <div className="ws-menu-group" role="group">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuPane(null);
+                if (layout && layout.focused !== leaf.id) setLayout(focusPane(layout, leaf.id));
+                openBrowserTab(worktree);
+              }}
+            >
+              {t("browser.tab.newMenu")}
+            </button>
+          </div>
           <RunTargetsMenu
             api={api}
             worktree={worktree}
@@ -1184,6 +1236,7 @@ export function WorktreeTabs(props: {
                 worktree={worktree}
                 onLinkMenu={(at, items, title) => setLinkMenu({ at, items, title })}
                 onLinkSettings={props.onLinkSettings}
+                onOpenInBrowser={openInBrowser}
                 profile={tab.profileId}
                 account={ownAccount(tab)}
                 onStarted={(info) => sessions.noteStarted(tab.id, info)}
@@ -1289,6 +1342,27 @@ export function WorktreeTabs(props: {
               }}
             >
               <SurfaceBoundary id="peers.terminal" surface="Terminal" resetKey={entry.id}><PeerTerminalTab api={api} entry={entry} /></SurfaceBoundary>
+            </div>
+          );
+        })}
+        {browserTabs.map((entry) => {
+          const at = placed(entry.id);
+          return (
+            <div
+              key={entry.id}
+              className="ws-tab-pane"
+              role="tabpanel"
+              data-tab={entry.id}
+              hidden={at.hidden}
+              style={at.style}
+              onPointerDownCapture={() => {
+                const pane = layout ? paneOf(layout, entry.id) : null;
+                if (layout && pane && layout.focused !== pane) setLayout(focusPane(layout, pane));
+              }}
+            >
+              <SurfaceBoundary id="browser.tab" surface="Browser" resetKey={entry.id}>
+                <BrowserTab api={api} entry={entry} visible={visible && !at.hidden} />
+              </SurfaceBoundary>
             </div>
           );
         })}

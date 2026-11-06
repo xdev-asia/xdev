@@ -432,6 +432,10 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::mobile::SimLaunch::export_all(cfg)?;
     crate::mobile::SimRef::export_all(cfg)?;
     crate::settings::CaptureSettings::export_all(cfg)?;
+    crate::settings::BrowserSettings::export_all(cfg)?;
+    crate::browser_pane::pool::Bounds::export_all(cfg)?;
+    crate::browser_pane::BrowserPage::export_all(cfg)?;
+    crate::browser_pane::BrowserTabUrl::export_all(cfg)?;
     crate::capture::CapturePermission::export_all(cfg)?;
     crate::capture::ShortcutStatus::export_all(cfg)?;
     crate::capture::CaptureReady::export_all(cfg)?;

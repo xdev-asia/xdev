@@ -16,6 +16,7 @@ mod automations;
 mod bindings;
 mod board;
 mod board_decompose;
+mod browser_pane;
 mod capture;
 mod charts;
 mod cli_automations;
@@ -153,6 +154,7 @@ pub fn run() {
         .manage(updater::Phase::default())
         .manage(updater::Deferred::default())
         .manage(shell::ShellState::default())
+        .manage(browser_pane::BrowserPanes::default())
         // Terminals wait until the start below has picked where they run.
         .manage(pty::Ptys::pending())
         .manage(workspace::WorkspaceLock::default())
@@ -898,6 +900,16 @@ pub fn run() {
             capture::capture_shortcut_apply,
             capture::capture_settings_get,
             capture::capture_settings_put,
+            browser_pane::browser_show,
+            browser_pane::browser_set_bounds,
+            browser_pane::browser_hide,
+            browser_pane::browser_close,
+            browser_pane::browser_navigate,
+            browser_pane::browser_history,
+            browser_pane::browser_reload,
+            browser_pane::browser_devtools,
+            browser_pane::browser_settings_get,
+            browser_pane::browser_settings_put,
             remote_ssh::remote_projects_list,
             remote_ssh::remote_project_add,
             remote_ssh::remote_project_remove,

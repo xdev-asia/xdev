@@ -196,6 +196,9 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("cloud.server", "cloud.server.title", ["cloud", "server", "license", "self-hosted", "on-prem", "key", "trusted", "root", "fingerprint", "máy chủ", "may chu", "giấy phép", "giay phep", "khóa", "khoa", "tin cậy", "tin cay", "dấu vân tay", "dau van tay"], "cloud.server.hint"),
   // Open in
   e("openIn.apps", "openIn.title", ["editor", "vscode", "app", "command", "args", "mở bằng", "mo bang"], "openIn.intro"),
+  // Browser
+  e("browser.openLinksIn", "settings.browser.openLinksIn", ["browser", "link", "url", "open", "pane", "tab", "system", "trình duyệt", "trinh duyet", "liên kết", "lien ket", "mở", "mo"], "settings.browser.openLinksInHint"),
+  e("browser.searchTemplate", "settings.browser.searchTemplate", ["browser", "search", "engine", "template", "address", "trình duyệt", "trinh duyet", "tìm kiếm", "tim kiem", "địa chỉ", "dia chi"], "settings.browser.searchTemplateHint"),
   // Git
   e("git.prefix", "settings.git.prefix", ["branch", "name", "username", "nhánh", "nhanh", "tiền tố", "tien to"]),
   e("git.compare", "settings.git.compare", ["diff", "upstream", "base", "so sánh", "so sanh"], "settings.git.compareHint"),

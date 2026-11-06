@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the main window",
-  "windows": ["main"],
+  "description": "Permissions for the main webview only: a browser tab's webview (label browser-*) sits in the same window and gets none",
+  "webviews": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-destroy",
