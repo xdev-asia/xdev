@@ -7,10 +7,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::gh::{GhOutput, run_program};
 use crate::remote::{failed, plain_remote};
-use crate::{GitError, PrFilter, Repo, run};
+use crate::{GitError, PrDraft, PrFilter, Repo, run};
 
 /// Most merge requests one list call returns.
 const LIST_LIMIT: &str = "100";
+
+/// Longest merge request description, in UTF-16 units. It rides on the command line, and Windows
+/// caps a command line at 32 767 units; the same limit applies on every OS.
+pub const MR_BODY_LIMIT: usize = 16_000;
 
 pub trait GlabExec {
     fn run(&self, cwd: &Path, args: &[&str]) -> Result<GhOutput, GitError>;
@@ -196,6 +200,103 @@ pub fn glab_mr_view(glab: &dyn GlabExec, cwd: &Path, iid: u64) -> Result<MrSumma
     parse_mr(&out.stdout)
 }
 
+/// The description value for `--description=`. A blank text becomes one space and a lone `-`
+/// becomes `\-`, because glab opens an editor for an empty description or for `-`.
+pub(crate) fn description_arg(body: &str) -> String {
+    match body.trim() {
+        "" => " ".to_owned(),
+        "-" => "\\-".to_owned(),
+        _ => body.to_owned(),
+    }
+}
+
+/// The arguments of `glab mr create`. Every value uses the `--flag=value` form, so a text that
+/// starts with `-` is never read as a flag.
+pub(crate) fn mr_create_args(head: &str, draft: &PrDraft) -> Vec<String> {
+    let mut args = vec![
+        "mr".to_owned(),
+        "create".to_owned(),
+        format!("--source-branch={head}"),
+        format!("--target-branch={}", draft.base),
+        format!("--title={}", draft.title),
+        format!("--description={}", description_arg(&draft.body)),
+        "--yes".to_owned(),
+    ];
+    if draft.draft {
+        args.push("--draft".to_owned());
+    }
+    args
+}
+
+/// The merge request URL and number in the text `glab mr create` prints: the last word that is
+/// an http(s) URL with `/-/merge_requests/<digits>`.
+pub(crate) fn parse_mr_url(stdout: &str) -> Option<(String, u64)> {
+    stdout.split_whitespace().rev().find_map(|word| {
+        if !(word.starts_with("http://") || word.starts_with("https://")) {
+            return None;
+        }
+        let url = word.trim_end_matches(['/', ')', '.']);
+        let (_, tail) = url.rsplit_once("/-/merge_requests/")?;
+        if tail.is_empty() || !tail.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        Some((url.to_owned(), tail.parse().ok()?))
+    })
+}
+
+/// The merge request a branch shows: the first open one, else the most recently updated.
+pub(crate) fn current_mr(list: &[MrSummary]) -> Option<MrSummary> {
+    list.iter()
+        .find(|m| m.state == MrState::Open)
+        .or_else(|| list.iter().max_by(|a, b| a.updated_at.cmp(&b.updated_at)))
+        .cloned()
+}
+
+/// Creates a merge request from `head` and returns it as `glab mr view` reads it back. The
+/// branch must already be pushed; glab never pushes here.
+pub fn glab_mr_create(
+    glab: &dyn GlabExec,
+    cwd: &Path,
+    head: &str,
+    draft: &PrDraft,
+) -> Result<MrSummary, GitError> {
+    let args = mr_create_args(head, draft);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = glab.run(cwd, &args)?;
+    if out.status != Some(0) {
+        return Err(classify(&out));
+    }
+    let (_, iid) = parse_mr_url(&out.stdout)
+        .ok_or_else(|| GitError::Glab("glab printed no merge request URL".to_owned()))?;
+    glab_mr_view(glab, cwd, iid)
+}
+
+/// The merge request of a branch, in any state, or `None`.
+pub fn glab_mr_for_branch(
+    glab: &dyn GlabExec,
+    cwd: &Path,
+    branch: &str,
+) -> Result<Option<MrSummary>, GitError> {
+    let source = format!("--source-branch={branch}");
+    let out = glab.run(
+        cwd,
+        &[
+            "mr",
+            "list",
+            &source,
+            "--all",
+            "--output",
+            "json",
+            "--per-page",
+            LIST_LIMIT,
+        ],
+    )?;
+    if out.status != Some(0) {
+        return Err(classify(&out));
+    }
+    Ok(current_mr(&parse_mr_list(&out.stdout)?))
+}
+
 /// The host of a remote URL, lowercased: `https://host/..`, `ssh://git@host:22/..` or the scp
 /// style `git@host:path`.
 fn remote_host(url: &str) -> Option<String> {
@@ -316,6 +417,199 @@ mod tests {
                 stderr: self.out.stderr.clone(),
             })
         }
+    }
+
+    /// Answers each call with the next scripted output.
+    struct Script {
+        calls: RefCell<Vec<Vec<String>>>,
+        outs: RefCell<std::collections::VecDeque<GhOutput>>,
+    }
+
+    fn out(status: i32, stdout: &str, stderr: &str) -> GhOutput {
+        GhOutput {
+            status: Some(status),
+            stdout: stdout.into(),
+            stderr: stderr.into(),
+        }
+    }
+
+    impl Script {
+        fn new(outs: Vec<GhOutput>) -> Script {
+            Script {
+                calls: RefCell::default(),
+                outs: RefCell::new(outs.into()),
+            }
+        }
+    }
+
+    impl GlabExec for Script {
+        fn run(&self, _: &Path, args: &[&str]) -> Result<GhOutput, GitError> {
+            self.calls
+                .borrow_mut()
+                .push(args.iter().map(|s| s.to_string()).collect());
+            Ok(self
+                .outs
+                .borrow_mut()
+                .pop_front()
+                .expect("unscripted glab call"))
+        }
+    }
+
+    fn pr_draft(draft: bool) -> PrDraft {
+        PrDraft {
+            base: "main".into(),
+            title: "Add x".into(),
+            body: "Body".into(),
+            draft,
+        }
+    }
+
+    fn mr(iid: u64, state: MrState, updated_at: &str) -> MrSummary {
+        MrSummary {
+            iid,
+            url: String::new(),
+            state,
+            draft: false,
+            title: String::new(),
+            source: String::new(),
+            target: String::new(),
+            author: None,
+            updated_at: updated_at.into(),
+            fork: false,
+        }
+    }
+
+    const CREATED: &str = "Creating merge request for feat/a into main in g/p\n\n!12 Add x (feat/a)\n https://gitlab.com/g/p/-/merge_requests/12\n";
+
+    #[test]
+    fn create_args_use_the_flag_equals_form() {
+        let mut want = vec![
+            "mr",
+            "create",
+            "--source-branch=feat/a",
+            "--target-branch=main",
+            "--title=Add x",
+            "--description=Body",
+            "--yes",
+        ];
+        assert_eq!(mr_create_args("feat/a", &pr_draft(false)), want);
+        want.push("--draft");
+        assert_eq!(mr_create_args("feat/a", &pr_draft(true)), want);
+        let mut d = pr_draft(false);
+        d.title = "-rf".into();
+        let args = mr_create_args("feat/a", &d);
+        assert!(args.contains(&"--title=-rf".to_owned()));
+        assert!(!args.contains(&"-rf".to_owned()));
+    }
+
+    #[test]
+    fn description_arg_avoids_the_editor() {
+        assert_eq!(description_arg(""), " ");
+        assert_eq!(description_arg("  \n"), " ");
+        assert_eq!(description_arg(" - "), "\\-");
+        assert_eq!(description_arg("- item"), "- item");
+        assert_eq!(description_arg("Body"), "Body");
+    }
+
+    #[test]
+    fn mr_url_is_read_from_the_output() {
+        assert_eq!(
+            parse_mr_url(CREATED),
+            Some(("https://gitlab.com/g/p/-/merge_requests/12".into(), 12))
+        );
+        assert_eq!(
+            parse_mr_url("https://git.corp.local/a/b/c/-/merge_requests/7/"),
+            Some(("https://git.corp.local/a/b/c/-/merge_requests/7".into(), 7))
+        );
+        assert_eq!(
+            parse_mr_url("see (https://h/g/p/-/merge_requests/5)."),
+            None,
+            "a word that starts with a parenthesis is not a URL word"
+        );
+        for none in [
+            "",
+            "no url here",
+            "https://gitlab.com/g/p/-/issues/3",
+            "https://gitlab.com/g/p/-/merge_requests/abc",
+            "!12 only",
+        ] {
+            assert_eq!(parse_mr_url(none), None, "{none}");
+        }
+    }
+
+    #[test]
+    fn current_mr_prefers_open_then_latest() {
+        assert_eq!(current_mr(&[]), None);
+        let list = [mr(1, MrState::Merged, "2"), mr(2, MrState::Open, "1")];
+        assert_eq!(current_mr(&list).unwrap().iid, 2);
+        let list = [mr(1, MrState::Closed, "1"), mr(2, MrState::Merged, "3")];
+        assert_eq!(current_mr(&list).unwrap().iid, 2);
+    }
+
+    #[test]
+    fn create_runs_glab_then_reads_the_mr_back() {
+        let cwd = Path::new(".");
+        let fake = Script::new(vec![
+            out(0, CREATED, ""),
+            out(0, r#"{"iid":12,"title":"Add x"}"#, ""),
+        ]);
+        let got = glab_mr_create(&fake, cwd, "feat/a", &pr_draft(false)).unwrap();
+        assert_eq!(got.iid, 12);
+        let calls = fake.calls.borrow();
+        assert_eq!(calls[0], mr_create_args("feat/a", &pr_draft(false)));
+        assert_eq!(calls[1], ["mr", "view", "12", "--output", "json"]);
+    }
+
+    #[test]
+    fn create_without_a_url_is_a_glab_failure() {
+        let fake = Script::new(vec![out(0, "done\n", "")]);
+        let err = glab_mr_create(&fake, Path::new("."), "feat/a", &pr_draft(false)).unwrap_err();
+        assert!(matches!(&err, GitError::Glab(m) if m == "glab printed no merge request URL"));
+        assert_eq!(err.code(), "glab_failed");
+        assert_eq!(fake.calls.borrow().len(), 1);
+    }
+
+    #[test]
+    fn create_failures_map_to_codes() {
+        let run = |stderr: &str| {
+            glab_mr_create(
+                &Script::new(vec![out(1, "", stderr)]),
+                Path::new("."),
+                "feat/a",
+                &pr_draft(false),
+            )
+            .unwrap_err()
+        };
+        let text = "Another open merge request already exists for this source branch: !3";
+        assert!(matches!(run(text), GitError::Glab(m) if m == text));
+        assert_eq!(run("run glab auth login").code(), "glab_auth");
+        assert_eq!(
+            run("none of the git remotes configured").code(),
+            "not_gitlab"
+        );
+    }
+
+    #[test]
+    fn mr_for_branch_lists_the_branch_in_any_state() {
+        let cwd = Path::new(".");
+        let fake = Script::new(vec![out(0, LIST, "")]);
+        let got = glab_mr_for_branch(&fake, cwd, "feat/a").unwrap();
+        assert_eq!(
+            fake.calls.borrow()[0],
+            [
+                "mr",
+                "list",
+                "--source-branch=feat/a",
+                "--all",
+                "--output",
+                "json",
+                "--per-page",
+                LIST_LIMIT
+            ]
+        );
+        assert_eq!(got, current_mr(&parse_mr_list(LIST).unwrap()));
+        let none = Script::new(vec![out(0, "", "")]);
+        assert_eq!(glab_mr_for_branch(&none, cwd, "feat/a").unwrap(), None);
     }
 
     #[test]
