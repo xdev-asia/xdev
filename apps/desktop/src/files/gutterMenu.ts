@@ -2,7 +2,19 @@
 import type { EditorState } from "@codemirror/state";
 import { toApiError, type Api } from "@/api";
 import type { MenuItem } from "@/ui/ContextMenu";
+import { draftFromSelection } from "@/tasks/board/captureTask";
+import { openTaskEditor } from "@/tasks/board/TaskEditorHost";
 import { pathToLine } from "./linkPath";
+
+/** The main selection's text and its 1-based lines, for Create task from selection; null when nothing is selected. */
+export type SelectionCapture = { text: string; fromLine: number; toLine: number };
+
+/** The main selection of `state` as text with its lines; null for a caret. */
+export function captureOf(state: EditorState): SelectionCapture | null {
+  const { from, to, empty } = state.selection.main;
+  if (empty) return null;
+  return { text: state.sliceDoc(from, to), fromLine: state.doc.lineAt(from).number, toLine: state.doc.lineAt(to).number };
+}
 
 /** The main selection as the gutter needs it: lines are 1-based, `toCol` is the 1-based column of its end. */
 export type GutterSelection = { fromLine: number; toLine: number; toCol: number };
@@ -28,7 +40,7 @@ export function remoteRange(line: number, selection: GutterSelection | null): { 
   return { line: selection.fromLine, endLine: end > selection.fromLine ? end : null };
 }
 
-type Translate = (key: string) => string;
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 export interface GutterContext {
   api: Pick<Api, "fileRemoteUrl">;
@@ -36,6 +48,8 @@ export interface GutterContext {
   rel: string;
   line: number;
   selection: GutterSelection | null;
+  /** The editor's selection; the Create task row shows when this is given (null disables it). */
+  capture?: SelectionCapture | null;
   copyText(text: string): Promise<boolean>;
   toast(text: string): void;
   t: Translate;
@@ -48,6 +62,20 @@ export function gutterMenuItems(ctx: GutterContext): MenuItem[] {
   const copy = async (text: string): Promise<void> => {
     ctx.toast(ctx.t((await ctx.copyText(text)) ? "editor.gutter.copied" : "editor.gutter.copyFailed"));
   };
+  const capture = ctx.capture;
+  const createTask: MenuItem[] =
+    capture === undefined
+      ? []
+      : [
+          {
+            id: "createTask",
+            labelKey: "board.capture",
+            disabled: !capture || !capture.text.trim(),
+            run: () => {
+              if (capture?.text.trim()) openTaskEditor(draftFromSelection({ text: capture.text, source: { kind: "file", file: ctx.rel, from: capture.fromLine, to: capture.toLine } }, ctx.t));
+            },
+          },
+        ];
   return [
     { id: "copyPath", labelKey: "editor.gutter.copyPath", run: () => void copy(pathToLine(ctx.worktree, ctx.rel, ctx.line, ctx.win)) },
     { id: "copyRelPath", labelKey: "editor.gutter.copyRelPath", run: () => void copy(`${ctx.rel}:${ctx.line}`) },
@@ -61,5 +89,6 @@ export function gutterMenuItems(ctx: GutterContext): MenuItem[] {
         });
       },
     },
+    ...createTask,
   ];
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { translate } from "@/i18n";
-import { gutterMenuItems, remoteRange, selectionOf, type GutterContext } from "./gutterMenu";
+import { captureOf, gutterMenuItems, remoteRange, selectionOf, type GutterContext } from "./gutterMenu";
 
 function ctx(over: Partial<GutterContext> = {}) {
   const toasts: string[] = [];
@@ -104,5 +104,21 @@ describe("selectionOf", () => {
   it("is null for a caret and for a selection inside one line", () => {
     expect(selectionOf(state(4, 4))).toBeNull();
     expect(selectionOf(state(3, 5))).toBeNull();
+  });
+});
+
+describe("Create task from selection", () => {
+  it("shows only when the editor gives a capture, and is disabled for a caret", () => {
+    expect(gutterMenuItems(ctx().c).some((i) => i.id === "createTask")).toBe(false);
+    const off = gutterMenuItems(ctx({ capture: null }).c).find((i) => i.id === "createTask")!;
+    expect([off.labelKey, off.disabled]).toEqual(["board.capture", true]);
+    const on = gutterMenuItems(ctx({ capture: { text: "a\nb", fromLine: 2, toLine: 3 } }).c).find((i) => i.id === "createTask")!;
+    expect(on.disabled).toBe(false);
+  });
+
+  it("captureOf reads the main selection text and its lines", () => {
+    const state = EditorState.create({ doc: "one\ntwo\nthree", selection: EditorSelection.range(2, 10) });
+    expect(captureOf(state)).toEqual({ text: "e\ntwo\nth", fromLine: 1, toLine: 3 });
+    expect(captureOf(EditorState.create({ doc: "x", selection: EditorSelection.cursor(1) }))).toBeNull();
   });
 });

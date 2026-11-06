@@ -45,6 +45,8 @@ export interface TerminalHandle {
   /** Opens the find bar, as Ctrl+F does. */
   find(): void;
   hasSelection(): boolean;
+  /** The selected text; "" when nothing is selected. Absent in a stand-in handle. */
+  selectionText?(): string;
   focus(): void;
   /** The last `max` lines of the buffer, blank tail lines dropped (for Copy Context). */
   lines(max: number): string[];

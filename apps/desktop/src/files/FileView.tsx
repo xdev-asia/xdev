@@ -15,7 +15,7 @@ import { CodeEditor } from "./CodeEditor";
 import { useEditorSettings } from "./editorSettings";
 import { ExternalChange, needsChoice } from "./ExternalChangeBanner";
 import { loadFile, saveFile } from "./fileIO";
-import { gutterMenuItems, type GutterSelection } from "./gutterMenu";
+import { gutterMenuItems, type GutterSelection, type SelectionCapture } from "./gutterMenu";
 import { fileTabs, useFileEntry } from "./fileTabs";
 import { viewerOf } from "./viewer";
 
@@ -27,7 +27,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
   const settings = useEditorSettings();
   const status = entry?.status;
   // The gutter's right-click menu: where it opened and for which line.
-  const [gutter, setGutter] = useState<{ at: { x: number; y: number }; line: number; selection: GutterSelection | null } | null>(null);
+  const [gutter, setGutter] = useState<{ at: { x: number; y: number }; line: number; selection: GutterSelection | null; capture: SelectionCapture | null } | null>(null);
   const io = { api, store: fileTabs, t };
   // Images and media are read as bytes by their own view, so the text read is skipped for them.
   const direct = viewerOf(rel) !== "text" && viewerOf(rel) !== "markdown";
@@ -103,7 +103,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
           goto={entry.goto}
           onChange={(text) => fileTabs.edit(worktree, rel, text)}
           onSave={() => void saveFile(io, worktree, rel)}
-          onGutterMenu={(at, line, selection) => setGutter({ at, line, selection })}
+          onGutterMenu={(at, line, selection, capture) => setGutter({ at, line, selection, capture: capture ?? null })}
         />
         {entry.saving && <span className="file-saving" role="status">{t("files.saving")}</span>}
       </>
@@ -117,7 +117,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
         <ContextMenu
           at={gutter.at}
           label={t("editor.gutter.label")}
-          items={gutterMenuItems({ api, worktree, rel, line: gutter.line, selection: gutter.selection, copyText, toast: (text) => void pushToast({ text }), t, win: PLATFORM === "win" })}
+          items={gutterMenuItems({ api, worktree, rel, line: gutter.line, selection: gutter.selection, capture: gutter.capture, copyText, toast: (text) => void pushToast({ text }), t, win: PLATFORM === "win" })}
           onClose={() => setGutter(null)}
         />
       )}

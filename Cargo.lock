@@ -6938,6 +6938,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "xdev-board"
+version = "0.7.0"
+dependencies = [
+ "getrandom 0.4.3",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "ts-rs",
+]
+
+[[package]]
 name = "xdev-cli"
 version = "0.7.0"
 dependencies = [
@@ -7016,6 +7028,7 @@ dependencies = [
  "xdev-ai",
  "xdev-automations",
  "xdev-awake",
+ "xdev-board",
  "xdev-core",
  "xdev-git",
  "xdev-id",

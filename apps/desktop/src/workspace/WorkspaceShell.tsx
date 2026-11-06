@@ -26,6 +26,7 @@ import { startOptionAsAltProbe } from "@/terminal/optionAsAlt";
 import { startAutosave } from "@/files/autosave";
 import { useWorktreeWatch } from "./useWorktreeWatch";
 import { ComposerHost, type ComposerRequest } from "@/composer/ComposerHost";
+import { TaskEditorHost } from "@/tasks/board/TaskEditorHost";
 import { fileTabId, fileTabRel, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { LayoutControls } from "./LayoutControls";
@@ -2434,6 +2435,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         active={view === "workspace" && !dialogOpen}
         request={composerAsk}
       />
+      <TaskEditorHost api={api} repos={repos} current={current} />
       <PaletteHost
         open={jumpOpen}
         onClose={() => setJumpOpen(false)}

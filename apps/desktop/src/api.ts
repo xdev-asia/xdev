@@ -337,6 +337,8 @@ export type PortStopConsent = { confirmed: boolean; outsideTerminal: boolean };
 
 export type ScriptKind = Extract<HookKind, "setup" | "archive">;
 export type { Target };
+import type { BoardList, BoardTask, TaskPriority, TaskDraft, TaskFull, TaskLink, TaskPatch, TaskStatus, Unreadable } from "@xdev/bindings";
+export type { BoardList, BoardTask, TaskPriority, TaskDraft, TaskFull, TaskLink, TaskPatch, TaskStatus, Unreadable };
 export type { DirEntry, DirListing, Home, KitText, MemorySet, PromptEntry, Skill, UsageSummary };
 export type { Agent, AgentSession, Cost, SessionQuery, SessionRow, SessionSearchStatus, SessionTurn, SkippedLogs };
 export type { DiffSettings, EditorSettings, Eol, NavigationSettings, FileText, WriteOutcome };
@@ -838,7 +840,10 @@ export type ErrorCode =
   | "lsp_not_found"
   | "lsp_timeout"
   | "lsp_crashed"
-  | "lsp_unsupported";
+  | "lsp_unsupported"
+  | "board_conflict"
+  | "board_bad_id"
+  | "board_too_large";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1936,6 +1941,24 @@ export interface Api {
   /** Restarts the servers of a worktree, or every server for null. */
   lspRestart(worktree: string | null): Promise<void>;
   lspStatus(): Promise<LspRunning[]>;
+  /** The task files in `<repo>/.xdev/tasks`; a file that does not parse is listed in `unreadable` and never rewritten. */
+  boardList(repo: string): Promise<BoardList>;
+  /** One task with its body. Rejects `not_found`, `board_bad_id`, `board_too_large`. */
+  boardGet(repo: string, id: string): Promise<TaskFull>;
+  boardCreate(repo: string, draft: TaskDraft): Promise<BoardTask>;
+  /**
+   * `expectedUpdated` is the `updated` the caller read; when the file has another one this rejects
+   * `board_conflict` with the current task as JSON in `detail`. In a patch, an absent key keeps the field
+   * and `null` clears `assignee` or `branch`.
+   */
+  boardUpdate(repo: string, id: string, patch: TaskPatch, expectedUpdated?: string): Promise<BoardTask>;
+  boardDelete(repo: string, id: string): Promise<void>;
+  /** All the drafts are written or none is. */
+  boardCreateMany(repo: string, drafts: TaskDraft[]): Promise<BoardTask[]>;
+  /** The tabs working on tasks of `repo`; this machine only. Links to tasks no longer in the repo are dropped. */
+  boardLinks(repo: string): Promise<TaskLink[]>;
+  /** Sets, or with `null` clears, the tab working on task `id`. */
+  boardLinkSet(repo: string, id: string, link: TaskLink | null): Promise<void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2144,6 +2167,9 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "lsp_timeout",
   "lsp_crashed",
   "lsp_unsupported",
+  "board_conflict",
+  "board_bad_id",
+  "board_too_large",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2762,6 +2788,14 @@ const tauriApi: Api = {
   lspWorkspaceSymbols: (worktree, query) => call("lsp_workspace_symbols", { worktree, query }),
   lspRestart: (worktree) => call("lsp_restart", { worktree }),
   lspStatus: () => call("lsp_status"),
+  boardList: (repo) => call("board_list", { repo }),
+  boardGet: (repo, id) => call("board_get", { repo, id }),
+  boardCreate: (repo, draft) => call("board_create", { repo, draft }),
+  boardUpdate: (repo, id, patch, expectedUpdated) => call("board_update", { repo, id, patch, expectedUpdated: expectedUpdated ?? null }),
+  boardDelete: (repo, id) => call("board_delete", { repo, id }),
+  boardCreateMany: (repo, drafts) => call("board_create_many", { repo, drafts }),
+  boardLinks: (repo) => call("board_links", { repo }),
+  boardLinkSet: (repo, id, link) => call("board_link_set", { repo, id, link }),
 };
 
 const DEMO_CRASH: CrashReport = {

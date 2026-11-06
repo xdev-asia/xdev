@@ -41,6 +41,7 @@ trash.workspace = true
 xdev-agent.workspace = true
 xdev-ai.workspace = true
 xdev-awake.workspace = true
+xdev-board.workspace = true
 xdev-automations.workspace = true
 xdev-core.workspace = true
 xdev-git.workspace = true
@@ -89,6 +90,7 @@ ts-rs.workspace = true
 xdev-agent = { workspace = true, features = ["ts"] }
 xdev-ai = { workspace = true, features = ["ts"] }
 xdev-automations = { workspace = true, features = ["ts"] }
+xdev-board = { workspace = true, features = ["ts"] }
 xdev-core = { workspace = true, features = ["ts"] }
 xdev-git = { workspace = true, features = ["ts"] }
 xdev-id = { workspace = true, features = ["ts", "test-util"] }

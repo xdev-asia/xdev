@@ -14,6 +14,7 @@ mod automation_runs_summary;
 mod automations;
 #[cfg(test)]
 mod bindings;
+mod board;
 mod charts;
 mod cli_automations;
 mod cli_file;
@@ -452,6 +453,14 @@ pub fn run() {
             ai_keys::ai_keys_list,
             ai_keys::ai_key_set,
             ai_keys::ai_key_remove,
+            board::board_list,
+            board::board_get,
+            board::board_create,
+            board::board_update,
+            board::board_delete,
+            board::board_create_many,
+            board::board_links,
+            board::board_link_set,
             tasks::tasks_context,
             tasks::tasks_list,
             tasks::task_get,

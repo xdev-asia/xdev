@@ -18,6 +18,7 @@ import { JumpPalette } from "./JumpPalette";
 import { layoutItems } from "@/workspace/layoutEvents";
 import { chatItems, taskItems } from "./moreItems";
 import { RecentStore } from "./recent";
+import { openTaskEditor } from "@/tasks/board/TaskEditorHost";
 import { conversationItems } from "@/conversation/conversationStore";
 
 /** What the palette can make the shell do; the shell supplies each one. */
@@ -143,6 +144,8 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       stageAll: current && actions.stageAllChanges ? () => actions.stageAllChanges?.() : undefined,
       resumeSession: actions.openSessions ? () => actions.openSessions?.() : undefined,
       discardAll: current && actions.discardAllChanges ? () => actions.discardAllChanges?.() : undefined,
+      // Always listed: with no repo open it says so, instead of vanishing.
+      newTask: () => openTaskEditor(),
     };
     // The tab in front, when it is a terminal: the same calls as the tab and terminal menus.
     const front = sessions && current && shownTab ? sessions.tabs(current.path).find((x) => x.id === shownTab) : undefined;

@@ -22,6 +22,7 @@ default-members = [
     "crates/xdev-ssh",
     "crates/xdev-ipc",
     "crates/xdev-awake",
+    "crates/xdev-board",
     "crates/xdev-input-source",
     "crates/xdev-workspace",
     "crates/xdev-automations",
@@ -47,6 +48,7 @@ xdev-git = { path = "crates/xdev-git" }
 xdev-id = { path = "crates/xdev-id" }
 xdev-ipc = { path = "crates/xdev-ipc" }
 xdev-awake = { path = "crates/xdev-awake" }
+xdev-board = { path = "crates/xdev-board" }
 xdev-input-source = { path = "crates/xdev-input-source" }
 xdev-kit = { path = "crates/xdev-kit" }
 xdev-link = { path = "crates/xdev-link" }

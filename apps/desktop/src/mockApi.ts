@@ -62,6 +62,7 @@ import { createMockMission } from "./mockMission";
 import { createMockCharts } from "./mockCharts";
 import { createMockLsp } from "./mockLsp";
 import { createMockTasks } from "./mockTasks";
+import { createMockBoard, type MockBoard } from "./mockBoard";
 import { createMockWorkspace, type MockWorkspaceSeed } from "./mockWorkspace";
 import { mockHash, type MockFiles } from "./mockFiles";
 import { createMockForeignTerms } from "./mockForeignTerms";
@@ -393,7 +394,7 @@ function snippet(text: string, terms: string[]): string | null {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSsh, "__sshConfig"> & MockPtyd & Omit<MockCli, keyof Api> & Omit<MockAutomations, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge" | "__dismissed" | "__setPermission" | "__openedSettings"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockXdevId, "__xdevIdExpire" | "__xdevIdDeepLink" | "__xdevIdManages" | "__xdevIdReopens"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockCrash, "__crash" | "__startupFail" | "__exports" | "__relaunches" | "__logReveals"> & Pick<MockTermLinks, "__openedUrls" | "__defaultOpens"> & Pick<MockFiles, "__editFile" | "__fileReveals" | "__watchers" | "__overflow" | "__fileOpens" | "__failBytes"> & Pick<MockProfiles, "__installed" | "__docsOpened"> & Pick<MockThemes, "__paths"> & Pick<MockAppThemes, "__appThemePaths" | "__appThemeExports"> & Pick<MockKit, "__shareLog"> & Pick<MockShell, "__menu" | "__quitMode" | "__attention" | "__opened" | "__labels" | "__windowCalls" | "__closeIntent"> & {
+export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSsh, "__sshConfig"> & MockPtyd & Omit<MockCli, keyof Api> & Omit<MockAutomations, keyof Api> & Pick<MockStatus, "__hook" | "__clickNotification" | "__notifications" | "__badge" | "__dismissed" | "__setPermission" | "__openedSettings"> & Pick<MockKeybindings, "__editKeybindings" | "__reveals"> & Pick<MockXdevId, "__xdevIdExpire" | "__xdevIdDeepLink" | "__xdevIdManages" | "__xdevIdReopens"> & Pick<MockOpenIn, "__openInCalls"> & Pick<MockCrash, "__crash" | "__startupFail" | "__exports" | "__relaunches" | "__logReveals"> & Pick<MockTermLinks, "__openedUrls" | "__defaultOpens"> & Pick<MockFiles, "__editFile" | "__fileReveals" | "__watchers" | "__overflow" | "__fileOpens" | "__failBytes"> & Pick<MockBoard, "__boardEditOutside" | "__boardFiles"> & Pick<MockProfiles, "__installed" | "__docsOpened"> & Pick<MockThemes, "__paths"> & Pick<MockAppThemes, "__appThemePaths" | "__appThemeExports"> & Pick<MockKit, "__shareLog"> & Pick<MockShell, "__menu" | "__quitMode" | "__attention" | "__opened" | "__labels" | "__windowCalls" | "__closeIntent"> & {
   // Changes a file the way another program would (`null` deletes it); xDev did not write it.
   __editOutside(path: string, content: string | null): void;
   __attributionTouch: MockAttribution["__attributionTouch"];
@@ -637,6 +638,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     read: (worktree, rel) => workspace.fileRead(worktree, rel).then((f) => f.text, () => null),
   });
   const api: MockApi = {
+    ...createMockBoard(),
     ...createMockTasks({
       defaultRepo: repo ? DEMO_ROOT : null,
       accountNames: () => accounts.map((a) => a.name),

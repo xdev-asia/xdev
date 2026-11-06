@@ -172,6 +172,8 @@ pub enum WorkStatus {
 pub enum WorkItemKind {
     Pr,
     Issue,
+    /// A task file of the repo's board, `.xdev/tasks/<id>.md`.
+    Task,
 }
 
 /// A link to a pull request or issue, typed by the person.
@@ -457,5 +459,30 @@ mod tests {
             );
         }
         assert_eq!(repo_id(Path::new("/a")).len(), 12);
+    }
+
+    #[test]
+    fn a_task_work_item_loads_and_older_files_still_do() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = r#"{"version":1,"repos":[],"worktrees":[{"repo_id":"a","path":"/w/a","start":"s","pinned":false,"created_ms":1,"made_here":true,"item":{"kind":"issue","url":"https://x.test/1","title":null}}]}"#;
+        std::fs::write(dir.path().join("workspace.json"), old).unwrap();
+        let reg = Registry::load(dir.path()).unwrap();
+        assert_eq!(
+            reg.worktrees[0].item.as_ref().unwrap().kind,
+            WorkItemKind::Issue
+        );
+        let new = old.replace(
+            r#""kind":"issue","url":"https://x.test/1""#,
+            r#""kind":"task","url":".xdev/tasks/t7k2m9q.md""#,
+        );
+        std::fs::write(dir.path().join("workspace.json"), new).unwrap();
+        let reg = Registry::load(dir.path()).unwrap();
+        assert_eq!(
+            reg.worktrees[0].item.as_ref().unwrap().kind,
+            WorkItemKind::Task
+        );
+        reg.save(dir.path()).unwrap();
+        let text = std::fs::read_to_string(dir.path().join("workspace.json")).unwrap();
+        assert!(text.contains(r#""kind": "task""#));
     }
 }

@@ -38,6 +38,8 @@ export interface TerminalMenuContext {
   copySessionId?(): void;
   /** Opens the tab's sticky note. Absent hides Sticky note. */
   openNote?(): void;
+  /** Opens the task editor on the selected text ("Create task from selection"). Absent hides the item. */
+  onCreateTask?: (text: string) => void;
   /** Which header chips show now, and the switch of one; absent hides the Header chips submenu. */
   chips?: { prefs: ChipPrefs; toggle(kind: ChipKind): void };
 }
@@ -62,6 +64,20 @@ function chipsSubmenu(chips: NonNullable<TerminalMenuContext["chips"]>): MenuIte
   return { id: "headerChips", labelKey: "paneChips.menu", children: [row("quota"), row("context"), row("timer")] };
 }
 
+/** Create task from selection: disabled while nothing is selected. */
+function createTaskItem(ctx: TerminalMenuContext, create: (text: string) => void): MenuItem {
+  const { handle } = ctx;
+  return {
+    id: "createTask",
+    labelKey: "board.capture",
+    disabled: !handle.hasSelection(),
+    run: () => {
+      const text = handle.selectionText?.() ?? "";
+      if (text.trim()) create(text);
+    },
+  };
+}
+
 /**
  * The terminal's right-click items, in the reference order (plan U2): the items that have an action
  * show its chord, and the Quick Commands submenu sits before Copy Context.
@@ -78,6 +94,7 @@ export function terminalMenuItems(ctx: TerminalMenuContext): MenuItem[] {
     ...(ctx.forkSession ? [{ id: "forkSession", labelKey: "termMenu.forkSession", disabled: !ctx.tab.agentSession, run: ctx.forkSession }] : []),
     ...(ctx.handOff ? [{ id: "handOff", labelKey: "termMenu.handOff", run: ctx.handOff }] : []),
     { id: "copyContext", labelKey: "termMenu.copyContext", run: ctx.copyContext },
+    ...(ctx.onCreateTask ? [createTaskItem(ctx, ctx.onCreateTask)] : []),
     SEP("sep2"),
     { id: "splitRight", labelKey: "termMenu.splitRight", chord: chord("pane.splitRight"), run: () => ctx.split("right") },
     { id: "splitDown", labelKey: "termMenu.splitDown", chord: chord("pane.splitDown"), run: () => ctx.split("down") },
