@@ -2,8 +2,10 @@ import { Button, EmptyState, FileIcon, Icon, IconButton } from "@xdev-asia/ui";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
+import { RemoteTargetDialog } from "@/remote/RemoteTargetDialog";
+import { RemoteTargetMenu } from "@/remote/RemoteTargetMenu";
 import { sshProfiles, useSshAliases } from "./sshHosts";
-import { type Api, type ApiError, type PtyProfile, type TerminalSet } from "@/api";
+import { type Api, type ApiError, type PtyProfile, type RemoteTarget, type TerminalSet } from "@/api";
 import { FileView } from "@/files/FileView";
 import { fileName, fileTabId, fileTabRel, fileTabs, isDirty, isFileTab, useOpenFiles } from "@/files/fileTabs";
 import { saveFile } from "@/files/fileIO";
@@ -154,6 +156,8 @@ export function WorktreeTabs(props: {
   gate?: SetupGate;
   /** The repo registry key of the worktree and its short name, for the quick commands. */
   repo?: string | null;
+  /** The repo id, to read and set its remote target; absent for a remote project. */
+  repoId?: string;
   repoName?: string;
   /** A new value opens the Command popover of the focused pane. */
   quickSeq?: number;
@@ -174,6 +178,25 @@ export function WorktreeTabs(props: {
   const [switcher, setSwitcher] = useState<Switch | null>(null);
   // The pane whose `+` menu is open.
   const [menuPane, setMenuPane] = useState<string | null>(null);
+
+  // --- remote target: where a local project runs agents and terminals on an SSH host ---
+  const [target, setTarget] = useState<{ target: RemoteTarget; alias: string } | null>(null);
+  const [targetOpen, setTargetOpen] = useState(false);
+  const localProject = !worktree.startsWith("ssh://") && props.repoId !== undefined;
+  const readTarget = useCallback(async () => {
+    if (!localProject || !props.repoId) return;
+    try {
+      const found = await api.remoteTargetGet(props.repoId);
+      if (!found) return setTarget(null);
+      const hosts = await api.remoteHostsState();
+      setTarget({ target: found, alias: hosts.find((h) => h.hostId === found.hostId)?.alias ?? found.hostId });
+    } catch {
+      setTarget(null);
+    }
+  }, [api, localProject, props.repoId]);
+  useEffect(() => {
+    void readTarget();
+  }, [readTarget]);
 
   // --- run targets ---
   const [focusedPane] = useState(() => ({ current: null as string | null }));
@@ -377,6 +400,14 @@ export function WorktreeTabs(props: {
     const at = sessions.layout(worktree);
     if (pane && at && at.focused !== pane) setLayout(focusPane(at, pane));
     return sessions.open(worktree, profile, null, cliFor(profile));
+  }
+
+  // A new agent or terminal on the project's remote target.
+  function launchRemote(profile: PtyProfile | null): void {
+    if (!profile || !target) return;
+    setMenuPane(null);
+    setError(null);
+    sessions.open(worktree, profile, null, cliFor(profile), { remote: { id: target.target.hostId, alias: target.alias } });
   }
 
   // What opening copies or a set needs: the sessions, this worktree and the others by name.
@@ -923,6 +954,18 @@ export function WorktreeTabs(props: {
         groups={groups}
         menuOpen={menuPane === leaf.id}
         extra={
+          <>
+          {localProject && (
+            <RemoteTargetMenu
+              alias={target?.alias ?? null}
+              onAgent={() => launchRemote(agents[0] ?? null)}
+              onShell={() => launchRemote(defaultShell)}
+              onSet={() => {
+                setMenuPane(null);
+                setTargetOpen(true);
+              }}
+            />
+          )}
           <RunTargetsMenu
             api={api}
             worktree={worktree}
@@ -939,6 +982,7 @@ export function WorktreeTabs(props: {
               targets.review(v);
             }}
           />
+          </>
         }
         onMenu={(isOpen) => setMenuPane(isOpen ? leaf.id : null)}
         onSelect={(id) => layout && setLayout(selectTab(layout, id))}
@@ -1053,6 +1097,19 @@ export function WorktreeTabs(props: {
   return (
     <div className="ws-tabs" hidden={!visible}>
       <PtydBanner api={api} />
+      {targetOpen && props.repoId && (
+        <RemoteTargetDialog
+          api={api}
+          repoId={props.repoId}
+          project={props.repoName ?? ""}
+          current={target?.target ?? null}
+          onSaved={() => {
+            setTargetOpen(false);
+            void readTarget();
+          }}
+          onCancel={() => setTargetOpen(false)}
+        />
+      )}
       {error && (
         <div className="banner banner-warn ws-tabs-banner" role="alert">
           <SpawnFailure api={api} error={error} profile={failedProfile} />

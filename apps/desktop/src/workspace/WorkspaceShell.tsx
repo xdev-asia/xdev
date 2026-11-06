@@ -2146,6 +2146,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                       gate={gate}
                       repo={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.path ?? null}
                       repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
+                      repoId={path.startsWith("ssh://") ? undefined : repos?.find((r) => r.worktrees.some((w) => w.path === path))?.id}
                       quickSeq={path === current?.path ? quickSeq : undefined}
                       onManageQuickCommands={() => openSettings("qcmd")}
                       onLinkSettings={() => openSettings("terminal", undefined, "terminal.linkClick")}
