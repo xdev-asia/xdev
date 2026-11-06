@@ -48,6 +48,7 @@ export interface SessionsPanelProps {
   onCopyCommand?(command: string): void;
   /** Put a row's first prompt on the clipboard. */
   onCopyFirstPrompt?(text: string): void;
+  onCopyRecentPrompt?(row: SessionRow): void;
   /** The worktree on screen, which the resume destinations are judged against. */
   current?: string | null;
   /** Resume a row at a destination picked from the Resume menu; without it the row has only the default Resume. */
@@ -208,6 +209,7 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
         handOff: () => props.onHandOff?.(row),
         copyCommand: (command) => props.onCopyCommand?.(command),
         copyFirstPrompt: props.onCopyFirstPrompt,
+        copyRecentPrompt: props.onCopyRecentPrompt && (() => props.onCopyRecentPrompt?.(row)),
         jump: () => tab !== null && props.onPrimary(row, tab),
         copyLogPath: props.onCopyLogPath && (() => props.onCopyLogPath?.(row)),
         revealLog: props.onRevealLog && (() => props.onRevealLog?.(row)),

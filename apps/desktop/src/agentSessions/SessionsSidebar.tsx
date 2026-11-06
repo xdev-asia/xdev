@@ -11,6 +11,7 @@ import { SessionsPanel, type ScopeKind } from "./SessionsPanel";
 import { confirmResume, startResume, type PendingResume } from "./resumeFlow";
 import { FIRST_PROMPT_MAX, handoffPrompt, transcriptText, TRANSCRIPT_MAX } from "./handoff";
 import type { ResumeDestination } from "./resumeTarget";
+import { RECENT_PROMPT_CHARS, RECENT_PROMPT_TURNS, lastUserPrompt } from "./rowMenu";
 import { baseName } from "./sessionsView";
 import type { AgentSessionsStore } from "./store";
 
@@ -145,6 +146,14 @@ export function SessionsSidebar(props: {
         current={path}
         onResumeAt={resume}
         onCopyFirstPrompt={(text) => void copyText(text).then((ok) => pushToast({ text: t(ok ? "agentSessions.firstPromptCopied" : "agentSessions.copyFailed") }))}
+        onCopyRecentPrompt={(row) =>
+          void api
+            .agentSessionTail(row.session.key, RECENT_PROMPT_TURNS, RECENT_PROMPT_CHARS)
+            .then(lastUserPrompt)
+            .then((text) => (text === null ? "none" : copyText(text).then((ok) => (ok ? "copied" : "failed"))))
+            .catch(() => "failed")
+            .then((result) => pushToast({ text: t(result === "copied" ? "agentSessions.recentPromptCopied" : result === "none" ? "agentSessions.recentPromptNone" : "agentSessions.copyFailed") }))
+        }
         loadTail={(row) => api.agentSessionTail(row.session.key)}
         onViewLog={(row) => void api.agentSessionOpenLog(row.session.key).catch(() => pushToast({ text: t("agentSessions.logFailed") }))}
         onCopyLogPath={(row) =>
