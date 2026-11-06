@@ -455,10 +455,17 @@ mod tests {
             "ALL_PROXY",
             "all_proxy",
         ] {
+            if cfg!(windows) && k.chars().any(|c| c.is_ascii_lowercase()) {
+                // Names are case-blind there, so the upper form is the one set.
+                assert!(!env.contains_key(k), "{k}");
+                continue;
+            }
             assert_eq!(env[k], "http://p:8080", "{k}");
         }
         assert_eq!(env["NO_PROXY"], "localhost,.corp");
-        assert_eq!(env["no_proxy"], "localhost,.corp");
+        if !cfg!(windows) {
+            assert_eq!(env["no_proxy"], "localhost,.corp");
+        }
         assert_eq!(env["npm_config_registry"], "https://m.example");
     }
 

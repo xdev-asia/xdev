@@ -173,11 +173,20 @@ mod tests {
     use super::*;
     use crate::cli_verbs::tests::fixture;
 
+    /// An absolute path on this OS: `/a` on Unix, `C:/a` on Windows.
+    fn abs(p: &str) -> String {
+        if cfg!(windows) {
+            format!("C:{p}")
+        } else {
+            p.to_owned()
+        }
+    }
+
     fn wts() -> Vec<PathBuf> {
         vec![
-            PathBuf::from("/r/a"),
-            PathBuf::from("/r/a/nested"),
-            PathBuf::from("/r/b"),
+            PathBuf::from(abs("/r/a")),
+            PathBuf::from(abs("/r/a/nested")),
+            PathBuf::from(abs("/r/b")),
         ]
     }
 
@@ -196,33 +205,33 @@ mod tests {
 
     #[test]
     fn a_path_inside_a_worktree_is_split_into_worktree_and_rest() {
-        let (w, rel) = locate("/r/a/src/x.rs", None, &wts()).unwrap();
-        assert_eq!((w, rel.as_str()), (PathBuf::from("/r/a"), "src/x.rs"));
-        let (w, rel) = locate("src/./x.rs", Some(Path::new("/r/b")), &wts()).unwrap();
-        assert_eq!((w, rel.as_str()), (PathBuf::from("/r/b"), "src/x.rs"));
+        let (w, rel) = locate(&abs("/r/a/src/x.rs"), None, &wts()).unwrap();
+        assert_eq!((w, rel.as_str()), (PathBuf::from(abs("/r/a")), "src/x.rs"));
+        let (w, rel) = locate("src/./x.rs", Some(Path::new(&abs("/r/b"))), &wts()).unwrap();
+        assert_eq!((w, rel.as_str()), (PathBuf::from(abs("/r/b")), "src/x.rs"));
         // The deepest worktree wins.
-        let (w, rel) = locate("/r/a/nested/y", None, &wts()).unwrap();
-        assert_eq!((w, rel.as_str()), (PathBuf::from("/r/a/nested"), "y"));
+        let (w, rel) = locate(&abs("/r/a/nested/y"), None, &wts()).unwrap();
+        assert_eq!((w, rel.as_str()), (PathBuf::from(abs("/r/a/nested")), "y"));
         // A `..` that stays inside is fine.
-        let (_, rel) = locate("../lib/z.rs", Some(Path::new("/r/a/src")), &wts()).unwrap();
+        let (_, rel) = locate("../lib/z.rs", Some(Path::new(&abs("/r/a/src"))), &wts()).unwrap();
         assert_eq!(rel, "lib/z.rs");
     }
 
     #[test]
     fn a_path_outside_every_worktree_is_a_clear_error() {
-        let e = locate("/etc/hosts", None, &wts()).unwrap_err();
+        let e = locate(&abs("/etc/hosts"), None, &wts()).unwrap_err();
         assert_eq!(e.code, "outside_worktree");
         assert!(e.message.contains("not inside a worktree"), "{}", e.message);
         // `/r/ab` only shares a prefix with `/r/a`.
         assert_eq!(
-            locate("/r/ab/x", None, &wts()).unwrap_err().code,
+            locate(&abs("/r/ab/x"), None, &wts()).unwrap_err().code,
             "outside_worktree"
         );
         assert_eq!(locate("x", None, &wts()).unwrap_err().code, "bad_request");
         assert_eq!(locate("  ", None, &wts()).unwrap_err().code, "bad_request");
         // The worktree itself is not a file.
         assert_eq!(
-            locate("/r/a", None, &wts()).unwrap_err().code,
+            locate(&abs("/r/a"), None, &wts()).unwrap_err().code,
             "bad_request"
         );
     }
@@ -291,7 +300,7 @@ mod tests {
     fn the_verb_refuses_outside_paths_without_an_event() {
         let f = fixture();
         let e = f
-            .call(None, "file.open", json!({ "path": "/etc/hosts" }))
+            .call(None, "file.open", json!({ "path": abs("/etc/hosts") }))
             .unwrap_err();
         assert_eq!(e.code, "outside_worktree");
         let e = f

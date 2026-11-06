@@ -2297,14 +2297,24 @@ mod tests {
         assert!(clean_sparse_presets(&[preset(&name, &["a"])]).is_ok());
     }
 
+    /// An absolute path on this OS: `/a` on Unix, `C:/a` on Windows.
+    fn abs(p: &str) -> &'static Path {
+        let text = if cfg!(windows) {
+            format!("C:{p}")
+        } else {
+            p.to_owned()
+        };
+        Box::leak(PathBuf::from(text).into_boxed_path())
+    }
+
     #[test]
     fn worktree_root_prefers_the_repo_then_the_global_folder() {
-        let primary = Path::new("/code/app");
-        let default = Path::new("/code/wt");
-        let global = Path::new("/elsewhere/trees");
+        let primary = abs("/code/app");
+        let default = abs("/code/wt");
+        let global = abs("/elsewhere/trees");
         assert_eq!(worktree_root_for(primary, default, None), default);
         assert_eq!(worktree_root_for(primary, default, Some(global)), global);
-        let own = Path::new("/mine/wt");
+        let own = abs("/mine/wt");
         assert_eq!(worktree_root_for(primary, own, Some(global)), own);
         // A relative folder or one inside the checkout is not used.
         assert_eq!(
@@ -2312,11 +2322,11 @@ mod tests {
             default
         );
         assert_eq!(
-            worktree_root_for(primary, default, Some(Path::new("/code/app/wt"))),
+            worktree_root_for(primary, default, Some(abs("/code/app/wt"))),
             default
         );
         assert_eq!(
-            worktree_root_for(primary, Path::new("/code/wt/"), Some(global)),
+            worktree_root_for(primary, abs("/code/wt/"), Some(global)),
             global
         );
     }

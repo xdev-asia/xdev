@@ -908,18 +908,28 @@ mod tests {
         }
     }
 
+    /// An absolute path on this OS: `/a` on Unix, `C:/a` on Windows.
+    fn abs(p: &str) -> String {
+        if cfg!(windows) {
+            format!("C:{p}")
+        } else {
+            p.to_owned()
+        }
+    }
+
     #[test]
     fn relative_handles_absolute_relative_and_outside() {
-        let root = Path::new("/w/oak");
+        let root_text = abs("/w/oak");
+        let root = Path::new(&root_text);
         assert_eq!(
-            relative(root, "/w/oak/src/a.ts").as_deref(),
+            relative(root, &abs("/w/oak/src/a.ts")).as_deref(),
             Some("src/a.ts")
         );
         assert_eq!(relative(root, "src/a.ts").as_deref(), Some("src/a.ts"));
         assert_eq!(relative(root, "./a.ts").as_deref(), Some("a.ts"));
-        assert_eq!(relative(root, "/w/other/a.ts"), None);
+        assert_eq!(relative(root, &abs("/w/other/a.ts")), None);
         assert_eq!(relative(root, "../a.ts"), None);
-        assert_eq!(relative(root, "/w/oak"), None);
+        assert_eq!(relative(root, &root_text), None);
     }
 
     #[test]
