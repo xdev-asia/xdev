@@ -6795,6 +6795,7 @@ dependencies = [
  "xdev-input-source",
  "xdev-ipc",
  "xdev-kit",
+ "xdev-lsp",
  "xdev-mcp",
  "xdev-orch",
  "xdev-policy",
@@ -6875,6 +6876,19 @@ dependencies = [
  "thiserror 2.0.21",
  "ts-rs",
  "xdev-ai",
+]
+
+[[package]]
+name = "xdev-lsp"
+version = "0.7.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "url",
+ "xdev-agent",
 ]
 
 [[package]]

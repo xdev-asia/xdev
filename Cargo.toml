@@ -26,6 +26,7 @@ default-members = [
     "crates/xdev-workspace",
     "crates/xdev-automations",
     "crates/xdev-cli",
+    "crates/xdev-lsp",
 ]
 
 [workspace.package]
@@ -47,6 +48,7 @@ xdev-ipc = { path = "crates/xdev-ipc" }
 xdev-awake = { path = "crates/xdev-awake" }
 xdev-input-source = { path = "crates/xdev-input-source" }
 xdev-kit = { path = "crates/xdev-kit" }
+xdev-lsp = { path = "crates/xdev-lsp" }
 xdev-mcp = { path = "crates/xdev-mcp" }
 xdev-orch = { path = "crates/xdev-orch" }
 xdev-policy = { path = "crates/xdev-policy" }
