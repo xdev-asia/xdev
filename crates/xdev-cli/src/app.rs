@@ -240,7 +240,8 @@ pub enum WorktreeCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Sets the status, comment or title of a worktree (default: the caller's).
+    /// Sets the details of a worktree (default: the caller's): status,
+    /// comment, title, linked issue or pull request, parent, read state.
     Set {
         #[arg(long)]
         worktree: Option<String>,
@@ -250,8 +251,28 @@ pub enum WorktreeCommand {
         /// At most 2000 characters.
         #[arg(long)]
         comment: Option<String>,
-        #[arg(long)]
+        /// The name the sidebar shows.
+        #[arg(long, visible_alias = "display-name")]
         title: Option<String>,
+        /// Links an issue: its URL, a number on the origin's host, or none.
+        #[arg(long, conflicts_with = "pr")]
+        issue: Option<String>,
+        /// Links a pull request: its URL, a number on the origin's host, or
+        /// none.
+        #[arg(long)]
+        pr: Option<String>,
+        /// Id, unique prefix, name or path of the new parent worktree.
+        #[arg(long, conflicts_with = "no_parent")]
+        parent_worktree: Option<String>,
+        /// Takes the worktree out from under its parent.
+        #[arg(long)]
+        no_parent: bool,
+        /// Marks the worktree unread in the sidebar.
+        #[arg(long, conflicts_with = "read")]
+        unread: bool,
+        /// Marks the worktree read in the sidebar.
+        #[arg(long)]
+        read: bool,
         #[arg(long)]
         json: bool,
     },
@@ -391,9 +412,30 @@ pub fn request(
             status,
             comment,
             title,
+            issue,
+            pr,
+            parent_worktree,
+            no_parent,
+            unread,
+            read,
             json,
         }) => {
-            let params = json!({ "worktree": worktree, "status": status, "comment": comment, "title": title });
+            let unread = match (unread, read) {
+                (true, _) => Some(true),
+                (_, true) => Some(false),
+                _ => None,
+            };
+            let params = json!({
+                "worktree": worktree,
+                "status": status,
+                "comment": comment,
+                "title": title,
+                "issue": issue,
+                "pr": pr,
+                "parent": parent_worktree,
+                "noParent": no_parent,
+                "unread": unread,
+            });
             ("worktree.set", params, *json)
         }
         AppCommand::Terminal(TerminalCommand::List { worktree, json }) => {
@@ -643,6 +685,64 @@ mod tests {
         assert_eq!(params["parent"], Value::Null);
     }
 
+    #[derive(clap::Parser)]
+    struct WorktreeCli {
+        #[command(subcommand)]
+        command: WorktreeCommand,
+    }
+
+    fn worktree(args: &[&str]) -> Result<AppCommand, clap::Error> {
+        use clap::Parser;
+        let mut argv = vec!["worktree"];
+        argv.extend_from_slice(args);
+        WorktreeCli::try_parse_from(argv).map(|c| AppCommand::Worktree(c.command))
+    }
+
+    #[test]
+    fn set_maps_every_flag() {
+        let none = &mut &b""[..];
+        let cmd = worktree(&[
+            "set",
+            "--worktree",
+            "lead",
+            "--display-name",
+            "Lead",
+            "--issue",
+            "12",
+            "--parent-worktree",
+            "main-ish",
+            "--unread",
+            "--json",
+        ])
+        .unwrap();
+        let (m, p, json) = request(&cmd, none).unwrap();
+        assert_eq!(m, "worktree.set");
+        assert!(json);
+        assert_eq!(
+            p,
+            json!({
+                "worktree": "lead", "status": null, "comment": null, "title": "Lead",
+                "issue": "12", "pr": null, "parent": "main-ish", "noParent": false,
+                "unread": true,
+            })
+        );
+        let cmd = worktree(&["set", "--pr", "none", "--no-parent", "--read"]).unwrap();
+        let (_, p, json) = request(&cmd, none).unwrap();
+        assert!(!json);
+        assert_eq!(p["pr"], "none");
+        assert_eq!(p["noParent"], true);
+        assert_eq!(p["unread"], false);
+        let cmd = worktree(&["set", "--status", "todo"]).unwrap();
+        assert_eq!(request(&cmd, none).unwrap().1["unread"], Value::Null);
+        for clash in [
+            &["set", "--issue", "1", "--pr", "2"][..],
+            &["set", "--parent-worktree", "a", "--no-parent"],
+            &["set", "--unread", "--read"],
+        ] {
+            assert!(worktree(clash).is_err(), "{clash:?}");
+        }
+    }
+
     #[test]
     fn request_maps_show_read_send() {
         let none = &mut &b""[..];
@@ -884,6 +984,12 @@ pub(crate) mod endpoint_tests {
             status: Some("in-review".into()),
             comment: None,
             title: None,
+            issue: None,
+            pr: None,
+            parent_worktree: None,
+            no_parent: false,
+            unread: false,
+            read: false,
             json: true,
         });
         assert_eq!(run(&cmd, dir.path(), &prefix), 7);

@@ -857,7 +857,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (!sessions) return;
     const reporter = startCliReport(api, sessions, () => live.selected);
     live.cliPoke = reporter.poke;
-    const stopEvents = startCliEvents(api, { reload: () => live.reload(), openTab: (w, p, prompt) => live.cliOpen(w, p, prompt), t: (key, vars) => live.t(key, vars) });
+    const stopEvents = startCliEvents(api, {
+      reload: () => live.reload(),
+      openTab: (w, p, prompt) => live.cliOpen(w, p, prompt),
+      markUnread: (w, unread) => (unread ? sessions.markUnread(w) : sessions.markRead(w)),
+      t: (key, vars) => live.t(key, vars),
+    });
     // Worker tabs the backend asks for, closes and reads (orchestration).
     const stopOrchestration = startOrchestrationEvents(api, {
       sessions,

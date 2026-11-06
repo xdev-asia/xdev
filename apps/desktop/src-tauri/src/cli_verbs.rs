@@ -10,11 +10,13 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, State};
+use xdev_git::{HostKind, HostRepo};
 use xdev_policy::{Action, Audited, Policy, Verdict};
 use xdev_ports::PortScan;
 use xdev_workspace::{
-    COMMENT_MAX, CreateOptions, DetailsPatch, MadeBy, Registry, RepoView, WorkStatus, WorktreeView,
-    create_worktree_linked, list, path_key, refresh_base, set_details, shared_to_link,
+    COMMENT_MAX, CreateOptions, DetailsPatch, MadeBy, Registry, RepoView, WorkItem, WorkItemKind,
+    WorkStatus, WorktreeView, create_worktree_linked, list, path_key, refresh_base, set_details,
+    shared_to_link,
 };
 
 use crate::accounts::data_dir;
@@ -392,6 +394,8 @@ struct Row<'a> {
     comment: &'a str,
     /// The parent's id.
     parent: Option<String>,
+    /// The linked pull request or issue.
+    item: Option<&'a WorkItem>,
     made_by: MadeBy,
     set_by_cli_ms: Option<i64>,
     /// The states of its agent tabs.
@@ -456,6 +460,7 @@ impl Ctx<'_> {
             status: v.status,
             comment: &v.comment,
             parent: v.parent.as_deref().map(|p| path_key(Path::new(p))),
+            item: v.item.as_ref(),
             made_by: v.made_by,
             set_by_cli_ms: v.set_by_cli_ms,
             agents,
@@ -672,11 +677,34 @@ impl Ctx<'_> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SetParams {
     worktree: Option<String>,
     status: Option<String>,
     comment: Option<String>,
     title: Option<String>,
+    /// An issue: its URL, a number on the origin's host, or `none`.
+    issue: Option<String>,
+    /// A pull request, the same way.
+    pr: Option<String>,
+    /// The parent worktree, as `--worktree` names one.
+    parent: Option<String>,
+    #[serde(default)]
+    no_parent: bool,
+    /// True marks the worktree unread in the sidebar, false read.
+    unread: Option<bool>,
+}
+
+/// Marks a worktree read or unread in the sidebar; the UI keeps that state.
+pub const WORKTREE_READ_EVENT: &str = "cli://worktree-read";
+
+/// The payload of `WORKTREE_READ_EVENT`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct CliWorktreeRead {
+    pub worktree: String,
+    pub unread: bool,
 }
 
 /// `todo`, `in-progress`, `in-review`, `completed`; `none` clears.
@@ -691,13 +719,74 @@ fn work_status(text: &str) -> Result<Option<WorkStatus>, AppError> {
     })
 }
 
-/// `worktree.set`: status, comment and title of the named worktree or the
-/// caller's. A write on the caller's parent asks like one on another worktree.
+/// The web page of pull request or issue `n` on a hosted repo.
+fn item_url(host: &HostRepo, kind: WorkItemKind, n: u64) -> String {
+    let path = match (host.kind, kind) {
+        (HostKind::Github, WorkItemKind::Pr) => "pull",
+        (HostKind::Gitlab, WorkItemKind::Pr) => "-/merge_requests",
+        (HostKind::Bitbucket, WorkItemKind::Pr) => "pull-requests",
+        (HostKind::Gitlab, _) => "-/issues",
+        _ => "issues",
+    };
+    format!("{}/{path}/{n}", host.base)
+}
+
+/// `--issue` / `--pr`: a URL as it is, a number (`#` allowed) on the
+/// origin of `worktree`, or `none` to clear the link.
+fn work_item(
+    worktree: &Path,
+    kind: WorkItemKind,
+    text: &str,
+) -> Result<Option<WorkItem>, AppError> {
+    let text = text.trim();
+    if text == "none" {
+        return Ok(None);
+    }
+    let url = match text.strip_prefix('#').unwrap_or(text).parse::<u64>() {
+        Ok(0) => return Err(bad_request("an issue or pull request number starts at 1")),
+        Ok(n) => {
+            let host = xdev_git::Repo::discover(worktree)
+                .ok()
+                .and_then(|r| r.origin_host().ok().flatten())
+                .ok_or_else(|| {
+                    bad_request(format!(
+                        "{text}: origin is not on GitHub, GitLab or Bitbucket; pass the URL"
+                    ))
+                })?;
+            item_url(&host, kind, n)
+        }
+        Err(_) => text.to_owned(),
+    };
+    Ok(Some(WorkItem {
+        kind,
+        url,
+        title: None,
+    }))
+}
+
+/// `worktree.set`: status, comment, title, linked item, parent and read
+/// state of the named worktree or the caller's. A write on the caller's
+/// parent asks like one on another worktree.
 pub fn worktree_set(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Value, AppError> {
     let p: SetParams = params(req)?;
-    if p.status.is_none() && p.comment.is_none() && p.title.is_none() {
+    let details = p.status.is_some()
+        || p.comment.is_some()
+        || p.title.is_some()
+        || p.issue.is_some()
+        || p.pr.is_some()
+        || p.parent.is_some()
+        || p.no_parent;
+    if !details && p.unread.is_none() {
         return Err(bad_request(
-            "nothing to set: give --status, --comment or --title",
+            "nothing to set: give --status, --comment, --title, --issue, --pr,              --parent-worktree, --no-parent, --unread or --read",
+        ));
+    }
+    if p.issue.is_some() && p.pr.is_some() {
+        return Err(bad_request("give --issue or --pr, not both"));
+    }
+    if p.parent.is_some() && p.no_parent {
+        return Err(bad_request(
+            "give --parent-worktree or --no-parent, not both",
         ));
     }
     let status = p.status.as_deref().map(work_status).transpose()?;
@@ -712,13 +801,25 @@ pub fn worktree_set(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Val
     let all = ctx.listed()?;
     let me = ctx.caller_worktree(caller)?;
     let t = target(&all, p.worktree.as_deref(), me.as_deref())?;
-    if t.view.primary {
+    if details && t.view.primary {
         return Err(AppError::new(
             "primary_worktree",
             "the main checkout has no details",
         ));
     }
     let path = PathBuf::from(&t.view.path);
+    let item = match (&p.issue, &p.pr) {
+        (Some(text), _) => Some(work_item(&path, WorkItemKind::Issue, text)?),
+        (_, Some(text)) => Some(work_item(&path, WorkItemKind::Pr, text)?),
+        _ => None,
+    };
+    let parent = match (&p.parent, p.no_parent) {
+        (Some(text), _) => Some(Some(PathBuf::from(
+            &target(&all, Some(text), me.as_deref())?.view.path,
+        ))),
+        (None, true) => Some(None),
+        (None, false) => None,
+    };
     let scope = downward(
         scope_of(me.as_deref(), &path, &ctx.registry()?),
         &all,
@@ -726,18 +827,28 @@ pub fn worktree_set(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Val
         &path,
     );
     ctx.gate("worktree.set", "set", me.as_deref(), &path, scope)?;
-    let patch = DetailsPatch {
-        title: p.title.map(Some),
-        comment: p.comment,
-        status,
-        ..Default::default()
-    };
-    update(ctx.data, ctx.lock, |reg| {
-        set_details(reg, &path, patch)?;
-        ctx.mark(reg, &path);
-        Ok(())
-    })?;
-    (ctx.emit)("workspace://changed", Value::Null);
+    if details {
+        let patch = DetailsPatch {
+            title: p.title.map(Some),
+            comment: p.comment,
+            status,
+            item,
+            parent,
+        };
+        update(ctx.data, ctx.lock, |reg| {
+            set_details(reg, &path, patch)?;
+            ctx.mark(reg, &path);
+            Ok(())
+        })?;
+        (ctx.emit)("workspace://changed", Value::Null);
+    }
+    if let Some(unread) = p.unread {
+        let read = CliWorktreeRead {
+            worktree: t.view.path.clone(),
+            unread,
+        };
+        (ctx.emit)(WORKTREE_READ_EVENT, json!(read));
+    }
     let all = ctx.listed()?;
     let l = target(&all, Some(&t.view.path), None)?;
     Ok(json!(ctx.row(l, &ctx.board.tabs().0)))
@@ -1468,6 +1579,164 @@ pub(crate) mod tests {
             "primary_worktree"
         );
         assert!(xdev_policy::read_audit(&f.data).is_err());
+    }
+
+    #[test]
+    fn set_checks_the_new_flags_before_anything_runs() {
+        let f = fixture();
+        let code = |params: Value| {
+            f.call(Some("p-lead"), "worktree.set", params)
+                .unwrap_err()
+                .code
+        };
+        assert_eq!(code(json!({ "issue": "1", "pr": "2" })), "bad_request");
+        assert_eq!(
+            code(json!({ "parent": "other", "noParent": true })),
+            "bad_request"
+        );
+        // A number needs a hosted origin; the fixture has none.
+        assert_eq!(code(json!({ "issue": "7" })), "bad_request");
+        assert_eq!(code(json!({ "pr": "#0" })), "bad_request");
+        assert_eq!(code(json!({ "parent": "nope" })), "not_found");
+        // Read state is the UI's, so the main checkout takes it, but no details.
+        assert_eq!(
+            code(json!({ "worktree": "main", "issue": "https://x.test/1" })),
+            "primary_worktree"
+        );
+        assert!(xdev_policy::read_audit(&f.data).is_err());
+    }
+
+    #[test]
+    fn set_links_an_issue_or_pr_by_number_or_url_and_clears_it() {
+        let f = fixture();
+        git(
+            &f.main,
+            &["remote", "add", "origin", "git@github.com:acme/app.git"],
+        );
+        let set = |params: Value| f.call(Some("p-lead"), "worktree.set", params).unwrap();
+        let row = set(json!({ "issue": "#12" }));
+        assert_eq!(
+            row["item"],
+            json!({ "kind": "issue", "url": "https://github.com/acme/app/issues/12", "title": null })
+        );
+        let row = set(json!({ "pr": "34" }));
+        assert_eq!(row["item"]["kind"], "pr");
+        assert_eq!(row["item"]["url"], "https://github.com/acme/app/pull/34");
+        let row = set(json!({ "issue": "https://tracker.test/browse/AB-1" }));
+        assert_eq!(row["item"]["url"], "https://tracker.test/browse/AB-1");
+        let row = set(json!({ "pr": "none" }));
+        assert_eq!(row["item"], Value::Null);
+        // set_details still checks the URL.
+        assert_eq!(
+            f.call(
+                Some("p-lead"),
+                "worktree.set",
+                json!({ "issue": "ftp://x" })
+            )
+            .unwrap_err()
+            .code,
+            "bad_item"
+        );
+    }
+
+    #[test]
+    fn item_urls_follow_each_host() {
+        let host = |kind, base: &str| HostRepo {
+            kind,
+            base: base.to_owned(),
+        };
+        let gl = host(HostKind::Gitlab, "https://gitlab.com/a/b");
+        let bb = host(HostKind::Bitbucket, "https://bitbucket.org/a/b");
+        assert_eq!(
+            item_url(&gl, WorkItemKind::Pr, 3),
+            "https://gitlab.com/a/b/-/merge_requests/3"
+        );
+        assert_eq!(
+            item_url(&gl, WorkItemKind::Issue, 3),
+            "https://gitlab.com/a/b/-/issues/3"
+        );
+        assert_eq!(
+            item_url(&bb, WorkItemKind::Pr, 3),
+            "https://bitbucket.org/a/b/pull-requests/3"
+        );
+        assert_eq!(
+            item_url(&bb, WorkItemKind::Issue, 3),
+            "https://bitbucket.org/a/b/issues/3"
+        );
+    }
+
+    #[test]
+    fn set_moves_a_worktree_under_a_parent_and_out_again() {
+        let f = fixture();
+        let row = f
+            .call(
+                Some("p-lead"),
+                "worktree.set",
+                json!({ "worktree": "child", "noParent": true }),
+            )
+            .unwrap();
+        assert_eq!(row["parent"], Value::Null);
+        let row = f
+            .call(Some("p-other"), "worktree.set", json!({ "parent": "lead" }))
+            .unwrap();
+        assert_eq!(row["parent"], key(&f.lead));
+        assert_eq!(row["setByCliMs"], 777);
+        // A parent may not have a parent itself.
+        let e = f
+            .call(
+                Some("p-child"),
+                "worktree.set",
+                json!({ "parent": "other" }),
+            )
+            .unwrap_err();
+        assert_eq!(e.code, "bad_parent");
+        assert_eq!(
+            f.call(None, "worktree.ps", json!({ "all": true }))
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["id"] == key(&f.child))
+                .unwrap()["parent"],
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn unread_and_read_go_to_the_ui_and_touch_no_details() {
+        let mut f = fixture();
+        // The main checkout is not the caller's: the person allows it.
+        f.answer = Some(true);
+        f.call(Some("p-lead"), "worktree.set", json!({ "unread": true }))
+            .unwrap();
+        let row = f
+            .call(
+                Some("p-lead"),
+                "worktree.set",
+                json!({ "worktree": "main", "unread": false }),
+            )
+            .unwrap();
+        assert_eq!(row["primary"], true);
+        let events = f.events.lock().unwrap();
+        let reads: Vec<&Value> = events
+            .iter()
+            .filter(|(e, _)| e == WORKTREE_READ_EVENT)
+            .map(|(_, p)| p)
+            .collect();
+        assert_eq!(
+            reads,
+            [
+                &json!({ "worktree": f.lead.display().to_string(), "unread": true }),
+                // The sidebar's own spelling of the path.
+                &json!({ "worktree": row["path"], "unread": false }),
+            ]
+        );
+        assert!(!events.iter().any(|(e, _)| e == "workspace://changed"));
+        drop(events);
+        let lead = f
+            .call(Some("p-lead"), "worktree.current", Value::Null)
+            .unwrap();
+        assert_eq!(lead["setByCliMs"], Value::Null);
     }
 
     #[test]

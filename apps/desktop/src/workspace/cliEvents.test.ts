@@ -84,6 +84,20 @@ describe("CLI events", () => {
     off();
   });
 
+  it("marks a worktree unread or read when the CLI says so", async () => {
+    const api = createMockApi({});
+    const markUnread = vi.fn();
+    const stop = startCliEvents(api, { reload() {}, openTab() {}, markUnread, t });
+    await flush();
+    api.__cliWorktreeRead({ worktree: "/w/lead", unread: true });
+    api.__cliWorktreeRead({ worktree: "/w/other", unread: false });
+    expect(markUnread.mock.calls).toEqual([
+      ["/w/lead", true],
+      ["/w/other", false],
+    ]);
+    stop();
+  });
+
   it("words an automation write as a change to one that runs in the worktree", async () => {
     const api = createMockApi({});
     startCliEvents(api, { reload() {}, openTab() {}, t });
