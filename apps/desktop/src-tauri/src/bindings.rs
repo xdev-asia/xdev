@@ -421,6 +421,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_ssh::RemoteDir::export_all(cfg)?;
     xdev_ssh::RemoteDirListing::export_all(cfg)?;
     xdev_ssh::RemoteTarget::export_all(cfg)?;
+    crate::run_targets::TargetsView::export_all(cfg)?;
+    xdev_workspace::deploy::DeployPreset::export_all(cfg)?;
+    xdev_workspace::deploy::VpsTarget::export_all(cfg)?;
     Ok(())
 }
 

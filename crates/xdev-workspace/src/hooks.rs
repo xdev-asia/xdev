@@ -215,7 +215,8 @@ pub(crate) fn read_file(path: &Path) -> Result<Option<SharedFile>, String> {
                 }
             }
             // Read by `repo_commands`.
-            "commands" => {}
+            // Read by `repo_commands`, and `deploy` for `deploy` and `vps`.
+            "commands" | "deploy" | "vps" => {}
             "issue_command" => {
                 let toml::Value::String(text) = value else {
                     return Err("issue_command must be a string".into());
@@ -522,6 +523,8 @@ pub(crate) enum TrustKind {
     Shared,
     Tabs,
     IssueCommand,
+    /// The `[[deploy]]` presets and `[vps]` target.
+    Targets,
 }
 
 impl From<HookKind> for TrustKind {

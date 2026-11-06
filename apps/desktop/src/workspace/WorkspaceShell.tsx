@@ -2445,6 +2445,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         sessions={sessions}
         history={history}
         tasks={() => api.tasks()}
+        targets={(wt) => api.targetsList(wt)}
         current={current}
         shownTab={current ? shownTab[current.path] ?? null : null}
         actions={{

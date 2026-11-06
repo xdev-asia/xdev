@@ -55,6 +55,8 @@ export type MockPtyd = {
   __spawnOverrides(id: string): LaunchOverrides | null;
   // Everything `ptyWrite` was given for a pty, decoded and joined; empty when nothing.
   __ptyWritten(id: string): string;
+  // `__ptyWritten` for every pty, by id.
+  __ptyWrittenAll(): Record<string, string>;
 };
 
 const PROMPT = "$ ";
@@ -368,5 +370,6 @@ export function createMockPty(
     __spawnExtraArgs: (id) => spawnArgs.get(id) ?? null,
     __spawnOverrides: (id) => spawnOverrides.get(id) ?? null,
     __ptyWritten: (id) => written.get(id) ?? "",
+    __ptyWrittenAll: () => Object.fromEntries(written),
   };
 }
