@@ -1062,6 +1062,7 @@ pub fn dispatch(
         "terminal.read" => crate::cli_terminal::terminal_read(ctx, req),
         "terminal.send" => crate::cli_terminal::terminal_send(ctx, req, caller),
         "file.open" => crate::cli_file::file_open(ctx, req, caller),
+        "agent.context" => crate::cli_context::agent_context(ctx, req, caller),
         "capture.start" => crate::capture::cli_start(ctx, req, caller),
         "ports.list" => crate::cli_ports::ports_list(ctx, req, caller),
         m if m.starts_with("automation.") => crate::cli_automations::handle(ctx, req, caller),

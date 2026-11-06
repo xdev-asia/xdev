@@ -1,5 +1,6 @@
 mod accounts;
 mod agent;
+mod agent_context;
 mod agent_hook;
 mod ai;
 mod app;
@@ -135,6 +136,11 @@ enum Command {
     /// Asks the running app to capture a screen region, like the capture
     /// shortcut. Prints `started`.
     Capture(capture::CaptureCommand),
+    /// Where this terminal runs: repo, worktree, tab, PTY and the
+    /// orchestration run. Outside an xDev terminal it goes by
+    /// `XDEV_WORKTREE_PATH`, then the current folder.
+    #[command(name = "agent-context")]
+    AgentContext(agent_context::AgentContextArgs),
     /// Scheduled agent runs: `list`, `show`, `run`, `runs`, `enable`, `disable`, `remove`.
     Automations {
         #[command(subcommand)]
@@ -205,6 +211,7 @@ fn main() -> ExitCode {
         Command::File { command } => app::AppCommand::File(command),
         Command::Ports(a) => app::AppCommand::Ports(a),
         Command::Capture(a) => app::AppCommand::Capture(a),
+        Command::AgentContext(a) => app::AppCommand::AgentContext(a),
         Command::Automations { command } => app::AppCommand::Automations(command),
         other => return finish(run(other)),
     };
@@ -256,6 +263,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         | Command::File { .. }
         | Command::Ports(_)
         | Command::Capture(_)
+        | Command::AgentContext(_)
         | Command::Automations { .. } => return Ok(Outcome::Ok),
         Command::Mcp { dir } => {
             let dir = dir.unwrap_or_else(|| {

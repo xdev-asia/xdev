@@ -20,6 +20,7 @@ mod browser_pane;
 mod capture;
 mod charts;
 mod cli_automations;
+mod cli_context;
 mod cli_file;
 mod cli_install;
 mod cli_path;
