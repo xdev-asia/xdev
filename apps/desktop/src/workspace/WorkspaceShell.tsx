@@ -28,6 +28,7 @@ import { startAutosave } from "@/files/autosave";
 import { useWorktreeWatch } from "./useWorktreeWatch";
 import { ComposerHost, type ComposerRequest } from "@/composer/ComposerHost";
 import { FloatingHost } from "@/floating/FloatingHost";
+import { DictationHost } from "@/dictation/DictationHost";
 import { FloatingItem } from "@/floating/FloatingItem";
 import { repoOf, TaskEditorHost } from "@/tasks/board/TaskEditorHost";
 import { fileTabId, fileTabRel, fileTabs } from "@/files/fileTabs";
@@ -2598,6 +2599,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         }}
       />
       <FloatingHost api={api} />
+      <DictationHost api={api} openSettings={(section) => openSettings(section)} />
       <ComposerHost
         api={api}
         sessions={sessions}

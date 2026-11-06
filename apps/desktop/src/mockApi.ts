@@ -64,6 +64,7 @@ import { createMockMission } from "./mockMission";
 import { createMockCharts } from "./mockCharts";
 import { createMockLsp } from "./mockLsp";
 import { captureOptionsFromLocation, createMockCapture, type MockCapture } from "./mockCapture";
+import { createMockSpeech, type MockSpeech } from "./mockSpeech";
 import { browserOptionsFromLocation, createMockBrowser, type MockBrowser } from "./mockBrowser";
 import { createMockTasks } from "./mockTasks";
 import { createMockBoard, type MockBoard } from "./mockBoard";
@@ -423,6 +424,7 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   & Pick<MockTargets, "__targetsUntrusted" | "__targetsTyped">
   & Pick<MockCapture, "__captureFail" | "__captureCancel" | "__captureSaved" | "__captureTrigger" | "__capturePrivacyOpens" | "__captureSeed">
   & Pick<MockBrowser, "__browserLive" | "__browserBounds" | "__browserPopup">
+  & Pick<MockSpeech, "__speechLevel">
   & {
     // What `clipboardImageSave` returns next: a saved path, or null for no image.
     __clipboardImage(path: string | null): void;
@@ -1046,6 +1048,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     },
     ...createMockLsp(),
     ...createMockCapture(captureOptionsFromLocation()),
+    ...createMockSpeech(),
     ...createMockBrowser(browserOptionsFromLocation()),
     ...accountRouting,
     // Last: an `ssh://` worktree's file calls go to the remote mock, every other one to the workspace's.
