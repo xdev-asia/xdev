@@ -1,5 +1,5 @@
 import { Badge, Button, EmptyState, IconButton, Segmented, Spinner, Switch, Tag } from "@xdev-asia/ui";
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
 import type { Api, ConversationEntry, ConversationSubagent } from "@/api";
 import { openFile } from "@/files/openFile";
@@ -10,6 +10,7 @@ import type { TabStatus } from "@/workspace/status";
 import { Markdown, MarkdownContext, pathCandidates, type MarkdownEnv } from "./Markdown";
 import { atBottom, failedSteps, firstIndex, foldRows, followUpText, hasOlder, lastAssistantText, mergePage, olderPage, readPrefs, runOf, stepSize, TEXT_SIZES, writePrefs, type ConversationPrefs, type Loaded, type Row } from "./model";
 import { sendFollowUp } from "./followUp";
+import { linkChips } from "./linkChips";
 import { QuestionCard } from "./QuestionCard";
 import { hookQuestion, parseQuestionText, transcriptQuestion, type QuestionCli } from "./questions";
 import { clearQuestion, feedQuestions, noteTranscriptQuestion, useQuestion } from "./questionStore";
@@ -34,13 +35,43 @@ export interface ConversationViewProps {
   tab: ConversationTab;
   /** The agent's name, as the tab shows it. */
   agentName: string;
-  /** `split` sits beside the terminal; `full` covers it and has a back button. */
-  mode: "split" | "full";
+  /** `split` sits beside the terminal; `full` covers it and has a back button; `tab` is the chat tab's own view. */
+  mode: "split" | "full" | "tab";
   onBack: () => void;
   /** A new value asks the view to take keyboard focus. */
   focusSeq?: number;
   /** Gives the keyboard to the tab's terminal, for a prompt answered there; `onBack` when absent. */
   onOpenTerminal?: () => void;
+  /** Re-read the transcript this often (ms) while the tab is working. */
+  pollMs?: number;
+  /** Called once per session when a read finds no transcript; the read is then tried once more. */
+  onMissing?: () => Promise<unknown> | void;
+  /** `tab` mode: starts a new conversation. */
+  onNewConversation?: () => void;
+}
+
+/**
+ * One transcript read. When it rejects with `not_found`, `onMissing` runs once per session (`tried` keeps
+ * the sessions it ran for) and the read is attempted once more.
+ */
+export async function readTranscript<P>(read: () => Promise<P>, session: string, tried: Set<string>, onMissing?: () => Promise<unknown> | void): Promise<P> {
+  try {
+    return await read();
+  } catch (e) {
+    if (!onMissing || tried.has(session) || (e as { code?: unknown } | null)?.code !== "not_found") throw e;
+    tried.add(session);
+    await Promise.resolve(onMissing()).catch(() => undefined);
+    return read();
+  }
+}
+
+/** Starts the working-tab poll; returns its stop. Nothing starts without `pollMs` or while the tab is not working. */
+export function startPoll(pollMs: number | undefined, working: boolean, tick: () => void, every: (fn: () => void, ms: number) => () => void = (fn, ms) => {
+  const h = setInterval(fn, ms);
+  return () => clearInterval(h);
+}): () => void {
+  if (!pollMs || !working) return () => {};
+  return every(tick, pollMs);
 }
 
 type Load = { state: "loading" } | { state: "error" } | { state: "ready"; data: Loaded };
@@ -62,6 +93,10 @@ export function ConversationView(props: ConversationViewProps): JSX.Element {
   const [menu, setMenu] = useState<{ at: { x: number; y: number }; url: string } | null>(null);
   const [resolved, setResolved] = useState<Map<string, string | null>>(() => new Map());
   const [older, setOlder] = useState(false);
+  // The sessions `onMissing` already ran for.
+  const missingTried = useRef(new Set<string>());
+  const onMissing = useRef(props.onMissing);
+  onMissing.current = props.onMissing;
   // A question card is up; set below, read by the refresh that follows a turn.
   const asking = useRef(false);
   const [showRuns, setShowRuns] = useState(false);
@@ -87,7 +122,7 @@ export function ConversationView(props: ConversationViewProps): JSX.Element {
     async (fresh: boolean) => {
       if (!session) return;
       try {
-        const page = await api.agentConversation(session);
+        const page = await readTranscript(() => api.agentConversation(session), session, missingTried.current, onMissing.current && (() => onMissing.current?.()));
         setLoad((prev) => ({ state: "ready", data: mergePage(fresh || prev.state !== "ready" ? null : prev.data, page) }));
         return true;
       } catch {
@@ -115,6 +150,10 @@ export function ConversationView(props: ConversationViewProps): JSX.Element {
     // A question on screen stays the news: its line is not replaced by the refresh.
     if (settled) void refresh(false).then((ok) => ok && !asking.current && setSaid(t("conversation.updated")));
   }, [settled, tab.status]);
+
+  // While the agent works its log grows with no event to say so: the chat tab re-reads on a timer.
+  const working = tab.status === "working";
+  useEffect(() => startPoll(props.pollMs, working, () => void refresh(false)), [props.pollMs, working, refresh]);
 
   const data = load.state === "ready" ? load.data : null;
 
@@ -295,9 +334,14 @@ export function ConversationView(props: ConversationViewProps): JSX.Element {
   return (
     <section ref={root} className="cv" tabIndex={-1} data-mode={mode} data-view={prefs.mode} data-size={prefs.size} aria-label={t("conversation.region", { name: props.agentName })} onKeyDown={onKeyDown}>
       <header className="cv-head">
-        <IconButton icon={mode === "full" ? "arrow-left" : "close"} label={t(mode === "full" ? "conversation.back" : "conversation.close")} onClick={onBack} data-testid="conversation-back" />
+        {mode === "tab" ? (
+          <IconButton icon="terminal" label={t("chat.showTerminal")} onClick={onBack} data-testid="conversation-back" />
+        ) : (
+          <IconButton icon={mode === "full" ? "arrow-left" : "close"} label={t(mode === "full" ? "conversation.back" : "conversation.close")} onClick={onBack} data-testid="conversation-back" />
+        )}
         <h2 className="cv-title">{t("conversation.title")}</h2>
         <div className="cv-tools-bar">
+          {mode === "tab" && props.onNewConversation && <IconButton icon="plus" label={t("chat.newConversation")} onClick={props.onNewConversation} />}
           <Segmented
             label={t("conversation.mode")}
             value={prefs.mode}
@@ -594,6 +638,37 @@ function ToolsLabel({ items }: { items: ConversationEntry[] }): JSX.Element {
   );
 }
 
+/** Up to three local chips for the links of a message; a click opens the link menu. Nothing is fetched. */
+function LinkChips({ text }: { text: string }): JSX.Element | null {
+  const { t } = useI18n();
+  const env = useContext(MarkdownContext);
+  const chips = useMemo(() => linkChips(text), [text]);
+  if (!env || chips.length === 0) return null;
+  return (
+    <div className="cv-linkchips" role="group" aria-label={t("chat.links")}>
+      {chips.map((c) => (
+        <button
+          key={c.url}
+          type="button"
+          className="cv-linkchip"
+          aria-haspopup="menu"
+          aria-label={t("chat.link", { host: c.host })}
+          title={c.url}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            env.onLink(c.url, { x: r.left, y: r.bottom }, e.currentTarget);
+          }}
+        >
+          <Tag>
+            {c.host}
+            {c.path && <small className="cv-linkchip-path">{c.path}</small>}
+          </Tag>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ChatRow({ row, agentName, open, onToggle }: { row: Row; agentName: string; open: boolean; onToggle: () => void }): JSX.Element {
   const { t } = useI18n();
   if (row.kind === "tools") {
@@ -622,6 +697,7 @@ function ChatRow({ row, agentName, open, onToggle }: { row: Row; agentName: stri
         <span className="x-sr-only">{who}: </span>
         <Markdown text={row.item.text} />
       </div>
+      <LinkChips text={row.item.text} />
       {row.item.at > 0 && (
         <time className="cv-time" dateTime={new Date(row.item.at).toISOString()}>
           {time(row.item.at)}
