@@ -36,6 +36,8 @@ export type MockRemoteSsh = RemoteApi &
     __remoteDrop(hostId: string): void;
     // The host goes offline until `remoteConnect`; file calls reject with `remote_offline`.
     __remoteOffline(hostId: string): void;
+    // Every later call that needs the host rejects with `code` (e.g. `remote_denied`) until set to null.
+    __remoteFail(hostId: string, code: ApiError["code"] | null): void;
   };
 
 /** How long a mock connect or reconnect takes, in ms. */
@@ -108,6 +110,7 @@ export function createMockRemoteSsh(local: RemoteRouted, hosts: () => Promise<Ss
   const stateFns = new Set<(v: RemoteHostView) => void>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   let next = 1;
+  const failing = new Map<string, ApiError["code"]>();
 
   const treeOf = (hostId: string) => {
     let f = files.get(hostId);
@@ -147,6 +150,8 @@ export function createMockRemoteSsh(local: RemoteRouted, hosts: () => Promise<Ss
   const live = async (hostId: string) => {
     const s = stateOf(hostId).state;
     if (s === "offline" || s === "reconnecting") fail("remote_offline", hostId);
+    const forced = failing.get(hostId);
+    if (forced) fail(forced, hostId);
     if (s !== "connected") await setState(hostId, connected);
   };
 
@@ -244,6 +249,10 @@ export function createMockRemoteSsh(local: RemoteRouted, hosts: () => Promise<Ss
       clearTimeout(timers.get(hostId));
       void setState(hostId, { state: "offline", reason: "unreachable" });
     },
+    __remoteFail(hostId, code) {
+      if (code === null) failing.delete(hostId);
+      else failing.set(hostId, code);
+    },
 
     async fileRead(worktree, rel) {
       if (!parseRemote(worktree)) return local.fileRead(worktree, rel);
@@ -322,6 +331,42 @@ export function createMockRemoteSsh(local: RemoteRouted, hosts: () => Promise<Ss
       await live(r.hostId);
       const changes: WorktreeChange[] = [{ path: "src/main.ts", kind: "modified" }];
       return changes;
+    },
+  };
+}
+
+/** The `worktree_*` calls the desktop refuses on an `ssh://` worktree with `remote_unsupported`, like `local_only`. */
+export const REMOTE_UNSUPPORTED = {
+  worktreeArchiveRun: "worktree_archive_run",
+  worktreeAdopt: "worktree_adopt",
+  worktreeRenameBranch: "worktree_rename_branch",
+  worktreePin: "worktree_pin",
+  worktreeRemove: "worktree_remove",
+  worktreeArchive: "worktree_archive",
+  worktreeDetails: "worktree_details",
+  worktreeFileDiff: "worktree_file_diff",
+  worktreeListDir: "worktree_list_dir",
+  worktreeCommit: "worktree_commit",
+  worktreeCreate: "worktree_create",
+  worktreeNamePreview: "worktree_name_preview",
+  worktreeRestore: "worktree_restore",
+} as const;
+
+export type RemoteGuarded = Pick<Api, keyof typeof REMOTE_UNSUPPORTED | "worktreeStat">;
+
+/** `local`'s calls with the desktop's guards: an `ssh://` path or repo id is refused, `worktreeStat` counts `git status`. */
+export function guardRemote(local: RemoteGuarded, remote: Pick<Api, "worktreeChanges">): RemoteGuarded {
+  const out: Record<string, (first: string, ...rest: unknown[]) => Promise<unknown>> = {};
+  for (const [name, command] of Object.entries(REMOTE_UNSUPPORTED)) {
+    const fn = local[name as keyof typeof REMOTE_UNSUPPORTED] as (first: string, ...rest: unknown[]) => Promise<unknown>;
+    out[name] = async (first, ...rest) => (first.startsWith("ssh://") ? fail("remote_unsupported", command) : fn(first, ...rest));
+  }
+  const guarded = out as unknown as RemoteGuarded;
+  return {
+    ...guarded,
+    async worktreeStat(path) {
+      if (!parseRemote(path)) return local.worktreeStat(path);
+      return { files: (await remote.worktreeChanges(path)).length, added: 0, removed: 0 };
     },
   };
 }

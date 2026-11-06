@@ -2,6 +2,7 @@ import { expect, test, vi } from "vitest";
 import type { RemoteHostView } from "./api";
 import { createMockApi, DEMO_SEED } from "./mockApi";
 import { joinRel, parseRemote } from "./mockRemoteSsh";
+import { REMOTE_UNSUPPORTED } from "./mockRemoteSsh";
 
 const WT = "ssh://devbox/home/dev/app";
 
@@ -89,4 +90,28 @@ test("paths follow the Rust rules", () => {
   expect(parseRemote("ssh://dev.box/x")).toBeNull();
   expect(joinRel("/r", "./a//b")).toBe("/r/a/b");
   for (const bad of ["..", "a/../b", "/x", "a\0b", "a\\b", ""]) expect(joinRel("/r", bad)).toBeNull();
+});
+
+test("every remote error code is reachable", async () => {
+  const api = createMockApi(DEMO_SEED);
+  await api.remoteProjectAdd("devbox", "/home/dev/app");
+  await expect(api.fileRead(WT, "nope.md")).rejects.toMatchObject({ code: "remote_path" });
+  for (const code of ["remote_denied", "remote_too_large", "remote_auth", "remote_no_sftp", "remote_no_git", "remote_offline"] as const) {
+    api.__remoteFail("devbox", code);
+    await expect(api.fileRead(WT, "README.md")).rejects.toMatchObject({ code });
+  }
+  api.__remoteFail("devbox", null);
+  expect((await api.fileRead(WT, "README.md")).kind).toBe("text");
+  await expect(api.worktreeCommit(WT, ["README.md"], "x")).rejects.toMatchObject({ code: "remote_unsupported", detail: "worktree_commit" });
+});
+
+test("worktree calls the desktop guards refuse an ssh worktree and keep local ones", async () => {
+  const api = createMockApi(DEMO_SEED);
+  for (const [name, command] of Object.entries(REMOTE_UNSUPPORTED)) {
+    const fn = api[name as keyof typeof REMOTE_UNSUPPORTED] as (first: string, ...rest: unknown[]) => Promise<unknown>;
+    await expect(fn(WT)).rejects.toEqual({ code: "remote_unsupported", detail: command });
+  }
+  expect(await api.worktreeStat(WT)).toEqual({ files: 1, added: 0, removed: 0 });
+  const local = (await api.workspaceList())[0].worktrees[0].path;
+  expect((await api.worktreeStat(local)).files).toBeGreaterThanOrEqual(0);
 });
