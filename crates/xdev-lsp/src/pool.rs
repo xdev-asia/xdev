@@ -430,6 +430,11 @@ impl Pool {
         entry.open.get(rel).map(|d| d.text.clone())
     }
 
+    /// The capabilities of an open document's ready server.
+    pub fn caps_of(&self, worktree: &Path, rel: &str) -> Result<ServerCaps, LspError> {
+        self.server_for(worktree, rel).map(|s| s.caps().clone())
+    }
+
     /// The ready server of an open document. A stopped one is started, and
     /// the call says it is starting.
     fn server_for(&self, worktree: &Path, rel: &str) -> Result<Arc<Server>, LspError> {
@@ -536,15 +541,30 @@ impl Pool {
             .spawn(move || stop_servers(stopping));
     }
 
+    /// Stops the servers of `language` (all when None) and forgets their
+    /// documents; waits for them to exit.
+    pub fn stop_language(&self, language: Option<LspLanguage>) {
+        let mut stopping = Vec::new();
+        let mut out = Vec::new();
+        {
+            let mut entries = self.inner.lock();
+            entries.retain(|key, entry| {
+                if language.is_some_and(|l| l != key.1) {
+                    return true;
+                }
+                stopping.extend(take_for_stop(entry));
+                entry.open.clear();
+                out.push(status_of(key, entry));
+                false
+            });
+        }
+        self.inner.emit(out);
+        stop_servers(stopping);
+    }
+
     /// Stops every server and forgets every document; for app exit.
     pub fn stop_all(&self) {
-        let stopping: Vec<_> = {
-            let mut entries = self.inner.lock();
-            let all = entries.values_mut().filter_map(take_for_stop).collect();
-            entries.clear();
-            all
-        };
-        stop_servers(stopping);
+        self.stop_language(None);
     }
 
     pub fn status(&self) -> Vec<Status> {
@@ -891,6 +911,11 @@ mod tests {
             .unwrap();
         h.wait_for(State::Ready);
         h.wait_for(State::Ready);
+        h.pool.stop_language(Some(LspLanguage::Go));
+        eventually("exit", || h.fakes.count("exit") == 1);
+        let left = h.pool.status();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].language, LspLanguage::Rust);
         h.pool.stop_all();
         eventually("exit", || h.fakes.count("exit") == 2);
         assert!(h.pool.status().is_empty());
