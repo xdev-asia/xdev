@@ -13,4 +13,9 @@ setup: string, readyTimeoutMs: number,
 /**
  * The account the worker starts on; none lets its provider's routing pick.
  */
-account?: string, };
+account?: string, 
+/**
+ * A swarm worker: its terminal is not shown as a tab until the person
+ * opens it.
+ */
+hidden?: boolean, };

@@ -109,6 +109,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     SquadView::export_all(cfg)?;
     xdev_agent::Seat::export_all(cfg)?;
     xdev_agent::Routing::export_all(cfg)?;
+    xdev_agent::Matched::export_all(cfg)?;
     Models::export_all(cfg)?;
     AiKeyStatus::export_all(cfg)?;
     UpdateInfo::export_all(cfg)?;
@@ -340,6 +341,12 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::orchestration::MissionView::export_all(cfg)?;
     xdev_orch::Grant::export_all(cfg)?;
     xdev_orch::Worker::export_all(cfg)?;
+    xdev_orch::Pipeline::export_all(cfg)?;
+    xdev_orch::StageSpec::export_all(cfg)?;
+    xdev_orch::SwarmStopped::export_all(cfg)?;
+    crate::swarm::SwarmStart::export_all(cfg)?;
+    crate::swarm::SwarmRow::export_all(cfg)?;
+    crate::swarm::RevealTab::export_all(cfg)?;
     crate::orch_sweep::WorkerFailover::export_all(cfg)?;
     crate::orch_sweep::FailedOver::export_all(cfg)?;
     xdev_orch::FailReason::export_all(cfg)?;

@@ -328,6 +328,7 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 import type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView } from "@xdev/bindings";
+import type { GateKind, Matched, MatchRow, Pipeline, RevealTab, RouteTarget, StageRun, StageSpec, StageStatus, SwarmRow, SwarmStart, SwarmStopped } from "@xdev/bindings";
 
 export { createMockApi };
 /** The kinds of `HookKind` that are scripts; the others are lists. */
@@ -397,6 +398,7 @@ export type {
 } from "@xdev/bindings";
 export type { AccountRouting, QuotaAlert, RoutePolicy } from "@xdev/bindings";
 export type { FailedOver, FailReason, FailoverKind, WorkerFailover } from "@xdev/bindings";
+export type { GateKind, Matched, MatchRow, Pipeline, RevealTab, RouteTarget, StageRun, StageSpec, StageStatus, SwarmRow, SwarmStart, SwarmStopped, SwarmWorker } from "@xdev/bindings";
 
 // The IPC types come from Rust; see packages/bindings/README.md.
 export type {
@@ -911,6 +913,23 @@ export interface Api {
   setRouting(routing: Routing): Promise<void>;
   /** What each CLI offers; a missing CLI gives an empty list. */
   models(): Promise<Models>;
+  // The first row of the routing's match table that takes the work (the rows may be unsaved); the default row when none does.
+  routingMatch(routing: Routing, sentence: string, label: string | null): Promise<Matched>;
+  // Pipeline stages of a squad or task (`subject` such as `squad:<id>`, null for all). A hand-off passes the current stage's gate:
+  // a check that exits 0, a person's approval, or none. A stage that fails its gate stays put with its reason; retry runs it again.
+  pipelines(subject: string | null): Promise<Pipeline[]>;
+  newPipeline(name: string, subject: string, worktree: string, stages: StageSpec[]): Promise<Pipeline>;
+  pipelineHandOff(id: string): Promise<Pipeline>;
+  pipelineRetry(id: string): Promise<Pipeline>;
+  pipelineDecide(id: string, approved: boolean, note: string | null): Promise<Pipeline>;
+  removePipeline(id: string): Promise<void>;
+  // Headless swarm: `count` (default 4, at most 12) hidden workers on one goal. `tab` is the tab the swarm starts from; without it `worktree` is shared.
+  swarmStart(goal: string, count: number | null, agent: string, tab: string | null, worktree: string | null): Promise<SwarmStart>;
+  swarmWorkers(run: string): Promise<SwarmRow[]>;
+  swarmStopAll(run: string): Promise<SwarmStopped>;
+  // Asks the window to show a hidden worker as a tab.
+  swarmOpenTab(tab: string): Promise<void>;
+  onOrchestrationRevealTab(cb: (e: RevealTab) => void): Promise<() => void>;
   /** Which providers have an API key in the system keychain. A key is never returned. */
   aiKeys(): Promise<AiKeyStatus[]>;
   /** Trims and stores the key; `empty_key`, `too_large` or `secret_store` when it cannot. */
@@ -2060,6 +2079,18 @@ const tauriApi: Api = {
   routing: () => call("routing_get"),
   setRouting: (routing) => call("routing_set", { routing }),
   models: () => call("routing_models"),
+  routingMatch: (routing, sentence, label) => call("routing_match", { routing, sentence, label }),
+  pipelines: (subject) => call("pipelines_list", { subject }),
+  newPipeline: (name, subject, worktree, stages) => call("pipeline_new", { name, subject, worktree, stages }),
+  pipelineHandOff: (id) => call("pipeline_hand_off", { id }),
+  pipelineRetry: (id) => call("pipeline_retry", { id }),
+  pipelineDecide: (id, approved, note) => call("pipeline_decide", { id, approved, note }),
+  removePipeline: (id) => call("pipeline_remove", { id }),
+  swarmStart: (goal, count, agent, tab, worktree) => call("swarm_start_workers", { goal, count, agent, tab, worktree }),
+  swarmWorkers: (run) => call("swarm_workers", { run }),
+  swarmStopAll: (run) => call("swarm_stop_all", { run }),
+  swarmOpenTab: (tab) => call("swarm_open_tab", { tab }),
+  onOrchestrationRevealTab: (cb) => listen<RevealTab>("orchestration://reveal-tab", (e) => cb(e.payload)),
   aiKeys: () => call("ai_keys_list"),
   aiKeySet: (provider, key) => call("ai_key_set", { provider, key }),
   aiKeyRemove: (provider) => call("ai_key_remove", { provider }),

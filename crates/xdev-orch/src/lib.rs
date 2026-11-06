@@ -25,7 +25,10 @@ pub use charts::{
     SeatTab, may_hand_off, may_mail,
 };
 pub use error::OrchError;
-pub use gates::AskAnswer;
+pub use gates::{
+    AskAnswer, Evidence, GateKind, Need, Pipeline, PipelineStore, STAGES_MAX, StageRun, StageSpec,
+    StageStatus, Verdict, judge,
+};
 pub use links::{
     Grant, MissionSettings, NUDGE_DEFAULT, STUCK_MINUTES_DEFAULT, TabLink, TabWorker, handoff_text,
     tab_address,
@@ -45,3 +48,7 @@ pub use workers::{
     BREAKER_LIMIT, CLOSE_AFTER_MS, CLOSE_RETRY_MS, StartPlan, StartResult, Swept, WorkerView,
 };
 pub use workers::{Chain, Takeover};
+pub use workers::{
+    SWARM_DEFAULT, SWARM_MAX, Spawner, SwarmFailure, SwarmSpawn, SwarmStarted, SwarmStopped,
+    SwarmWorker, swarm_size, swarm_start, swarm_stop,
+};

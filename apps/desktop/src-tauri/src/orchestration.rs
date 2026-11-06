@@ -40,6 +40,11 @@ pub struct WorkerOpen {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub account: Option<String>,
+    /// A swarm worker: its terminal is not shown as a tab until the person
+    /// opens it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub hidden: Option<bool>,
 }
 
 /// The UI's answer to `open-worker`.
@@ -1408,6 +1413,7 @@ fn worker_start(
                 setup,
                 ready_timeout_ms: ready_ms,
                 account: None,
+                hidden: flag(req, "hidden").then_some(true),
             };
             let payload = to_value(&open)?;
             let wait = Duration::from_millis(ready_ms) + ctx.orch.waits.open_slack;
@@ -2309,6 +2315,18 @@ line", "title": "A"}),
         );
         let model = call("worker-start", json!({"spec": "y", "model": "m"}));
         assert_eq!(model.unwrap_err().code, "unsupported");
+    }
+
+    #[test]
+    fn a_hidden_start_says_so_in_the_open_event_and_an_ordinary_one_does_not() {
+        let mut f = crate::cli_verbs::tests::fixture();
+        f.open_answer = Some(WorkerOpenOutcome::Ok);
+        let call = |p: Value| f.call(Some("p-lead"), "orchestration.worker-start", p);
+        call(json!({"spec": "shared goal", "hidden": true})).unwrap();
+        call(json!({"spec": "my own"})).unwrap();
+        let events = opened(&f);
+        assert_eq!(events[0]["hidden"], true);
+        assert!(events[1].get("hidden").is_none());
     }
 
     #[test]

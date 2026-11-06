@@ -80,3 +80,29 @@ test("workspace parts and the PATH editor fit at 360px", async ({ page, openApp 
   await expect(path.getByText("/opt/missing/bin")).toBeVisible();
   expect(await fitsWidth(page)).toBe(true);
 });
+
+test("the stage strip, the swarm and the router table fit at 360px", async ({ page, openApp }) => {
+  await openApp();
+  const later = page.getByRole("complementary", { name: "Tip: xDev skill" }).getByRole("button", { name: "Maybe later" });
+  if (await later.isVisible()) await later.click();
+  await page.getByRole("button", { name: "Docs & SDLC" }).click();
+  // At 360px the workspace sidebar covers the docs apps until it is hidden.
+  const sidebar = page.getByRole("button", { name: "Show or hide the sidebar" });
+  if ((await sidebar.getAttribute("aria-expanded")) === "true") await sidebar.click();
+  await page.getByRole("button", { name: /^Squads/ }).first().click();
+  await expect(page.getByRole("heading", { name: "Bug squad" })).toBeVisible();
+  const pipeline = page.getByRole("region", { name: "Pipeline", exact: true });
+  await pipeline.getByRole("button", { name: "Start pipeline" }).click();
+  await expect(page.getByRole("list", { name: "Stages of Ship the goal" })).toBeVisible();
+  const swarm = page.getByRole("region", { name: "Swarm", exact: true });
+  await swarm.getByLabel("Goal").fill("Port the parser");
+  await swarm.getByRole("button", { name: "Start swarm" }).click();
+  await expect(swarm.getByRole("listitem")).toHaveCount(4);
+  expect(await fitsWidth(page)).toBe(true);
+  await page.getByRole("button", { name: /^Accounts/ }).first().click();
+  const routing = page.getByRole("region", { name: "Model routing" });
+  await routing.getByRole("button", { name: "Add row" }).click();
+  await routing.scrollIntoViewIfNeeded();
+  await expect(routing.getByRole("group", { name: "Row 1" })).toBeVisible();
+  expect(await fitsWidth(page)).toBe(true);
+});

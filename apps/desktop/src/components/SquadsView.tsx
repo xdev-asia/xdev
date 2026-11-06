@@ -20,6 +20,9 @@ import { relativeTime } from "@/changes/changes";
 import { useI18n } from "@/i18n";
 import { openTeamCharts } from "@/orchestration/charts/chartEvents";
 import { pushToast } from "@/workspace/toastStore";
+import { StageStrip } from "@/orchestration/pipeline/StageStrip";
+import { joinCommand } from "@/orchestration/pipeline/stages";
+import { SwarmPanel } from "@/orchestration/swarm/SwarmPanel";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -592,6 +595,9 @@ export function SquadsView({
             </div>
             <p className="doc-subtitle">{t("squads.ringHint")}</p>
           </div>
+
+          <StageStrip key={v.squad.id} api={api} subject={`squad:${v.squad.id}`} worktree={v.squad.repo} defaultCheck={v.squad.test ? joinCommand(v.squad.test) : ""} />
+          <SwarmPanel key={`swarm-${v.squad.id}`} api={api} worktree={v.squad.repo} />
 
           <div className="squad-pair">
           <section className="squad-card" aria-label={t("squads.escalations")}>

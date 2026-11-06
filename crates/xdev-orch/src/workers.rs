@@ -1610,3 +1610,250 @@ mod tests {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Headless swarm: N workers on one goal, each started through the ordinary
+// worker path with its terminal hidden (no tab of its own). The starting
+// and stopping go through a `Spawner`, so the rules here run without a real
+// process.
+// ---------------------------------------------------------------------------
+
+/// Workers a swarm starts when the person gives no count.
+pub const SWARM_DEFAULT: u32 = 4;
+/// The most workers one swarm starts.
+pub const SWARM_MAX: u32 = 12;
+
+/// The swarm size for a requested count: the default when none is given,
+/// else the count held to `1..=`[`SWARM_MAX`].
+pub fn swarm_size(count: Option<u32>) -> u32 {
+    count.unwrap_or(SWARM_DEFAULT).clamp(1, SWARM_MAX)
+}
+
+/// One worker the swarm asks for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwarmSpawn {
+    /// 1-based position in the swarm.
+    pub index: u32,
+    pub size: u32,
+    pub goal: String,
+    pub agent: String,
+    /// The worker's terminal stays out of the tab strip until opened.
+    pub hidden: bool,
+}
+
+/// A worker the spawner started.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SwarmWorker {
+    pub dispatch: String,
+    pub tab: String,
+}
+
+/// A worker that did not start.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SwarmFailure {
+    pub index: u32,
+    pub error: String,
+}
+
+/// How a swarm start went; one worker failing does not stop the others.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SwarmStarted {
+    pub size: u32,
+    pub workers: Vec<SwarmWorker>,
+    pub failed: Vec<SwarmFailure>,
+}
+
+/// How a stop-all went.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SwarmStopped {
+    pub stopped: Vec<String>,
+    pub failed: Vec<SwarmFailure>,
+}
+
+/// What starts and stops a swarm's workers: the app's real worker path, or
+/// a fake in tests.
+pub trait Spawner {
+    fn spawn(&mut self, req: &SwarmSpawn) -> Result<SwarmWorker, String>;
+    fn stop(&mut self, dispatch: &str) -> Result<(), String>;
+}
+
+/// Starts `count` workers (see [`swarm_size`]) on `goal`, one after another.
+pub fn swarm_start(
+    spawner: &mut dyn Spawner,
+    goal: &str,
+    count: Option<u32>,
+    agent: &str,
+) -> Result<SwarmStarted, OrchError> {
+    if goal.trim().is_empty() {
+        return Err(OrchError::bad_request("a swarm needs a goal"));
+    }
+    if agent.trim().is_empty() {
+        return Err(OrchError::bad_request("a swarm needs an agent"));
+    }
+    let size = swarm_size(count);
+    let mut out = SwarmStarted {
+        size,
+        workers: Vec::new(),
+        failed: Vec::new(),
+    };
+    for index in 1..=size {
+        let req = SwarmSpawn {
+            index,
+            size,
+            goal: goal.trim().to_owned(),
+            agent: agent.trim().to_owned(),
+            hidden: true,
+        };
+        match spawner.spawn(&req) {
+            Ok(w) => out.workers.push(w),
+            Err(error) => out.failed.push(SwarmFailure { index, error }),
+        }
+    }
+    Ok(out)
+}
+
+/// Stops every worker; one that will not stop is reported and the rest are
+/// still stopped.
+pub fn swarm_stop(spawner: &mut dyn Spawner, dispatches: &[String]) -> SwarmStopped {
+    let mut out = SwarmStopped {
+        stopped: Vec::new(),
+        failed: Vec::new(),
+    };
+    for (i, d) in dispatches.iter().enumerate() {
+        match spawner.stop(d) {
+            Ok(()) => out.stopped.push(d.clone()),
+            Err(error) => out.failed.push(SwarmFailure {
+                index: i as u32 + 1,
+                error,
+            }),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod swarm_tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct Fake {
+        spawned: Vec<SwarmSpawn>,
+        stopped: Vec<String>,
+        fail_spawn: Vec<u32>,
+        fail_stop: Vec<String>,
+    }
+
+    impl Spawner for Fake {
+        fn spawn(&mut self, req: &SwarmSpawn) -> Result<SwarmWorker, String> {
+            self.spawned.push(req.clone());
+            if self.fail_spawn.contains(&req.index) {
+                return Err(format!("no tab for {}", req.index));
+            }
+            Ok(SwarmWorker {
+                dispatch: format!("disp_{}", req.index),
+                tab: format!("tab_{}", req.index),
+            })
+        }
+        fn stop(&mut self, dispatch: &str) -> Result<(), String> {
+            if self.fail_stop.iter().any(|d| d == dispatch) {
+                return Err("stuck".to_owned());
+            }
+            self.stopped.push(dispatch.to_owned());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn the_size_defaults_to_four_and_is_held_between_one_and_twelve() {
+        assert_eq!(swarm_size(None), 4);
+        assert_eq!(swarm_size(Some(0)), 1);
+        assert_eq!(swarm_size(Some(7)), 7);
+        assert_eq!(swarm_size(Some(12)), 12);
+        assert_eq!(swarm_size(Some(13)), 12);
+        assert_eq!(swarm_size(Some(u32::MAX)), 12);
+    }
+
+    #[test]
+    fn a_swarm_starts_the_default_four_hidden_workers_on_one_goal() {
+        let mut f = Fake::default();
+        let got = swarm_start(&mut f, "  port the parser ", None, "claude").unwrap();
+        assert_eq!(got.size, 4);
+        assert_eq!(got.workers.len(), 4);
+        assert!(got.failed.is_empty());
+        assert!(
+            f.spawned
+                .iter()
+                .all(|s| s.hidden && s.goal == "port the parser" && s.size == 4)
+        );
+        let order: Vec<u32> = f.spawned.iter().map(|s| s.index).collect();
+        assert_eq!(order, [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn the_cap_is_twelve_however_many_are_asked_for() {
+        let mut f = Fake::default();
+        let got = swarm_start(&mut f, "g", Some(50), "codex").unwrap();
+        assert_eq!(got.size, 12);
+        assert_eq!(f.spawned.len(), 12);
+        assert_eq!(f.spawned[0].agent, "codex");
+    }
+
+    #[test]
+    fn a_failed_spawn_is_reported_and_the_others_still_start() {
+        let mut f = Fake {
+            fail_spawn: vec![2],
+            ..Fake::default()
+        };
+        let got = swarm_start(&mut f, "g", Some(3), "claude").unwrap();
+        assert_eq!(got.workers.len(), 2);
+        assert_eq!(
+            got.failed,
+            vec![SwarmFailure {
+                index: 2,
+                error: "no tab for 2".to_owned()
+            }]
+        );
+        assert_eq!(f.spawned.len(), 3);
+    }
+
+    #[test]
+    fn no_goal_or_no_agent_starts_nothing() {
+        let mut f = Fake::default();
+        assert_eq!(
+            swarm_start(&mut f, "  ", None, "claude").unwrap_err().code,
+            "bad_request"
+        );
+        assert_eq!(
+            swarm_start(&mut f, "g", None, " ").unwrap_err().code,
+            "bad_request"
+        );
+        assert!(f.spawned.is_empty());
+    }
+
+    #[test]
+    fn stop_all_stops_every_worker_even_past_one_that_will_not() {
+        let mut f = Fake {
+            fail_stop: vec!["disp_2".to_owned()],
+            ..Fake::default()
+        };
+        let ids: Vec<String> = (1..=3).map(|i| format!("disp_{i}")).collect();
+        let got = swarm_stop(&mut f, &ids);
+        assert_eq!(got.stopped, ["disp_1", "disp_3"]);
+        assert_eq!(
+            got.failed,
+            vec![SwarmFailure {
+                index: 2,
+                error: "stuck".to_owned()
+            }]
+        );
+        assert_eq!(swarm_stop(&mut f, &[]).stopped.len(), 0);
+    }
+}

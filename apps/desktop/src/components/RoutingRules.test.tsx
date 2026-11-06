@@ -103,3 +103,102 @@ it("reorders and removes rules", async () => {
   view.button("Remove rule 1").props.onClick();
   expect(view.html()).toContain("No rules yet");
 });
+
+const row = (view: Awaited<ReturnType<typeof harness>>, n: number) => nodes(view.draw()).find(x => x.props["aria-label"] === `Row ${n}`)!;
+const rowField = (view: Awaited<ReturnType<typeof harness>>, n: number, type: string, at = 0) => nodes(row(view, n)).filter(x => x.type === type)[at];
+const status = (view: Awaited<ReturnType<typeof harness>>) => nodes(view.draw()).filter(x => x.props.role === "status" && x.props.className === "routing-match")[0];
+const text = (node: Node) => nodes(node.props.children).map(n => typeof n.props.children === "string" ? n.props.children : "").join("") + (typeof node.props.children === "string" ? node.props.children : "");
+const testBox = (view: Awaited<ReturnType<typeof harness>>) => nodes(view.draw()).find(x => x.type === "form" && x.props["aria-label"] === "Test a sentence")!;
+
+async function withRows(view: Awaited<ReturnType<typeof harness>>) {
+  view.button("Add row").props.onClick();
+  rowField(view, 1, "input").props.onChange({ target: { value: "fix typo, rename" } });
+  rowField(view, 1, "select").props.onChange({ target: { value: "codex" } });
+  rowField(view, 1, "input", 2).props.onChange({ target: { value: "gpt-mini" } });
+  view.button("Add row").props.onClick();
+  rowField(view, 2, "input").props.onChange({ target: { value: "refactor" } });
+  rowField(view, 2, "input", 2).props.onChange({ target: { value: "opus" } });
+}
+
+it("adds rows to the match table and saves them with the default row, leaving the rules alone", async () => {
+  const view = await harness(); const save = vi.spyOn(view.api, "setRouting");
+  await withRows(view);
+  expect(row(view, 2)).toBeDefined();
+  await view.button("Save rules").props.onClick(); await tick();
+  expect(save).toHaveBeenCalledWith({
+    rules: [{ role: "review", provider: "claude", maxPrompt: null, model: "haiku" }],
+    table: [
+      { keywords: ["fix typo", "rename"], target: { agent: "codex", model: "gpt-mini" } },
+      { keywords: ["refactor"], target: { agent: "claude", model: "opus" } },
+    ],
+    fallback: { agent: "claude" },
+  });
+  expect(view.html()).toContain("Saved. New turns use these rules.");
+});
+
+it("does not save a row that has no keyword and no label", async () => {
+  const view = await harness(); const save = vi.spyOn(view.api, "setRouting");
+  view.button("Add row").props.onClick();
+  await view.button("Save rules").props.onClick();
+  expect(save).not.toHaveBeenCalled();
+  expect(view.html()).toContain("Every row needs a keyword or a task label.");
+});
+
+it("tests a sentence and says which row takes it, or that the default row does", async () => {
+  const view = await harness();
+  await withRows(view);
+  const sentence = () => nodes(testBox(view)).filter(x => x.type === "input")[0];
+  sentence().props.onChange({ target: { value: "Please refactor the parser" } });
+  await testBox(view).props.onSubmit({ preventDefault() {} }); await tick();
+  expect(text(status(view))).toBe("Row 2 takes it: claude · opus.");
+  expect(row(view, 2).props["data-hit"]).toBe("true");
+  expect(row(view, 1).props["data-hit"]).toBeUndefined();
+
+  sentence().props.onChange({ target: { value: "Rename the file" } });
+  expect(text(status(view))).toBe("");
+  await testBox(view).props.onSubmit({ preventDefault() {} }); await tick();
+  expect(text(status(view))).toBe("Row 1 takes it: codex · gpt-mini.");
+
+  sentence().props.onChange({ target: { value: "write a poem" } });
+  await testBox(view).props.onSubmit({ preventDefault() {} }); await tick();
+  expect(text(status(view))).toBe("No row matches. The default row takes it: claude.");
+  expect(nodes(view.draw()).find(x => x.props["aria-label"] === "Default row")!.props["data-hit"]).toBe("true");
+});
+
+it("the order of the rows decides which one wins, and a row moves by button or Alt+Arrow", async () => {
+  const view = await harness();
+  await withRows(view);
+  // Both rows now match "refactor rename"; the first wins.
+  rowField(view, 2, "input").props.onChange({ target: { value: "refactor, rename" } });
+  const sentence = () => nodes(testBox(view)).filter(x => x.type === "input")[0];
+  sentence().props.onChange({ target: { value: "refactor rename" } });
+  await testBox(view).props.onSubmit({ preventDefault() {} }); await tick();
+  expect(text(status(view))).toBe("Row 1 takes it: codex · gpt-mini.");
+
+  expect(view.button("Move row 1 up").props.disabled).toBe(true);
+  expect(view.button("Move row 2 down").props.disabled).toBe(true);
+  // Alt+ArrowUp inside row 2 moves it above row 1; a plain arrow does nothing.
+  const prevent = vi.fn();
+  row(view, 2).props.onKeyDown({ key: "ArrowUp", altKey: false, preventDefault: prevent, target: { id: "x" } });
+  expect(prevent).not.toHaveBeenCalled();
+  row(view, 2).props.onKeyDown({ key: "ArrowUp", altKey: true, preventDefault: prevent, target: { id: "x" } });
+  expect(prevent).toHaveBeenCalledTimes(1);
+  expect(rowField(view, 1, "input").props.value).toBe("refactor, rename");
+  expect(status(view) && text(status(view))).toBe("");
+  await testBox(view).props.onSubmit({ preventDefault() {} }); await tick();
+  expect(text(status(view))).toBe("Row 1 takes it: claude · opus.");
+  // The same move by button.
+  view.button("Move row 2 up").props.onClick();
+  expect(rowField(view, 1, "input").props.value).toBe("fix typo, rename");
+  view.button("Remove row 1").props.onClick();
+  expect(rowField(view, 1, "input").props.value).toBe("refactor, rename");
+});
+
+it("an old routing without a table loads and tests against the default row", async () => {
+  const view = await harness();
+  expect(view.html()).toContain("No rows yet: all work goes to the default row.");
+  const sentence = nodes(testBox(view)).filter(x => x.type === "input")[0];
+  sentence.props.onChange({ target: { value: "anything" } });
+  await testBox(view).props.onSubmit({ preventDefault() {} }); await tick();
+  expect(text(status(view))).toBe("No row matches. The default row takes it: claude.");
+});

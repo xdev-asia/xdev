@@ -25,6 +25,8 @@ export interface OrchestrationHost {
   failed?(open: WorkerOpen, stage: OpenStage, error: string): void;
   /** The clock for the shared readiness budget. */
   now?(): number;
+  /** Shows a hidden (swarm) worker's tab: selects its worktree and the tab. */
+  reveal?(tab: string): void;
 }
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : typeof e === "string" ? e : "failed");
@@ -129,6 +131,7 @@ export function startOrchestrationEvents(api: Api, host: OrchestrationHost): () 
       if (host.sessions.tab(e.tab)) void host.sessions.close(e.tab).catch(() => {});
     }),
     api.onOrchestrationReadTab((e) => void api.orchestrationReadAnswer(e.request, readTab(host, e)).catch(() => {})),
+    api.onOrchestrationRevealTab((e) => host.reveal?.(e.tab)),
   ];
   return () => {
     for (const off of offs) void off.then((stop) => stop()).catch(() => {});
