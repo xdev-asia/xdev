@@ -1,7 +1,7 @@
 import { api } from "./api";
 import { OnboardingGate } from "./onboarding/OnboardingGate";
 import { useOnboarding } from "./onboarding/onboardingStore";
-import { CliSkillTip } from "./shell/CliSkillTip";
+import { TipsHost } from "./tips/TipsModal";
 import { LspHost } from "./files/lsp/LspHost";
 import { WorkspaceShell } from "./workspace/WorkspaceShell";
 
@@ -13,7 +13,7 @@ export function App() {
       <OnboardingGate api={api}>
         <WorkspaceShell api={api} />
       </OnboardingGate>
-      <CliSkillTip api={api} suppressed={wizardOpen} />
+      <TipsHost api={api} suppressed={wizardOpen} />
       <LspHost api={api} />
     </>
   );
