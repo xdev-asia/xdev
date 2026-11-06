@@ -22,6 +22,8 @@ const LOCAL = new Set([
   "--ws-pane-line", // PaneView sets it on the root: pane divider thickness
   "--ws-pane-inset", // PaneView sets it on the root: divider thickness above 1px
   "--ws-tab-color", // workspace/TabStrip.tsx sets it inline to a `--x-tab-color-*` token
+  // preview-files.css `.pdf-text-layer`: pdf.js sets these on each text span (and the page box sets the scale), as in its own text layer CSS.
+  ...["total-scale-factor", "min-font-size", "font-height", "rotate", "scale-x"].map((n) => `--${n}`),
   // workspace.css `.ws-shell`: project colours (RepoBadge), each an alias over palette tokens, so both themes follow.
   ...["slate", "red", "orange", "yellow", "green", "teal", "violet", "pink"].map((c) => `--x-color-tag-${c}`),
 ]);

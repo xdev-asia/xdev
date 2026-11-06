@@ -51,6 +51,12 @@ it("the file viewers wrap their toolbars and fix no width past 360px", () => {
   expect(fixed.filter((px) => px > 360)).toEqual([]);
 });
 
+it("the PDF viewer toolbar and find bar take a full row at 360px", () => {
+  const narrow = media(read("preview-files.css"), "max-width: 600px");
+  expect(narrow).toMatch(/\.pdf-view \.media-name[^{]*\{[^}]*flex-basis:\s*100%/);
+  expect(narrow).toMatch(/\.pdf-view \.md-find\s*\{[^}]*flex-basis:\s*100%/);
+});
+
 it("the automations list fits 360px: Project and Last run go, and the list scrolls rather than spills", () => {
   const automations = read("automations.css");
   expect(automations).toMatch(/\.au-main\s*\{[^}]*overflow-x:\s*auto/);

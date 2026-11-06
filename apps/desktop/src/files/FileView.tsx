@@ -13,6 +13,7 @@ import { ImageView } from "./ImageView";
 import { MarkdownPane } from "./MarkdownPane";
 import { MediaView } from "./MediaView";
 import { NotebookView } from "./NotebookView";
+import { PdfView } from "./PdfView";
 import { LoadError } from "./LoadError";
 import { CodeEditor, type EditorControls } from "./CodeEditor";
 import { clampEditorSettings } from "./editorDefaults";
@@ -75,6 +76,8 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
     );
   } else if (viewer === "image") {
     body = <ImageView key={entry?.version ?? 0} api={api} worktree={worktree} rel={rel} />;
+  } else if (viewer === "pdf") {
+    body = <PdfView key={entry?.version ?? 0} api={api} worktree={worktree} rel={rel} />;
   } else if (viewer === "media") {
     body = <MediaView key={entry?.version ?? 0} api={api} worktree={worktree} rel={rel} />;
   } else if (!entry || entry.status === "loading") {

@@ -12,6 +12,7 @@ import { ContextMenu } from "@/ui/ContextMenu";
 import { FileView } from "./FileView";
 import { ImageView } from "./ImageView";
 import { MediaView } from "./MediaView";
+import { PdfView } from "./PdfView";
 import { LoadError } from "./LoadError";
 import { fileTabs, isDirty } from "./fileTabs";
 
@@ -169,7 +170,7 @@ it("a right click on the gutter opens a menu with the three copy rows, and closi
 });
 
 it("does not read an image or media file as text", () => {
-  for (const rel of ["pic.png", "clip.mp4", "song.mp3"]) {
+  for (const rel of ["pic.png", "clip.mp4", "song.mp3", "doc.pdf"]) {
     const api = createMockApi({});
     const read = vi.spyOn(api, "fileRead");
     fileTabs.open(W, rel);
@@ -178,6 +179,14 @@ it("does not read an image or media file as text", () => {
     hooks.effects.forEach((e) => e());
     expect(read).not.toHaveBeenCalled();
   }
+});
+
+it("a pdf opens in the PDF view, and an archive does not", () => {
+  fileTabs.open(W, "doc.pdf");
+  const view = draw(createMockApi({}), "doc.pdf").find((n) => n.type === PdfView)!;
+  expect(view.props).toMatchObject({ worktree: W, rel: "doc.pdf" });
+  fileTabs.open(W, "a.zip");
+  expect(draw(createMockApi({}), "a.zip").find((n) => n.type === PdfView)).toBeUndefined();
 });
 
 it("an image or media file the watcher saw go shows not found, and Retry brings the view back", () => {
@@ -236,7 +245,7 @@ it("a read refused as too large keeps the too large note", () => {
 });
 
 it("an image or media view is drawn anew when its file changed on disk", () => {
-  for (const [rel, View] of [["pic.png", ImageView], ["clip.mp4", MediaView]] as const) {
+  for (const [rel, View] of [["pic.png", ImageView], ["clip.mp4", MediaView], ["doc.pdf", PdfView]] as const) {
     fileTabs.open(W, rel);
     const keyOf = () => draw(createMockApi({}), rel).find((n) => n.type === View)!.key;
     const before = keyOf();
