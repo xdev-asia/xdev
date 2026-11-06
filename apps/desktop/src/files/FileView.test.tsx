@@ -15,6 +15,7 @@ import { MediaView } from "./MediaView";
 import { PdfView } from "./PdfView";
 import { LoadError } from "./LoadError";
 import { fileTabs, isDirty } from "./fileTabs";
+import { lineAuthorsPref } from "./lineAuthorsPref";
 
 const hooks = vi.hoisted(() => ({ active: false, effects: [] as (() => void)[], slots: [] as unknown[], cursor: 0 }));
 vi.mock("react", async (original) => {
@@ -265,4 +266,48 @@ it("the editor's wrap key and the more menu flip the shared word wrap setting", 
   const buttons = draw(api).filter((n) => n.props.label === en("files.change.prev") || n.props.label === en("files.change.next"));
   expect(buttons).toHaveLength(2);
   expect(buttons.every((b) => b.props.disabled)).toBe(true);
+});
+
+const moreMenu = (api: ReturnType<typeof createMockApi>) => {
+  draw(api).find((n) => n.props.label === en("files.more") && n.props.icon === "more")!.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 0, bottom: 0 }) } });
+  return draw(api).find((n) => n.type === ContextMenu && n.props.label === en("files.more"))!;
+};
+
+it("the more menu has a line authors item that shows and flips the preference", () => {
+  const api = createMockApi({});
+  ready();
+  try {
+    const item = () => moreMenu(api).props.items.find((i: { id: string }) => i.id === "lineAuthors");
+    expect(item()).toMatchObject({ labelKey: "files.menu.lineAuthors", checked: true });
+    item().run();
+    expect(lineAuthorsPref.get()).toBe(false);
+    expect(item().checked).toBe(false);
+  } finally {
+    lineAuthorsPref.set(true);
+  }
+});
+
+it("with line authors off the editor gets none and nothing is read", () => {
+  const api = createMockApi({});
+  const head = vi.spyOn(api, "attributionLinesHead");
+  ready();
+  lineAuthorsPref.set(false);
+  try {
+    expect(draw(api).find((n) => n.type === CodeEditor)!.props.lineAuthors).toBeNull();
+    hooks.effects.forEach((e) => e());
+    expect(head).not.toHaveBeenCalled();
+  } finally {
+    lineAuthorsPref.set(true);
+  }
+});
+
+it("reads line authors for a text file; an empty result gives the editor none", async () => {
+  const api = createMockApi({});
+  const head = vi.spyOn(api, "attributionLinesHead");
+  ready();
+  draw(api);
+  hooks.effects.forEach((e) => e());
+  await tick();
+  expect(head).toHaveBeenCalledWith(W, "a.ts");
+  expect(draw(api).find((n) => n.type === CodeEditor)!.props.lineAuthors).toBeNull();
 });

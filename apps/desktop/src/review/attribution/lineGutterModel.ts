@@ -4,7 +4,7 @@ import { chipNames, letterOf, profileOf, when } from "./attributionModel";
 
 /** The class of the library's agent chip; the gutter marker and `AgentChip` share it. */
 export const CHIP_CLASS = "ws-chip";
-/** The "You" ring of a line changed after the last agent edit. */
+/** The "You" ring of a line the person or a tool that is not an agent changed. */
 export const OUTSIDE_CLASS = "attr-outside";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;

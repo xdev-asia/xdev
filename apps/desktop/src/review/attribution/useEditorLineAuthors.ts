@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Api, LineAttribution } from "@/api";
 import { createLineAuthorsFeed, type LineAuthorsFeed } from "./lineAuthorsFeed";
 
@@ -11,9 +11,9 @@ export type EditorLineAuthors = { attr: LineAttribution; text: string };
  */
 export function useEditorLineAuthors(api: Api, worktree: string, rel: string, saved: string | undefined, on: boolean): EditorLineAuthors | null {
   const [result, setResult] = useState<EditorLineAuthors | null>(null);
-  const feed = useRef<LineAuthorsFeed | null>(null);
-  const latest = useRef(saved);
-  latest.current = saved;
+  // The feed and the newest text, kept across draws (state, not a ref: the file view's tests stand in hooks).
+  const [box] = useState<{ feed: LineAuthorsFeed | null; saved: string | undefined }>({ feed: null, saved: undefined });
+  box.saved = saved;
 
   useEffect(() => {
     setResult(null);
@@ -26,8 +26,8 @@ export function useEditorLineAuthors(api: Api, worktree: string, rel: string, sa
       cancel: (handle) => clearTimeout(handle),
       onResult: (attr, text) => setResult(attr ? { attr, text } : null),
     });
-    feed.current = f;
-    if (latest.current !== undefined) f.request(latest.current);
+    box.feed = f;
+    if (box.saved !== undefined) f.request(box.saved);
     let live = true;
     let stop: (() => void) | undefined;
     if (typeof api.onAttributionChanged === "function") {
@@ -42,13 +42,13 @@ export function useEditorLineAuthors(api: Api, worktree: string, rel: string, sa
       live = false;
       stop?.();
       f.dispose();
-      if (feed.current === f) feed.current = null;
+      if (box.feed === f) box.feed = null;
     };
-  }, [api, worktree, rel, on]);
+  }, [api, worktree, rel, on, box]);
 
   useEffect(() => {
-    if (saved !== undefined) feed.current?.request(saved);
-  }, [saved]);
+    if (saved !== undefined) box.feed?.request(saved);
+  }, [saved, box]);
 
   return on ? result : null;
 }
