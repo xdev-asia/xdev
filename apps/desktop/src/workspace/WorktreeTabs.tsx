@@ -35,6 +35,8 @@ import { NotesLibrary } from "@/notes/NotesLibrary";
 import { hasText, pasteNote } from "@/notes/noteModel";
 import { useNotes } from "@/notes/notesStore";
 import { showsPaneLayout, terminalMenuItems } from "@/terminal/terminalMenu";
+import { draftFromSelection } from "@/tasks/board/captureTask";
+import { openTaskEditor } from "@/tasks/board/TaskEditorHost";
 import { registerTerminal } from "@/terminal/terminalRegistry";
 import { LaunchOptionsDialog, type LaunchChoice } from "@/agentLaunch/LaunchOptionsDialog";
 import { SpawnFailure } from "@/terminal/SpawnFailure";
@@ -795,6 +797,7 @@ export function WorktreeTabs(props: {
         if (id) void copyText(id).then((ok) => pushToast({ text: t(ok ? "termMenu.copied" : "termMenu.copyFailed") }));
       },
       copyTerminalId: () => void copyText(tab.id),
+      onCreateTask: (text) => openTaskEditor(draftFromSelection({ text, source: { kind: "terminal", tabTitle: tab.title ?? profile } }, t)),
       openNote: () => setNoting(noteTarget(tab)),
       chips: { prefs: chipPrefs(), toggle: (kind) => setChip(kind, !chipPrefs()[kind]) },
       copyPaneId: () => pane && void copyText(pane),

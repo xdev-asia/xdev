@@ -1,0 +1,33 @@
+/* The task editor dialog. Tokens only. */
+.board-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.board-editor .ws-field {
+  min-width: 0;
+}
+
+.board-editor-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+  gap: 12px;
+}
+
+.board-editor-row select {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+}
+
+.board-editor textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.board-editor-error {
+  margin: 0;
+  color: var(--danger);
+}

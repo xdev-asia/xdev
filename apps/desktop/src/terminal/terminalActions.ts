@@ -72,6 +72,7 @@ export function createTerminalHandle(deps: HandleDeps): TerminalHandle {
     },
     find: () => deps.find(),
     hasSelection: () => deps.term()?.hasSelection() ?? false,
+    selectionText: () => deps.term()?.getSelection() ?? "",
     focus: () => deps.term()?.focus(),
     lines(max) {
       const buffer = deps.term()?.buffer.active;

@@ -163,7 +163,7 @@ it("a right click on the gutter opens a menu with the three copy rows, and closi
   const menu = draw(api).find((n) => n.type === ContextMenu)!;
   expect(menu.props.at).toEqual({ x: 5, y: 6 });
   expect(menu.props.label).toBe(en("editor.gutter.label"));
-  expect(menu.props.items.map((i: { id: string }) => i.id)).toEqual(["copyPath", "copyRelPath", "copyRemote"]);
+  expect(menu.props.items.map((i: { id: string }) => i.id)).toEqual(["copyPath", "copyRelPath", "copyRemote", "createTask"]);
   menu.props.onClose();
   expect(draw(api).some((n) => n.type === ContextMenu)).toBe(false);
 });

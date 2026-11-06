@@ -207,3 +207,21 @@ it("without a note or chips context the menu has neither", () => {
   const { items } = setup();
   expect(items.some((i) => i.id === "stickyNote" || i.id === "headerChips")).toBe(false);
 });
+
+it("Create task from selection is hidden without a task editor, and disabled without a selection", () => {
+  expect(setup().items.some((i) => i.id === "createTask")).toBe(false);
+  const taken: string[] = [];
+  const withTask = (selection: boolean, text: string) => {
+    const { ctx } = setup({ selection });
+    const handle = { ...ctx.handle, selectionText: () => text };
+    const items = terminalMenuItems({ ...ctx, handle, onCreateTask: (t) => void taken.push(t) });
+    return items.find((i) => i.id === "createTask") as MenuItem;
+  };
+  const none = withTask(false, "");
+  expect(none.labelKey).toBe("board.capture");
+  expect(none.disabled).toBe(true);
+  const some = withTask(true, "npm test failed");
+  expect(some.disabled).toBe(false);
+  some.run?.();
+  expect(taken).toEqual(["npm test failed"]);
+});

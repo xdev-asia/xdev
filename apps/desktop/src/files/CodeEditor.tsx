@@ -9,7 +9,7 @@ import { highlight, theme } from "@/components/Editor";
 import { useI18n } from "@/i18n";
 import type { Goto } from "./fileTabs";
 import { conflictDecorations } from "./conflictDecorations";
-import { selectionOf, type GutterSelection } from "./gutterMenu";
+import { captureOf, selectionOf, type GutterSelection, type SelectionCapture } from "./gutterMenu";
 import { languageOf, loadLanguage } from "./languages";
 
 const wrap = (on: boolean) => (on ? EditorView.lineWrapping : []);
@@ -24,7 +24,7 @@ export function CodeEditor(props: {
   onChange(text: string): void;
   onSave(): void;
   /** A right click on the line-number gutter: where, which line, and the multi-line selection if any. */
-  onGutterMenu?(at: { x: number; y: number }, line: number, selection: GutterSelection | null): void;
+  onGutterMenu?(at: { x: number; y: number }, line: number, selection: GutterSelection | null, capture?: SelectionCapture | null): void;
 }): JSX.Element {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
@@ -59,7 +59,7 @@ export function CodeEditor(props: {
               if (!open || !(e.target instanceof Element) || !e.target.closest(".cm-gutters")) return false;
               const block = view.lineBlockAtHeight(e.clientY - view.documentTop);
               e.preventDefault();
-              open({ x: e.clientX, y: e.clientY }, view.state.doc.lineAt(block.from).number, selectionOf(view.state));
+              open({ x: e.clientX, y: e.clientY }, view.state.doc.lineAt(block.from).number, selectionOf(view.state), captureOf(view.state));
               return true;
             },
           }),
