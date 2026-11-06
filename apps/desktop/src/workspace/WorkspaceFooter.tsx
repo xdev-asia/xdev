@@ -245,7 +245,7 @@ export function LiveWorkspaceFooter(props: {
   const { t } = useI18n();
   const { quota, loading, refresh } = useQuota(api, hidden === true);
   const update = useUpdate(api);
-  const { notice } = useLicense(api);
+  const { notice, state: licenseState } = useLicense(api);
   const [open, setOpen] = useState(false);
   const [accounts, setAccounts] = useState<Accounts | null>(null);
   const [menuAt, setMenuAt] = useState<{ x: number; y: number; kind: "meters" | "empty" } | null>(null);
@@ -319,7 +319,7 @@ export function LiveWorkspaceFooter(props: {
   return (
     <WorkspaceFooter
       {...rest}
-      license={<LicenseStatus notice={notice} onOpen={onOpenLicense} />}
+      license={<LicenseStatus notice={notice} state={licenseState} onOpen={onOpenLicense} />}
       hidden={hidden}
       items={items}
       quota={quota === null ? null : footerQuota(quota, accounts, usage.footer)}

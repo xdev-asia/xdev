@@ -1,7 +1,8 @@
 import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
+import type { LicenseState } from "@xdev/bindings";
 import { translate } from "@/i18n";
-import { LicenseStatus, statusNoticeOf } from "./StatusBar";
+import { LicenseStatus, statusNoticeFor, statusNoticeOf } from "./StatusBar";
 
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string) => translate("en", key) }) }));
 
@@ -29,4 +30,31 @@ it("renders one status with a dot and a button that opens Account", () => {
   expect(text).toBe(translate("en", "license.notice.expired.title"));
   button.props.onClick();
   expect(open).toHaveBeenCalledTimes(1);
+});
+
+const device = { id: "d", name: "n", platform: "linux" } as never;
+function active(over: Record<string, unknown>): LicenseState {
+  return {
+    state: "active",
+    plan: ["pro"],
+    features: ["pro.early"],
+    freshness: { kind: "expired" },
+    pro: null,
+    syncUntil: null,
+    team: null,
+    device,
+    ...over,
+  } as unknown as LicenseState;
+}
+
+it("shows no expired notice for one-time Pro without a subscription", () => {
+  expect(statusNoticeFor("expired", active({}))).toBeNull();
+  expect(LicenseStatus({ notice: "expired", state: active({}) })).toBeNull();
+});
+
+it("shows the expired notice while a subscription is on the licence", () => {
+  expect(statusNoticeFor("expired", active({ syncUntil: 1 }))).toBe("expired");
+  expect(statusNoticeFor("expired", active({ plan: ["pro", "sync"] }))).toBe("expired");
+  expect(statusNoticeFor("expired", active({ team: { id: "t" } }))).toBe("expired");
+  expect(statusNoticeFor("clock", active({}))).toBe("clock");
 });
