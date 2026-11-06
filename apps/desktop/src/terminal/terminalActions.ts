@@ -77,6 +77,10 @@ export function createTerminalHandle(deps: HandleDeps): TerminalHandle {
     hasSelection: () => deps.term()?.hasSelection() ?? false,
     selectionText: () => deps.term()?.getSelection() ?? "",
     focus: () => deps.term()?.focus(),
+    insertText(text) {
+      const clean = sanitizeForTerminal(text);
+      if (clean) deps.term()?.paste(clean);
+    },
     lines(max) {
       const buffer = deps.term()?.buffer.active;
       if (!buffer) return [];
@@ -88,6 +92,16 @@ export function createTerminalHandle(deps: HandleDeps): TerminalHandle {
 }
 
 export { copyText };
+
+/**
+ * Dictated text made safe to type: line breaks and tabs become spaces, so nothing runs on
+ * its own, and every other control character (C0, DEL, C1) is dropped, so no escape sequence
+ * reaches the program.
+ */
+export function sanitizeForTerminal(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\r\n|\r|\n|\t/g, " ").replace(/[\x00-\x1f\x7f-\x9f]/g, "");
+}
 
 /** The header of Copy Context. `exitCode` undefined means the program still runs. */
 export interface ContextInfo {
