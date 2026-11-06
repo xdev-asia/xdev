@@ -131,6 +131,8 @@ export function TabStrip(props: {
   onLaunchOptionsPicker?: () => void;
   /** Opens the agent picker of this pane; absent, the menu has no "Agent…" item. */
   onAgentPicker?: () => void;
+  /** Extra block of the `+` menu, after the launch groups and before split (Run targets). */
+  extra?: ReactNode;
   /** The open agent picker of this pane, drawn under the `+` button. */
   agentPicker?: ReactNode;
   /** Splits this pane, opening the default shell in the new one. */
@@ -547,6 +549,7 @@ export function TabStrip(props: {
                   {g.picker && props.onLaunchOptionsPicker && menuItem("launch-options", t("workspace.tabs.launchOptions"), props.onLaunchOptionsPicker)}
                 </div>
               ))}
+              {props.extra}
               <div className="ws-menu-group" role="group">
                 {menuItem("split-right", t("workspace.tabs.split.right"), () => props.onSplit("right"))}
                 {menuItem("split-down", t("workspace.tabs.split.down"), () => props.onSplit("down"))}

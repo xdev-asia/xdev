@@ -22,6 +22,8 @@ import { useUsageSettings } from "@/settings/usageSettings";
 import { useCacheTimers } from "./cacheTimer";
 import { buildSections } from "@/quickCommands/model";
 import { QuickCommandsControl } from "@/quickCommands/QuickCommandsControl";
+import { RunTargetsMenu } from "@/targets/RunTargetsMenu";
+import { useRunTargets } from "@/targets/useRunTargets";
 import { runWithToast } from "@/quickCommands/runUi";
 import { getQuickCommands, selectCommands } from "@/quickCommands/store";
 import { quickCommandsSubmenu } from "@/quickCommands/submenu";
@@ -172,6 +174,18 @@ export function WorktreeTabs(props: {
   const [switcher, setSwitcher] = useState<Switch | null>(null);
   // The pane whose `+` menu is open.
   const [menuPane, setMenuPane] = useState<string | null>(null);
+
+  // --- run targets ---
+  const [focusedPane] = useState(() => ({ current: null as string | null }));
+  const targets = useRunTargets({
+    api,
+    sessions,
+    worktree,
+    repoName: worktree.split(/[\/]/).filter(Boolean).pop() ?? worktree,
+    visible,
+    openMenu: () => setMenuPane(focusedPane.current),
+  });
+  // --- end run targets ---
   const [drag, setDrag] = useState<TabDrag | null>(null);
   // The pane whose agent picker is open.
   const [pickerPane, setPickerPane] = useState<string | null>(null);
@@ -270,6 +284,7 @@ export function WorktreeTabs(props: {
     const cards = syncCanvas(layout.canvas, (leaves(layout) as Leaf[]).map((n) => n.id));
     if (cards !== layout.canvas) layout = { ...layout, canvas: cards };
   }
+  focusedPane.current = layout?.focused ?? null;
   useEffect(() => {
     if (layout !== stored) sessions.setLayout(worktree, layout);
   }, [layout, stored, sessions, worktree]);
@@ -907,6 +922,24 @@ export function WorktreeTabs(props: {
         active={leaf.active}
         groups={groups}
         menuOpen={menuPane === leaf.id}
+        extra={
+          <RunTargetsMenu
+            api={api}
+            worktree={worktree}
+            onDeploy={(p) => {
+              setMenuPane(null);
+              targets.deploy(p);
+            }}
+            onServer={(v) => {
+              setMenuPane(null);
+              targets.server(v);
+            }}
+            onReview={(v) => {
+              setMenuPane(null);
+              targets.review(v);
+            }}
+          />
+        }
         onMenu={(isOpen) => setMenuPane(isOpen ? leaf.id : null)}
         onSelect={(id) => layout && setLayout(selectTab(layout, id))}
         onClose={(id) => void requestClose([id])}
@@ -1366,6 +1399,7 @@ export function WorktreeTabs(props: {
           onCancel={() => setClosing(null)}
         />
       )}
+      {targets.dialogs /* run targets */}
     </div>
   );
 }

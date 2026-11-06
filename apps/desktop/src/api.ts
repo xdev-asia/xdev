@@ -326,6 +326,8 @@ import { toBytes } from "./terminal/ptyClient";
 import type { AttributionChanged, AttributionEvent, FileAttribution, FileVersion } from "@xdev/bindings";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
+import type { DeployPreset, TargetsView, VpsTarget } from "@xdev/bindings";
+export type { DeployPreset, TargetsView, VpsTarget };
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 import type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView } from "@xdev/bindings";
 import type { DeviceRow, LicenseState } from "@xdev/bindings";
@@ -799,6 +801,8 @@ export type ErrorCode =
   | "unsupported_agent"
   | "bad_sound"
   | "hook_untrusted"
+  | "deploy_untrusted"
+  | "vps_host_unknown"
   | "hook_none"
   | "setup_skipped"
   | "cancelled"
@@ -1988,6 +1992,12 @@ export interface Api {
   licenseAllows(feature: string): Promise<boolean>;
   /** `license://changed`, with the full state, after every change. */
   onLicenseChanged(cb: (s: LicenseState) => void): Promise<() => void>;
+  /** The worktree's deploy presets (detected and from `xdev.toml`) and its `[vps]` target. */
+  targetsList(worktree: string): Promise<TargetsView>;
+  /** Trusts the repo's current `[[deploy]]` and `[vps]`. Rejects `deploy_untrusted` when `hash` is stale. */
+  targetsTrust(worktree: string, hash: string): Promise<void>;
+  /** The `[vps] notes` path, repo-relative, when that file exists in the worktree. */
+  targetsVpsNotes(worktree: string): Promise<string | null>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2153,6 +2163,8 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "unsupported_agent",
   "bad_sound",
   "hook_untrusted",
+  "deploy_untrusted",
+  "vps_host_unknown",
   "hook_none",
   "setup_skipped",
   "cancelled",
@@ -2841,6 +2853,9 @@ const tauriApi: Api = {
   licenseBuyCancel: () => call("license_buy_cancel"),
   licenseAllows: (feature) => call("license_allows", { feature }),
   onLicenseChanged: (cb) => listen<LicenseState>("license://changed", (e) => cb(e.payload)),
+  targetsList: (worktree) => call("targets_list", { worktree }),
+  targetsTrust: (worktree, hash) => call("targets_trust", { worktree, hash }),
+  targetsVpsNotes: (worktree) => call("targets_vps_notes", { worktree }),
 };
 
 const DEMO_CRASH: CrashReport = {

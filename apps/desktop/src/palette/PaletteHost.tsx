@@ -20,6 +20,7 @@ import { layoutItems } from "@/workspace/layoutEvents";
 import { chatItems, taskItems } from "./moreItems";
 import { RecentStore } from "./recent";
 import { openTaskEditor } from "@/tasks/board/TaskEditorHost";
+import { requestTargets } from "@/targets/targetsEvents";
 import { conversationItems } from "@/conversation/conversationStore";
 
 /** What the palette can make the shell do; the shell supplies each one. */
@@ -66,6 +67,8 @@ export interface PaletteHostProps {
   history?: AgentSessionsStore | null;
   /** Optional: the agent task list, read each time the palette opens. */
   tasks?: () => Promise<Task[]>;
+  /** Optional: whether the worktree has a `[vps]` target, read each time the palette opens. */
+  targets?: (worktree: string) => Promise<{ vps: unknown | null }>;
   actions: PaletteActions;
 }
 
@@ -113,6 +116,24 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
   }, [open, canReadTasks]);
 
   const currentPath = current?.path ?? null;
+  // --- run targets ---
+  const [hasVps, setHasVps] = useState(false);
+  const readTargets = props.targets;
+  const targetsRef = useRef(readTargets);
+  targetsRef.current = readTargets;
+  useEffect(() => {
+    const read = targetsRef.current;
+    if (!open || !read || !currentPath) return setHasVps(false);
+    let live = true;
+    read(currentPath).then(
+      (v) => live && setHasVps(v.vps !== null),
+      () => live && setHasVps(false),
+    );
+    return () => {
+      live = false;
+    };
+  }, [open, currentPath]);
+  // --- end run targets ---
   const quick = useSyncExternalStore(subscribeQuickCommands, getQuickCommands, getQuickCommands);
   useEffect(() => {
     if (currentPath) recent.touch(`wt:${currentPath}`);
@@ -147,6 +168,8 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       discardAll: current && actions.discardAllChanges ? () => actions.discardAllChanges?.() : undefined,
       // Always listed: with no repo open it says so, instead of vanishing.
       newTask: () => openTaskEditor(),
+      runTargets: sessions && current ? () => requestTargets({ kind: "menu" }) : undefined,
+      openServerShell: sessions && current && hasVps ? () => requestTargets({ kind: "serverShell" }) : undefined,
     };
     // The tab in front, when it is a terminal: the same calls as the tab and terminal menus.
     const front = sessions && current && shownTab ? sessions.tabs(current.path).find((x) => x.id === shownTab) : undefined;
