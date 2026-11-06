@@ -19,6 +19,7 @@ import { JumpPalette } from "./JumpPalette";
 import { layoutItems } from "@/workspace/layoutEvents";
 import { chatItems, taskItems } from "./moreItems";
 import { RecentStore } from "./recent";
+import { api } from "@/api";
 import { openTaskEditor } from "@/tasks/board/TaskEditorHost";
 import { requestTargets } from "@/targets/targetsEvents";
 import { conversationItems } from "@/conversation/conversationStore";
@@ -170,6 +171,11 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       newTask: () => openTaskEditor(),
       runTargets: sessions && current ? () => requestTargets({ kind: "menu" }) : undefined,
       openServerShell: sessions && current && hasVps ? () => requestTargets({ kind: "serverShell" }) : undefined,
+      // The license actions: the purchase and the check-in report through `license://changed`.
+      getPro: () => void api.licenseBuy("pro").catch(() => undefined),
+      // No free seat: Settings → Account says so and offers to move one.
+      activatePro: () => void api.licenseActivate().catch(() => actions.openSettings("account")),
+      refreshLicense: () => void api.licenseRefresh().catch(() => undefined),
     };
     // The tab in front, when it is a terminal: the same calls as the tab and terminal menus.
     const front = sessions && current && shownTab ? sessions.tabs(current.path).find((x) => x.id === shownTab) : undefined;

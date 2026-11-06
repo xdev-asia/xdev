@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use ::xdev_id::{
     CallError, E_CODE, E_EXPIRED, E_KEYCHAIN, E_LINK, E_SERVER, E_STATE, E_TIMEOUT, E_UNAVAILABLE,
-    Keychain, REFRESH_EVERY, Redeem, Session, TokenStore, Transport, UreqTransport, XdevIdServer,
-    XdevIdState, check_origin, resolve_server,
+    Keychain, REFRESH_EVERY, Redeem, Secret, Session, TokenStore, Transport, UreqTransport,
+    XdevIdServer, XdevIdState, check_origin, resolve_server,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -81,6 +81,13 @@ impl XdevIdHub {
 
     pub fn base(&self) -> String {
         self.lock().base().to_owned()
+    }
+
+    /// The session token with the origin it belongs to, for the license. `None` when signed
+    /// out. Never sent to the webview.
+    pub fn credentials(&self) -> Option<(Secret, String)> {
+        let session = self.lock();
+        session.token().map(|t| (t, session.base().to_owned()))
     }
 
     pub fn server(&self) -> XdevIdServer {
@@ -310,7 +317,7 @@ impl XdevIdHub {
     }
 }
 
-fn emitter(app: &AppHandle) -> impl Fn(&XdevIdState) + use<> {
+pub(crate) fn emitter(app: &AppHandle) -> impl Fn(&XdevIdState) + use<> {
     let app = app.clone();
     move |state| {
         let _ = app.emit(CHANGED_EVENT, state);
@@ -469,7 +476,9 @@ pub fn start(app: &AppHandle) {
         let hub = app.state::<XdevIdHub>();
         let notify = emitter(&app);
         // The server first, so a token saved for another origin is never sent anywhere.
-        let setting = crate::settings_store::read(&app).xdev_id.server;
+        // Settings → Cloud wins over the older `xdevId.server`.
+        let settings = crate::settings_store::read(&app);
+        let setting = settings.cloud.server_url.unwrap_or(settings.xdev_id.server);
         let _ = hub.configure_server(Some(&setting), &notify);
         if hub.load(&notify).is_err() {
             eprintln!("xdev id: the system keychain is not available");

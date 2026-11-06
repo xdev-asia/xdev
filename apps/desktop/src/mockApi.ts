@@ -69,6 +69,7 @@ import { mockHash, type MockFiles } from "./mockFiles";
 import { createMockForeignTerms } from "./mockForeignTerms";
 import { createMockNotch, type MockNotch } from "./mockNotch";
 import { createMockPeers, type MockPeers } from "./mockPeers";
+import { createMockCloud } from "./mockCloud";
 import { createMockLicense, type MockLicense } from "./mockLicense";
 import { createMockTargets, type MockTargets } from "./mockTargets";
 
@@ -724,6 +725,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockPeers(),
     ...createMockLicense(),
     ...createMockTargets(() => api.__ptyWrittenAll()),
+    ...createMockCloud(() => void api.xdevIdSignOut()),
     async clipboardImageSave() {
       if (mockClipboardImage === null || typeof mockClipboardImage === "string") return mockClipboardImage;
       throw mockClipboardImage;

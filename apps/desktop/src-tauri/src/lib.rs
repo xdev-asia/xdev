@@ -42,6 +42,7 @@ mod keybindings;
 mod keyboard;
 mod kit;
 mod layout;
+mod license;
 mod links;
 mod links_open;
 mod lsp;
@@ -215,6 +216,8 @@ pub fn run() {
             }
             // After the settings store: the server setting is read first.
             xdev_id::start(app.handle());
+            // The license: the cached token is checked now, the network later.
+            license::start(app.handle());
             // Paired computers: the listener runs only when Settings turn it on.
             peers::cmd::start(app.handle());
             // The OS request follows the stored mode from the start. Off the main thread: a
@@ -734,6 +737,26 @@ pub fn run() {
             xdev_id::xdev_id_manage,
             xdev_id::xdev_id_server,
             xdev_id::xdev_id_server_set,
+            license::license_state,
+            license::license_refresh,
+            license::license_activate,
+            license::license_deactivate,
+            license::license_devices,
+            license::license_buy,
+            license::license_buy_cancel,
+            license::license_allows,
+            license::cloud_settings_get,
+            license::cloud_settings_put,
+            license::license_state,
+            license::license_refresh,
+            license::license_activate,
+            license::license_deactivate,
+            license::license_devices,
+            license::license_buy,
+            license::license_buy_cancel,
+            license::license_allows,
+            license::cloud_settings_get,
+            license::cloud_settings_put,
             automations::automations_list,
             automations::automation_runs,
             automation_runs_summary::automation_runs_summary,

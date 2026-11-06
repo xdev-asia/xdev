@@ -330,7 +330,7 @@ import type { DeployPreset, TargetsView, VpsTarget } from "@xdev/bindings";
 export type { DeployPreset, TargetsView, VpsTarget };
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 import type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView } from "@xdev/bindings";
-import type { DeviceRow, LicenseState } from "@xdev/bindings";
+import type { CloudSettings, DeviceRow, LicenseState } from "@xdev/bindings";
 import type { GateKind, Matched, MatchRow, Pipeline, RevealTab, RouteTarget, StageRun, StageSpec, StageStatus, SwarmRow, SwarmStart, SwarmStopped } from "@xdev/bindings";
 import type { RemoteConnState, RemoteDir, RemoteDirListing, RemoteHostView, RemoteProject, RemoteProjectView, RemoteTarget } from "@xdev/bindings";
 export type { RemoteConnState, RemoteDir, RemoteDirListing, RemoteHostView, RemoteProject, RemoteProjectView, RemoteTarget };
@@ -865,7 +865,12 @@ export type ErrorCode =
   | "remote_path"
   | "remote_too_large"
   | "remote_denied"
-  | "remote_unsupported";
+  | "remote_unsupported"
+  | "license_checkout_timeout"
+  | "license_bad_product"
+  | "cloud_bad_url"
+  | "cloud_bad_root"
+  | "cloud_need_root";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -2027,6 +2032,13 @@ export interface Api {
   targetsTrust(worktree: string, hash: string): Promise<void>;
   /** The `[vps] notes` path, repo-relative, when that file exists in the worktree. */
   targetsVpsNotes(worktree: string): Promise<string | null>;
+  /** The server and trusted keys the license and xDev ID talk to. */
+  cloudSettings(): Promise<CloudSettings>;
+  /**
+   * Saves them. A changed server signs out of xDev ID and drops the cached license. Rejects
+   * `cloud_bad_url`, `cloud_bad_root` or `cloud_need_root`; resolves with what was stored.
+   */
+  cloudSettingsPut(settings: CloudSettings): Promise<CloudSettings>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2255,6 +2267,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "remote_too_large",
   "remote_denied",
   "remote_unsupported",
+  "license_checkout_timeout",
+  "license_bad_product",
+  "cloud_bad_url",
+  "cloud_bad_root",
+  "cloud_need_root",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2903,6 +2920,8 @@ const tauriApi: Api = {
   targetsList: (worktree) => call("targets_list", { worktree }),
   targetsTrust: (worktree, hash) => call("targets_trust", { worktree, hash }),
   targetsVpsNotes: (worktree) => call("targets_vps_notes", { worktree }),
+  cloudSettings: () => call("cloud_settings_get"),
+  cloudSettingsPut: (settings) => call("cloud_settings_put", { settings }),
 };
 
 const DEMO_CRASH: CrashReport = {
