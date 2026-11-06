@@ -10,6 +10,8 @@ export type { AgentSession } from "./AgentSession";
 export type { AgentsSettings } from "./AgentsSettings";
 export type { AiKeyStatus } from "./AiKeyStatus";
 export type { AppStatsView } from "./AppStatsView";
+export type { AppTheme } from "./AppTheme";
+export type { AppThemeInput } from "./AppThemeInput";
 export type { Approval } from "./Approval";
 export type { Approvals } from "./Approvals";
 export type { AttributionChanged } from "./AttributionChanged";

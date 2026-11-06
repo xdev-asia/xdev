@@ -6,6 +6,7 @@ mod ai_keys;
 mod app_icon;
 mod app_menu;
 mod app_stats;
+mod app_themes;
 mod applog;
 mod atomic;
 mod attribution;
@@ -432,6 +433,11 @@ pub fn run() {
             terminal_themes::terminal_theme_preview,
             terminal_themes::terminal_theme_import,
             terminal_themes::terminal_theme_remove,
+            app_themes::app_themes_list,
+            app_themes::app_theme_save,
+            app_themes::app_theme_remove,
+            app_themes::app_theme_import,
+            app_themes::app_theme_export,
             accounts::accounts_quota,
             accounts::account_add,
             accounts::account_login,

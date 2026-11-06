@@ -79,4 +79,9 @@ showTitlebarName: boolean,
  * Settings → Appearance → App icon: one of `APP_ICONS`. An unknown id,
  * or a value that is no string, reads as `APP_ICON_DEFAULT`.
  */
-appIcon: string, };
+appIcon: string, 
+/**
+ * Settings → Appearance → Theme colours: the id of the saved app theme; empty is Default.
+ * Only a valid file stem is kept (`[a-z0-9-]{1,33}`).
+ */
+appTheme: string, };

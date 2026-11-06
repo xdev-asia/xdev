@@ -35,7 +35,7 @@ pub struct ThemeError {
 }
 
 impl ThemeError {
-    fn invalid(field: &str) -> Self {
+    pub(crate) fn invalid(field: &str) -> Self {
         ThemeError {
             code: "theme_invalid",
             field: Some(field.to_string()),
@@ -355,7 +355,7 @@ pub fn parse_any(
 }
 
 /// The file's stem, as a default scheme name.
-fn stem_name(path: &Path) -> String {
+pub(crate) fn stem_name(path: &Path) -> String {
     path.file_stem()
         .and_then(|s| s.to_str())
         .map(|s| {
@@ -377,7 +377,7 @@ pub fn themes_dir(data_dir: &Path) -> PathBuf {
 /// Moves a file to the OS trash. A parameter of `remove`, so a test passes its own.
 pub type Trash<'a> = &'a dyn Fn(&Path) -> io::Result<()>;
 
-fn io_error(e: io::Error) -> CmdError {
+pub(crate) fn io_error(e: io::Error) -> CmdError {
     CmdError {
         code: "io",
         detail: Some(e.kind().to_string()),
@@ -393,7 +393,7 @@ impl From<ThemeError> for CmdError {
     }
 }
 
-fn not_found() -> CmdError {
+pub(crate) fn not_found() -> CmdError {
     CmdError {
         code: "not_found",
         detail: None,
@@ -401,7 +401,7 @@ fn not_found() -> CmdError {
 }
 
 /// A file stem this module wrote: lower-case letters, digits and `-`.
-fn valid_stem(stem: &str) -> bool {
+pub(crate) fn valid_stem(stem: &str) -> bool {
     !stem.is_empty()
         && stem.chars().count() <= SLUG_MAX
         && stem
@@ -409,12 +409,12 @@ fn valid_stem(stem: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-fn file_of(dir: &Path, stem: &str) -> PathBuf {
+pub(crate) fn file_of(dir: &Path, stem: &str) -> PathBuf {
     dir.join(format!("{stem}.json"))
 }
 
 /// The file's bytes, refusing one over `THEME_FILE_MAX` before reading it.
-fn read_capped(path: &Path) -> Result<Vec<u8>, CmdError> {
+pub(crate) fn read_capped(path: &Path) -> Result<Vec<u8>, CmdError> {
     // A folder (or anything else that is not a file) reads like a missing file.
     if !path.metadata().is_ok_and(|m| m.is_file()) {
         return Err(not_found());
@@ -477,7 +477,7 @@ pub fn preview(dir: &Path, source: &Path) -> Result<SchemePreview, CmdError> {
 }
 
 /// `base` with `-n`, cut so the stem stays within `SLUG_MAX`.
-fn numbered(base: &str, n: u32) -> String {
+pub(crate) fn numbered(base: &str, n: u32) -> String {
     let suffix = format!("-{n}");
     let head: String = base.chars().take(SLUG_MAX - suffix.len()).collect();
     format!("{}{suffix}", head.trim_end_matches('-'))
@@ -566,7 +566,7 @@ fn dir_of(state: &AppState) -> Result<PathBuf, CmdError> {
     data_dir(state).map(themes_dir)
 }
 
-fn trash_file(path: &Path) -> io::Result<()> {
+pub(crate) fn trash_file(path: &Path) -> io::Result<()> {
     trash::delete(path).map_err(|e| io::Error::other(e.to_string()))
 }
 
