@@ -1,4 +1,4 @@
-import { Button, EmptyState, IconButton } from "@xdev-asia/ui";
+import { Banner, Button, EmptyState, IconButton } from "@xdev-asia/ui";
 import { useEffect, useRef, useState, type FormEvent, type JSX } from "react";
 import { toApiError, type Api, type BrowserBounds } from "@/api";
 import { useI18n } from "@/i18n";
@@ -20,6 +20,7 @@ type BrowserApi = Pick<
   | "onBrowserPage"
   | "onBrowserEvicted"
   | "onBrowserPopup"
+  | "onBrowserPopupBlocked"
   | "openUrl"
 >;
 
@@ -64,6 +65,7 @@ export function BrowserTab({ api, entry, visible }: BrowserTabProps): JSX.Elemen
   const [evicted, setEvicted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
+  const [popupBlocked, setPopupBlocked] = useState(false);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
 
@@ -79,6 +81,8 @@ export function BrowserTab({ api, entry, visible }: BrowserTabProps): JSX.Elemen
         if (visibleRef.current) setEvicted(true);
       }),
       api.onBrowserPopup((e) => e.tab === id && openBrowserTab(entry.worktree, { url: e.url })),
+      // The backend drops popups past its limit and says so once per tab.
+      api.onBrowserPopupBlocked((e) => e.tab === id && setPopupBlocked(true)),
     ];
     return () => offs.forEach((p) => void p.then((off) => off()).catch(() => {}));
   }, [api, id, entry.worktree]);
@@ -198,6 +202,18 @@ export function BrowserTab({ api, entry, visible }: BrowserTabProps): JSX.Elemen
         <p className="browser-error error-text" id={`${id}-error`} role="alert">
           {error}
         </p>
+      )}
+      {popupBlocked && (
+        <Banner
+          title={t("browser.popupBlocked.title")}
+          action={
+            <Button type="button" variant="secondary" onClick={() => setPopupBlocked(false)}>
+              {t("browser.popupBlocked.dismiss")}
+            </Button>
+          }
+        >
+          {t("browser.popupBlocked.hint")}
+        </Banner>
       )}
       <div className="browser-page" ref={body} data-tab={id}>
         {unavailable ? (

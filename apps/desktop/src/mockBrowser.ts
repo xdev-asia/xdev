@@ -15,6 +15,7 @@ type BrowserApi = Pick<
   | "onBrowserPage"
   | "onBrowserEvicted"
   | "onBrowserPopup"
+  | "onBrowserPopupBlocked"
 >;
 
 export type MockBrowser = BrowserApi & {
@@ -24,6 +25,8 @@ export type MockBrowser = BrowserApi & {
   __browserBounds(tab: string): BrowserBounds | null;
   /** The page of `tab` opens a new window at `url`: emits `browser://popup`. */
   __browserPopup(tab: string, url: string): void;
+  /** The backend dropped a popup of `tab`: emits `browser://popup-blocked`. */
+  __browserPopupBlocked(tab: string, url: string): void;
 };
 
 export type MockBrowserOptions = {
@@ -67,6 +70,7 @@ export function createMockBrowser(options: MockBrowserOptions = {}): MockBrowser
   const page = new Set<(e: BrowserPage) => void>();
   const evicted = new Set<(e: BrowserTabUrl) => void>();
   const popup = new Set<(e: BrowserTabUrl) => void>();
+  const popupBlocked = new Set<(e: BrowserTabUrl) => void>();
   const on =
     <E>(set: Set<(e: E) => void>) =>
     (cb: (e: E) => void): Promise<() => void> => {
@@ -137,8 +141,10 @@ export function createMockBrowser(options: MockBrowserOptions = {}): MockBrowser
     onBrowserPage: on(page),
     onBrowserEvicted: on(evicted),
     onBrowserPopup: on(popup),
+    onBrowserPopupBlocked: on(popupBlocked),
     __browserLive: () => [...live],
     __browserBounds: (tab) => bounds.get(tab) ?? null,
     __browserPopup: (tab, url) => popup.forEach((cb) => cb({ tab, url })),
+    __browserPopupBlocked: (tab, url) => popupBlocked.forEach((cb) => cb({ tab, url })),
   };
 }

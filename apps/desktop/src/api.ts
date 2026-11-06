@@ -2125,6 +2125,11 @@ export interface Api {
   onBrowserPage(cb: (e: BrowserPage) => void): Promise<() => void>;
   onBrowserEvicted(cb: (e: BrowserTabUrl) => void): Promise<() => void>;
   onBrowserPopup(cb: (e: BrowserTabUrl) => void): Promise<() => void>;
+  /**
+   * A page asked for new windows faster than one a second or five a minute; the backend dropped
+   * them and says so once per tab.
+   */
+  onBrowserPopupBlocked(cb: (e: BrowserTabUrl) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -3056,6 +3061,7 @@ const tauriApi: Api = {
   onBrowserPage: (cb) => listen<BrowserPage>("browser://page", (e) => cb(e.payload)),
   onBrowserEvicted: (cb) => listen<BrowserTabUrl>("browser://evicted", (e) => cb(e.payload)),
   onBrowserPopup: (cb) => listen<BrowserTabUrl>("browser://popup", (e) => cb(e.payload)),
+  onBrowserPopupBlocked: (cb) => listen<BrowserTabUrl>("browser://popup-blocked", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {

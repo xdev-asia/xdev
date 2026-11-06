@@ -4,12 +4,15 @@
 //! capability grants it; the capabilities name the `main` webview and the `notch` window, never a
 //! `browser-` label, so a page gets no app or plugin command whatever origin it loads. A page may
 //! also load only `http`/`https` away from the app's own origins (`address::navigation_allowed`).
-//! Popups become new tabs of the front end.
+//! Popups become new tabs of the front end, at most one a second and five a minute per tab
+//! (`popup::PopupLimiter`); the rest are dropped with a `POPUP_BLOCKED_EVENT`.
 
 pub mod address;
 pub mod pool;
+pub mod popup;
 
 use std::sync::{Mutex, PoisonError};
+use std::time::Instant;
 
 use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{
@@ -22,6 +25,7 @@ use crate::settings;
 use crate::settings::SettingsSection;
 use crate::settings_store;
 use pool::{Bounds, Pool};
+use popup::{Popup, PopupLimiter};
 
 /// A page's address, title or loading state changed.
 pub const PAGE_EVENT: &str = "browser://page";
@@ -29,12 +33,15 @@ pub const PAGE_EVENT: &str = "browser://page";
 pub const EVICTED_EVENT: &str = "browser://evicted";
 /// A page asked for a new window; the front end opens it as a tab.
 pub const POPUP_EVENT: &str = "browser://popup";
+/// A page asked for more new windows than the limit; sent once per tab, for its first drop.
+pub const POPUP_BLOCKED_EVENT: &str = "browser://popup-blocked";
 /// The front end's webview, the only one that hears these events.
 const MAIN: &str = "main";
 
 #[derive(Default)]
 pub struct BrowserPanes {
     pool: Mutex<Pool>,
+    popups: Mutex<PopupLimiter>,
 }
 
 /// The payload of `PAGE_EVENT`.
@@ -54,7 +61,7 @@ pub struct BrowserPage {
     pub loading: Option<bool>,
 }
 
-/// The payload of `EVICTED_EVENT` and `POPUP_EVENT`.
+/// The payload of `EVICTED_EVENT`, `POPUP_EVENT` and `POPUP_BLOCKED_EVENT`.
 #[derive(Debug, Clone, serde::Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -136,14 +143,27 @@ fn builder(app: &AppHandle, tab: &str, url: Url, dev: Option<Url>) -> WebviewBui
             if address::navigation_allowed(&url, dev_popup.as_ref())
                 && url.as_str() != address::BLANK
             {
-                let _ = on_popup.emit_to(
-                    MAIN,
-                    POPUP_EVENT,
-                    BrowserTabUrl {
-                        tab: tab_popup.clone(),
-                        url: url.to_string(),
-                    },
-                );
+                let decision = on_popup
+                    .state::<BrowserPanes>()
+                    .popups
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .request(&tab_popup, Instant::now());
+                let event = match decision {
+                    Popup::Open => Some(POPUP_EVENT),
+                    Popup::Drop { notify: true } => Some(POPUP_BLOCKED_EVENT),
+                    Popup::Drop { notify: false } => None,
+                };
+                if let Some(event) = event {
+                    let _ = on_popup.emit_to(
+                        MAIN,
+                        event,
+                        BrowserTabUrl {
+                            tab: tab_popup.clone(),
+                            url: url.to_string(),
+                        },
+                    );
+                }
             }
             NewWindowResponse::Deny
         })
@@ -236,6 +256,11 @@ pub fn browser_close(
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .remove(&tab);
+    state
+        .popups
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .forget(&tab);
     match webview_of(&app, &tab) {
         Some(view) => view.close().map_err(|e| err("browser_unavailable", e)),
         None => Ok(()),
