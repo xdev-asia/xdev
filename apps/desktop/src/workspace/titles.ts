@@ -25,17 +25,20 @@ const CLAUDE_SPINNER = /^[\u{2722}\u{2736}\u{273B}\u{273D}]/u;
 /**
  * Glyphs the CLIs put in the terminal title. A Braille spinner frame leads the title while a turn
  * runs; claude rests on U+2733 and spins through other star glyphs; gemini shows U+2726 while it
- * works, U+25C7 when idle and U+270B when it needs input. Titles count only for a pane that has no
- * hook data (see `status.ts`).
+ * works (U+23F2 while it works without output), U+25C7 when idle and U+270B when it needs input;
+ * codex with a `[tui].terminal_title` leads with `[ ! ] Action Required` (its other frame `[ . ]`)
+ * while it waits on you. Titles count only for a pane that has no hook data (see `status.ts`).
  */
 export const TITLE_RULES: readonly TitleRule[] = [
   { cli: "claude", match: /^\u{2733}/u, status: "idle" },
   { cli: "claude", match: SPINNER, status: "working" },
   { cli: "claude", match: QUARTER, status: "working" },
   { cli: "claude", match: CLAUDE_SPINNER, status: "working" },
+  { cli: "codex", match: /^\[ [!.] \] Action Required/, status: "needs-you" },
   { cli: "codex", match: SPINNER, status: "working" },
   { cli: "codex", match: QUARTER, status: "working" },
   { cli: "gemini", match: /^\u{2726}/u, status: "working" },
+  { cli: "gemini", match: /^\u{23F2}/u, status: "working" },
   { cli: "gemini", match: /^\u{25C7}/u, status: "idle" },
   { cli: "gemini", match: /^\u{270B}/u, status: "needs-you" },
 ];
