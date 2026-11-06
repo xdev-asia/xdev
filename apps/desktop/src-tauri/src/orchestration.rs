@@ -1495,6 +1495,7 @@ pub(crate) fn mission_of(
 ) -> Result<MissionView, OrchError> {
     if !tabs.is_empty() {
         store.links_prune(&|id| tabs.iter().any(|t| t.id == id))?;
+        store.chart_members_prune(&|id| tabs.iter().any(|t| t.id == id))?;
     }
     let workers = store.tab_workers()?;
     let mut out = Vec::with_capacity(tabs.len());
@@ -1628,6 +1629,8 @@ pub(crate) fn hand_off(
         .find(|t| t.id == from)
         .ok_or_else(|| AppError::new("not_found", format!("no open tab {from}")))?;
     let target = agent_tab(tabs, to)?;
+    // A worker of a hierarchy hands off to its lead only; refused before anything is typed.
+    hub.with_store(data, |s| s.check_hand_off(from, &target.id))?;
     let title = sender.title.clone().unwrap_or_else(|| sender.id.clone());
     type_into(write, &target.id, &xdev_orch::handoff_text(&title, body))?;
     Ok(hub.with_store(data, |s| s.handoff(from, &target.id, body.trim(), now))?)
@@ -2914,6 +2917,58 @@ line", "title": "A"}),
             .unwrap();
         assert_eq!(read["count"], 1);
         assert!(read["text"].as_str().unwrap().contains("please review"));
+    }
+
+    #[test]
+    fn a_hierarchy_worker_cannot_hand_off_to_a_sibling_and_nothing_is_typed() {
+        use xdev_orch::{Chart, ChartEdge, ChartKind, ChartSeat, SeatTab};
+        let f = crate::cli_verbs::tests::fixture();
+        board(&f);
+        let seat = |id: &str, lead: bool| ChartSeat {
+            id: id.into(),
+            role: id.into(),
+            agent: "claude".into(),
+            model: None,
+            prompt: String::new(),
+            lead,
+        };
+        f.orch
+            .with_store(&f.data, |s| {
+                let c = s.chart_save(
+                    Chart {
+                        id: String::new(),
+                        name: "T".into(),
+                        kind: ChartKind::Hierarchy,
+                        seats: vec![seat("l", true), seat("a", false), seat("b", false)],
+                        edges: vec![ChartEdge {
+                            from: "l".into(),
+                            to: "a".into(),
+                            transcript: true,
+                            screen: false,
+                        }],
+                        routes: vec![],
+                        created_ms: 0,
+                        updated_ms: 0,
+                    },
+                    1,
+                )?;
+                let tabs =
+                    [("l", "p-other"), ("a", "p-lead"), ("b", "p-child")].map(|(seat, tab)| {
+                        SeatTab {
+                            seat: seat.into(),
+                            tab: tab.into(),
+                        }
+                    });
+                s.chart_run_bind(&c.id, &tabs, 1)
+            })
+            .unwrap();
+        let got = f.call(
+            Some("p-lead"),
+            "orchestration.handoff",
+            json!({"to": "p-child", "body": "psst"}),
+        );
+        assert_eq!(got.unwrap_err().code, "denied");
+        assert!(f.pty_writes.lock().unwrap().is_empty());
     }
 
     #[test]

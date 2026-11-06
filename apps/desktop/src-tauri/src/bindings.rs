@@ -355,6 +355,10 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::attribution::FileAttribution::export_all(cfg)?;
     crate::attribution::Toucher::export_all(cfg)?;
     crate::attribution::FileVersion::export_all(cfg)?;
+    xdev_orch::Chart::export_all(cfg)?;
+    xdev_orch::ChartProblem::export_all(cfg)?;
+    xdev_orch::ChartRun::export_all(cfg)?;
+    xdev_orch::SeatTab::export_all(cfg)?;
     Ok(())
 }
 

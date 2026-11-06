@@ -13,6 +13,7 @@ mod automation_runs_summary;
 mod automations;
 #[cfg(test)]
 mod bindings;
+mod charts;
 mod cli_automations;
 mod cli_file;
 mod cli_install;
@@ -768,6 +769,12 @@ pub fn run() {
             notch::notch_report,
             notch::notch_state,
             notch::notch_open,
+            charts::charts_list,
+            charts::charts_save,
+            charts::charts_delete,
+            charts::charts_duplicate,
+            charts::charts_save_squad,
+            charts::charts_run_bind,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
