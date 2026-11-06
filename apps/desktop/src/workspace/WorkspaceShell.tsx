@@ -48,6 +48,8 @@ import { startKeepAwakeReport } from "@/status/keepAwake";
 import { flash } from "./flash";
 import { startBusyReport } from "@/stats/busyReport";
 import { startNotchReport } from "@/notch/notchReport";
+import { PrPanel } from "./PrPanel";
+import { onPrPanelOpen } from "./prPanelEvents";
 import { ForeignTermsHost } from "@/foreignTerms/ForeignTermsHost";
 import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore } from "./layoutPersist";
 import { copyText } from "@/terminal/terminalActions";
@@ -179,7 +181,7 @@ function storeSelected(path: string): void {
 }
 
 type View = "workspace" | "docs" | "settings" | "automations";
-type PanelTab = "files" | "search" | "changes" | "checks" | "issues" | "ports";
+type PanelTab = "files" | "search" | "changes" | "checks" | "pr" | "issues" | "ports";
 type Creating = { repoId: string; name?: string; agents: AgentChoice[]; defaultAgent: string | null };
 type Editing = { worktree: WorktreeView; busy: boolean; error?: ApiError["code"] };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
@@ -321,7 +323,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const statusSettings = useStatusSettings();
   const automationsSettings = useAutomationsSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string): boolean => false, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {}, automationSetup: async (_w: string, _r: string, _d: SetupDecision) => {} }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string): boolean => false, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, openPrTab: () => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {}, automationSetup: async (_w: string, _r: string, _d: SetupDecision) => {} }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -988,6 +990,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setPanelTab(tab);
     if (tab === "issues") setIssuesPinned(true);
   }
+  // The PR chip and the palette open the pull request panel; unlike a panel key, a second ask keeps it open.
+  function openPrTab(): void {
+    show("workspace");
+    setRightOpen(true);
+    setPanelTab("pr");
+  }
+  live.openPrTab = openPrTab;
+  useEffect(() => onPrPanelOpen(() => live.openPrTab()), []);
   // Read on start and again when the person comes back from Settings.
   useEffect(() => {
     if (view === "settings") return;
@@ -2061,6 +2071,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           )}
           <SurfaceBoundary id="sidebar.worktrees" surface="Workspace list" titleKey="boundary.worktrees.title">
             <WorktreeList
+              onOpenPr={() => openPrTab()}
               onOrder={(paths) => setOrder((o) => (o.join(",") === paths.join(",") ? o : paths))}
               picked={picked.paths}
               onPick={(wt, mods) => setPicked((sel) => pickClick(sel, wt.path, selectable, mods))}
@@ -2290,6 +2301,22 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                   type="button"
                   role="tab"
                   className="ws-panel-tab"
+                  aria-selected={panelTab === "pr"}
+                  aria-label={t("prPanel.tab")}
+                  title={t("prPanel.tab")}
+                  onClick={() => setPanelTab("pr")}
+                >
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="6" cy="6" r="2.5" />
+                    <circle cx="6" cy="18" r="2.5" />
+                    <circle cx="18" cy="18" r="2.5" />
+                    <path d="M6 8.5v7M18 15.5V10a3 3 0 0 0-3-3h-2" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className="ws-panel-tab"
                   aria-selected={panelTab === "checks"}
                   aria-label={failing > 0 ? t("checks.tabFailing", { count: failing }) : t("checks.tab")}
                   title={t("checks.tab")}
@@ -2395,6 +2422,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 <SurfaceBoundary id="panel.checks" surface="Right sidebar: checks" resetKey={current?.path} titleKey="boundary.panel.title">
                   {current ? (
                     <ChecksPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={panelTab === "checks"} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} />
+                  ) : (
+                    <p className="ws-empty">{t("workspace.panel.empty")}</p>
+                  )}
+                </SurfaceBoundary>
+              </div>
+              <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "pr"}>
+                <SurfaceBoundary id="panel.pr" surface="Right sidebar: pull request" resetKey={current?.path} titleKey="boundary.panel.title">
+                  {current ? (
+                    <PrPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={rightOpen && panelTab === "pr"} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} onOpenFile={(rel) => openFile(current.path, rel)} />
                   ) : (
                     <p className="ws-empty">{t("workspace.panel.empty")}</p>
                   )}

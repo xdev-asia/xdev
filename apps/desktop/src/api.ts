@@ -171,6 +171,16 @@ import type {
   MergeMethod,
   MergeBlock,
   PrMergeInfo,
+  PrDetail,
+  PrEntry,
+  PrEntryKind,
+  PrFile,
+  PrReviewer,
+  PrAutoMerge,
+  ReviewDecision,
+  Mergeable,
+  MergeState,
+  ReviewerState,
   RerunReport,
   Issue,
   IssueComment,
@@ -545,6 +555,16 @@ export type {
   MergeMethod,
   MergeBlock,
   PrMergeInfo,
+  PrDetail,
+  PrEntry,
+  PrEntryKind,
+  PrFile,
+  PrReviewer,
+  PrAutoMerge,
+  ReviewDecision,
+  Mergeable,
+  MergeState,
+  ReviewerState,
   RerunReport,
   Issue,
   IssueComment,
@@ -1414,6 +1434,12 @@ export interface Api {
   // Rejects with `merge_blocked`; `detail` is the `MergeBlock`.
   worktreePrMerge(path: string, number: number, method: MergeMethod, headOid: string): Promise<void>;
   worktreePrOpen(path: string, checks: boolean): Promise<void>;
+  // The PR of the branch in full (conversation, reviews, files, auto-merge); null when the branch has none.
+  worktreePrDetail(path: string): Promise<PrDetail | null>;
+  // A conversation comment; the body goes to `gh` on stdin. Rejects with `empty_comment` or `comment_too_large`.
+  worktreePrComment(path: string, number: number, body: string): Promise<void>;
+  // Arms auto-merge with `method`; null turns it off.
+  worktreePrAutoMerge(path: string, number: number, method: MergeMethod | null): Promise<void>;
   // The logins `gh` holds, active one flagged; [] when none or `gh` is not signed in. Rejects with
   // `gh_missing`. A repo bound to a login that is gone rejects its `gh` calls with `gh_account_missing`.
   ghLogins(): Promise<GhLogin[]>;
@@ -2646,6 +2672,9 @@ const tauriApi: Api = {
   worktreePrMergeInfo: (path, number) => call("worktree_pr_merge_info", { path, number }),
   worktreePrMerge: (path, number, method, headOid) => call("worktree_pr_merge", { path, number, method, headOid }),
   worktreePrOpen: (path, checks) => call("worktree_pr_open", { path, checks }),
+  worktreePrDetail: (path) => call("worktree_pr_detail", { path }),
+  worktreePrComment: (path, number, body) => call("worktree_pr_comment", { path, number, body }),
+  worktreePrAutoMerge: (path, number, method) => call("worktree_pr_auto_merge", { path, number, method }),
   issuesList: (repoId, query) => call("issues_list", { repoId, query }),
   issueView: (repoId, number) => call("issue_view", { repoId, number }),
   issueResolve: (repoId, text) => call("issue_resolve", { repoId, text }),

@@ -4,7 +4,7 @@ import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { pushDirHistory } from "./settings/worktreeDir";
 import { mockImageBytes, mockReviewFindings, mockReviewPlan } from "./mockReviewAi";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, NestedRepo, Check, MergeBlock, PrComment, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
+import type { Api, ApiError, NestedRepo, Check, MergeBlock, PrComment, PrDetail, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 import { fromWork } from "@/workspace/branchName";
 import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
@@ -82,6 +82,9 @@ type WorkspaceApi = Pick<
   | "worktreePrMergeInfo"
   | "worktreePrMerge"
   | "worktreePrOpen"
+  | "worktreePrDetail"
+  | "worktreePrComment"
+  | "worktreePrAutoMerge"
   | "worktreeCheckLog"
   | "worktreeDraftCommit"
   | "worktreeDraftPr"
@@ -121,6 +124,8 @@ export type MockWorkspaceSeed = {
   // Review comments and merge state of each worktree's PR, by worktree path.
   prComments?: Record<string, PrComment[]>;
   mergeInfo?: Record<string, PrMergeInfo>;
+  // The full PR panel read of each worktree's PR; built from the `prs` entry when absent.
+  prDetails?: Record<string, PrDetail>;
   // The PR head on GitHub by worktree path; the mock's own HEAD when absent.
   prHeads?: Record<string, string>;
   // The next commit or amend in that worktree is rejected with `hook_failed`; the text is the hook output.
@@ -512,6 +517,7 @@ export function createMockWorkspace(
   const checks = new Map<string, Check[]>(Object.entries(structuredClone(seed.checks ?? {})));
   const prComments = new Map<string, PrComment[]>(Object.entries(structuredClone(seed.prComments ?? {})));
   const mergeInfo = new Map<string, PrMergeInfo>(Object.entries(structuredClone(seed.mergeInfo ?? {})));
+  const prDetails = new Map<string, PrDetail>(Object.entries(structuredClone(seed.prDetails ?? {})));
   const hooks = new Map<string, string>(Object.entries(seed.hookFailure ?? {}));
   const remotes = new Map<string, Remote>();
   // Worktrees whose local commits were rewritten after they were pushed, by an amend or a rebase.
@@ -1576,6 +1582,26 @@ export function createMockWorkspace(
     async worktreePrOpen(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       if (!prs.has(path)) return reject("gh_failed");
+    },
+    async worktreePrDetail(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const own = prDetails.get(path);
+      if (own) return structuredClone(own);
+      const pr = prs.get(path);
+      if (!pr) return null;
+      return { number: pr.number, url: pr.url, state: pr.state, title: pr.title, body: "", author: null, base: pr.base, head: pr.head, reviewDecision: null, mergeable: "unknown", mergeState: "unknown", reviewers: [], entries: [], files: [], autoMerge: null };
+    },
+    async worktreePrComment(path, _number, body) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (body.trim() === "") return reject("empty_comment");
+      if (body.length > COMMENT_BODY_MAX) return reject("comment_too_large");
+      const own = prDetails.get(path);
+      if (own) own.entries.push({ kind: "comment", author: "you", body, at: new Date().toISOString(), url: null, review: null });
+    },
+    async worktreePrAutoMerge(path, _number, method) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const own = prDetails.get(path);
+      if (own) own.autoMerge = method === null ? null : { method, enabledBy: "you" };
     },
     async worktreeCheckLog(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

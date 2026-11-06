@@ -25,6 +25,8 @@ export function ChecksPanel(props: {
   // The review comments under the checks. Left out, the section does not show.
   comments?: PrCommentStore;
   visible: boolean;
+  // Embedded under the pull request panel, which has its own header, merge controls and comments.
+  bare?: boolean;
   // Where queued comments can go: the sessions to pick an agent tab from, and the send itself.
   sessions?: Sessions | null;
   onSendComments?(pr: { number: number; title: string; url: string }, groups: CommentGroup[], choice: SendChoice, ack: boolean): Promise<SendOutcome>;
@@ -156,18 +158,20 @@ export function ChecksPanel(props: {
       )}
       {pr ? (
         <>
-          <div className="ws-checks-pr">
+          {!props.bare && <div className="ws-checks-pr">
             <span className="ws-dot" data-pr={pr.state} aria-hidden="true" />
             <span className="ws-checks-number">{`#${pr.number}`}</span>
             <span className="ws-checks-title" title={pr.title}>
               {pr.title}
             </span>
             <span className="ws-checks-state">{t(`checks.state.${pr.state}`)}</span>
-          </div>
+          </div>}
           <div className="ws-checks-actions">
-            <button type="button" className="ws-checks-btn" onClick={() => void open(false)}>
-              {t("checks.openPr")}
-            </button>
+            {!props.bare && (
+              <button type="button" className="ws-checks-btn" onClick={() => void open(false)}>
+                {t("checks.openPr")}
+              </button>
+            )}
             <button type="button" className="ws-checks-btn" onClick={() => void open(true)}>
               {t("checks.openChecks")}
             </button>
@@ -224,8 +228,8 @@ export function ChecksPanel(props: {
               ))}
             </ul>
           )}
-          <PrMergeMenu api={api} worktree={worktree} pr={pr} prs={prs} reloadKey={entry?.checks} />
-          {props.comments && (
+          {!props.bare && <PrMergeMenu api={api} worktree={worktree} pr={pr} prs={prs} reloadKey={entry?.checks} />}
+          {!props.bare && props.comments && (
             <PrComments store={props.comments} worktree={worktree} number={pr.number} overrides={overrides} reloadKey={entry?.checks} onMarkBot={(login, mark) => void markBot(login, mark)} agent={props.onSendComments ? { sessions: props.sessions, send: (groups, choice, ack) => props.onSendComments!(pr, groups, choice, ack) } : undefined} />
           )}
         </>

@@ -96,6 +96,8 @@ export interface WorktreeListProps {
   /** Why the last repo or pin action failed. */
   notice?: ApiError["code"];
   onSelect(worktree: WorktreeView): void;
+  /** A click on the PR chip: the row is selected as for any click, then this opens the pull request panel. */
+  onOpenPr?(): void;
   /** Worktree paths in the multi-selection. */
   picked?: ReadonlySet<string>;
   /** Ctrl/Cmd or Shift click: change the selection instead of opening the worktree. */
@@ -224,6 +226,10 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       <span
         className="ws-pr"
         role="img"
+        onClick={(e) => {
+          if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+          props.onOpenPr?.();
+        }}
         aria-label={
           summary
             ? t("ship.chip.labelChecks", { number: pr.number, state: t(`checks.state.${pr.state}`).toLowerCase(), checks: t(`checks.summary.${summary}`) })
