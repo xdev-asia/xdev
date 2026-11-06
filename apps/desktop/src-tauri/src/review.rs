@@ -177,7 +177,7 @@ fn review(data: &Path, path: &Path, base: Option<&str>) -> Result<ReviewData, Cm
     })
 }
 
-fn review_file(
+pub(crate) fn review_file(
     data: &Path,
     path: &Path,
     base: &str,

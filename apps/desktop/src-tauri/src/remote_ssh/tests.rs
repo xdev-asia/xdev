@@ -859,6 +859,10 @@ fn local_only_commands_are_guarded() {
             ][..],
         ),
         (
+            include_str!("../line_attribution.rs"),
+            &["attribution_lines"][..],
+        ),
+        (
             include_str!("../files.rs"),
             &["file_reveal", "files_search"][..],
         ),

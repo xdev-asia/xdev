@@ -53,6 +53,7 @@ mod kit;
 mod layout;
 mod layout_user;
 mod license;
+mod line_attribution;
 mod links;
 mod links_open;
 mod lsp;
@@ -644,6 +645,7 @@ pub fn run() {
             attribution::attribution_versions,
             attribution::attribution_version_read,
             attribution::attribution_restore,
+            line_attribution::attribution_lines,
             ship::worktree_ship,
             ship::worktree_push,
             ship::worktree_pull,
