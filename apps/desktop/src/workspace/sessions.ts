@@ -129,6 +129,17 @@ export function reorderTabs(tabs: readonly string[], id: string, before: string 
   return next.every((t, i) => t === tabs[i]) ? tabs : next;
 }
 
+/**
+ * The `before` argument of `reorderTab` that moves `id` one place along `tabs` (`step` -1 left, 1 right);
+ * undefined when it cannot move (not in the strip, or already at that end).
+ */
+export function stepBefore(tabs: readonly string[], id: string, step: -1 | 1): string | null | undefined {
+  const from = tabs.indexOf(id);
+  const to = from + step;
+  if (from < 0 || to < 0 || to >= tabs.length) return undefined;
+  return step < 0 ? tabs[to] : (tabs[to + 1] ?? null);
+}
+
 /** The CLI of a built-in profile id, for callers that have no profile view. */
 export function cliOf(profileId: PtyProfile): TabCli {
   return profileId === "claude" || profileId === "codex" ? profileId : null;

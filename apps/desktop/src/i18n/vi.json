@@ -2195,6 +2195,8 @@
   "keys.action.file.closeAll": "Đóng tất cả trình soạn thảo",
   "keys.action.tab.nextSameKind": "Tab cùng loại kế tiếp",
   "keys.action.tab.prevSameKind": "Tab cùng loại trước đó",
+  "keys.action.tab.moveLeft": "Chuyển tab sang trái",
+  "keys.action.tab.moveRight": "Chuyển tab sang phải",
   "keys.action.quickCommands.open": "Lệnh nhanh",
   "keys.action.tab.select.1": "Tới tab 1",
   "keys.action.worktree.select.1": "Tới worktree 1",

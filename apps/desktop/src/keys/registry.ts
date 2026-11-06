@@ -64,6 +64,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("tab.reopenClosed", "tabs", ["Mod+Shift+T"]),
   def("tab.nextSameKind", "tabs", ["Mod+Alt+]"]),
   def("tab.prevSameKind", "tabs", ["Mod+Alt+["]),
+  def("tab.moveLeft", "tabs", ["Mod+Shift+PageUp"]),
+  def("tab.moveRight", "tabs", ["Mod+Shift+PageDown"]),
   def("tab.closeAll", "tabs", ["Mod+Alt+W"]),
   def("browser.new", "tabs", ["Mod+Shift+B"]),
   // Panes.

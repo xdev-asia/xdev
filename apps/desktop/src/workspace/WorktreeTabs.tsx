@@ -75,7 +75,7 @@ import { bodyStyle, PaneView, paneRects } from "./PaneView";
 import { CanvasView, cardBodyStyle, cardLayers } from "./canvas/CanvasView";
 import { sync as syncCanvas, screenRect, type CanvasState } from "./canvas/canvasModel";
 import { CommitView, type CommitAsk } from "./CommitView";
-import { cliOf, ownAccount, type Sessions, type Tab, type TabCli } from "./sessions";
+import { cliOf, ownAccount, stepBefore, type Sessions, type Tab, type TabCli } from "./sessions";
 import type { SetupGate } from "./setupGate";
 import { TabStrip, type MenuGroup, type StripItem, type TabDrag } from "./TabStrip";
 import { AgentIcon } from "./AgentIcon";
@@ -552,6 +552,14 @@ export function WorktreeTabs(props: {
   }
 
   // The next / previous tab of the front tab's kind: files with files, terminals with terminals.
+  function moveShown(step: -1 | 1): boolean {
+    if (!shown) return false;
+    const before = stepBefore(focusedLeaf?.tabs ?? [], shown, step);
+    if (before === undefined) return false;
+    sessions.reorderTab(shown, before);
+    return true;
+  }
+
   function stepSameKind(step: 1 | -1): boolean {
     const kindOf = (id: string) =>
       isFileTab(id) || isViewTab(id) ? "file" : isPreviewTab(id) ? "preview" : isPeerTab(id) ? "peer" : isBrowserTab(id) ? "browser" : id === REVIEW_TAB || id === COMMIT_TAB ? id : "terminal";
@@ -796,6 +804,8 @@ export function WorktreeTabs(props: {
         return true;
       },
       "tab.reopenClosed": () => reopenClosed(),
+      "tab.moveLeft": () => moveShown(-1),
+      "tab.moveRight": () => moveShown(1),
       "tab.nextSameKind": () => stepSameKind(1),
       "tab.prevSameKind": () => stepSameKind(-1),
       "tab.closeAll": () => closeAllTabs(),

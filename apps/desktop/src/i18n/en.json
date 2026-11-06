@@ -2195,6 +2195,8 @@
   "keys.action.file.closeAll": "Close all editors",
   "keys.action.tab.nextSameKind": "Next tab of the same kind",
   "keys.action.tab.prevSameKind": "Previous tab of the same kind",
+  "keys.action.tab.moveLeft": "Move tab left",
+  "keys.action.tab.moveRight": "Move tab right",
   "keys.action.quickCommands.open": "Quick commands",
   "keys.action.tab.select.1": "Go to tab 1",
   "keys.action.worktree.select.1": "Go to worktree 1",
