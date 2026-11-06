@@ -178,10 +178,15 @@ pub fn sim_boot(device: crate::mobile::SimRef) -> Result<crate::mobile::SimLaunc
         });
     }
     with_sdk(|sdk| {
-        let list = sdk_list(sdk, ios);
+        // Only the requested platform is listed: no xcrun for Android, no adb for iOS.
+        let list = mobile::list_platform(ios, sdk, device.platform, &|p, a, t| {
+            crate::agent_path::capture(p, a, t)
+        });
         let found = mobile::find_device(&list, &device)?;
         if found.platform == SimPlatform::Ios {
-            mobile::boot_ios(&found.id, &|p, a, t| crate::agent_path::capture(p, a, t));
+            mobile::boot_ios(&found.id, &mobile::run_exit, &|p, a, t| {
+                crate::agent_path::capture(p, a, t)
+            })?;
         }
         let emulator = sdk.find("emulator", "emulator");
         let adb = sdk.find("adb", "platform-tools");

@@ -23,8 +23,10 @@ export async function runSim(
     return { ok: false, code: toApiError(e).code };
   }
   const tabs: Tab[] = [];
+  // Rust quotes the commands for PowerShell on Windows, so the tab must run PowerShell there.
+  const profile = typeof navigator !== "undefined" && /^win/i.test(navigator.platform) ? "shell:powershell" : "shell";
   const open = (title: string, command: string) => {
-    const tab = ctx.sessions.open(ctx.worktree, "shell", null, undefined, { title });
+    const tab = ctx.sessions.open(ctx.worktree, profile, null, undefined, { title });
     tab.client.typeWhenReady(terminalBytes(command, true));
     tabs.push(tab);
   };

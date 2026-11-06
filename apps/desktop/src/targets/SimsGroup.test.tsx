@@ -23,6 +23,12 @@ it("shows the empty text and both problems when no tool is found", () => {
   expect(html).toContain("Refresh");
 });
 
+it("off macOS the empty text does not mention Xcode", () => {
+  const html = draw({ ios: null, android: [], problems: [] });
+  expect(html).toContain("No emulators found.");
+  expect(html).not.toContain("Xcode");
+});
+
 it("lists rows with their state and action", () => {
   const html = draw({
     ios: [

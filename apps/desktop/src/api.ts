@@ -812,6 +812,7 @@ export type ErrorCode =
   | "sim_unsupported"
   | "sim_not_found"
   | "sim_tool_missing"
+  | "sim_boot_failed"
   | "hook_none"
   | "setup_skipped"
   | "cancelled"
@@ -2046,7 +2047,7 @@ export interface Api {
   targetsVpsNotes(worktree: string): Promise<string | null>;
   /** The installed iOS simulators (macOS) and Android AVDs; a missing tool is `null` with a problem key. */
   simsList(): Promise<SimList>;
-  /** Boots a simulator and returns the commands to type into tabs. Rejects `sim_not_found`, `sim_unsupported`, `sim_tool_missing`. */
+  /** Boots a simulator and returns the commands to type into tabs. Rejects `sim_not_found`, `sim_unsupported`, `sim_tool_missing`, `sim_boot_failed`. */
   simBoot(device: SimRef): Promise<SimLaunch>;
   /** The server and trusted keys the license and xDev ID talk to. */
   cloudSettings(): Promise<CloudSettings>;
@@ -2243,6 +2244,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "sim_unsupported",
   "sim_not_found",
   "sim_tool_missing",
+  "sim_boot_failed",
   "hook_none",
   "setup_skipped",
   "cancelled",

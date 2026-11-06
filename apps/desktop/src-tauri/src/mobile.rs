@@ -84,6 +84,7 @@ pub(crate) enum Shell {
 }
 
 impl Shell {
+    /// The shell of the tab: assumes PowerShell on Windows (`runSim.ts` opens a PowerShell tab there).
     pub(crate) fn host() -> Shell {
         if cfg!(windows) {
             Shell::PowerShell
@@ -93,18 +94,19 @@ impl Shell {
     }
 
     fn quote(self, text: &str) -> String {
-        match self {
-            Shell::Posix | Shell::PowerShell => {
-                let plain = !text.is_empty()
-                    && text
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || "_@%+=:,./-".contains(c));
-                match (plain, self) {
-                    (true, _) => text.to_owned(),
-                    (false, Shell::Posix) => format!("'{}'", text.replace('\'', "'\\''")),
-                    (false, Shell::PowerShell) => format!("'{}'", text.replace('\'', "''")),
-                }
-            }
+        // PowerShell treats `,@%+=` as operators, so its plain set is smaller.
+        let safe = match self {
+            Shell::Posix => "_@%+=:,./-",
+            Shell::PowerShell => "_:./-",
+        };
+        let plain = !text.is_empty()
+            && text
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || safe.contains(c));
+        match (plain, self) {
+            (true, _) => text.to_owned(),
+            (false, Shell::Posix) => format!("'{}'", text.replace('\'', "'\\''")),
+            (false, Shell::PowerShell) => format!("'{}'", text.replace('\'', "''")),
         }
     }
 
@@ -347,6 +349,26 @@ pub(crate) fn list_all(ios_supported: bool, sdk: &Sdk<'_>, run: Runner<'_>) -> S
     }
 }
 
+/// The list of one platform only; the other stays `None`.
+pub(crate) fn list_platform(
+    ios_supported: bool,
+    sdk: &Sdk<'_>,
+    platform: SimPlatform,
+    run: Runner<'_>,
+) -> SimList {
+    let mut list = SimList {
+        ios: None,
+        android: None,
+        problems: Vec::new(),
+    };
+    match platform {
+        SimPlatform::Ios if ios_supported => list.ios = list_ios(run),
+        SimPlatform::Ios => {}
+        SimPlatform::Android => list.android = list_android(sdk, run),
+    }
+    list
+}
+
 /// The commands for `device`. Android needs the tool paths.
 pub(crate) fn sim_launch(
     device: &SimDevice,
@@ -379,8 +401,11 @@ pub(crate) fn sim_launch(
             }
             let wait = [&base[..], &["wait-for-device"]].concat();
             let logcat = [&base[..], &["logcat", "-v", "color"]].concat();
+            // A running emulator is only streamed; a second one must not start.
+            let tab_command = (device.state != SimState::Booted || device.serial.is_none())
+                .then(|| shell.command(&emulator, &["-avd", &device.id]));
             Ok(SimLaunch {
-                tab_command: Some(shell.command(&emulator, &["-avd", &device.id])),
+                tab_command,
                 log_command: shell.then(shell.command(&adb, &wait), shell.command(&adb, &logcat)),
                 title,
             })
@@ -415,12 +440,70 @@ pub(crate) fn find_device(list: &SimList, target: &SimRef) -> Result<SimDevice, 
         })
 }
 
+/// How a command ended.
+pub(crate) struct Exit {
+    pub ok: bool,
+    pub stderr: String,
+}
+
+/// Like `Runner`, but keeps stderr and the exit status; `None` when the
+/// command did not start or timed out.
+pub(crate) type ExitRunner<'a> = &'a dyn Fn(&str, &[&str], Duration) -> Option<Exit>;
+
+/// A boot that fails only because the device already runs is a success.
+pub(crate) fn boot_outcome(exit: Option<Exit>) -> Result<(), CmdError> {
+    match exit {
+        Some(e)
+            if e.ok
+                || e.stderr
+                    .contains("Unable to boot device in current state: Booted") =>
+        {
+            Ok(())
+        }
+        _ => Err(CmdError {
+            code: "sim_boot_failed",
+            detail: None,
+        }),
+    }
+}
+
 /// `xcrun simctl boot <udid>` then `open -a Simulator`. "Already booted" is fine.
-pub(crate) fn boot_ios(udid: &str, run: Runner<'_>) {
-    // `capture` reports a failed boot as None; a booted device fails the same
-    // way, so a failure is not an error: `open` and the log tab show the rest.
-    let _ = run("xcrun", &["simctl", "boot", udid], TOOL_TIMEOUT);
+pub(crate) fn boot_ios(udid: &str, boot: ExitRunner<'_>, run: Runner<'_>) -> Result<(), CmdError> {
+    boot_outcome(boot("xcrun", &["simctl", "boot", udid], TOOL_TIMEOUT))?;
     let _ = run("open", &["-a", "Simulator"], TOOL_TIMEOUT);
+    Ok(())
+}
+
+/// Runs `program args` and returns its status and stderr; `None` when it
+/// cannot start or is still running after `timeout` (then it is killed).
+pub(crate) fn run_exit(program: &str, args: &[&str], timeout: Duration) -> Option<Exit> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let mut stderr = child.stderr.take()?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = stderr.by_ref().take(1 << 16).read_to_end(&mut bytes);
+        let _ = tx.send(bytes);
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(bytes) => Some(Exit {
+            ok: child.wait().ok()?.success(),
+            stderr: String::from_utf8_lossy(&bytes).into_owned(),
+        }),
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -751,16 +834,90 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
+    fn exit(ok: bool, stderr: &str) -> Option<Exit> {
+        Some(Exit {
+            ok,
+            stderr: stderr.into(),
+        })
+    }
+
+    #[test]
+    fn boot_outcome_accepts_booted_and_names_other_failures() {
+        assert!(boot_outcome(exit(true, "")).is_ok());
+        assert!(
+            boot_outcome(exit(
+                false,
+                "An error was encountered (code=405):\nUnable to boot device in current state: Booted"
+            ))
+            .is_ok()
+        );
+        for bad in [
+            exit(false, "Unable to boot device in current state: Creating"),
+            exit(false, ""),
+            None,
+        ] {
+            assert_eq!(boot_outcome(bad).unwrap_err().code, "sim_boot_failed");
+        }
+    }
+
     #[test]
     fn ios_boot_runs_simctl_then_opens_simulator() {
-        let fake = Fake {
-            ran: RefCell::new(Vec::new()),
+        let ran = RefCell::new(Vec::new());
+        let boot = |p: &str, a: &[&str], _t: Duration| {
+            ran.borrow_mut().push(format!("{p} {}", a.join(" ")));
+            exit(false, "Unable to boot device in current state: Booted")
         };
-        boot_ios("AAAA-2", &|p, a, t| fake.run(p, a, t));
+        let open = |p: &str, a: &[&str], _t: Duration| {
+            ran.borrow_mut().push(format!("{p} {}", a.join(" ")));
+            None
+        };
+        boot_ios("AAAA-2", &boot, &open).unwrap();
         assert_eq!(
-            *fake.ran.borrow(),
+            *ran.borrow(),
             ["xcrun simctl boot AAAA-2", "open -a Simulator"]
         );
+        let failing = |_: &str, _: &[&str], _: Duration| exit(false, "boom");
+        assert_eq!(
+            boot_ios("AAAA-2", &failing, &open).unwrap_err().code,
+            "sim_boot_failed"
+        );
+    }
+
+    #[test]
+    fn running_android_emulator_gets_no_second_tab() {
+        let emu = PathBuf::from("emulator");
+        let adb = PathBuf::from("adb");
+        let mut d = avd(Some("emulator-5554"));
+        d.state = SimState::Booted;
+        let l = sim_launch(&d, Some(&emu), Some(&adb), Shell::Posix, &title).unwrap();
+        assert_eq!(l.tab_command, None);
+        assert!(l.log_command.contains("-s emulator-5554 logcat"));
+    }
+
+    #[test]
+    fn powershell_quotes_its_operator_characters() {
+        for s in ["a,b", "@x", "a=1", "50%", "a+b"] {
+            assert_eq!(Shell::PowerShell.quote(s), format!("'{s}'"));
+        }
+        assert_eq!(Shell::PowerShell.quote("it's"), "'it''s'");
+        assert_eq!(Shell::PowerShell.quote("-avd"), "-avd");
+        assert_eq!(Shell::Posix.quote("a,b"), "a,b");
+    }
+
+    #[test]
+    fn list_platform_runs_only_that_platform() {
+        let ran = RefCell::new(Vec::new());
+        let run = |p: &str, _a: &[&str], _t: Duration| {
+            ran.borrow_mut().push(p.to_owned());
+            None
+        };
+        let find = |_: &str| None;
+        let var = |_: &str| None;
+        let nofile = |_: &Path| false;
+        let sdk = fake_sdk(&find, &var, &nofile);
+        list_platform(true, &sdk, SimPlatform::Android, &run);
+        assert!(!ran.borrow().iter().any(|p| p == "xcrun"));
+        list_platform(true, &sdk, SimPlatform::Ios, &run);
+        assert_eq!(*ran.borrow(), ["xcrun"]);
     }
 }

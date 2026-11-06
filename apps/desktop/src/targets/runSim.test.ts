@@ -57,3 +57,23 @@ it("a failed boot opens nothing and gives the error code", async () => {
   expect(res).toEqual({ ok: false, code: "sim_not_found" });
   expect(h.opened).toEqual([]);
 });
+
+it("opens PowerShell tabs on Windows and the default shell elsewhere", async () => {
+  const profiles: string[] = [];
+  const mk = () => {
+    const sessions = {
+      open: vi.fn((_w: string, p: string) => {
+        profiles.push(p);
+        return { client: { typeWhenReady: () => undefined } };
+      }),
+    } as unknown as Sessions;
+    return sessions;
+  };
+  const api = { simBoot: vi.fn(() => Promise.resolve({ tabCommand: null, logCommand: "x", title: "t" })) };
+  for (const platform of ["Win32", "MacIntel"]) {
+    vi.stubGlobal("navigator", { platform });
+    await runSim(device({}), { api, sessions: mk(), worktree: "/w", t });
+  }
+  vi.unstubAllGlobals();
+  expect(profiles).toEqual(["shell:powershell", "shell"]);
+});

@@ -24,7 +24,7 @@ export function SimsItems(props: {
           {t("targets.sim.loading")}
         </div>
       )}
-      {list && simsEmpty(list) && <div className="targets-hint">{t("targets.sim.none")}</div>}
+      {list && simsEmpty(list) && <div className="targets-hint">{t(list.ios === null && !list.problems.includes("targets.sim.noXcode") ? "targets.sim.noneAndroid" : "targets.sim.none")}</div>}
       {groups.map((g) => (
         <div key={g.key} role="group" aria-label={t(g.titleKey)}>
           <div className="ws-menu-label" aria-hidden="true">

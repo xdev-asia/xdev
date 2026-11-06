@@ -5575,6 +5575,7 @@
   "targets.sim.boot": "Start and stream logs",
   "targets.sim.logs": "Stream logs",
   "targets.sim.none": "No simulators found. Install Xcode or the Android SDK, then create a simulator there.",
+  "targets.sim.noneAndroid": "No emulators found. Install the Android SDK, then create an emulator there.",
   "targets.sim.noXcode": "Xcode command line tools were not found.",
   "targets.sim.noAndroid": "The Android emulator was not found. Set ANDROID_HOME or add the SDK's emulator folder to PATH.",
   "targets.sim.logTab": "Logs: {name}",
@@ -5582,5 +5583,6 @@
   "targets.refresh": "Refresh",
   "error.sim_unsupported": "iOS simulators need a Mac.",
   "error.sim_not_found": "That simulator is no longer there. Refresh the list.",
-  "error.sim_tool_missing": "The simulator tool was not found. Install it, then refresh."
+  "error.sim_tool_missing": "The simulator tool was not found. Install it, then refresh.",
+  "error.sim_boot_failed": "The simulator could not be started. Check that it is installed and not busy, then try again."
 }
