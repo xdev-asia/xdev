@@ -1,15 +1,19 @@
 //! GitLab merge requests of a registered repo, read through `glab` in its main checkout, and the
 //! local branch a merge request is started on.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tauri::State;
-use xdev_git::{GlabExec, MrSummary, PrFilter, Repo, SystemGlab, glab_mr_list, glab_mr_view};
+use xdev_git::{
+    GlabExec, MR_BODY_LIMIT, MrSummary, PrDraft, PrFilter, Repo, SystemGlab, glab_mr_create,
+    glab_mr_for_branch, glab_mr_list, glab_mr_view,
+};
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
 use crate::issues::main_path;
 use crate::prs::{PrBranch, branch_for};
+use crate::ship::{base_ref_for, err, ready_draft};
 
 fn detect_with(data: &Path, repo_id: &str) -> Result<bool, CmdError> {
     let repo = Repo::discover(&main_path(data, repo_id)?)?;
@@ -55,6 +59,31 @@ fn branch_with(
     )
 }
 
+/// Creates a merge request for the checked-out branch, which must already be pushed.
+fn create_mr_with(
+    glab: &dyn GlabExec,
+    repo: &Repo,
+    base_ref: &str,
+    draft: PrDraft,
+) -> Result<MrSummary, CmdError> {
+    let (branch, draft) = ready_draft(repo, base_ref, draft)?;
+    if repo.gitlab_remote()?.is_none() {
+        return Err(err("not_gitlab", None));
+    }
+    if draft.body.encode_utf16().count() > MR_BODY_LIMIT {
+        return Err(err("body_too_long", Some(MR_BODY_LIMIT.to_string())));
+    }
+    Ok(glab_mr_create(glab, &repo.root(), &branch, &draft)?)
+}
+
+/// The merge request of the checked-out branch, in any state; `None` on a detached `HEAD`.
+fn mr_with(glab: &dyn GlabExec, repo: &Repo) -> Result<Option<MrSummary>, CmdError> {
+    match repo.current_branch()? {
+        Some(branch) => Ok(glab_mr_for_branch(glab, &repo.root(), &branch)?),
+        None => Ok(None),
+    }
+}
+
 /// Whether the repo's remote is a GitLab one, so the merge request views apply.
 #[tauri::command(async)]
 pub fn gitlab_detect(state: State<'_, AppState>, repo_id: String) -> Result<bool, CmdError> {
@@ -88,6 +117,33 @@ pub fn gitlab_mr_branch(
     iid: u64,
 ) -> Result<PrBranch, CmdError> {
     branch_with(&SystemGlab, data_dir(&state)?, &repo_id, iid)
+}
+
+/// The merge request of the worktree's branch, or `None` when it has none.
+#[tauri::command(async)]
+pub fn worktree_mr(
+    state: State<'_, AppState>,
+    path: PathBuf,
+) -> Result<Option<MrSummary>, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_mr")?;
+    let _ = data_dir(&state)?;
+    mr_with(&SystemGlab, &Repo::discover(&path)?)
+}
+
+#[tauri::command(async)]
+pub fn worktree_mr_create(
+    state: State<'_, AppState>,
+    stats: State<'_, crate::app_stats::AppStatsHub>,
+    path: PathBuf,
+    draft: PrDraft,
+) -> Result<MrSummary, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_mr_create")?;
+    let data = data_dir(&state)?;
+    let base_ref = base_ref_for(data, &path)?;
+    let repo = Repo::discover(&path)?;
+    let mr = create_mr_with(&SystemGlab, &repo, &base_ref, draft)?;
+    stats.record_pr(data, &mr.url);
+    Ok(mr)
 }
 
 #[cfg(test)]
@@ -291,5 +347,132 @@ mod tests {
         let fake = Fake::new(vec![(0, &mr(7, "feat/x", false), "")]);
         let err = branch_with(&fake, &data, "g-b6", 7).unwrap_err();
         assert_eq!(err.code, "not_gitlab");
+    }
+
+    /// Pushes the checked-out branch of `main` to its origin and sets the upstream.
+    fn push_current(main: &Path) -> String {
+        let branch = git(main, &["branch", "--show-current"]).trim().to_owned();
+        git(main, &["push", "-q", "-u", "origin", &branch]);
+        branch
+    }
+
+    fn draft(base: &str, title: &str, body: &str) -> PrDraft {
+        PrDraft {
+            base: base.into(),
+            title: title.into(),
+            body: body.into(),
+            draft: false,
+        }
+    }
+
+    const CREATED: &str = "!12 Add x
+https://gitlab.com/acme/app/-/merge_requests/12
+";
+
+    fn create_code(fx: &str, url: &str, d: PrDraft, prep: impl Fn(&Path)) -> (&'static str, usize) {
+        let (_tmp, _data, main) = fixture(fx, url);
+        prep(&main);
+        let fake = Fake::new(vec![]);
+        let repo = Repo::discover(&main).unwrap();
+        let code = create_mr_with(&fake, &repo, "origin/main", d)
+            .unwrap_err()
+            .code;
+        (code, fake.calls.borrow().len())
+    }
+
+    #[test]
+    fn create_refuses_what_the_pr_path_refuses() {
+        let none = |_: &Path| {};
+        assert_eq!(
+            create_code("m-np", URL, draft("", "T", ""), none),
+            ("not_pushed", 0)
+        );
+        assert_eq!(
+            create_code("m-et", URL, draft("", "   ", ""), |m| {
+                push_current(m);
+            }),
+            ("empty_title", 0)
+        );
+        assert_eq!(
+            create_code("m-dt", URL, draft("", "T", ""), |m| {
+                push_current(m);
+                git(m, &["checkout", "-q", "--detach"]);
+            }),
+            ("detached", 0)
+        );
+        assert_eq!(
+            create_code("m-br", URL, draft("bad..ref", "T", ""), |m| {
+                push_current(m);
+            }),
+            ("bad_ref", 0)
+        );
+    }
+
+    #[test]
+    fn create_on_a_github_repo_is_not_gitlab_and_runs_no_glab() {
+        let got = create_code(
+            "m-gh",
+            "https://github.com/acme/app.git",
+            draft("", "T", ""),
+            |m| {
+                push_current(m);
+            },
+        );
+        assert_eq!(got, ("not_gitlab", 0));
+    }
+
+    #[test]
+    fn create_caps_the_description() {
+        let prep = |m: &Path| {
+            push_current(m);
+        };
+        let long = "a".repeat(16_001);
+        let got = create_code("m-bl", URL, draft("", "T", &long), prep);
+        assert_eq!(got, ("body_too_long", 0));
+        let (_tmp, _data, main) = fixture("m-bl2", URL);
+        push_current(&main);
+        let repo = Repo::discover(&main).unwrap();
+        let ok = "a".repeat(16_000);
+        let fake = Fake::new(vec![(0, CREATED, ""), (0, &mr(12, "x", false), "")]);
+        assert!(create_mr_with(&fake, &repo, "origin/main", draft("", "T", &ok)).is_ok());
+        // Two units per astral char: 8 001 of them are over the limit.
+        let wide = char::from_u32(0x1F600).unwrap().to_string().repeat(8_001);
+        let fake = Fake::new(vec![]);
+        let err = create_mr_with(&fake, &repo, "origin/main", draft("", "T", &wide)).unwrap_err();
+        assert_eq!(
+            (err.code, err.detail.as_deref()),
+            ("body_too_long", Some("16000"))
+        );
+    }
+
+    #[test]
+    fn create_targets_the_plain_base_and_returns_the_viewed_mr() {
+        let (_tmp, _data, main) = fixture("m-ok", URL);
+        let branch = push_current(&main);
+        let repo = Repo::discover(&main).unwrap();
+        let fake = Fake::new(vec![(0, CREATED, ""), (0, &mr(12, &branch, false), "")]);
+        let got =
+            create_mr_with(&fake, &repo, "origin/main", draft("", " Add x ", "Body")).unwrap();
+        assert_eq!(got.iid, 12);
+        let calls = fake.calls.borrow();
+        assert!(calls[0].contains(&"--target-branch=main".to_owned()));
+        assert!(calls[0].contains(&format!("--source-branch={branch}")));
+        assert!(calls[0].contains(&"--title=Add x".to_owned()));
+        assert!(!calls[0].iter().any(|a| a == "--push" || a == "--fill"));
+        assert_eq!(calls[1][..3], ["mr", "view", "12"]);
+    }
+
+    #[test]
+    fn mr_of_a_branch_lists_it_and_a_detached_head_has_none() {
+        let (_tmp, _data, main) = fixture("m-for", URL);
+        let branch = git(&main, &["branch", "--show-current"]).trim().to_owned();
+        let repo = Repo::discover(&main).unwrap();
+        let fake = Fake::new(vec![(0, &format!("[{}]", mr(5, &branch, false)), "")]);
+        assert_eq!(mr_with(&fake, &repo).unwrap().unwrap().iid, 5);
+        assert!(fake.calls.borrow()[0].contains(&format!("--source-branch={branch}")));
+        git(&main, &["checkout", "-q", "--detach"]);
+        let fake = Fake::new(vec![]);
+        assert_eq!(mr_with(&fake, &repo).unwrap(), None);
+        assert!(fake.calls.borrow().is_empty());
     }
 }

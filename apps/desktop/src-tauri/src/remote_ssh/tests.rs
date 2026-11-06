@@ -906,6 +906,10 @@ fn local_only_commands_are_guarded() {
             ][..],
         ),
         (
+            include_str!("../gitlab.rs"),
+            &["worktree_mr", "worktree_mr_create"][..],
+        ),
+        (
             include_str!("../history.rs"),
             &[
                 "worktree_log",
