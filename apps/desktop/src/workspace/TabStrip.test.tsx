@@ -60,3 +60,32 @@ it("a pinned file tab shows the pin and has no close button", () => {
   expect(out).not.toContain("ws-tab-close");
   expect(html([file()])).toContain("ws-tab-close");
 });
+
+it("the + menu lists New chat tab in the agents group only with onNewChat", () => {
+  const menu = (onNewChat?: () => void) =>
+    renderToStaticMarkup(
+      <TabStrip
+        pane="p1"
+        items={[]}
+        active={null}
+        groups={[{ label: "Agents", ids: ["claude"], picker: true }]}
+        menuOpen={true}
+        onMenu={noop}
+        onSelect={noop}
+        onClose={noop}
+        onCloseOthers={noop}
+        onCloseToRight={noop}
+        onLaunch={noop}
+        onSplit={noop}
+        onMoveToSplit={noop}
+        onPin={noop}
+        onCopyTabId={noop}
+        onRename={noop}
+        onChangeTitle={noop}
+        onColor={noop}
+        {...(onNewChat ? { onNewChat } : {})}
+      />,
+    );
+  expect(menu(noop)).toContain(en("workspace.tabs.newChat"));
+  expect(menu()).not.toContain(en("workspace.tabs.newChat"));
+});

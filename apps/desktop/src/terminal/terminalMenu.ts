@@ -24,6 +24,8 @@ export interface TerminalMenuContext {
    * (the item is hidden); the item is disabled while the tab has no session id yet.
    */
   forkSession?(): void;
+  /** Switches this chat-capable agent tab to its chat. Absent hides Show chat. */
+  showChat?(): void;
   /** Opens the hand off dialog: the same work given to another agent. Absent hides the item. */
   handOff?(): void;
   /** Sets every split of the worktree to equal sizes. Absent hides Equalize. */
@@ -90,6 +92,7 @@ export function terminalMenuItems(ctx: TerminalMenuContext): MenuItem[] {
     { id: "paste", labelKey: "termMenu.paste", chord: chord("terminal.paste"), run: () => void handle.paste() },
     { id: "selectAll", labelKey: "termMenu.selectAll", chord: chord("terminal.selectAll"), run: () => handle.selectAll() },
     SEP("sep1"),
+    ...(ctx.showChat ? [{ id: "showChat", labelKey: "termMenu.showChat", chord: chord("tab.toggleChat"), run: ctx.showChat }] : []),
     ...(ctx.quickCommands ? [ctx.quickCommands] : []),
     ...(ctx.forkSession ? [{ id: "forkSession", labelKey: "termMenu.forkSession", disabled: !ctx.tab.agentSession, run: ctx.forkSession }] : []),
     ...(ctx.handOff ? [{ id: "handOff", labelKey: "termMenu.handOff", run: ctx.handOff }] : []),

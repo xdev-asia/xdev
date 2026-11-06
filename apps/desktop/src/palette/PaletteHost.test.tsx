@@ -44,7 +44,7 @@ beforeEach(() => {
 function host(over: Partial<PaletteHostProps> = {}) {
   const actions: PaletteActions = { selectWorktree: vi.fn(), frontTab: vi.fn(), showWorkspace: vi.fn(), openSettings: vi.fn(), newWorktree: vi.fn(), addRepo: vi.fn(), searchDocs: vi.fn(), toggleSidebar: vi.fn(), showDocs: vi.fn() };
   const open = vi.fn((worktree: string, profile: string) => tabOf("new1", worktree, profile, true));
-  const tabs: Record<string, Tab[]> = { "/wt/oak": [tabOf("p1", "/wt/oak", "claude", true)], "/wt/elm": [tabOf("p2", "/wt/elm", "shell", false)] };
+  const tabs: Record<string, Tab[]> = { "/wt/oak": [{ ...tabOf("p1", "/wt/oak", "claude", true), cli: "claude" } as Tab], "/wt/elm": [tabOf("p2", "/wt/elm", "shell", false)] };
   const sessions = { tabs: (p: string) => tabs[p] ?? [], dot: () => null, lastActivity: () => null, open, setPinned: vi.fn(), moveToSplit: vi.fn(), canMoveToSplit: () => true } as unknown as Sessions;
   const props: PaletteHostProps = { open: true, onClose: vi.fn(), repos, sessions, current: oak, shownTab: "p1", actions, ...over };
   const draw = () => {
@@ -301,4 +301,16 @@ it("without an openFile action it reads no files", () => {
   expect(list).not.toHaveBeenCalled();
   expect((h.draw().props as { queryItems(q: string): unknown[] }).queryItems("main")).toEqual([]);
   list.mockRestore();
+});
+
+it("lists the chat toggle for a chat-capable agent in front and not for a shell", () => {
+  expect(host().palette().items.some((i) => i.id === "chat:toggle")).toBe(true);
+  expect(host({ shownTab: "p2", current: elm }).palette().items.some((i) => i.id === "chat:toggle")).toBe(false);
+});
+
+it("the chat toggle switches the front tab to chat", () => {
+  const h = host();
+  h.sessions.setView = vi.fn();
+  h.item("chat:toggle").run();
+  expect(h.sessions.setView).toHaveBeenCalledWith("p1", "chat");
 });

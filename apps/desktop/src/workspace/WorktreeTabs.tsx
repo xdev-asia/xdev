@@ -48,7 +48,7 @@ import { useNotes } from "@/notes/notesStore";
 import { showsPaneLayout, terminalMenuItems } from "@/terminal/terminalMenu";
 import { draftFromSelection } from "@/tasks/board/captureTask";
 import { openTaskEditor } from "@/tasks/board/TaskEditorHost";
-import { registerTerminal } from "@/terminal/terminalRegistry";
+import { registerTerminal, terminalOf } from "@/terminal/terminalRegistry";
 import { LaunchOptionsDialog, type LaunchChoice } from "@/agentLaunch/LaunchOptionsDialog";
 import { SpawnFailure } from "@/terminal/SpawnFailure";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
@@ -101,6 +101,8 @@ import { openCopy, openEntry, type OpenContext } from "@/terminalSets/launch";
 import { captureEntries } from "@/terminalSets/sets";
 import { startupOf } from "@/terminalSets/startupMemory";
 import { ConversationDock } from "@/conversation/ConversationDock";
+import { ChatSurface } from "@/conversation/ChatSurface";
+import { chatCapable, openAgentTab, openAsOf } from "@/conversation/chatOpen";
 
 // Offered while the profile view has not loaded: the built-in agents and the default shell.
 const FALLBACK_AGENTS: readonly PtyProfile[] = ["claude", "codex"];
@@ -410,6 +412,7 @@ export function WorktreeTabs(props: {
   }, [props.prPage]);
 
   const { view, update: updateProfiles } = useProfiles();
+  const profilesView = view ?? null;
   // The CLI a profile runs, from the profile view; the built-in ids stand in until it loads.
   const cliFor = (id: PtyProfile): TabCli => {
     const found = view?.profiles.find((p) => p.profile.id === id);
@@ -482,11 +485,39 @@ export function WorktreeTabs(props: {
     void batch.run(set.entries.length, (i) => openEntry(ctx, set.entries[i], i));
   }
 
+  // A new agent tab through the chat logic: its lookup resumes the worktree's last conversation, so it is async.
+  function launchChat(profile: PtyProfile, pane?: string, view?: "chat" | "terminal"): void {
+    setMenuPane(null);
+    setPickerPane(null);
+    setError(null);
+    const focus = (p: string) => {
+      const at = sessions.layout(worktree);
+      if (at && at.focused !== p) setLayout(focusPane(at, p));
+    };
+    void openAgentTab(
+      { api, sessions, profiles: profilesView, focusPane: focus },
+      { worktree, profile, cli: cliFor(profile), ...(view ? { view } : {}), ...(pane ? { pane } : {}) },
+    );
+  }
+  // Whether this agent launch opens as a chat: a chat-capable profile whose `openAs` says so.
+  const opensAsChat = (profile: PtyProfile): boolean => chatCapable(cliFor(profile)) && openAsOf(profilesView, profile) === "chat";
+
   // An agent launch waits for the setup tab when the gate says so; a shell never does.
   function launchGated(profile: PtyProfile, pane?: string): void {
     const agent = !profile.startsWith("shell") && !profile.startsWith("xdev:");
-    if (agent && props.gate?.defer(worktree, () => void launch(profile, pane))) return;
-    launch(profile, pane);
+    const run = () => (agent && opensAsChat(profile) ? launchChat(profile, pane) : void launch(profile, pane));
+    if (agent && props.gate?.defer(worktree, run)) return;
+    run();
+  }
+
+  // Switches the shown tab between its chat and its terminal; false lets the key on when it has no chat.
+  function toggleChat(): boolean {
+    const tab = shown ? byId.get(shown) : undefined;
+    if (!tab || !tab.agent || !chatCapable(tab.cli)) return false;
+    const next = tab.view === "chat" ? "terminal" : "chat";
+    sessions.setView(tab.id, next);
+    if (next === "terminal") setTimeout(() => terminalOf(tab.id)?.focus(), 0);
+    return true;
   }
 
   // A new pane beside `pane`, with a new terminal in it, in the folder of the pane's terminal.
@@ -810,6 +841,12 @@ export function WorktreeTabs(props: {
   // worktree listens only while it is on screen. A handler that returns false lets the key on.
   // What `auto` or the saved default resolves to; null starts the default shell.
   const defaultAgent: PtyProfile | null = view ? view.resolvedDefault : FALLBACK_AGENTS[0];
+  // The `+` menu's New chat tab: the default agent when it is chat-capable, else the first enabled claude or codex profile.
+  const chatProfile: PtyProfile | null = (() => {
+    if (defaultAgent !== null && chatCapable(cliFor(defaultAgent))) return defaultAgent;
+    return agents.find((id) => chatCapable(cliFor(id))) ?? null;
+  })();
+
   function launchDefault(pane?: string): void {
     setPickerPane(null);
     const profile = defaultAgent ?? defaultShell;
@@ -826,6 +863,7 @@ export function WorktreeTabs(props: {
     {
       "agent.new": () => agentNew(),
       "tab.new": () => newShell(),
+      "tab.toggleChat": () => toggleChat(),
       "browser.new": () => {
         openBrowserTab(worktree);
         return true;
@@ -965,6 +1003,7 @@ export function WorktreeTabs(props: {
           branch: props.branch ?? null,
           exitCode: tab.exitCode,
         }),
+      showChat: tab.agent && chatCapable(tab.cli) && tab.view !== "chat" ? () => void sessions.setView(tab.id, "chat") : undefined,
       forkSession: forkable(tab) ? () => forkSession(tab) : undefined,
       handOff: forkable(tab) && props.worktrees ? () => setHandingOff({ id: tab.id, lines: handle.lines(CONTEXT_LINES) }) : undefined,
       equalize: layout && showsPaneLayout(panes.length) ? () => setLayout(equalize(layout)) : undefined,
@@ -1097,6 +1136,7 @@ export function WorktreeTabs(props: {
               }
             : undefined
         }
+        onNewChat={chatProfile !== null ? () => launchChat(chatProfile, leaf.id, "chat") : undefined}
         onAgentPicker={() => {
           setMenuPane(null);
           setPickerPane(leaf.id);
@@ -1302,7 +1342,8 @@ export function WorktreeTabs(props: {
                   return () => registerTerminal(tab.id, null);
                 }}
               /></SurfaceBoundary>}
-              {tab.agent && <ConversationDock api={api} tab={tab} agentName={profileName(view, tab.profileId, t)} />}
+              {tab.agent && tab.view !== "chat" && <ConversationDock api={api} tab={tab} agentName={profileName(view, tab.profileId, t)} />}
+              {tab.view === "chat" && !tab.asleep && <ChatSurface api={api} sessions={sessions} tab={tab} agentName={profileName(view, tab.profileId, t)} />}
             </div>
           );
         })}
