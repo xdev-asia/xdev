@@ -83,6 +83,18 @@ fn status_script(root: &str) -> String {
     )
 }
 
+/// The script for `checked`: walks `names` down from `root` and exits 4 at
+/// the first link, 0 at the first missing name or the end. In a subshell,
+/// so the `exit` ends only it.
+fn link_script(root: &str, names: &[&str]) -> String {
+    let names: Vec<String> = names.iter().map(|n| sh_quote(n)).collect();
+    format!(
+        r#"( p={}; for n in {}; do p="${{p%/}}/$n"; if [ -L "$p" ]; then exit 4; fi; if [ ! -e "$p" ]; then exit 0; fi; done; exit 0 )"#,
+        sh_quote(root),
+        names.join(" ")
+    )
+}
+
 const PROBE_SCRIPT: &str = "printf '%s\\n' \"$HOME\"; if command -v git >/dev/null 2>&1; then echo git=1; else echo git=0; fi; if command -v tmux >/dev/null 2>&1; then echo tmux=1; else echo tmux=0; fi";
 
 fn parse_probe(out: &[u8]) -> Probe {
@@ -102,9 +114,26 @@ impl<SW: Write, CW: Write> RemoteFs<SW, CW> {
         Self { sftp, chan }
     }
 
+    /// `root` + `rel` when no name on the way is a link, like a local path:
+    /// a link could lead anywhere on the host. One shell round-trip; the
+    /// names left after a missing one are not there, so not links either.
+    pub fn checked(&mut self, root: &str, rel: &str) -> Result<String, RemoteError> {
+        let path = join_rel(root, rel)?;
+        let rest = path
+            .strip_prefix(root.trim_end_matches('/'))
+            .unwrap_or(&path);
+        let names: Vec<&str> = rest.split('/').filter(|n| !n.is_empty()).collect();
+        let out = self.chan.run(&link_script(root, &names), CMD_TIMEOUT)?;
+        match out.code {
+            0 => Ok(path),
+            4 => Err(RemoteError::BadPath(rel.to_owned())),
+            c => Err(RemoteError::Io(format!("path check exited {c}"))),
+        }
+    }
+
     /// The file `rel` of the remote folder `root`, read like a local one.
     pub fn read_file(&mut self, root: &str, rel: &str) -> Result<FileText, RemoteError> {
-        let path = join_rel(root, rel)?;
+        let path = self.checked(root, rel)?;
         let attrs = self.sftp.stat(&path)?;
         if attrs.is_dir() {
             return Err(RemoteError::BadPath(rel.to_owned()));
@@ -132,7 +161,7 @@ impl<SW: Write, CW: Write> RemoteFs<SW, CW> {
         eol: Eol,
         expected: Option<&str>,
     ) -> Result<WriteOutcome, RemoteError> {
-        let path = join_rel(root, rel)?;
+        let path = self.checked(root, rel)?;
         let (on_disk, mode) = match self.sftp.stat(&path) {
             Ok(a) if a.is_dir() => return Err(RemoteError::BadPath(rel.to_owned())),
             Ok(a) => {
@@ -178,7 +207,7 @@ impl<SW: Write, CW: Write> RemoteFs<SW, CW> {
 
     /// An empty file or a folder; `Exists` when the name is taken.
     pub fn create_entry(&mut self, root: &str, rel: &str, dir: bool) -> Result<(), RemoteError> {
-        let path = join_rel(root, rel)?;
+        let path = self.checked(root, rel)?;
         if self.sftp.try_lstat(&path)?.is_some() {
             return Err(RemoteError::Exists);
         }
@@ -193,6 +222,8 @@ impl<SW: Write, CW: Write> RemoteFs<SW, CW> {
     pub fn rename_entry(&mut self, root: &str, from: &str, to: &str) -> Result<(), RemoteError> {
         let src = join_rel(root, from)?;
         let dst = join_rel(root, to)?;
+        self.checked(root, from)?;
+        self.checked(root, to)?;
         if src == dst {
             return Ok(());
         }
@@ -206,11 +237,12 @@ impl<SW: Write, CW: Write> RemoteFs<SW, CW> {
         self.sftp.rename(&src, &dst)
     }
 
-    /// Deletes for good (SFTP has no trash): a file, a link, or a folder with
-    /// everything in it, at most `REMOVE_DEPTH` deep. Links are removed, not
+    /// Deletes for good (SFTP has no trash): a file or a folder with
+    /// everything in it, at most `REMOVE_DEPTH` deep. `rel` itself may not be
+    /// a link (see `checked`); links inside the folder are removed, not
     /// followed.
     pub fn remove_entry(&mut self, root: &str, rel: &str) -> Result<(), RemoteError> {
-        let path = join_rel(root, rel)?;
+        let path = self.checked(root, rel)?;
         let attrs = self.sftp.lstat(&path)?;
         if attrs.is_dir() {
             self.remove_tree(&path, 0)
@@ -333,6 +365,11 @@ mod tests {
         (RemoteFs::new(sftp, chan), sink, shell)
     }
 
+    /// `n` answers of the link check: no link on the way.
+    fn clear(n: usize) -> Vec<(Vec<u8>, i32)> {
+        vec![(Vec::new(), 0); n]
+    }
+
     /// The path strings each request carried, by type.
     fn kinds(sink: &Sink) -> Vec<u8> {
         sink.packets().iter().map(|p| p.0).collect()
@@ -349,7 +386,7 @@ mod tests {
                 ok(5),
             ],
             true,
-            vec![],
+            clear(1),
         );
         let out = f
             .write_file(
@@ -381,7 +418,7 @@ mod tests {
                 ok(5),
             ],
             true,
-            vec![],
+            clear(1),
         );
         let out = f.write_file(ROOT, "a.txt", "y", Eol::Lf, None).unwrap();
         assert_eq!(
@@ -408,7 +445,7 @@ mod tests {
                 ok(9),
             ],
             true,
-            vec![],
+            clear(1),
         );
         let out = f
             .write_file(
@@ -454,7 +491,7 @@ mod tests {
                 ok(5),
             ],
             false,
-            vec![],
+            clear(1),
         );
         let out = f.write_file(ROOT, "new.txt", "hi", Eol::Lf, None).unwrap();
         assert_eq!(
@@ -478,7 +515,7 @@ mod tests {
                 ok(6),
             ],
             true,
-            vec![],
+            clear(1),
         );
         assert_eq!(
             f.write_file(ROOT, "n.txt", "hi", Eol::Lf, None),
@@ -511,7 +548,7 @@ mod tests {
                 attrs(6, READ_MAX + 1, FILE),
             ],
             true,
-            vec![],
+            clear(2),
         );
         let t = f.read_file(ROOT, "x.txt").unwrap();
         assert_eq!(t.text.as_deref(), Some("a\r\nb\r\n"));
@@ -621,7 +658,7 @@ mod tests {
                 ok(7),
             ],
             true,
-            vec![],
+            clear(1),
         );
         f.remove_entry(ROOT, "src").unwrap();
         assert_eq!(kinds(&sink), [1, 7, 11, 12, 12, 4, 13, 15]);
@@ -632,7 +669,7 @@ mod tests {
         let (mut f, _, _) = fs(
             &[attrs(1, 0, FILE), attrs(2, 0, FILE), attrs(3, 0, FILE)],
             true,
-            vec![],
+            clear(5),
         );
         assert_eq!(f.create_entry(ROOT, "a", false), Err(RemoteError::Exists));
         assert_eq!(f.rename_entry(ROOT, "a", "b"), Err(RemoteError::Exists));
@@ -640,6 +677,55 @@ mod tests {
             f.rename_entry(ROOT, "d", "d/e"),
             Err(RemoteError::BadPath(_))
         ));
+    }
+
+    #[test]
+    fn link_script_quotes_each_name() {
+        let s = link_script("/home/dev/it's", &["a b", "c'd"]);
+        assert_eq!(
+            s,
+            r#"( p='/home/dev/it'\''s'; for n in 'a b' 'c'\''d'; do p="${p%/}/$n"; if [ -L "$p" ]; then exit 4; fi; if [ ! -e "$p" ]; then exit 0; fi; done; exit 0 )"#
+        );
+    }
+
+    #[test]
+    fn file_ops_refuse_a_link_on_the_way() {
+        // Every call asks the shell first; 4 means a link.
+        let answers = vec![(Vec::new(), 4); 6];
+        let (mut f, sink, shell) = fs(&[], true, answers);
+        let bad = |r: Result<(), RemoteError>| matches!(r, Err(RemoteError::BadPath(_)));
+        assert!(bad(f.read_file(ROOT, "link/x").map(|_| ())));
+        assert!(bad(f
+            .write_file(ROOT, "link/x", "", Eol::Lf, None)
+            .map(|_| ())));
+        assert!(bad(f.create_entry(ROOT, "link/x", false)));
+        assert!(bad(f.rename_entry(ROOT, "link", "b")));
+        assert!(bad(f.remove_entry(ROOT, "link")));
+        assert!(bad(f.checked(ROOT, "link").map(|_| ())));
+        // Nothing reached SFTP but its init.
+        assert_eq!(kinds(&sink), [1]);
+        let scripts = shell.scripts.lock().unwrap();
+        assert_eq!(scripts.len(), 6);
+        assert!(
+            scripts[0].contains("for n in 'link' 'x';"),
+            "{}",
+            scripts[0]
+        );
+    }
+
+    #[test]
+    fn file_ops_refuse_git_without_asking_the_host() {
+        let (mut f, sink, shell) = fs(&[], true, vec![]);
+        let bad = |r: Result<(), RemoteError>| matches!(r, Err(RemoteError::BadPath(_)));
+        assert!(bad(f.read_file(ROOT, ".git/config").map(|_| ())));
+        assert!(bad(f
+            .write_file(ROOT, "sub/.GIT/hooks/pre-commit", "", Eol::Lf, None)
+            .map(|_| ())));
+        assert!(bad(f.create_entry(ROOT, ".git", true)));
+        assert!(bad(f.rename_entry(ROOT, "a", ".git/a")));
+        assert!(bad(f.remove_entry(ROOT, ".git")));
+        assert_eq!(kinds(&sink), [1]);
+        assert!(shell.scripts.lock().unwrap().is_empty());
     }
 
     #[test]

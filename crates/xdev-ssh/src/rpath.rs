@@ -58,8 +58,8 @@ pub fn sh_quote(s: &str) -> String {
 }
 
 /// `root` + `rel`, for a `rel` that names something inside `root`: not
-/// empty, not absolute, no `..`, no NUL and no `\`. `.` segments and empty
-/// ones (`a//b`) are dropped.
+/// empty, not absolute, no `..`, no `.git` (any case), no NUL and no `\`.
+/// `.` segments and empty ones (`a//b`) are dropped.
 pub fn join_rel(root: &str, rel: &str) -> Result<String, RemoteError> {
     let bad = || RemoteError::BadPath(rel.to_owned());
     if rel.starts_with('/') || rel.contains('\0') || rel.contains('\\') {
@@ -70,6 +70,8 @@ pub fn join_rel(root: &str, rel: &str) -> Result<String, RemoteError> {
         match seg {
             "" | "." => {}
             ".." => return Err(bad()),
+            // Like a local path: git's own folder is not edited from here.
+            s if s.eq_ignore_ascii_case(".git") => return Err(bad()),
             s => parts.push(s),
         }
     }
@@ -190,6 +192,18 @@ mod tests {
                 "{rel:?}"
             );
         }
+    }
+
+    #[test]
+    fn join_rel_refuses_git() {
+        for rel in [".git", ".git/config", "a/.GIT/hooks/x", "./.Git", "a//.git"] {
+            assert!(
+                matches!(join_rel("/r", rel), Err(RemoteError::BadPath(_))),
+                "{rel:?}"
+            );
+        }
+        assert_eq!(join_rel("/r", ".github/x").unwrap(), "/r/.github/x");
+        assert_eq!(join_rel("/r", "a.git").unwrap(), "/r/a.git");
     }
 
     #[test]

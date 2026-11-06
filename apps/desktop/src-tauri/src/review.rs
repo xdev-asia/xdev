@@ -372,6 +372,7 @@ pub fn worktree_review(
     path: PathBuf,
     base: Option<String>,
 ) -> Result<ReviewData, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_review")?;
     review(data_dir(&state)?, &path, base.as_deref())
 }
 
@@ -382,6 +383,7 @@ pub fn worktree_review_file(
     base: String,
     file: String,
 ) -> Result<WorktreeFileDiff, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_review_file")?;
     review_file(data_dir(&state)?, &path, &base, &file)
 }
 
@@ -392,6 +394,7 @@ pub fn worktree_stage(
     files: Vec<String>,
     staged: bool,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_stage")?;
     stage(data_dir(&state)?, &path, &files, staged)
 }
 
@@ -404,6 +407,7 @@ pub fn worktree_discard(
     staged_too: bool,
     confirmed: bool,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_discard")?;
     discard(data_dir(&state)?, &path, &files, staged_too, confirmed)
 }
 
@@ -413,6 +417,7 @@ pub fn worktree_stage_state(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<Vec<StageState>, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_stage_state")?;
     stage_state(data_dir(&state)?, &path)
 }
 
@@ -422,6 +427,7 @@ pub fn worktree_conflicts(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<Option<ConflictState>, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_conflicts")?;
     conflicts(data_dir(&state)?, &path)
 }
 
@@ -431,6 +437,7 @@ pub fn worktree_conflict_continue(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_conflict_continue")?;
     conflict_continue(data_dir(&state)?, &path)
 }
 
@@ -442,6 +449,7 @@ pub fn worktree_conflict_abort(
     path: PathBuf,
     confirmed: bool,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_conflict_abort")?;
     let data = data_dir(&state)?;
     conflict_abort(&gate(data)?, data, &path, confirmed)
 }
@@ -457,6 +465,7 @@ pub fn worktree_conflict_resolve(
     how: ConflictResolution,
     confirmed: bool,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_conflict_resolve")?;
     let data = data_dir(&state)?;
     conflict_resolve(&gate(data)?, data, &path, &file, expected, how, confirmed)
 }
@@ -466,6 +475,7 @@ pub fn worktree_branches(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<Vec<ReviewBranch>, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_branches")?;
     branches(data_dir(&state)?, &path)
 }
 

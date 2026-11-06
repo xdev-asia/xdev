@@ -488,6 +488,12 @@ fn hooks_now(app: &AppHandle) -> Option<PathBuf> {
     hook_program(&status, &std::env::current_exe().ok()?)
 }
 
+/// The hook program a launch gets: none when it runs on a host, which has
+/// neither this machine's `xdev` nor its hook settings files.
+fn launch_hooks(remote: bool, hooks: Option<PathBuf>) -> Option<PathBuf> {
+    if remote { None } else { hooks }
+}
+
 /// The launch of profile or shell `id`, from the stores in `data_dir`.
 /// `account` replaces the profile's own account (a restart keeps the tab's).
 /// With `hooks`, an agent CLI that has status hooks gets the flags that run
@@ -785,6 +791,7 @@ pub(crate) fn spawn_launch(
 
 /// `spawn_launch` that first writes `trust`, once the policy gate has passed:
 /// a launch that is refused trusts nothing.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_launch_trusted(
     ptys: &Ptys,
@@ -795,6 +802,28 @@ pub(crate) fn spawn_launch_trusted(
     cols: u16,
     rows: u16,
     trust: Option<TrustPlan>,
+    on_output: impl FnMut(Vec<u8>) + Send + 'static,
+    on_exit: impl FnOnce(Option<i32>) + Send + 'static,
+) -> Result<PtyInfo, CmdError> {
+    spawn_launch_at(
+        ptys, data_dir, id, cwd, launch, cols, rows, trust, None, on_output, on_exit,
+    )
+}
+
+/// Gates an agent, writes `trust` once the gate has passed (a refused
+/// launch trusts nothing), then starts `launch`. With `remote` the gate
+/// checks the launch as resolved here, then it runs as `ssh -tt` on the host.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spawn_launch_at(
+    ptys: &Ptys,
+    data_dir: &Path,
+    id: String,
+    cwd: PathBuf,
+    launch: Launch,
+    cols: u16,
+    rows: u16,
+    trust: Option<TrustPlan>,
+    remote: Option<crate::remote_launch::RemoteSpec>,
     on_output: impl FnMut(Vec<u8>) + Send + 'static,
     on_exit: impl FnOnce(Option<i32>) + Send + 'static,
 ) -> Result<PtyInfo, CmdError> {
@@ -831,6 +860,13 @@ pub(crate) fn spawn_launch_trusted(
     if let Some(plan) = trust {
         apply_trust(plan);
     }
+    let (launch, listed) = match &remote {
+        Some(spec) => (
+            crate::remote_launch::wrap(launch, spec, &id),
+            PathBuf::from(&spec.worktree),
+        ),
+        None => (launch, cwd.clone()),
+    };
     let (program, args) = launch.command();
     let prompt_after = launch.prompt_after;
     let mut env = launch.env;
@@ -861,12 +897,12 @@ pub(crate) fn spawn_launch_trusted(
     };
     // What the service lists the PTY with; `info` comes back on attach.
     let meta = serde_json::json!({
-        "worktree": cwd.display().to_string(),
+        "worktree": listed.display().to_string(),
         "tabId": id,
         "profile": info.profile,
         "info": info,
     });
-    ptys.cwds().insert(id.clone(), cwd.clone());
+    ptys.cwds().insert(id.clone(), listed);
     if launch.agent {
         ptys.agents
             .lock()
@@ -1128,6 +1164,26 @@ pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdErr
     })
 }
 
+/// The host a launch runs on, with the env names its profile declares.
+fn remote_launch_spec(
+    app: &AppHandle,
+    data: &Path,
+    cwd: &Path,
+    remote_host: Option<&str>,
+    profile_id: &str,
+) -> Result<Option<crate::remote_launch::RemoteSpec>, CmdError> {
+    if remote_host.is_none() && crate::remote_ssh::remote_ref(cwd).is_none() {
+        return Ok(None);
+    }
+    let declared = Profiles::load(data)
+        .map_err(LaunchError::from)?
+        .get(profile_id)
+        .map(|p| p.env.iter().map(|v| v.name.clone()).collect())
+        .unwrap_or_default();
+    let hub = app.state::<crate::remote_ssh::RemoteHub>();
+    crate::remote_ssh::launch_spec(&hub, data, cwd, remote_host, declared)
+}
+
 #[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn pty_spawn(
@@ -1148,12 +1204,24 @@ pub fn pty_spawn(
     extra_args: Option<Vec<String>>,
     // This launch's model, effort and arguments over the profile's.
     overrides: Option<xdev_agent::LaunchOverrides>,
+    // A saved SSH host id: the launch runs there, in the remote project or
+    // the repo's remote target.
+    remote_host: Option<String>,
 ) -> Result<PtyInfo, CmdError> {
     let data = data_dir(&state)?;
+    let remote = remote_launch_spec(&app, data, &cwd, remote_host.as_deref(), &profile_id)?;
+    // A remote launch's local process starts in the home folder.
+    let cwd = match &remote {
+        Some(_) => app.path().home_dir().map_err(|e| CmdError {
+            code: "io",
+            detail: Some(e.to_string()),
+        })?,
+        None => cwd,
+    };
     let mut launch = if profile_id == SETUP_PROFILE {
         setup_launch(data, &cwd)?
     } else {
-        let hooks = hooks_now(&app);
+        let hooks = launch_hooks(remote.is_some(), hooks_now(&app));
         launch_with_prompt(
             data,
             &profile_id,
@@ -1182,7 +1250,9 @@ pub fn pty_spawn(
         );
     }
     // The repo's own variables (Settings → Repos → Environment) win over inherited ones.
-    if let Ok(reg) = xdev_workspace::Registry::load(data) {
+    if remote.is_none()
+        && let Ok(reg) = xdev_workspace::Registry::load(data)
+    {
         crate::network::add_project_env(&mut launch.env, &reg, &crate::repo_env::Keychain, &cwd);
     }
     let starts_agent = crate::app_stats::counts_as_start(launch.agent, resume.as_deref(), fork);
@@ -1192,16 +1262,19 @@ pub fn pty_spawn(
     let feed_cwd = cwd.clone();
     let feed_app = app.clone();
     let stats_app = app.clone();
-    let trust = trust_plan(
-        &launch,
-        &cwd,
-        data,
-        app.path().home_dir().ok(),
-        settings_store::read(&app).agents.workspace_trust,
-        resume.is_none() && !fork.unwrap_or(false),
-        &|name| std::env::var_os(name),
-    );
-    let info = spawn_launch_trusted(
+    let trust = match remote {
+        Some(_) => None,
+        None => trust_plan(
+            &launch,
+            &cwd,
+            data,
+            app.path().home_dir().ok(),
+            settings_store::read(&app).agents.workspace_trust,
+            resume.is_none() && !fork.unwrap_or(false),
+            &|name| std::env::var_os(name),
+        ),
+    };
+    let info = spawn_launch_at(
         &ptys,
         data,
         id,
@@ -1210,6 +1283,7 @@ pub fn pty_spawn(
         cols,
         rows,
         trust,
+        remote,
         move |bytes| {
             crate::ports::feed_output(&feed_app, &feed_id, &feed_cwd, &bytes);
             crate::term_tail::feed(&feed_app, &feed_id, &bytes);
@@ -1250,23 +1324,46 @@ pub fn pty_approve(
 ) -> Result<(), CmdError> {
     let data = data_dir(&state)?;
     let hooks = hooks_now(&app);
-    let mut launch = launch_for(
-        data,
-        &profile_id,
-        account.as_deref(),
-        hooks.as_deref(),
-        resume.as_deref(),
-        fork.unwrap_or(false),
-    )?;
-    if let Some(o) = &overrides {
-        launch.apply_overrides(o);
-    }
-    approve_extra(
+    let resolve = |hooks: Option<&Path>| -> Result<Launch, CmdError> {
+        let mut launch = launch_for(
+            data,
+            &profile_id,
+            account.as_deref(),
+            hooks,
+            resume.as_deref(),
+            fork.unwrap_or(false),
+        )?;
+        if let Some(o) = &overrides {
+            launch.apply_overrides(o);
+        }
+        Ok(launch)
+    };
+    let launch = resolve(hooks.as_deref())?;
+    // A remote tab spawns the launch without hooks (`launch_hooks`).
+    let plain = hooks.is_some().then(|| resolve(None)).transpose()?;
+    approve_launches(
         &ptys,
         data,
         launch,
+        plain,
         extra_args.as_deref().unwrap_or_default(),
     )
+}
+
+/// Approves `launch` and, when given, the same launch without hooks, each
+/// with `extra_args` as `pty_spawn` appends them.
+fn approve_launches(
+    ptys: &Ptys,
+    data_dir: &Path,
+    launch: Launch,
+    plain: Option<Launch>,
+    extra_args: &[String],
+) -> Result<(), CmdError> {
+    approve_extra(ptys, data_dir, launch, extra_args)?;
+    match plain {
+        Some(p) => approve_extra(ptys, data_dir, p, extra_args),
+        None => Ok(()),
+    }
 }
 
 /// Approves `launch` with `extra_args` appended as `pty_spawn` appends them,
@@ -1840,6 +1937,27 @@ mod tests {
         .unwrap();
         assert!(!shell.hooks);
         assert!(!shell.args.iter().any(|a| a == "--settings"));
+    }
+
+    #[test]
+    fn a_remote_launch_gets_no_hook_program() {
+        let cli = PathBuf::from("/opt/xdev/xdev");
+        assert_eq!(launch_hooks(false, Some(cli.clone())), Some(cli.clone()));
+        assert_eq!(launch_hooks(true, Some(cli)), None);
+    }
+
+    #[test]
+    fn approving_a_hooked_launch_also_approves_it_without_hooks() {
+        // `pty_approve` does not know where the tab runs: a remote tab spawns
+        // the launch without hooks, so both lines are approved.
+        let data = tempfile::tempdir().unwrap();
+        let ptys = Ptys::default();
+        approve_launches(&ptys, data.path(), hooked(), Some(agent()), &[]).unwrap();
+        let (a, _) = start(&ptys, data.path(), "a", hooked());
+        assert!(a.is_ok());
+        let (b, _) = start(&ptys, data.path(), "b", agent());
+        assert!(b.is_ok());
+        ptys.kill_all();
     }
 
     #[test]

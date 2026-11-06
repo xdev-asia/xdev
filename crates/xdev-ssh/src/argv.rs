@@ -24,7 +24,8 @@ pub fn effective_timeout(host: &SshHost) -> u16 {
         .clamp(TIMEOUT_MIN, TIMEOUT_MAX)
 }
 
-/// The args after `ssh` for `host`, ending with the alias. The alias is the
+/// The args after `ssh` for `host`, ending with `--` and the alias (so an
+/// alias never reads as an option). The alias is the
 /// destination so the `Host` blocks of the user's config still apply; the
 /// stored address goes in `-o HostName=` when it differs, so a host added by
 /// hand reaches its address too. `ssh` keeps the first value of an option,
@@ -65,6 +66,7 @@ pub fn ssh_argv(host: &SshHost) -> Vec<String> {
     if host.forward_agent {
         out.push("-A".to_owned());
     }
+    out.push("--".to_owned());
     out.push(host.alias.clone());
     out
 }
@@ -133,15 +135,16 @@ fn remote_opts(mux: Option<&Path>) -> Vec<String> {
     out
 }
 
-/// The remote options, the host's own, then `flags`, the destination and
-/// `tail`.
+/// The remote options, the host's own, then `flags`, `--`, the destination
+/// and `tail`.
 fn remote_argv(host: &SshHost, mux: Option<&Path>, flags: &[&str], tail: &[&str]) -> Vec<String> {
     let mut out = remote_opts(mux);
     let mut base = ssh_argv(host);
-    let dest = base.pop().unwrap_or_default();
+    // `ssh_argv` ends with `--` and the destination.
+    let dest = base.split_off(base.len().saturating_sub(2));
     out.extend(base);
     out.extend(flags.iter().map(|s| (*s).to_owned()));
-    out.push(dest);
+    out.extend(dest);
     out.extend(tail.iter().map(|s| (*s).to_owned()));
     out
 }
@@ -175,11 +178,11 @@ mod tests {
         let h = host("web");
         assert_eq!(
             strs(&ssh_argv(&h)),
-            ["-o", "HostName=web.example.com", "web"]
+            ["-o", "HostName=web.example.com", "--", "web"]
         );
         let mut same = host("web");
         same.host_name = "web".into();
-        assert_eq!(strs(&ssh_argv(&same)), ["web"]);
+        assert_eq!(strs(&ssh_argv(&same)), ["--", "web"]);
     }
 
     #[test]
@@ -191,7 +194,7 @@ mod tests {
         h.user = Some("deploy".into());
         assert_eq!(
             strs(&ssh_argv(&h)),
-            ["-p", "2222", "-i", "~/.ssh/k", "-l", "deploy", "web"]
+            ["-p", "2222", "-i", "~/.ssh/k", "-l", "deploy", "--", "web"]
         );
     }
 
@@ -200,7 +203,10 @@ mod tests {
         let mut h = host("web");
         h.host_name = "web".into();
         h.proxy_jump = Some("bastion,me@jump:22".into());
-        assert_eq!(strs(&ssh_argv(&h)), ["-J", "bastion,me@jump:22", "web"]);
+        assert_eq!(
+            strs(&ssh_argv(&h)),
+            ["-J", "bastion,me@jump:22", "--", "web"]
+        );
     }
 
     #[test]
@@ -208,7 +214,7 @@ mod tests {
         let mut h = host("web");
         h.host_name = "web".into();
         h.forward_agent = true;
-        assert_eq!(strs(&ssh_argv(&h)), ["-A", "web"]);
+        assert_eq!(strs(&ssh_argv(&h)), ["-A", "--", "web"]);
     }
 
     #[test]
@@ -229,7 +235,14 @@ mod tests {
         ];
         assert_eq!(
             strs(&ssh_argv(&h)),
-            ["-L", "5432:db.internal:5432", "-L", "8080:[::1]:80", "web"]
+            [
+                "-L",
+                "5432:db.internal:5432",
+                "-L",
+                "8080:[::1]:80",
+                "--",
+                "web"
+            ]
         );
     }
 
@@ -248,6 +261,7 @@ mod tests {
                 "ServerAliveInterval=30",
                 "-o",
                 "SetEnv=A=b c",
+                "--",
                 "web"
             ]
         );
@@ -278,6 +292,7 @@ mod tests {
                 "-T",
                 "-o",
                 "ConnectTimeout=5",
+                "--",
                 "web",
                 "exit"
             ]
@@ -310,13 +325,25 @@ mod tests {
         let with = |rest: &[&'static str]| [&keep[..], &["-l", "dev"], rest].concat();
         assert_eq!(
             strs(&sftp_argv(&h, None)),
-            with(&["-T", "-s", "web", "sftp"])
+            with(&["-T", "-s", "--", "web", "sftp"])
         );
-        assert_eq!(strs(&exec_argv(&h, None)), with(&["-T", "web", "sh"]));
+        assert_eq!(strs(&exec_argv(&h, None)), with(&["-T", "--", "web", "sh"]));
         assert_eq!(
             strs(&tty_argv(&h, None, "cd '/srv' && exec \"$SHELL\" -l")),
-            with(&["-tt", "web", "cd '/srv' && exec \"$SHELL\" -l"])
+            with(&["-tt", "--", "web", "cd '/srv' && exec \"$SHELL\" -l"])
         );
+    }
+
+    #[test]
+    fn an_alias_like_an_option_stays_the_destination() {
+        let mut h = host("-oProxyCommand=x");
+        h.host_name = "web".into();
+        let argv = exec_argv(&h, None);
+        let at = argv.iter().position(|a| a == "--").unwrap();
+        assert_eq!(argv[at + 1], "-oProxyCommand=x");
+        assert_eq!(argv.iter().filter(|a| *a == "--").count(), 1);
+        let plain = ssh_argv(&h);
+        assert_eq!(plain[plain.len() - 2..], ["--", "-oProxyCommand=x"]);
     }
 
     #[test]
@@ -340,6 +367,7 @@ mod tests {
                 "-o",
                 "ControlPersist=60",
                 "-T",
+                "--",
                 "web",
                 "sh"
             ]
@@ -347,7 +375,15 @@ mod tests {
         let sftp = sftp_argv(&host("db"), Some(dir));
         assert_eq!(
             strs(&sftp[10..]),
-            ["-o", "HostName=db.example.com", "-T", "-s", "db", "sftp"]
+            [
+                "-o",
+                "HostName=db.example.com",
+                "-T",
+                "-s",
+                "--",
+                "db",
+                "sftp"
+            ]
         );
     }
 }

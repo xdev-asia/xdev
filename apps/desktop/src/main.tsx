@@ -32,6 +32,7 @@ import "./styles/usageStats.css";
 import "./styles/tabOutput.css";
 import "./styles/quickCommands.css";
 import "./styles/ssh.css";
+import "./styles/remote.css";
 import "./styles/peers.css";
 import "katex/dist/katex.min.css";
 import "./styles/preview-files.css";

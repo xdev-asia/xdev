@@ -1,11 +1,12 @@
 import { Banner, Icon } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { toApiError, type Api, type DirListing, type FsEvent, type WorktreeChange } from "@/api";
+import { toApiError, type Api, type DirListing, type FileList, type FsEvent, type WorktreeChange } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NameDialog } from "@/files/NameDialog";
 import { fileName, fileTabs } from "@/files/fileTabs";
 import { openFile } from "@/files/openFile";
+import { isRemoteWorktree, listingFromFiles } from "@/files/remoteTree";
 import { dirsToReload, drain, type WatchQueue } from "@/files/treeRefresh";
 import { copyAbsolute, copyRelative, createEntry, deleteEntry, findInFolder, parentOf, renameEntry, treeMenuItems, type TreeIo } from "@/files/treeActions";
 import { matchFiles } from "@/files/treeFilter";
@@ -110,6 +111,24 @@ export function FileTree(props: {
   // Set when a key moved the cursor, so the row takes the focus; and the file to scroll to once its row exists.
   const focusCursor = useRef(false);
   const scrollTo = useRef<string | null>(null);
+  // A remote worktree has no folder listing: its folders come from the file list, asked once for
+  // the folders read together.
+  const fileList = useRef<Promise<FileList> | null>(null);
+  // A changed file opens as a diff; a remote one has no diff yet, so it opens in the editor.
+  const diffs = !isRemoteWorktree(worktree);
+
+  function listDir(dir: string): Promise<DirListing> {
+    if (!isRemoteWorktree(worktree)) return api.worktreeListDir(worktree, dir);
+    if (!fileList.current) {
+      const asking = api.filesList(worktree);
+      fileList.current = asking;
+      const done = () => {
+        if (fileList.current === asking) fileList.current = null;
+      };
+      asking.then(done, done);
+    }
+    return fileList.current.then((list) => listingFromFiles(list, dir));
+  }
 
   function read(dir: string): void {
     if (asked.current.has(dir)) return;
@@ -120,7 +139,7 @@ export function FileTree(props: {
       asked.current.delete(dir);
       setFolders((all) => ({ ...all, [dir]: folder }));
     };
-    api.worktreeListDir(worktree, dir).then(
+    listDir(dir).then(
       (listing) => keep({ listing }),
       (e) => keep({ error: toApiError(e).code }),
     );
@@ -223,7 +242,9 @@ export function FileTree(props: {
     try {
       await api.worktreeOpenFileOnHost(worktree, rel, null, null);
     } catch (e) {
-      pushToast({ id: "files-open-host", text: t(toApiError(e).code === "no_web_remote" ? "gitHistory.noWebRemote" : "files.openOnHostFailed") });
+      const code = toApiError(e).code;
+      const key = code === "no_web_remote" ? "gitHistory.noWebRemote" : code === "remote_unsupported" ? "remote.unsupported" : "files.openOnHostFailed";
+      pushToast({ id: "files-open-host", text: t(key) });
     }
   }
 
@@ -237,7 +258,10 @@ export function FileTree(props: {
         onSearch?.();
       },
       ask: setAsk,
-      reveal: (rel) => void api.fileReveal(worktree, rel).catch(() => undefined),
+      reveal: (rel) =>
+        void api.fileReveal(worktree, rel).catch((e) => {
+          if (toApiError(e).code === "remote_unsupported") pushToast({ id: "files-reveal", text: t("remote.unsupported") });
+        }),
       openOnHost: (rel) => void openOnHost(rel),
     });
 
@@ -360,7 +384,7 @@ export function FileTree(props: {
           title={hit.rel}
           style={{ paddingLeft: "var(--tree-pad)" }}
           {...cell(hit.rel)}
-          onClick={() => (kinds.has(hit.rel) ? onOpen(hit.rel) : openFile({ worktree, rel: hit.rel }))}
+          onClick={() => (diffs && kinds.has(hit.rel) ? onOpen(hit.rel) : openFile({ worktree, rel: hit.rel }))}
           onDoubleClick={() => openFile({ worktree, rel: hit.rel })}
           onContextMenu={(e) => onMenu(e as unknown as MouseEvent, { rel: hit.rel, dir: false })}
         >
@@ -424,7 +448,7 @@ export function FileTree(props: {
             title={row.path}
             style={indent}
             {...cell(row.path)}
-            onClick={() => (changed ? onOpen(row.path) : openFile({ worktree, rel: row.path }))}
+            onClick={() => (diffs && changed ? onOpen(row.path) : openFile({ worktree, rel: row.path }))}
             onDoubleClick={() => openFile({ worktree, rel: row.path })}
             onContextMenu={(e) => onMenu(e as unknown as MouseEvent, { rel: row.path, dir: false })}
           >

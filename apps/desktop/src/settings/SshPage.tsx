@@ -4,6 +4,7 @@ import type { JSX } from "react";
 import { toApiError, type ApiError, type SshConnState, type SshHost, type SshSyncReport } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
+import { KeepAliveList } from "@/remote/KeepAliveList";
 import { SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 import { SshHostDialog } from "./ssh/SshHostDialog";
@@ -165,6 +166,7 @@ export function SshPage(props: SettingsSectionProps): JSX.Element {
           onDisconnect={(h) => void connection(() => api.sshDisconnect(h.id))}
         />
       </SettingRow>
+      <KeepAliveList api={api} hosts={hosts} />
 
       {editing && (
         <SshHostDialog

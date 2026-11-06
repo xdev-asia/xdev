@@ -76,6 +76,7 @@ pub fn worktree_pr_comments(
     path: PathBuf,
     number: u64,
 ) -> Result<PrComments, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_comments")?;
     let account = gh_account_for(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, account, |gh| comments_with(gh, &path, number))
 }
@@ -87,6 +88,7 @@ pub fn worktree_pr_comment_post(
     number: u64,
     draft: PrCommentDraft,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_comment_post")?;
     let account = gh_account_for(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, account, |gh| {
         post_with(gh, &path, number, &draft)
@@ -100,6 +102,7 @@ pub fn worktree_pr_head(
     path: PathBuf,
     number: u64,
 ) -> Result<String, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_head")?;
     let account = gh_account_for(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, account, |gh| Ok(pr_head_oid(gh, &path, number)?))
 }
@@ -111,6 +114,7 @@ pub fn worktree_pr_thread_resolve(
     thread_id: String,
     resolved: bool,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_thread_resolve")?;
     let account = gh_account_for(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, account, |gh| {
         resolve_with(gh, &path, &thread_id, resolved)
@@ -125,6 +129,7 @@ pub fn worktree_pr_reaction(
     content: Reaction,
     on: bool,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_reaction")?;
     let account = gh_account_for(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, account, |gh| {
         reaction_with(gh, &path, &subject_id, content, on)
@@ -138,6 +143,7 @@ pub fn worktree_pr_checks_rerun(
     number: u64,
     failed_only: bool,
 ) -> Result<RerunReport, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_checks_rerun")?;
     let account = gh_account_for(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, account, |gh| {
         rerun_with(gh, &path, number, failed_only)
@@ -150,6 +156,7 @@ pub fn worktree_pr_merge_info(
     path: PathBuf,
     number: u64,
 ) -> Result<PrMergeInfo, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_merge_info")?;
     let account = gh_account_for(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, account, |gh| merge_info_with(gh, &path, number))
 }
@@ -162,6 +169,7 @@ pub fn worktree_pr_merge(
     method: MergeMethod,
     head_oid: String,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_merge")?;
     let account = gh_account_for(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, account, |gh| {
         merge_with(gh, &path, number, method, &head_oid)

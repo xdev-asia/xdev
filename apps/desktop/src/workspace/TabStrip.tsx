@@ -224,7 +224,10 @@ export function TabStrip(props: {
 
   const name = (tab: Tab) => profileName(view, tab.profileId, t);
   // What the strip shows: the terminal's own title once it set one, else the profile.
-  const shownName = (tab: Tab) => tab.title ?? name(tab);
+  const shownName = (tab: Tab) => {
+    const base = tab.title ?? name(tab);
+    return tab.remoteLabel ? t("remote.tab.on", { title: base, host: tab.remoteLabel }) : base;
+  };
   const statusLabel = (status: TabStatus) => t(`workspace.tabs.status.${status}`);
   const labelOf = (item: StripItem) =>
     item.tab

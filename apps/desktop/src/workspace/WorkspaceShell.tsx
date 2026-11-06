@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
@@ -77,6 +77,10 @@ import { PendingCreates, type CreateArgs } from "./pendingCreates";
 import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { Titlebar } from "./Titlebar";
+import { RemoteBanner } from "@/remote/RemoteBanner";
+import { RemoteGroup } from "@/remote/RemoteGroup";
+import { projectOf, reconnectCandidate, remoteError, remoteRepo, remoteRows } from "@/remote/model";
+import { useRemoteProjects } from "@/remote/useRemoteProjects";
 import { AddProjectDialog, parentOf } from "./AddProjectDialog";
 import { RemoveRepoDialog } from "./RemoveRepoDialog";
 import { ParentPickerDialog } from "./ParentPickerDialog";
@@ -194,7 +198,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
   const { askBeforeDeleteWorktree, alwaysForceDeleteWorktrees, alwaysDeleteKeptBranches } = useNavigationSettings();
-  const [repos, setRepos] = useState<RepoView[] | null>(null);
+  const [localRepos, setRepos] = useState<RepoView[] | null>(null);
+  // Remote projects list as repos too, so selection, tabs and the file tree treat their `ssh://` worktree like any other.
+  const remote = useRemoteProjects(api);
+  const repos = useMemo(() => (localRepos === null ? null : [...localRepos, ...remote.projects.map(remoteRepo)]), [localRepos, remote.projects]);
+  const remoteKept = useRef<string[]>([]);
+  remoteKept.current = remote.projects.map((p) => p.worktree);
   const [items, setItems] = useState<SidebarItem[] | null>(null);
   const [prefs, setPrefs] = useState<SidebarPrefs>(SIDEBAR_PREFS_DEFAULTS);
   // The group name dialog: `id` null makes a new group.
@@ -332,6 +341,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [forgetting, setForgetting] = useState<{ repo: RepoView; error?: ApiError["code"] } | null>(null);
   // The Add project dialog (Open folder… or Clone from URL).
   const [adding, setAdding] = useState(false);
+  // Add project opened by the palette's remote action starts on its remote step.
+  const [addingRemote, setAddingRemote] = useState(false);
   // The folder the Add project dialog opens scanning, when a picked folder held no repo itself.
   const [scanRoot, setScanRoot] = useState<string>();
   const [openInApps, setOpenInApps] = useState<OpenInApp[]>([]);
@@ -372,7 +383,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       // A worktree gone from the list (removed outside the app, say) must not keep its ptys. A
       // missing repo lists no worktrees though they may still exist, so nothing closes then.
       if (!list.some((r) => r.missing)) {
-        const kept = new Set(list.flatMap((r) => r.worktrees.map((w) => w.path)));
+        const kept = new Set([...list.flatMap((r) => r.worktrees.map((w) => w.path)), ...remoteKept.current]);
         for (const path of sessions?.worktrees() ?? []) if (!kept.has(path)) void sessions?.closeWorktree(path);
         // The registry is complete here, so a saved layout of a worktree it does not list is gone for good.
         for (const path of sessions?.carriedWorktrees() ?? []) if (!kept.has(path)) sessions?.dropCarried(path);
@@ -1104,6 +1115,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   function addRepo(): void {
+    setAddingRemote(false);
     setNotice(undefined);
     setScanRoot(undefined);
     setAdding(true);
@@ -1696,6 +1708,32 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     show("settings");
   }
 
+  // The first remote project whose host is not connected: what the palette's Reconnect acts on.
+  const pendingReconnect = reconnectCandidate(remote.projects);
+  function remoteProject(id: string) {
+    return remote.projects.find((p) => p.id === id);
+  }
+  async function reconnectRemote(id: string): Promise<void> {
+    const p = remoteProject(id);
+    if (!p) return;
+    try {
+      await api.remoteConnect(p.hostId);
+    } catch (e) {
+      pushToast({ text: remoteError(t, toApiError(e).code, p.hostAlias) });
+    }
+  }
+  async function disconnectRemote(id: string): Promise<void> {
+    const p = remoteProject(id);
+    if (p) await api.remoteDisconnect(p.hostId).catch(() => undefined);
+  }
+  async function removeRemote(id: string): Promise<void> {
+    const p = remoteProject(id);
+    if (!p) return;
+    await api.remoteProjectRemove(id).catch((e: unknown) => pushToast({ text: t(`error.${toApiError(e).code}`) }));
+    await remote.reload();
+    void sessions?.closeWorktree(p.worktree);
+  }
+
   function show(next: View): void {
     setView(next);
     if (next === "docs") setDocsMounted(true);
@@ -2072,6 +2110,20 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               onRemoveRepo={(repo) => setForgetting({ repo })}
             />
           </SurfaceBoundary>
+          <RemoteGroup
+            rows={remoteRows(remote.projects)}
+            selected={current?.path ?? null}
+            onSelect={(row) => {
+              const wt = all.find((w) => w.path === row.worktree);
+              if (!wt) return;
+              setPicked(clearPicked());
+              select(wt);
+              show("workspace");
+            }}
+            onReconnect={(row) => void reconnectRemote(row.id)}
+            onDisconnect={(row) => void disconnectRemote(row.id)}
+            onRemove={(row) => void removeRemote(row.id)}
+          />
           </div>
         </aside>
 
@@ -2081,6 +2133,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           </div>
           <div className="ws-stage-body">
             <main className="ws-center" aria-label={t("workspace.center.label")}>
+              {view === "workspace" && <RemoteBanner project={projectOf(remote.projects, current?.path ?? null)} onReconnect={(p) => void reconnectRemote(p.id)} />}
               {sessions &&
                 mounted.map((path) => (
                   <SurfaceBoundary key={path} id="workspace.tabs" surface="Workspace tabs" resetKey={path} titleKey="boundary.workspace.title">
@@ -2100,6 +2153,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                       gate={gate}
                       repo={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.path ?? null}
                       repoName={repos?.find((r) => r.worktrees.some((w) => w.path === path))?.shortName ?? ""}
+                      repoId={path.startsWith("ssh://") ? undefined : repos?.find((r) => r.worktrees.some((w) => w.path === path))?.id}
                       quickSeq={path === current?.path ? quickSeq : undefined}
                       onManageQuickCommands={() => openSettings("qcmd")}
                       onLinkSettings={() => openSettings("terminal", undefined, "terminal.linkClick")}
@@ -2465,6 +2519,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           openSettings: (section, target) => openSettings(section, undefined, target),
           newWorktree: (name) => startCreate(undefined, name),
           addRepo,
+          remoteAdd: () => {
+            setNotice(undefined);
+            setScanRoot(undefined);
+            setAddingRemote(true);
+            setAdding(true);
+          },
+          remoteReconnect: pendingReconnect ? () => void reconnectRemote(pendingReconnect.id) : undefined,
           searchDocs: openSearch,
           toggleSidebar: () => setSidebarOpen((o) => !o),
           showDocs: () => show("docs"),
@@ -2568,12 +2629,25 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           onOpenFolder={() => void addRepoFolder()}
           onCloned={(repo) => void repoCloned(repo)}
           onCreated={(created) => void projectCreated(created)}
+          startRemote={addingRemote}
           onCancel={() => {
             setAdding(false);
+            setAddingRemote(false);
             setScanRoot(undefined);
           }}
           scanRoot={scanRoot}
           onAddRepos={(paths) => void addScanned(paths)}
+          onRemoteAdded={(p) => {
+            setAdding(false);
+            void remote.reload().then(() => {
+              select({ path: p.worktree } as WorktreeView);
+              show("workspace");
+            });
+          }}
+          onOpenSettings={() => {
+            setAdding(false);
+            openSettings("ssh");
+          }}
         />
       )}
       {forgetting && (

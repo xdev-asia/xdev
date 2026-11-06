@@ -29,6 +29,10 @@ export const TAB_COLORS: readonly TabColor[] = ["none", "c1", "c2", "c3", "c4", 
 export interface Tab {
   id: string;
   worktree: string;
+  /** The SSH host id this terminal or agent runs on (a remote target); absent for a local one. */
+  remoteHost?: string;
+  /** That host's alias, for the tab's title. */
+  remoteLabel?: string;
   profileId: PtyProfile;
   /** The account the profile runs under, if one was picked. */
   account: string | null;
@@ -205,9 +209,9 @@ export class Sessions {
    * adds the tab behind the pane's active one; `prompt` is the agent's first prompt, given on its
    * first launch only. `extraArgs` is an automation's extra agent arguments. The selected worktree is the caller's to keep.
    */
-  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean; prompt?: string; extraArgs?: string[]; overrides?: LaunchOverrides } = {}): Tab {
+  open(worktree: string, profileId: PtyProfile, account: string | null = null, cli?: TabCli, opts: { id?: string; title?: string; background?: boolean; prompt?: string; extraArgs?: string[]; overrides?: LaunchOverrides; remote?: { id: string; alias: string } } = {}): Tab {
     if (opts.id && this.entries.has(opts.id)) throw new Error("tab id in use");
-    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, opts.title ?? null, opts.id, null, opts.prompt, opts.extraArgs, opts.overrides);
+    const entry = this.entry(worktree, profileId, account, cli === undefined ? cliOf(profileId) : cli, null, opts.title ?? null, opts.id, null, opts.prompt, opts.extraArgs, opts.overrides, opts.remote);
     if (opts.title !== undefined) entry.tab = { ...entry.tab, renamed: true };
     this.entries.set(entry.tab.id, entry);
     this.cache.delete(worktree);
@@ -1129,10 +1133,11 @@ export class Sessions {
     this.emit();
   }
 
-  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID(), forkOf: string | null = null, prompt?: string, extraArgs?: string[], overrides?: LaunchOverrides): Entry {
+  private entry(worktree: string, profileId: PtyProfile, account: string | null, cli: TabCli, resumeOf: string | null = null, title: string | null = null, id: string = crypto.randomUUID(), forkOf: string | null = null, prompt?: string, extraArgs?: string[], overrides?: LaunchOverrides, remote?: { id: string; alias: string }): Entry {
     const tab: Tab = {
       id,
       worktree,
+      ...(remote ? { remoteHost: remote.id, remoteLabel: remote.alias } : {}),
       profileId,
       account,
       accountSource: null,
@@ -1155,7 +1160,7 @@ export class Sessions {
       openedAt: this.now(),
       pinned: false,
       color: "none",
-      client: new PtyClient(this.api, id, forkOf ?? resumeOf ?? undefined, forkOf !== null, prompt, extraArgs?.length ? [...extraArgs] : undefined, overrides),
+      client: new PtyClient(this.api, id, forkOf ?? resumeOf ?? undefined, forkOf !== null, prompt, extraArgs?.length ? [...extraArgs] : undefined, overrides, remote?.id),
     };
     // Caps stay off until the pty says whether it got hook flags.
     return { tab, state: start(), caps: NO_CAPS, programTitle: null, autoTitle: null };

@@ -369,6 +369,37 @@ fn changes(data: &Path, path: &Path) -> Result<Vec<WorktreeChange>, CmdError> {
         .collect())
 }
 
+/// `git status` of a remote project: changes against `HEAD`, not since
+/// the worktree's start.
+pub(crate) fn remote_changes(
+    hub: &crate::remote_ssh::RemoteHub,
+    data: &Path,
+    r: &xdev_ssh::RemoteRef,
+) -> Result<Vec<WorktreeChange>, CmdError> {
+    Ok(crate::remote_ssh::files::changes(hub, data, r)?
+        .into_iter()
+        .map(|c| WorktreeChange {
+            path: c.path,
+            kind: c.kind,
+        })
+        .collect())
+}
+
+/// A remote project's file count from `git status`; line counts are not
+/// read there, so they are 0.
+pub(crate) fn remote_stat(
+    hub: &crate::remote_ssh::RemoteHub,
+    data: &Path,
+    r: &xdev_ssh::RemoteRef,
+) -> Result<WorktreeStat, CmdError> {
+    let files = remote_changes(hub, data, r)?.len();
+    Ok(WorktreeStat {
+        files: u32::try_from(files).unwrap_or(u32::MAX),
+        added: 0,
+        removed: 0,
+    })
+}
+
 pub(crate) fn skipped(why: Skip) -> WorktreeFileDiff {
     WorktreeFileDiff {
         old: None,
@@ -754,6 +785,7 @@ pub fn worktree_archive_run(
     state: State<'_, AppState>,
     path: PathBuf,
 ) -> Result<HookRun, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_archive_run")?;
     archive_run(data_dir(&state)?, &path, ARCHIVE_TIMEOUT)
 }
 
@@ -872,6 +904,7 @@ pub fn worktree_adopt(
     lock: State<'_, WorkspaceLock>,
     path: PathBuf,
 ) -> Result<WorktreeView, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_adopt")?;
     let (now_ms, _) = clock();
     update(data_dir(&state)?, &lock, |reg| {
         adopt_worktree(reg, &path, now_ms)
@@ -947,6 +980,7 @@ pub fn worktree_create(
     from: Option<String>,
     request: Option<CreateRequest>,
 ) -> Result<WorktreeCreated, CmdError> {
+    crate::remote_ssh::local_only(Path::new(&repo_id), "worktree_create")?;
     let git = load_git_settings(&app);
     create_with(
         data_dir(&state)?,
@@ -1065,6 +1099,7 @@ pub fn worktree_name_preview(
     repo_id: String,
     name: String,
 ) -> Result<NamePreview, CmdError> {
+    crate::remote_ssh::local_only(Path::new(&repo_id), "worktree_name_preview")?;
     let git = load_git_settings(&app);
     let reg = {
         let _guard = lock_guard(&lock);
@@ -1083,6 +1118,7 @@ pub fn worktree_rename_branch(
     path: PathBuf,
     name: String,
 ) -> Result<WorktreeView, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_rename_branch")?;
     let opts = load_git_settings(&app).create_options();
     update(data_dir(&state)?, &lock, |reg| {
         xdev_workspace::rename_branch(reg, &path, &name, &opts)
@@ -1096,6 +1132,7 @@ pub fn worktree_pin(
     path: PathBuf,
     pinned: bool,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pin")?;
     pin_with(data_dir(&state)?, &lock, &path, pinned)
 }
 
@@ -1108,6 +1145,7 @@ pub fn worktree_remove(
     confirmed: bool,
     delete_unmerged: Option<bool>,
 ) -> Result<Removed, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_remove")?;
     remove_with(
         data_dir(&state)?,
         &lock,
@@ -1126,6 +1164,7 @@ pub fn worktree_archive(
     force: bool,
     confirmed: bool,
 ) -> Result<Removed, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_archive")?;
     archive_with(data_dir(&state)?, &lock, &path, force, confirmed)
 }
 
@@ -1136,6 +1175,7 @@ pub fn worktree_details(
     path: PathBuf,
     patch: DetailsPatch,
 ) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_details")?;
     update(data_dir(&state)?, &lock, |reg| {
         set_details(reg, &path, patch)
     })
@@ -1148,6 +1188,7 @@ pub fn worktree_restore(
     repo_id: String,
     branch: String,
 ) -> Result<WorktreeView, CmdError> {
+    crate::remote_ssh::local_only(Path::new(&repo_id), "worktree_restore")?;
     let now = clock().0;
     update(data_dir(&state)?, &lock, |reg| {
         restore_worktree(reg, &repo_id, &branch, now)
@@ -1260,15 +1301,28 @@ pub fn folder_forget(
 #[tauri::command(async)]
 pub fn worktree_changes(
     state: State<'_, AppState>,
+    hub: State<'_, crate::remote_ssh::RemoteHub>,
     path: PathBuf,
 ) -> Result<Vec<WorktreeChange>, CmdError> {
-    changes(data_dir(&state)?, &path)
+    let data = data_dir(&state)?;
+    if let Some(r) = crate::remote_ssh::remote_ref(&path) {
+        return remote_changes(&hub, data, &r);
+    }
+    changes(data, &path)
 }
 
 /// Read-only: loads the registry without the save lock, like `worktree_changes`.
 #[tauri::command(async)]
-pub fn worktree_stat(state: State<'_, AppState>, path: PathBuf) -> Result<WorktreeStat, CmdError> {
-    Ok(stat(&Registry::load(data_dir(&state)?)?, &path)?)
+pub fn worktree_stat(
+    state: State<'_, AppState>,
+    hub: State<'_, crate::remote_ssh::RemoteHub>,
+    path: PathBuf,
+) -> Result<WorktreeStat, CmdError> {
+    let data = data_dir(&state)?;
+    if let Some(r) = crate::remote_ssh::remote_ref(&path) {
+        return remote_stat(&hub, data, &r);
+    }
+    Ok(stat(&Registry::load(data)?, &path)?)
 }
 
 #[tauri::command(async)]
@@ -1277,6 +1331,7 @@ pub fn worktree_file_diff(
     path: PathBuf,
     file: String,
 ) -> Result<WorktreeFileDiff, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_file_diff")?;
     file_diff(data_dir(&state)?, &path, &file)
 }
 
@@ -1310,6 +1365,7 @@ pub fn worktree_list_dir(
     path: PathBuf,
     dir: String,
 ) -> Result<xdev_workspace::DirListing, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_list_dir")?;
     dir_listing(data_dir(&state)?, &path, &dir)
 }
 
@@ -1319,6 +1375,7 @@ pub fn worktree_commit(
     files: Vec<String>,
     message: String,
 ) -> Result<Option<String>, CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_commit")?;
     commit_files(&path, &files, &message)
 }
 
