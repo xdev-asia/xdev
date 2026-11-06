@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use xdev_policy::Action;
 use xdev_ssh::{RemoteError, RemoteRef, join_rel};
 use xdev_workspace::{
-    Eol, FileList, FileText, IMAGE_MAX, MEDIA_MAX, MediaKind, WorkspaceError, WriteOutcome,
-    media_kind,
+    Eol, FileList, FileText, IMAGE_MAX, MEDIA_MAX, MediaKind, PDF_MAX, WorkspaceError,
+    WriteOutcome, media_kind,
 };
 
 use super::{RemoteHub, project_host};
@@ -34,6 +34,7 @@ pub(crate) fn bytes(
     let cap = match media_kind(rel) {
         Some(MediaKind::Image) => IMAGE_MAX,
         Some(MediaKind::Audio | MediaKind::Video) => MEDIA_MAX,
+        Some(MediaKind::Pdf) => PDF_MAX,
         None => return Err(WorkspaceError::BadName(rel.to_owned()).into()),
     };
     hub.with_fs(&host, |fs| {

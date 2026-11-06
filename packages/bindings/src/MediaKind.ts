@@ -3,4 +3,4 @@
 /**
  * What a file shows as, by extension.
  */
-export type MediaKind = "image" | "audio" | "video";
+export type MediaKind = "image" | "audio" | "video" | "pdf";
