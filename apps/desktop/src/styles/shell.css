@@ -587,3 +587,24 @@
 .tip-actions {
   flex-wrap: wrap;
 }
+
+/* The feature wall: a release heading, then its cards. */
+.wall-release {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  margin-bottom: var(--x-space-3);
+}
+
+.wall-version {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.wall-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+}

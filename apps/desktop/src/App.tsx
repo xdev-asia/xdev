@@ -1,6 +1,7 @@
 import { api } from "./api";
 import { OnboardingGate } from "./onboarding/OnboardingGate";
 import { useOnboarding } from "./onboarding/onboardingStore";
+import { FeatureWallHost } from "./featureWall/FeatureWall";
 import { TipsHost } from "./tips/TipsModal";
 import { LspHost } from "./files/lsp/LspHost";
 import { WorkspaceShell } from "./workspace/WorkspaceShell";
@@ -14,6 +15,7 @@ export function App() {
         <WorkspaceShell api={api} />
       </OnboardingGate>
       <TipsHost api={api} suppressed={wizardOpen} />
+      <FeatureWallHost api={api} firstRun={wizardOpen} />
       <LspHost api={api} />
     </>
   );

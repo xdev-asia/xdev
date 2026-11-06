@@ -4,16 +4,18 @@ import { Icon, Menu, Popover } from "@xdev-asia/ui";
 import type { MenuEntry } from "@xdev-asia/ui";
 import type { Api, HelpLink } from "@/api";
 import { useI18n } from "@/i18n";
+import { openFeatureWall, useWallHasNew } from "@/featureWall/featureWallStore";
 import { replayFeatureTours } from "@/onboarding/featureTourStore";
 import { replayTour } from "@/onboarding/tourStore";
 
-export type HelpPick = "shortcuts" | "replay-tour" | "replay-feature-tours" | HelpLink | "check-updates" | "reload" | "devtools" | "about" | "restart";
+export type HelpPick = "shortcuts" | "replay-tour" | "replay-feature-tours" | "whats-new" | HelpLink | "check-updates" | "reload" | "devtools" | "about" | "restart";
 
 type HelpItem = { id: HelpPick; key: string } | { id: "separator" };
 
 /** The Help menu, top to bottom. */
 export const HELP_ITEMS: HelpItem[] = [
   { id: "shortcuts", key: "shortcuts" },
+  { id: "whats-new", key: "whatsNew" },
   { id: "replay-tour", key: "replayTour" },
   { id: "replay-feature-tours", key: "replayFeatureTours" },
   { id: "separator" },
@@ -50,6 +52,8 @@ export function runHelpPick(
     case "replay-feature-tours":
       replayFeatureTours();
       return h.toast?.("tour.featuresReset");
+    case "whats-new":
+      return openFeatureWall();
     case "check-updates":
       return h.openUpdates();
     case "about":
@@ -77,6 +81,7 @@ export function HelpMenu(props: { onPick(pick: HelpPick): void }): JSX.Element {
 export function HelpButton(props: { onPick(pick: HelpPick): void }): JSX.Element {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const hasNew = useWallHasNew();
   return (
     <Popover
       open={open}
@@ -87,12 +92,13 @@ export function HelpButton(props: { onPick(pick: HelpPick): void }): JSX.Element
         <button
           type="button"
           className="ws-icon-btn ws-header-btn"
-          aria-label={t("shell.help.label")}
+          aria-label={hasNew ? `${t("shell.help.label")}, ${t("wall.newDot")}` : t("shell.help.label")}
           title={t("shell.help.label")}
           {...triggerProps}
           onClick={() => setOpen(!open)}
         >
           <Icon name="help" size={16} />
+          {hasNew && <span className="ws-help-dot" aria-hidden="true" />}
         </button>
       )}
     >

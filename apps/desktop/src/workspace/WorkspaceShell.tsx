@@ -9,6 +9,7 @@ import { DocsApp, type AppRequest } from "@/DocsApp";
 import type { KitTab } from "@/components/AgentKitView";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { useI18n } from "@/i18n";
+import { onTryFeature } from "@/featureWall/featureWallStore";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { CrashHost } from "@/crash/CrashHost";
 import { MissionHost } from "@/orchestration/MissionHost";
@@ -1765,6 +1766,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     setView(next);
     if (next === "docs") setDocsMounted(true);
   }
+
+  // "Try it" on the feature wall opens the page or panel.
+  const tryFeatureRef = useRef<(target: { kind: string; section?: string }) => void>(() => {});
+  tryFeatureRef.current = (target) => {
+    if (target.kind === "settings") openSettings(target.section);
+    else { setSidebarOpen(true); setSideView("activity"); show("workspace"); }
+  };
+  useEffect(() => onTryFeature((target) => tryFeatureRef.current(target)), []);
 
   // Usage details & history live on the Stats & Usage settings page; the Kit app keeps its own tab.
   function openUsage(): void {

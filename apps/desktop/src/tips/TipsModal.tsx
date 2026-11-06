@@ -2,6 +2,7 @@ import { Button, Dialog } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type SkillStatus } from "@/api";
+import { wallHasNew, useWallState } from "@/featureWall/featureWallStore";
 import { useI18n } from "@/i18n";
 import { typingInTerminal } from "@/onboarding/featureTours";
 import { loadSeenTips, markTipSeen, nextTip, SETTLE_MS, TIPS, tipsGate, type Tip, type TipContext } from "./tipsModel";
@@ -70,7 +71,10 @@ export function TipsModalView(props: {
  * Each tip shown is remembered; "Don't show tips" turns them off until Settings → General turns them on.
  */
 export function TipsHost(props: { api: Pick<Api, "orchestrationSkillStatus" | "orchestrationSkillInstall">; suppressed?: boolean }): JSX.Element | null {
-  const { api, suppressed = false } = props;
+  const wall = useWallState();
+  // The what's new wall comes first: tips wait while it is open or about to open.
+  const suppressed = (props.suppressed ?? false) || wall.open || wallHasNew(wall);
+  const { api } = props;
   const enabled = useTipsEnabled();
   const [status, setStatus] = useState<SkillStatus | null>(null);
   const [settled, setSettled] = useState(false);
