@@ -1,0 +1,42 @@
+{
+  "note": "RFC 8032 test 1 key; fixed claims; Ed25519 is deterministic",
+  "kid": "ent-test",
+  "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "claims": {
+    "iss": "https://id.xdev.asia",
+    "aud": "xdev-desktop",
+    "sub": "user-golden-1",
+    "jti": "AAAAAAAAAAAAAAAAAAAAAA",
+    "iat": 1793836800,
+    "nbf": 1793836800,
+    "exp": 1795046400,
+    "rfa": 1793923200,
+    "dev": "GOLDENDEVICEFINGERPRINT",
+    "plan": [
+      "pro",
+      "sync"
+    ],
+    "features": [
+      "pro.phone",
+      "pro.usage_history",
+      "pro.session_replay",
+      "pro.layouts",
+      "sync.vault",
+      "push.phone"
+    ],
+    "pro": {
+      "grant": "grant-golden-1",
+      "perpetual": true,
+      "updates_until": 1825372800
+    },
+    "sync": {
+      "until": 1825372800,
+      "quota_bytes": 10737418240
+    },
+    "devices": {
+      "max": 1,
+      "active": 1
+    }
+  },
+  "token": "eyJhbGciOiJFZERTQSIsInR5cCI6InhkZXYtZW50K2p3dCIsImtpZCI6ImVudC10ZXN0In0.eyJpc3MiOiJodHRwczovL2lkLnhkZXYuYXNpYSIsImF1ZCI6InhkZXYtZGVza3RvcCIsInN1YiI6InVzZXItZ29sZGVuLTEiLCJqdGkiOiJBQUFBQUFBQUFBQUFBQUFBQUFBQUFBIiwiaWF0IjoxNzkzODM2ODAwLCJuYmYiOjE3OTM4MzY4MDAsImV4cCI6MTc5NTA0NjQwMCwicmZhIjoxNzkzOTIzMjAwLCJkZXYiOiJHT0xERU5ERVZJQ0VGSU5HRVJQUklOVCIsInBsYW4iOlsicHJvIiwic3luYyJdLCJmZWF0dXJlcyI6WyJwcm8ucGhvbmUiLCJwcm8udXNhZ2VfaGlzdG9yeSIsInByby5zZXNzaW9uX3JlcGxheSIsInByby5sYXlvdXRzIiwic3luYy52YXVsdCIsInB1c2gucGhvbmUiXSwicHJvIjp7ImdyYW50IjoiZ3JhbnQtZ29sZGVuLTEiLCJwZXJwZXR1YWwiOnRydWUsInVwZGF0ZXNfdW50aWwiOjE4MjUzNzI4MDB9LCJzeW5jIjp7InVudGlsIjoxODI1MzcyODAwLCJxdW90YV9ieXRlcyI6MTA3Mzc0MTgyNDB9LCJkZXZpY2VzIjp7Im1heCI6MSwiYWN0aXZlIjoxfX0.0y0sd5zwq09Md2e4lXObgqX9Fz06kQraOinkrMZVOzSD6jJyELVbetb7wHbHi08OhOhwAkizJi80QQgdsirDDA"
+}

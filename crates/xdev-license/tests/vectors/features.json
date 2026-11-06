@@ -1,0 +1,6 @@
+{
+  "note": "Copied from the cloud FEATURES list (packages/server-core/src/features.ts).",
+  "pro": ["pro.phone", "pro.usage_history", "pro.session_replay", "pro.layouts"],
+  "sync": ["sync.vault", "sync.history", "push.phone"],
+  "team": ["team.workspace", "team.shared_settings", "team.roles"]
+}

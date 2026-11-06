@@ -105,6 +105,7 @@ xdev-ports = { workspace = true, features = ["ts"] }
 xdev-ssh = { workspace = true, features = ["ts"] }
 xdev-pty = { workspace = true, features = ["ts"] }
 xdev-workspace = { workspace = true, features = ["ts"] }
+xdev-license = { workspace = true, features = ["ts"] }
 
 [lints.rust]
 # The process table on Windows needs the ToolHelp calls; they are allowed one by one.

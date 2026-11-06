@@ -1,0 +1,32 @@
+[package]
+name = "xdev-license"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+ts = ["dep:ts-rs"]
+# The in-memory key store, the RFC 8032 test root and the mock entitlement server.
+test-util = []
+
+[dependencies]
+base64.workspace = true
+ed25519-dalek.workspace = true
+getrandom.workspace = true
+keyring.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+ts-rs = { workspace = true, optional = true }
+x25519-dalek.workspace = true
+xdev-id.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+xdev-id = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
