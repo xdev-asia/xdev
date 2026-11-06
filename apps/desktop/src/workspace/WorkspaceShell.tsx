@@ -185,7 +185,7 @@ function storeSelected(path: string): void {
 
 type View = "workspace" | "docs" | "settings" | "automations";
 type PanelTab = "files" | "search" | "changes" | "checks" | "pr" | "issues" | "ports";
-type Creating = { repoId: string; name?: string; agents: AgentChoice[]; defaultAgent: string | null };
+type Creating = { repoId: string; name?: string; status?: WorkStatus | null; agents: AgentChoice[]; defaultAgent: string | null };
 type Editing = { worktree: WorktreeView; busy: boolean; error?: ApiError["code"] };
 type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
 type TrustAsk = { path: string; repoId: string; kind: ScriptKind | "lists"; text: string; hash: string; lists: PendingLists; changed: boolean; busy: boolean; error?: ApiError["code"] };
@@ -1400,11 +1400,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     return typeof document === "undefined" || !document.querySelector(".ws-docs .doc-status[data-dirty]");
   }
 
-  function startCreate(repoId?: string, name?: string): void {
+  function startCreate(repoId?: string, name?: string, status?: WorkStatus | null): void {
     const usable = repos?.filter((r) => !r.missing) ?? [];
     const id = repoId ?? (currentRepo && !currentRepo.missing ? currentRepo.id : usable[0]?.id);
     if (!id) return;
-    setCreating({ repoId: id, name, agents: [], defaultAgent: null });
+    setCreating({ repoId: id, name, status, agents: [], defaultAgent: null });
     // The agent choice arrives a moment later; the dialog is already open.
     void api
       .profiles()
@@ -1499,6 +1499,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (extra.parent !== null) patch.parent = extra.parent;
     if (extra.item !== null) patch.item = extra.item;
     if (extra.note) patch.comment = extra.note;
+    if (extra.status) patch.status = extra.status;
     try {
       if (Object.keys(patch).length > 0) await api.worktreeDetails(path, patch);
       if (extra.setDefault && extra.agent !== null) {
@@ -2556,6 +2557,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           repos={repos}
           repoId={creating.repoId}
           name={creating.name}
+          status={creating.status}
           agents={creating.agents}
           defaultAgent={creating.defaultAgent}
           namePreview={api.worktreeNamePreview}
@@ -2817,6 +2819,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           repoPath={repoOf(repos, current)}
           onTaskError={() => pushToast({ id: "board-sync-failed", text: t("kanban.taskSyncError") })}
           onClose={() => setBoardOpen(false)}
+          onNew={(status) => startCreate(undefined, undefined, status)}
         />
       )}
       {parentFor && (

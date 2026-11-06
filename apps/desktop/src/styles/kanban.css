@@ -31,6 +31,47 @@
   margin: 0;
 }
 
+/* Search, chips and board settings. */
+.kb-tools {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+}
+
+.kb-tools .search {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.kb-settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  margin: 0 0 var(--x-space-3);
+  padding: 0;
+  border: 0;
+}
+
+.kb-settings-group legend {
+  padding: 0;
+  margin-bottom: var(--x-space-1);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.kb-new {
+  flex-shrink: 0;
+}
+
+/* Compact cards keep the name and the status dot. */
+.kb[data-density="compact"] .ws-wt-sub,
+.kb[data-density="compact"] .ws-wt-meta {
+  display: none;
+}
+
 /* Columns scroll sideways when the window is too narrow to show them all. */
 .kb-board {
   display: flex;
@@ -134,6 +175,10 @@
   }
 
   .kb-col {
-    flex-basis: 240px;
+    flex-basis: min(240px, calc(100vw - 2 * var(--x-space-4)));
+  }
+
+  .kb-tools .search {
+    flex-basis: 100%;
   }
 }
