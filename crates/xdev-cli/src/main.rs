@@ -86,6 +86,10 @@ enum Command {
     /// Serve a folder to AI agents over MCP on stdin/stdout; default
     /// `./docs` when it is a folder, else the current folder.
     Mcp { dir: Option<PathBuf> },
+    /// Host this machine for a paired xDev desktop over xdev-link: it lists
+    /// the projects given, runs shells and agents in them, and streams
+    /// their output. Auth is always on.
+    Serve(serve::ServeArgs),
     /// Claude Code and Codex accounts on this machine.
     Accounts {
         #[command(subcommand)]
@@ -299,6 +303,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         | Command::Capture(_)
         | Command::AgentContext(_)
         | Command::Automations { .. } => return Ok(Outcome::Ok),
+        Command::Serve(args) => return serve::run(args, &data_dir),
         Command::Mcp { dir } => {
             let dir = dir.unwrap_or_else(|| {
                 let docs = PathBuf::from("docs");

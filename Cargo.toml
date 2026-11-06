@@ -68,6 +68,9 @@ xdev-license = { path = "crates/xdev-license" }
 # base64url for PKCE; already in the build.
 base64 = "0.23.1"
 blake3 = "1.8.7"
+# Ctrl+C, SIGTERM and Ctrl+Break for `xdev serve` shutdown; `unsafe_code` is
+# forbidden here, so no hand-written handler.
+ctrlc = { version = "3.5.2", features = ["termination"] }
 dirs = "7.0.0"
 # Ed25519 for the signed license token, its key certificates and the device key
 # (xdev-license). Not in the build before; the license contract requires Ed25519.

@@ -25,7 +25,8 @@ const SEQ_LEN: usize = 8;
 
 /// The methods served and the least role each needs. Keep in line with
 /// `apps/desktop/src-tauri/src/peers/host.rs::call`; `mail.handoff` is a
-/// follow-up and answers `unsupported` here.
+/// follow-up and answers `unsupported` here. The contract test walks it.
+#[cfg(test)]
 pub const METHODS: &[(&str, PeerRole)] = &[
     ("hello", PeerRole::None),
     ("bye", PeerRole::None),

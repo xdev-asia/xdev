@@ -321,6 +321,7 @@ impl Terms {
     }
 
     /// Ends the child; the term stays listed.
+    #[cfg(test)]
     pub fn kill(&self, id: &str) -> Result<(), &'static str> {
         let session = self.shared.lock().get(id).ok_or("no_term")?.session.clone();
         session.kill();

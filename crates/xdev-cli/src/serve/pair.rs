@@ -3,7 +3,7 @@
 //! the operator; stdin at EOF (a service) rejects every pairing.
 
 use std::io::{BufRead, Write};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
+use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -17,6 +17,7 @@ pub fn accepts(line: &str) -> bool {
 }
 
 /// Reads one answer: `Some(role)` on a yes, `None` on anything else or EOF.
+#[cfg(test)]
 pub fn confirm_from(reader: &mut impl BufRead, role: PeerRole) -> Option<PeerRole> {
     let mut line = String::new();
     match reader.read_line(&mut line) {
@@ -105,10 +106,7 @@ impl Answers {
     /// The next line, or `None` at EOF or after `wait`.
     pub fn next(&self, wait: Duration) -> Option<String> {
         let rx = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        match rx.recv_timeout(wait) {
-            Ok(line) => Some(line),
-            Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => None,
-        }
+        rx.recv_timeout(wait).ok()
     }
 }
 
