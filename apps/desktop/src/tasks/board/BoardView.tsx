@@ -1,0 +1,275 @@
+import { Badge, Banner, Button, Disclosure, EmptyState, IconButton, StatusDot, Tag } from "@xdev-asia/ui";
+import { useEffect, useRef, useState } from "react";
+import type { JSX, PointerEvent as ReactPointerEvent } from "react";
+import type { BoardTask, TaskLink, TaskStatus, Unreadable } from "@/api";
+import { useI18n } from "@/i18n";
+import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
+import { dropColumn, pastThreshold, type ColumnBox, type ColumnId } from "@/workspace/kanbanModel";
+import { COLUMNS, groupByStatus, keyMove } from "./boardModel";
+import { statusKey } from "./TaskEditor";
+import "@/styles/kanban.css";
+import "@/styles/board.css";
+
+export interface BoardViewProps {
+  /** The tasks to show (after the filters). */
+  tasks: BoardTask[];
+  /** How many tasks the repo has, filtered or not: 0 is the empty state, more with none shown is "no match". */
+  total: number;
+  unreadable: Unreadable[];
+  links: TaskLink[];
+  /** Whether the tab of a link is still open. */
+  tabOpen(link: TaskLink): boolean;
+  /** The name of an agent profile id. */
+  agentName(id: string): string;
+  onOpen(task: BoardTask): void;
+  onNew(status: TaskStatus): void;
+  onStart(task: BoardTask): void;
+  onMove(task: BoardTask, to: TaskStatus): void;
+  onOpenTab(link: TaskLink): void;
+  onClearFilters(): void;
+  /** Lane task-decompose passes it; without it the button is not shown. */
+  onDecompose?(): void;
+}
+
+interface Drag {
+  id: string;
+  x: number;
+  y: number;
+  over: TaskStatus | null;
+}
+
+/** The unreadable files as one banner that opens into a list of reasons. */
+export function UnreadableBanner({ items }: { items: Unreadable[] }): JSX.Element | null {
+  const { t } = useI18n();
+  if (items.length === 0) return null;
+  return (
+    <div className="board-unreadable">
+      <Banner title={t("board.unreadable.title", { count: items.length })} />
+      <Disclosure title={t("board.unreadable.show")} count={items.length} defaultExpanded={false}>
+        <ul className="board-unreadable-list">
+          {items.map((u) => (
+            <li key={u.file}>{t("board.unreadable.reason", { file: u.file, reason: u.reason })}</li>
+          ))}
+        </ul>
+      </Disclosure>
+    </div>
+  );
+}
+
+/** Five columns of task cards; drag a card, press Alt+Left or Alt+Right on it, or use its menu to move it. */
+export function BoardView(props: BoardViewProps): JSX.Element {
+  const { t } = useI18n();
+  const columns = useRef(new Map<TaskStatus, HTMLElement>());
+  const stop = useRef<(() => void) | null>(null);
+  // A drag ends in a click on the card; that click must not open it.
+  const dragged = useRef(false);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [menu, setMenu] = useState<{ task: BoardTask; at: { x: number; y: number } } | null>(null);
+  const [announce, setAnnounce] = useState("");
+  const link = (id: string) => props.links.find((l) => l.id === id);
+
+  useEffect(() => () => stop.current?.(), []);
+
+  const move = (task: BoardTask, to: TaskStatus): void => {
+    if (task.status === to) return;
+    props.onMove(task, to);
+    setAnnounce(t("board.moved", { title: task.title, status: t(statusKey(to)) }));
+  };
+
+  const boxes = (): ColumnBox[] =>
+    [...columns.current].map(([id, el]) => {
+      const { left, right } = el.getBoundingClientRect();
+      return { id: id as ColumnId, left, right };
+    });
+
+  // Pointer events, not HTML5 drag, as on the worktree board: the window's native drag-drop is on.
+  const press = (e: ReactPointerEvent, task: BoardTask): void => {
+    if (e.button !== 0) return;
+    const from = { x: e.clientX, y: e.clientY };
+    let dragging = false;
+    const over = (ev: PointerEvent): TaskStatus | null => (dropColumn(ev.clientX, boxes()) as TaskStatus | null);
+    const onMove = (ev: PointerEvent): void => {
+      if (!dragging && !pastThreshold(from, { x: ev.clientX, y: ev.clientY })) return;
+      dragging = true;
+      setDrag({ id: task.id, x: ev.clientX, y: ev.clientY, over: over(ev) });
+    };
+    const onUp = (ev: PointerEvent): void => {
+      const target = dragging ? over(ev) : null;
+      off();
+      if (!dragging) return;
+      dragged.current = true;
+      setTimeout(() => (dragged.current = false), 0);
+      setDrag(null);
+      if (target) move(task, target);
+    };
+    const onCancel = (): void => {
+      off();
+      setDrag(null);
+    };
+    const off = (): void => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      stop.current = null;
+    };
+    stop.current?.();
+    stop.current = off;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  };
+
+  const menuItems = (task: BoardTask): MenuItem[] => [
+    { id: "start", labelKey: "board.start", run: () => props.onStart(task) },
+    { id: "sep", labelKey: "board.start", kind: "separator" },
+    ...COLUMNS.map((s): MenuItem => ({ id: `move:${s}`, labelKey: statusKey(s), checked: task.status === s, run: () => move(task, s) })),
+  ];
+
+  const card = (task: BoardTask): JSX.Element => {
+    const l = link(task.id);
+    const open = l ? props.tabOpen(l) : false;
+    return (
+      <li key={task.id} className="ws-wt kb-card board-card" data-task={task.id} data-dragging={drag?.id === task.id ? "true" : undefined}>
+        <button
+          type="button"
+          className="ws-wt-main"
+          onPointerDown={(e) => press(e, task)}
+          onClick={() => {
+            if (!dragged.current) props.onOpen(task);
+          }}
+          onKeyDown={(e) => {
+            const to = keyMove(e.key, e.altKey, task.status);
+            if (!to) return;
+            e.preventDefault();
+            move(task, to);
+          }}
+        >
+          <span className="ws-wt-line">
+            <span className="ws-wt-name" title={task.title}>
+              {task.title}
+            </span>
+          </span>
+          <span className="board-card-meta">
+            <Badge>{t(`board.priority.${task.priority}`)}</Badge>
+            {task.assignee ? <span className="board-card-agent">{props.agentName(task.assignee)}</span> : null}
+          </span>
+          {task.labels.length > 0 ? (
+            <span className="board-card-meta">
+              {task.labels.map((x) => (
+                <Tag key={x}>{x}</Tag>
+              ))}
+            </span>
+          ) : null}
+        </button>
+        {l ? (
+          <div className="board-linked">
+            {open ? (
+              <>
+                <StatusDot tone="accent" label={t("board.linked", { tab: l.tabTitle })} />
+                <Button variant="secondary" onClick={() => props.onOpenTab(l)}>
+                  {t("board.linked.open")}
+                </Button>
+              </>
+            ) : (
+              <span className="board-linked-gone">{t("board.linked.gone")}</span>
+            )}
+          </div>
+        ) : null}
+        <button
+          type="button"
+          className="ws-wt-more board-more"
+          aria-label={t("board.menu", { title: task.title })}
+          title={t("board.menu", { title: task.title })}
+          aria-haspopup="menu"
+          aria-expanded={menu?.task.id === task.id}
+          onClick={(e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            setMenu({ task, at: { x: box.left, y: box.bottom } });
+          }}
+        >
+          ⋯
+        </button>
+      </li>
+    );
+  };
+
+  const ghost = drag && props.tasks.find((x) => x.id === drag.id);
+  const grouped = groupByStatus(props.tasks);
+  let body: JSX.Element;
+  if (props.total === 0) {
+    body = (
+      <EmptyState
+        size="center"
+        icon="file-plus"
+        title={t("board.empty.title")}
+        hint={t("board.empty.body")}
+        actions={
+          <>
+            <Button onClick={() => props.onNew("backlog")}>{t("board.new")}</Button>
+            {props.onDecompose ? (
+              <Button variant="secondary" onClick={props.onDecompose}>
+                {t("board.empty.decompose")}
+              </Button>
+            ) : null}
+          </>
+        }
+      />
+    );
+  } else if (props.tasks.length === 0) {
+    body = (
+      <EmptyState
+        size="center"
+        title={t("board.filter.none")}
+        actions={
+          <Button variant="secondary" onClick={props.onClearFilters}>
+            {t("board.filter.clear")}
+          </Button>
+        }
+      />
+    );
+  } else {
+    body = (
+      <div className="kb-board board-cols" data-dragging={drag ? "true" : undefined}>
+        {grouped.map((col) => {
+          const name = t(statusKey(col.status));
+          return (
+            <section
+              key={col.status}
+              className="kb-col board-col"
+              data-column={col.status}
+              data-over={drag?.over === col.status ? "true" : undefined}
+              aria-label={t("board.col.label", { status: name, count: col.tasks.length })}
+              ref={(el) => {
+                if (el) columns.current.set(col.status, el);
+                else columns.current.delete(col.status);
+              }}
+            >
+              <h3 className="kb-col-head">
+                <span className="kb-col-name">{name}</span>
+                <span className="ws-group-count">{col.tasks.length}</span>
+                <IconButton icon="plus" label={`${t("board.new")}: ${name}`} onClick={() => props.onNew(col.status)} />
+              </h3>
+              <ul className="ws-wts kb-cards">{col.tasks.map(card)}</ul>
+            </section>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="board-view">
+      <UnreadableBanner items={props.unreadable} />
+      {body}
+      <p className="board-announce" role="status">
+        {announce}
+      </p>
+      {ghost && drag ? (
+        <div className="kb-ghost" aria-hidden="true" style={{ left: drag.x, top: drag.y }}>
+          {ghost.title}
+        </div>
+      ) : null}
+      {menu ? <ContextMenu at={menu.at} items={menuItems(menu.task)} title={menu.task.title} onClose={() => setMenu(null)} /> : null}
+    </div>
+  );
+}
