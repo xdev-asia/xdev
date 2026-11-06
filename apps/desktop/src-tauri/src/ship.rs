@@ -1919,6 +1919,7 @@ mod tests {
                 account: None,
                 startup: vec![],
                 enabled: true,
+                wsl: None,
             })
             .unwrap();
         profiles.save(dir.path()).unwrap();
