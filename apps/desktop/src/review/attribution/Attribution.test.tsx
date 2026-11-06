@@ -1,11 +1,14 @@
 import { expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { JSX } from "react";
+import { AgentChip } from "@xdev-asia/ui";
 import { I18nProvider } from "@/i18n";
 import type { AttributionEvent } from "@/api";
 import { createMockApi } from "@/api";
 import { AgentChips } from "./AgentChips";
+import { LineLegend } from "./LineLegend";
 import { LivePanel } from "./LivePanel";
+import { CHIP_CLASS } from "./lineGutterModel";
 import { RestoreConfirm, VersionsDialog } from "./VersionsDialog";
 
 const render = (node: JSX.Element): string => renderToStaticMarkup(<I18nProvider>{node}</I18nProvider>);
@@ -77,4 +80,38 @@ it("the mock keeps versions once per content, twenty at most, and restores one",
   const oldest = full[full.length - 1];
   await api.attributionRestore(OAK, "src/a.ts", oldest.id);
   expect((await api.fileRead(OAK, "src/a.ts")).text).toBe(await api.attributionVersionRead(OAK, "src/a.ts", oldest.id));
+});
+
+it("the gutter marker uses the chip's own class and profile attribute", () => {
+  const html = renderToStaticMarkup(<AgentChip profile="claude" title="claude" />);
+  expect(html).toContain(`class="${CHIP_CLASS}"`);
+  expect(html).toContain('data-profile="claude"');
+  // A custom agent's chip has no profile attribute; the marker leaves it out too.
+  expect(renderToStaticMarkup(<AgentChip profile="custom" letter="A" title="aider" />)).not.toContain("data-profile");
+});
+
+it("the line legend names each agent tab with its chip, then You; nothing without marked lines", () => {
+  const attr = {
+    lines: 4,
+    authors: [
+      { kind: "agent" as const, tabId: "t1", agent: "claude", at: 1 },
+      { kind: "agent" as const, tabId: "t2", agent: "aider", at: 2 },
+      { kind: "outside" as const, tabId: null, agent: null, at: null },
+    ],
+    runs: [
+      { from: 1, to: 1, author: 0 },
+      { from: 2, to: 2, author: 1 },
+      { from: 4, to: 4, author: 2 },
+    ],
+  };
+  const html = render(<LineLegend attr={attr} />);
+  expect(html).toContain('<p class="attr-legend"><span>Line authors</span>');
+  expect(html.match(/class="ws-chip"/g)).toHaveLength(2);
+  expect(html).toContain('data-profile="claude"');
+  expect(html).toContain(">A</span>");
+  expect(html).toContain('<span class="attr-chip-name">aider</span>');
+  expect(html).toContain('class="attr-outside"');
+  expect(html).toContain('<span class="attr-chip-name">You</span>');
+  expect(render(<LineLegend attr={{ ...attr, runs: [] }} />)).toBe("");
+  expect(render(<LineLegend attr={null} />)).toBe("");
 });

@@ -345,7 +345,7 @@ import type {
 import type { Target } from "./doc/frontmatter";
 import type { LayoutSnapshot } from "./workspace/layoutSnapshot";
 import { toBytes } from "./terminal/ptyClient";
-import type { AttributionChanged, AttributionEvent, FileAttribution, FileVersion } from "@xdev/bindings";
+import type { AttributionChanged, AttributionEvent, FileAttribution, FileVersion, LineAttribution } from "@xdev/bindings";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 import type { DeployPreset, TargetsView, VpsTarget } from "@xdev/bindings";
@@ -378,7 +378,7 @@ export type { PortEvidence, PortKind, PortProtocol, PortScan, WorkspacePort } fr
 export type { HostSource, LocalForward, SshAuthPrompt, SshConnState, SshConnectionView, SshHost, SshPromptKind, SshSyncReport, SshTestOutcome };
 export type { ProviderSwitches, UsageDisplay, UsageReport, UsageReportArgs, UsageScope, UsageSettings };
 export type { ConfigExported, EnvPreviewRow, ImportApplied, ImportPreview, RepoEnvVar } from "@xdev/bindings";
-export type { AttributionChanged, AttributionEvent, AttributionSource, FileAttribution, FileVersion, Toucher } from "@xdev/bindings";
+export type { AttributionChanged, AttributionEvent, AttributionSource, FileAttribution, FileVersion, LineAttribution, LineAuthor, LineAuthorKind, LineRun, Toucher } from "@xdev/bindings";
 export type { SectionPreview, ConfigChange } from "@xdev/bindings";
 import type { Chart, ChartRun, SeatTab } from "@xdev/bindings";
 import type { JoinTarget, LinkBind, NearbyHost, PairOfferView, PairPending, PeerActivity, PeerConfirm, PeerKind, PeerPairRequest, PeerPairResult, PeerProject, PeerRole, PeersState, PeerTerm, PeerTermAttached, PeerTermClosed, PeerTermState, PeerView } from "@xdev/bindings";
@@ -2025,6 +2025,8 @@ export interface Api {
   attributionVersionRead(worktree: string, path: string, id: string): Promise<string>;
   /** Writes a kept version back into the worktree; ask the person first. Rejects `not_found`, `bad_path`, `worktree_unknown`, `io`. */
   attributionRestore(worktree: string, path: string, id: string): Promise<void>;
+  /** Who wrote each changed line of `path` against review base id `base`: runs of 1-based lines with their author. `lines` is 0 when the file cannot be shown. Rejects `worktree_unknown`, `bad_ref`, `bad_arg`, `remote_unsupported`. */
+  attributionLines(worktree: string, path: string, base: string): Promise<LineAttribution>;
   /** `attribution://changed`: the attributions of a worktree moved. */
   onAttributionChanged(cb: (e: AttributionChanged) => void): Promise<() => void>;
   /** Team charts: every saved chart, oldest first. */
@@ -3086,6 +3088,7 @@ const tauriApi: Api = {
   attributionVersions: (worktree, path) => call("attribution_versions", { worktree, path }),
   attributionVersionRead: (worktree, path, id) => call("attribution_version_read", { worktree, path, id }),
   attributionRestore: (worktree, path, id) => call("attribution_restore", { worktree, path, id }),
+  attributionLines: (worktree, path, base) => call("attribution_lines", { worktree, path, base }),
   onAttributionChanged: (cb) => listen<AttributionChanged>("attribution://changed", (e) => cb(e.payload)),
   chartsList: () => call("charts_list"),
   chartsSave: (chart) => call("charts_save", { chart }),

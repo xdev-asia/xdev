@@ -45,18 +45,33 @@ describe("diff settings", () => {
   });
 
   it("maps every setting to its option and back, fileTree included", () => {
-    const opts = fromDiffSettings(split, { lineNumbers: false, listWidth: 300 });
-    expect(opts).toEqual({ layout: "split", ignoreWhitespace: true, collapse: false, wrap: true, tree: true, lineNumbers: false, listWidth: 300 });
+    const opts = fromDiffSettings(split, { lineNumbers: false, listWidth: 300, attribution: false });
+    expect(opts).toEqual({ layout: "split", ignoreWhitespace: true, collapse: false, wrap: true, tree: true, lineNumbers: false, listWidth: 300, attribution: false });
     expect(toDiffSettings(opts, split)).toEqual(split);
     expect(toDiffSettings({ ...opts, layout: "inline", wrap: false, tree: false }, split)).toEqual({ ...split, defaultView: "inline", wordWrap: false, fileTree: false });
   });
 
   it("the part a view keeps for itself round-trips and clamps", () => {
     const s = store();
-    expect(readLocalView(s)).toEqual({ lineNumbers: true, listWidth: LIST_DEFAULT });
-    writeLocalView(s, { lineNumbers: false, listWidth: 900 });
-    expect(readLocalView(s)).toEqual({ lineNumbers: false, listWidth: 480 });
-    expect(readLocalView(store("{nope"))).toEqual({ lineNumbers: true, listWidth: LIST_DEFAULT });
+    expect(readLocalView(s)).toEqual({ lineNumbers: true, listWidth: LIST_DEFAULT, attribution: true });
+    writeLocalView(s, { lineNumbers: false, listWidth: 900, attribution: false });
+    expect(readLocalView(s)).toEqual({ lineNumbers: false, listWidth: 480, attribution: false });
+    expect(readLocalView(store("{nope"))).toEqual({ lineNumbers: true, listWidth: LIST_DEFAULT, attribution: true });
+  });
+
+  it("line authors are on by default, kept per view, and broken storage falls back to on", () => {
+    expect(DEFAULT_VIEW.attribution).toBe(true);
+    const local = (text: string) => ({ getItem: (k: string) => (k === LOCAL_KEY ? text : null) });
+    expect(readLocalView(local("{}")).attribution).toBe(true);
+    expect(readLocalView(local('{"attribution":false}')).attribution).toBe(false);
+    expect(readLocalView(local('{"attribution":"no"}')).attribution).toBe(true);
+    const throwing = { getItem: () => { throw new Error("blocked"); } };
+    expect(readLocalView(throwing)).toEqual({ lineNumbers: true, listWidth: LIST_DEFAULT, attribution: true });
+    const full = { setItem: () => { throw new Error("full"); } };
+    expect(() => writeLocalView(full, { lineNumbers: true, listWidth: 240, attribution: false })).not.toThrow();
+    const s = store();
+    writeLocalView(s, { lineNumbers: true, listWidth: 240, attribution: false });
+    expect(JSON.parse(s.getItem(LOCAL_KEY)!)).toMatchObject({ attribution: false });
   });
 });
 
@@ -74,7 +89,7 @@ describe("migrating the old localStorage options", () => {
     const now = await migrateViewOptions(s, DIFF_DEFAULTS, put);
     expect(now).toEqual({ ...DIFF_DEFAULTS, defaultView: "split", wordWrap: true });
     expect(s.data.has(VIEW_KEY)).toBe(false);
-    expect(JSON.parse(s.data.get(LOCAL_KEY)!)).toEqual({ lineNumbers: false, listWidth: 300 });
+    expect(JSON.parse(s.data.get(LOCAL_KEY)!)).toEqual({ lineNumbers: false, listWidth: 300, attribution: true });
   });
 
   it("leaves settings the person already changed alone, and still drops the key", async () => {

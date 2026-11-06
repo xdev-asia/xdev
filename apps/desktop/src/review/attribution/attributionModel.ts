@@ -43,3 +43,6 @@ export function chipNames(touchers: readonly Toucher[], unknown: string): string
     return same && t.tabId ? `${names[i]} ${t.tabId.slice(-4)}` : names[i];
   });
 }
+
+/** A version's time as the person reads it. */
+export const when = (at: number): string => new Date(at).toLocaleString();

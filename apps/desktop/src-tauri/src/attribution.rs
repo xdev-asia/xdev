@@ -497,7 +497,7 @@ pub struct HookIn {
     pub at: i64,
 }
 
-fn folder_of(data: &Path, worktree: &str) -> PathBuf {
+pub(crate) fn folder_of(data: &Path, worktree: &str) -> PathBuf {
     data.join("attribution").join(key_of(worktree))
 }
 
