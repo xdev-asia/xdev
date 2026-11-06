@@ -407,7 +407,7 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   // failed. Resolves with the new tab's id, or null.
   __orchFailWorker(from: WorkerOpen, reason?: FailReason): Promise<string | null>;
 } & Pick<MockNotch, "__notchTabs"> & Pick<MockPipeline, "__pipelineExits" | "__swarmOpened">
-  & Pick<MockPeers, "__peersPairRequest" | "__peersDrop" | "__peersActivity" | "__peersConfirm" | "__peersSetTheirRole" | "__peersConfirmDeny">
+  & Pick<MockPeers, "__peersPairRequest" | "__peersDrop" | "__peersActivity" | "__peersConfirm" | "__peersSetTheirRole" | "__peersConfirmDeny" | "__peersRise">
   & Pick<MockLicense, "__licenseCheckoutComplete" | "__licenseSet">;
 
 type MockOptions = {

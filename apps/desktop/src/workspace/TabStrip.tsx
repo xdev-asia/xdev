@@ -32,6 +32,8 @@ export interface StripItem {
   view?: { rel: string; dirty: boolean };
   /** Set for the commit tab: the commit it shows. */
   commit?: { id: string };
+  /** Set for a terminal of another computer: the tab's words ("review on studio-mac"). */
+  peer?: { title: string };
 }
 
 export interface MenuGroup {
@@ -225,7 +227,9 @@ export function TabStrip(props: {
   const labelOf = (item: StripItem) =>
     item.tab
       ? name(item.tab)
-      : item.file
+      : item.peer
+        ? item.peer.title
+        : item.file
         ? fileName(item.file.rel)
         : item.view
           ? fileName(item.view.rel)
@@ -261,7 +265,7 @@ export function TabStrip(props: {
   // The tab menu; the review tab is no terminal, so it has no pin, colour or title.
   const contextItems = (item: StripItem): MenuItem[] => {
     // The commit tab stays in its pane: it has only Close.
-    if (item.commit) return [{ id: "close", labelKey: "tabMenu.close", run: () => props.onClose(item.id) }];
+    if (item.commit || item.peer) return [{ id: "close", labelKey: "tabMenu.close", run: () => props.onClose(item.id) }];
     if (item.view) {
       const rel = item.view.rel;
       return viewTabMenuItems({
@@ -428,7 +432,7 @@ export function TabStrip(props: {
                       ? t("workspace.tabs.unreadLabel", { name: shownName(tab), status: statusLabel(tab.status).toLocaleLowerCase() })
                       : undefined
                   }
-                  title={tab?.title ?? item.file?.rel ?? (item.view ? t("files.view.tooltip", { rel: item.view.rel }) : undefined) ?? item.preview?.rel ?? (item.commit ? t("commitView.tab", { id: item.commit.id.slice(0, 7) }) : undefined)}
+                  title={tab?.title ?? item.file?.rel ?? (item.view ? t("files.view.tooltip", { rel: item.view.rel }) : undefined) ?? item.preview?.rel ?? item.peer?.title ?? (item.commit ? t("commitView.tab", { id: item.commit.id.slice(0, 7) }) : undefined)}
                   aria-describedby={tab && hover.open?.id === item.id ? cardId : undefined}
                   onMouseEnter={tab ? (e) => hover.show(item.id, e.currentTarget, HOVER_DELAY_MS) : undefined}
                   onMouseLeave={tab ? hover.hide : undefined}
@@ -476,6 +480,8 @@ export function TabStrip(props: {
                         </>
                       ) : item.view ? (
                         <span className="ws-tab-name">{fileName(item.view.rel)}</span>
+                      ) : item.peer ? (
+                        <span className="ws-tab-name">{item.peer.title}</span>
                       ) : (
                         <>
                           <span className="ws-tab-icon ws-mono" aria-hidden="true">

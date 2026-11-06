@@ -117,6 +117,7 @@ import { AboutDialog } from "./AboutDialog";
 import { checkForUpdates, HelpButton, type HelpPick, runHelpPick } from "./HelpMenu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SshAuthPrompts } from "@/components/SshAuthDialog";
+import { PeersHost } from "@/peers/PeersHost";
 import { runMenuAction } from "@/shell/menuActions";
 import { useShellLabels } from "@/shell/shellLabels";
 import { askQuit, guardClose, installCloseGuard, type QuitAsk, type QuitChoice } from "./quitGuard";
@@ -2385,6 +2386,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         hidden={view === "docs"}
       />
       <SshAuthPrompts api={api} />
+      <PeersHost api={api} />
 
       {creating && repos && (
         <CreateWorktreeDialog

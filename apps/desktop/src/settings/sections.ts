@@ -17,6 +17,7 @@ import { OpenInPage } from "./OpenInPage";
 import { OrchestrationPage } from "./orchestration/OrchestrationPage";
 import { NotificationsPage } from "./notifications/NotificationsPage";
 import { QuickCommandsPage } from "./quickCommands/QuickCommandsPage";
+import { PeersPage } from "@/peers/PeersPage";
 import { ReposSettings } from "./ReposSettings";
 import { ShortcutsPage } from "./shortcuts/ShortcutsPage";
 import { SshPage } from "./SshPage";
@@ -86,6 +87,7 @@ export const SECTIONS: SettingsSection[] = [
   { id: "account", group: "integrations", labelKey: "account.title", Component: AccountPage },
   { id: "vaults", group: "integrations", labelKey: "settings.vaults.title", Component: VaultsSettings },
   { id: "ssh", group: "integrations", labelKey: "ssh.title", Component: SshPage },
+  { id: "peers", group: "integrations", labelKey: "peers.title", Component: PeersPage },
   { id: "mcp", group: "integrations", labelKey: "settings.mcp.title", Component: McpPage },
   { id: "cli", group: "advanced", labelKey: "settings.cli.title", Component: CliPage },
   { id: "advanced", group: "advanced", labelKey: "settings.advanced.title", Component: AdvancedPage },
