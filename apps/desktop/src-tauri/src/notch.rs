@@ -8,6 +8,10 @@
 //! window on that tab (`notch_open`). The strip is shown without activating
 //! the app, so it never takes focus from another app on its own.
 
+// The placement maths runs only on macOS, where the strip exists; the tests
+// cover it on every OS.
+#![cfg_attr(not(target_os = "macos"), allow(dead_code))]
+
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
