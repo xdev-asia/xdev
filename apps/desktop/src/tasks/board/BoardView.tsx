@@ -130,64 +130,57 @@ export function BoardView(props: BoardViewProps): JSX.Element {
     const l = link(task.id);
     const open = l ? props.tabOpen(l) : false;
     const name = t("board.menu", { title: task.title });
-    // The wrapper only listens: a press starts a drag and Alt+Arrow moves, both bubbling from the card.
     return (
-      <div
+      <BoardCard
         key={task.id}
-        className="board-card-slot"
         data-task={task.id}
-        role="presentation"
+        title={task.title}
+        dragging={drag?.id === task.id}
+        // A press starts a drag and Alt+Arrow moves; the card's own buttons do neither.
         onPointerDown={(e) => {
           if (!(e.target as HTMLElement).closest("button")) press(e, task);
         }}
         onKeyDown={(e) => {
           const to = keyMove(e.key, e.altKey, task.status);
-          if (!to || e.target !== e.currentTarget.firstElementChild) return;
+          if (!to || e.target !== e.currentTarget) return;
           e.preventDefault();
           move(task, to);
         }}
-      >
-        <BoardCard
-          title={task.title}
-          dragging={drag?.id === task.id}
-          onOpen={() => {
-            if (!dragged.current) props.onOpen(task);
-          }}
-          meta={
-            <>
-              <span className="board-card-meta">
-                <Badge>{t(`board.priority.${task.priority}`)}</Badge>
-                {task.assignee ? <span className="board-card-agent">{props.agentName(task.assignee)}</span> : null}
+        onOpen={() => {
+          if (!dragged.current) props.onOpen(task);
+        }}
+        meta={
+          <>
+            <span className="board-card-meta">
+              <Badge>{t(`board.priority.${task.priority}`)}</Badge>
+              {task.assignee ? <span className="board-card-agent">{props.agentName(task.assignee)}</span> : null}
+            </span>
+            {l ? (
+              <span className="board-linked">
+                {open ? <StatusDot tone="accent" label={t("board.linked", { tab: l.tabTitle })} /> : <span className="board-linked-gone">{t("board.linked.gone")}</span>}
               </span>
-              {l ? (
-                <span className="board-linked">
-                  {open ? (
-                    <>
-                      <StatusDot tone="accent" label={t("board.linked", { tab: l.tabTitle })} />
-                      <Button variant="secondary" onClick={() => props.onOpenTab(l)}>
-                        {t("board.linked.open")}
-                      </Button>
-                    </>
-                  ) : (
-                    <span className="board-linked-gone">{t("board.linked.gone")}</span>
-                  )}
-                </span>
-              ) : null}
-            </>
-          }
-          tags={task.labels.length > 0 ? task.labels.map((x) => <Tag key={x}>{x}</Tag>) : undefined}
-          menu={
-            <IconButton
-              icon="more"
-              label={name}
-              onClick={(e) => {
-                const box = e.currentTarget.getBoundingClientRect();
-                setMenu({ task, at: { x: box.left, y: box.bottom } });
-              }}
-            />
-          }
-        />
-      </div>
+            ) : null}
+          </>
+        }
+        actions={
+          l && open ? (
+            <Button variant="secondary" onClick={() => props.onOpenTab(l)}>
+              {t("board.linked.open")}
+            </Button>
+          ) : undefined
+        }
+        tags={task.labels.length > 0 ? task.labels.map((x) => <Tag key={x}>{x}</Tag>) : undefined}
+        menu={
+          <IconButton
+            icon="more"
+            label={name}
+            onClick={(e) => {
+              const box = e.currentTarget.getBoundingClientRect();
+              setMenu({ task, at: { x: box.left, y: box.bottom } });
+            }}
+          />
+        }
+      />
     );
   };
 

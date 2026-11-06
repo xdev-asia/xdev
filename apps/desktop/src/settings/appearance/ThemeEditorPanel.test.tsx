@@ -32,8 +32,8 @@ describe("ThemeEditorPanel", () => {
     const html = render();
     expect(html).toContain(translate("en", "settings.appearance.colours.panel.new"));
     expect(html).toContain(translate("en", "settings.appearance.colours.name"));
-    expect(html.match(/class="theme-group"/g)).toHaveLength(5);
-    expect(html.match(/class="colour-field"/g)).toHaveLength(17);
+    expect(html.match(/class="x-theme-editor-group"/g)).toHaveLength(5);
+    expect(html.match(/class="x-colour-field"/g)).toHaveLength(17);
   });
 
   it("has exactly one submit button, Save", () => {
@@ -54,9 +54,11 @@ describe("ThemeEditorPanel", () => {
   it("reports a failing pair and no pass note", () => {
     const theme: AppTheme = { id: "dim", name: "Dim", dark: { "text-1": "#0b0b0e" }, light: {} } as AppTheme;
     const html = render(theme);
-    expect(html).toContain("theme-contrast-list");
-    expect(html).not.toContain('data-field="contrast-pass"');
-    expect(render()).toContain('data-field="contrast-pass"');
+    expect(html).toContain("x-theme-editor-issue-list");
+    expect(html).not.toContain(translate("en", "settings.appearance.colours.contrast.pass"));
+    expect(html).toContain("Text needs at least");
+    expect(render()).toContain(translate("en", "settings.appearance.colours.contrast.pass"));
+    expect(render()).not.toContain("x-theme-editor-issue-list");
   });
 });
 
