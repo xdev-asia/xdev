@@ -27,6 +27,9 @@ export type Provider = "overview" | Agent;
 export const PROVIDERS: Provider[] = ["overview", "claude", "codex"];
 export const SCOPES: UsageScope[] = ["xdev", "all"];
 export const RANGES: UsageRange[] = ["7", "30", "90", "all"];
+/** What the range picker offers: the CLI log ranges, then the saved history past them (Pro). */
+type RangeChoice = UsageRange | "history";
+const RANGE_CHOICES: RangeChoice[] = [...RANGES, "history"];
 const AGENTS: Agent[] = ["claude", "codex"];
 export const DISPLAYS: UsageDisplay[] = ["used", "remaining"];
 // Catalog ids of the page's settings, per group; a switch adds its provider (`usage.footer.claude`).
@@ -48,6 +51,8 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
   const [provider, setProvider] = useState<Provider>("overview");
   const [scope, setScope] = useState<UsageScope>("xdev");
   const [range, setRange] = useState<UsageRange>("30");
+  // The saved history past the CLI logs is a view of the same picker; the logs read stays as it was.
+  const [history, setHistory] = useState(false);
   const [report, setReport] = useState<UsageReport>();
   // The last six weeks by day, for the heatmap and the share card, whatever the range.
   const [recent, setRecent] = useState<[string, Tokens][]>();
@@ -325,8 +330,16 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
         </label>
         <label className="ws-field">
           <span>{t("usage.stats.range")}</span>
-          <select value={range} data-field="range" onChange={(e) => setRange(e.target.value as UsageRange)}>
-            {RANGES.map((r) => (
+          <select
+            value={history ? "history" : range}
+            data-field="range"
+            onChange={(e) => {
+              const next = e.target.value as RangeChoice;
+              setHistory(next === "history");
+              if (next !== "history") setRange(next);
+            }}
+          >
+            {RANGE_CHOICES.map((r) => (
               <option key={r} value={r}>
                 {t(`usage.stats.range.${r}`)}
               </option>
@@ -362,12 +375,14 @@ export function UsagePage(props: SettingsSectionProps): JSX.Element {
         </div>
       ))}
 
-      <ProGate feature={HISTORY_FEATURE} fallback={<UsageHistoryLocked />}>
-        <UsageHistory api={api} />
-      </ProGate>
+      {history && (
+        <ProGate feature={HISTORY_FEATURE} fallback={<UsageHistoryLocked />}>
+          <UsageHistory api={api} />
+        </ProGate>
+      )}
 
-      {report !== undefined && empty && <p className="kit-empty">{t("usage.stats.empty")}</p>}
-      {report !== undefined && !empty && (
+      {!history && report !== undefined && empty && <p className="kit-empty">{t("usage.stats.empty")}</p>}
+      {!history && report !== undefined && !empty && (
         <div className="kit-usage">
           <div className="kit-legend" aria-hidden="true">
             {(["input", "output", "cache"] as const).map((part) => (

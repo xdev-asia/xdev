@@ -5598,5 +5598,6 @@
   "usage.history.export": "Xuất CSV",
   "usage.history.locked": "Những ngày ngoài nhật ký CLI và xuất CSV thuộc xDev Pro.",
   "license.err.required": "Tính năng này cần xDev Pro.",
-  "error.license_required": "Tính năng này cần xDev Pro."
+  "error.license_required": "Tính năng này cần xDev Pro.",
+  "usage.stats.range.history": "Lịch sử đã lưu (Pro)"
 }

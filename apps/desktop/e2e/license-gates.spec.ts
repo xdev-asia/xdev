@@ -77,6 +77,7 @@ test("saved layouts: tagged on free; on Pro a saved layout is listed and applies
 test("usage history: tagged on free, loads on Pro", async ({ page, openApp }) => {
   await openApp();
   await openSection(page, "Stats & Usage");
+  await page.locator('[data-field="range"]').selectOption("history");
   const locked = page.locator('[data-field="usage-history-locked"]');
   await expect(locked.getByRole("button", { name: /Usage history/ })).toContainText("Pro");
   await goPro(page);
@@ -96,6 +97,7 @@ test("at 360px the upsell and the usage page fit", async ({ page, openApp }) => 
   await openApp();
   await openSection(page, "Stats & Usage");
   expect(await fitsWidth(page)).toBe(true);
+  await page.locator('[data-field="range"]').selectOption("history");
   await page.locator('[data-field="usage-history-locked"]').getByRole("button").click();
   await expect(page.getByRole("dialog", { name: "Usage history is part of xDev Pro" })).toBeVisible();
   expect(await fitsWidth(page)).toBe(true);

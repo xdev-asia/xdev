@@ -5598,5 +5598,6 @@
   "usage.history.export": "Export CSV",
   "usage.history.locked": "Days past your CLI logs, and CSV export, are part of xDev Pro.",
   "license.err.required": "This needs xDev Pro.",
-  "error.license_required": "This needs xDev Pro."
+  "error.license_required": "This needs xDev Pro.",
+  "usage.stats.range.history": "Saved history (Pro)"
 }
