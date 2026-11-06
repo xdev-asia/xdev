@@ -23,6 +23,7 @@ xdev-kit.workspace = true
 xdev-link.workspace = true
 xdev-mcp.workspace = true
 xdev-orch.workspace = true
+xdev-pty.workspace = true
 xdev-policy.workspace = true
 
 [dev-dependencies]

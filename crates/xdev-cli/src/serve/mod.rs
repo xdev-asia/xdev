@@ -13,6 +13,7 @@ use clap::{Parser, ValueEnum};
 use xdev_link::{LinkBind, PeerRole, PeerStore};
 
 pub mod projects;
+pub mod terms;
 
 /// The first port tried; up to 15 more after it, as on the desktop.
 pub const PORT: u16 = 47821;
