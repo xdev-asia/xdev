@@ -5713,5 +5713,10 @@
   "files.notebook.image": "Notebook output image",
   "files.notebook.error": "This notebook could not be read",
   "files.notebook.error.json": "The file is not valid JSON.",
-  "files.notebook.error.shape": "The file is JSON but has no list of cells."
+  "files.notebook.error.shape": "The file is JSON but has no list of cells.",
+  "update.card.title": "xDev IDE {version} is ready",
+  "update.card.body": "Restart to update. It also updates when you quit.",
+  "update.card.restart": "Restart to update",
+  "update.card.notes": "Release notes",
+  "update.card.dismiss": "Dismiss"
 }

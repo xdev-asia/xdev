@@ -5713,5 +5713,10 @@
   "files.notebook.image": "Ảnh kết quả của sổ tay",
   "files.notebook.error": "Không đọc được sổ tay này",
   "files.notebook.error.json": "Tệp không phải JSON hợp lệ.",
-  "files.notebook.error.shape": "Tệp là JSON nhưng không có danh sách ô."
+  "files.notebook.error.shape": "Tệp là JSON nhưng không có danh sách ô.",
+  "update.card.title": "xDev IDE {version} đã sẵn sàng",
+  "update.card.body": "Khởi động lại để cập nhật. Bản cập nhật cũng được cài khi bạn thoát.",
+  "update.card.restart": "Khởi động lại để cập nhật",
+  "update.card.notes": "Ghi chú phát hành",
+  "update.card.dismiss": "Đóng"
 }
