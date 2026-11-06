@@ -27,6 +27,8 @@ import { startOptionAsAltProbe } from "@/terminal/optionAsAlt";
 import { startAutosave } from "@/files/autosave";
 import { useWorktreeWatch } from "./useWorktreeWatch";
 import { ComposerHost, type ComposerRequest } from "@/composer/ComposerHost";
+import { FloatingHost } from "@/floating/FloatingHost";
+import { FloatingItem } from "@/floating/FloatingItem";
 import { repoOf, TaskEditorHost } from "@/tasks/board/TaskEditorHost";
 import { fileTabId, fileTabRel, fileTabs } from "@/files/fileTabs";
 import { onOpenFile, openFile as requestOpenFile, type OpenFileRequest } from "@/files/openFile";
@@ -2546,6 +2548,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         ports={<PortsItem store={ports} active={current?.path ?? null} onOpen={() => panelKey("ports")} />}
         onManageSsh={() => openSettings("ssh")}
         onOpenLicense={() => openSettings("account")}
+        floating={<FloatingItem />}
         onOpenSshTerminal={current && sessions ? (alias) => void sessions.open(current.path, `${SSH_SHELL_PREFIX}${alias}`, null, null) : undefined}
         hidden={view === "docs"}
       />
@@ -2594,6 +2597,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           else requestOpenFile({ worktree: current.path, rel, line, column });
         }}
       />
+      <FloatingHost api={api} />
       <ComposerHost
         api={api}
         sessions={sessions}

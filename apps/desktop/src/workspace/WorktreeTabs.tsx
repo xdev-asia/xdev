@@ -21,6 +21,7 @@ import { viewerOf } from "@/files/viewer";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { useI18n } from "@/i18n";
+import { focusInFloating } from "@/floating/floatingStore";
 import { useKeymap } from "@/keys/keymap";
 import { useNavigationSettings } from "@/settings/navigationSettings";
 import { useUsageSettings } from "@/settings/usageSettings";
@@ -870,7 +871,7 @@ export function WorktreeTabs(props: {
         return true;
       },
     },
-    { when: () => visible },
+    { when: () => visible && !focusInFloating() },
   );
 
   function failed(tab: Tab, e: ApiError): void {
