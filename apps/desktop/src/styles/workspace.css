@@ -4301,6 +4301,12 @@ button.ws-tree-row[data-active="true"] {
   gap: 8px;
 }
 
+.ws-update-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .ws-update-card-body,
 .ws-update-card-notes {
   margin: 0;

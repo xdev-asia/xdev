@@ -20,7 +20,7 @@ export const DIFF_SWITCHES = ["ignoreWhitespace", "collapseUnchanged", "wordWrap
 const NAVIGATION_IDS = ["general.tabOrder", ...NAVIGATION_SWITCHES.map((k) => `general.nav.${k}`)];
 const LOCALES: LocalePreference[] = ["system", "en", "vi"];
 const WORKSPACE_IDS = ["general.language", "general.zoom", "general.restore", "general.tips", "general.openIn"];
-const UPDATE_IDS = ["general.updates", "general.updateChannel"];
+const UPDATE_IDS = ["general.updates", "general.updateChannel", "general.updateRemind"];
 const DIFF_IDS = ["general.diffView", ...DIFF_SWITCHES.map((k) => `general.diff.${k}`)];
 export const ZOOM_LEVELS: number[] = Array.from({ length: Math.round((ZOOM_MAX - ZOOM_MIN) / ZOOM_STEP) + 1 }, (_, i) => clampZoom(ZOOM_MIN + i * ZOOM_STEP));
 

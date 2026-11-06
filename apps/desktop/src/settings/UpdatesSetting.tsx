@@ -7,6 +7,7 @@ import { LicenseUpsellContext } from "@/license/ProGate";
 import { useLicense } from "@/license/useLicense";
 import { phaseLine, useUpdateCheck, type CheckState } from "@/shell/useUpdateCheck";
 import { SettingRow } from "./SettingRow";
+import { UpdateReminderSetting } from "./UpdateReminderSetting";
 import type { SettingsFilter } from "./sections";
 
 export const UPDATE_CHANNELS: UpdateChannel[] = ["stable", "rc"];
@@ -163,6 +164,9 @@ export function UpdatesView(props: UpdatesViewProps): JSX.Element {
             <small className="settings-hint">{t("settings.general.updates.delayHint")}</small>
           </label>
         </div>
+      </SettingRow>
+      <SettingRow id="general.updateRemind" filter={filter}>
+        <UpdateReminderSetting />
       </SettingRow>
       <SettingRow id="general.updateBuild" filter={filter}>
         <div className="ws-fields">

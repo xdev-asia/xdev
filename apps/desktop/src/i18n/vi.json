@@ -5741,7 +5741,6 @@
   "update.card.body": "Khởi động lại để cập nhật. Bản cập nhật cũng được cài khi bạn thoát.",
   "update.card.restart": "Khởi động lại để cập nhật",
   "update.card.notes": "Ghi chú phát hành",
-  "update.card.dismiss": "Đóng",
   "about.machine": "Máy: {name}",
   "prPanel.tab": "Pull request",
   "prPanel.palette": "Mở pull request",
@@ -5886,5 +5885,12 @@
   "wall.tips.title": "Mẹo tính năng",
   "wall.tips.body": "Một mẹo ngắn sau khi ứng dụng khởi động. Tắt hoặc bật mẹo trong Cài đặt.",
   "wall.updates.title": "Nhắc cập nhật",
-  "wall.updates.body": "Nhắc lại sau đưa bản cập nhật trở lại sau vài ngày. Bỏ qua phiên bản này sẽ chờ bản mới hơn."
+  "wall.updates.body": "Nhắc lại sau đưa bản cập nhật trở lại sau vài ngày. Bỏ qua phiên bản này sẽ chờ bản mới hơn.",
+  "update.card.remind": "Nhắc lại sau",
+  "update.card.skip": "Bỏ qua phiên bản này",
+  "settings.general.updates.remind": "Nhắc cập nhật",
+  "settings.general.updates.remind.1": "Nhắc lại sau 1 ngày",
+  "settings.general.updates.remind.3": "Nhắc lại sau 3 ngày",
+  "settings.general.updates.remind.7": "Nhắc lại sau 7 ngày",
+  "settings.general.updates.remindHint": "Thời gian Nhắc lại sau chờ trước khi thẻ cập nhật quay lại. Phiên bản mới hơn sẽ đưa thẻ trở lại ngay."
 }

@@ -5741,7 +5741,6 @@
   "update.card.body": "Restart to update. It also updates when you quit.",
   "update.card.restart": "Restart to update",
   "update.card.notes": "Release notes",
-  "update.card.dismiss": "Dismiss",
   "about.machine": "Machine: {name}",
   "prPanel.tab": "Pull request",
   "prPanel.palette": "Open pull request",
@@ -5886,5 +5885,12 @@
   "wall.tips.title": "Feature tips",
   "wall.tips.body": "One short tip after the app starts. Turn tips off or on in Settings.",
   "wall.updates.title": "Update reminders",
-  "wall.updates.body": "Remind me later brings an update back after a few days. Skip this version waits for a newer one."
+  "wall.updates.body": "Remind me later brings an update back after a few days. Skip this version waits for a newer one.",
+  "update.card.remind": "Remind me later",
+  "update.card.skip": "Skip this version",
+  "settings.general.updates.remind": "Update reminder",
+  "settings.general.updates.remind.1": "Remind me after 1 day",
+  "settings.general.updates.remind.3": "Remind me after 3 days",
+  "settings.general.updates.remind.7": "Remind me after 7 days",
+  "settings.general.updates.remindHint": "How long Remind me later waits before the update card returns. A newer version brings it back at once."
 }
