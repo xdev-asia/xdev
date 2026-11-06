@@ -179,7 +179,7 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
   let orchestration: OrchestrationSettings = { ...ORCHESTRATION_DEFAULTS };
   let usage: UsageSettings = structuredClone(USAGE_DEFAULTS);
   let automations: AutomationsSettings = { ...AUTOMATIONS_DEFAULTS };
-  let network: NetworkSettings = { proxyUrl: "", noProxy: [], nodeMirror: "", machineName: "" };
+  let network: NetworkSettings = { proxyUrl: "", noProxy: [], nodeMirror: "", machineName: "", http1Only: false };
   return {
     onSettingsChanged: hub.onSettingsChanged,
     async terminalSettings() {

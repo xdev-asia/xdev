@@ -70,6 +70,7 @@ it("saves the cleaned values through the put command", async () => {
     noProxy: ["localhost", ".corp.example"],
     nodeMirror: "https://registry.npmmirror.com",
     machineName: "dev box",
+    http1Only: false,
   });
   await m.settle();
   expect(field(m.all(), "noProxy").props.value).toBe("localhost\n.corp.example");
@@ -83,5 +84,18 @@ it("validates like the app does", () => {
   expect(proxyProblem("http://")).toBe("invalid");
   expect(mirrorProblem("https://m.example/")).toBeUndefined();
   expect(parseBypass(" a \n\nb,A")).toEqual(["a", "b"]);
-  expect(fromDraft({ proxyUrl: "", noProxy: "", nodeMirror: "", machineName: " x " }).machineName).toBe("x");
+  expect(fromDraft({ proxyUrl: "", noProxy: "", nodeMirror: "", machineName: " x ", http1Only: true }).machineName).toBe("x");
+});
+
+it("round trips the HTTP/1.1 switch through the put command", async () => {
+  const { m, put } = await open();
+  const sw = () => m.all().find((n) => n.props?.role === "switch" && n.props["aria-label"] === t("settings.advanced.http1"))!;
+  expect(sw().props["aria-checked"]).toBe(false);
+  sw().props.onClick();
+  expect(sw().props["aria-checked"]).toBe(true);
+  save(m).props.onClick();
+  await m.settle();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ http1Only: true }));
+  await m.settle();
+  expect(sw().props["aria-checked"]).toBe(true);
 });

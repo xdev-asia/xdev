@@ -237,6 +237,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("advanced.noProxy", "settings.advanced.noProxy", ["proxy", "bypass", "no_proxy", "exclude", "hosts", "bỏ qua", "bo qua", "loại trừ", "loai tru"], "settings.advanced.noProxy.hint"),
   e("advanced.nodeMirror", "settings.advanced.nodeMirror", ["node", "npm", "registry", "mirror", "package", "gương", "guong", "kho gói", "kho goi"], "settings.advanced.nodeMirror.hint"),
   e("advanced.export", "settings.config.export", ["export", "import", "backup", "restore", "settings", "save", "load", "json", "xuất", "xuat", "nhập", "nhap", "sao lưu", "sao luu"], "settings.config.export.hint"),
+  e("advanced.http1", "settings.advanced.http1", ["http", "http1", "http/1.1", "http2", "proxy", "network", "protocol", "giao thức", "giao thuc", "mạng", "mang"], "settings.advanced.http1.hint"),
   e("advanced.machineName", "settings.advanced.machineName", ["machine", "name", "host", "hostname", "computer", "device", "tên máy", "ten may", "máy tính", "may tinh"], "settings.advanced.machineName.hint"),
   // Account: agent account routing
   e("account.routing.policy", "settings.account.routing.policy", ["account", "routing", "policy", "quota", "round robin", "priority", "most quota", "new tab", "tài khoản", "tai khoan", "định tuyến", "dinh tuyen", "hạn mức", "han muc", "luân phiên", "luan phien", "ưu tiên", "uu tien"], "settings.account.routing.lead"),

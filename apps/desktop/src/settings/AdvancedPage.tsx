@@ -8,9 +8,9 @@ import { ConfigIo } from "./ConfigIo";
 import { SettingGroup, SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
 
-const IDS = ["advanced.proxy", "advanced.noProxy", "advanced.nodeMirror", "advanced.machineName"];
+const IDS = ["advanced.proxy", "advanced.noProxy", "advanced.nodeMirror", "advanced.http1", "advanced.machineName"];
 const CONFIG_IDS = ["advanced.export"];
-const EMPTY: NetworkDraft = { proxyUrl: "", noProxy: "", nodeMirror: "", machineName: "" };
+const EMPTY: NetworkDraft = { proxyUrl: "", noProxy: "", nodeMirror: "", machineName: "", http1Only: false };
 
 /** Settings → Advanced: the proxy and its bypass list, the Node mirror and this machine's name. */
 export function AdvancedPage(props: SettingsSectionProps): JSX.Element {
@@ -115,6 +115,25 @@ export function AdvancedPage(props: SettingsSectionProps): JSX.Element {
                 disabled={busy}
                 onChange={(e) => edit({ nodeMirror: e.target.value })}
               />
+            </SettingRow>
+            <SettingRow id="advanced.http1" filter={filter}>
+              <ul className="settings-list">
+                <li className="settings-item" data-switch="http1Only">
+                  <div className="settings-item-text">
+                    <strong>{t("settings.advanced.http1")}</strong>
+                    <small className="settings-hint">{t("settings.advanced.http1.hint")}</small>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    className="agent-switch"
+                    aria-checked={draft.http1Only}
+                    aria-label={t("settings.advanced.http1")}
+                    disabled={busy}
+                    onClick={() => edit({ http1Only: !draft.http1Only })}
+                  />
+                </li>
+              </ul>
             </SettingRow>
             <SettingRow id="advanced.machineName" filter={filter}>
               <Field

@@ -20,4 +20,8 @@ nodeMirror: string,
 /**
  * What About and the diagnostics file call this machine; empty: the OS host name.
  */
-machineName: string, };
+machineName: string, 
+/**
+ * Force HTTP/1.1 on the updater's requests (for proxies that break HTTP/2).
+ */
+http1Only: boolean, };

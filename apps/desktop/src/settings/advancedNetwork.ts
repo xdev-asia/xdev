@@ -38,6 +38,7 @@ export interface NetworkDraft {
   noProxy: string;
   nodeMirror: string;
   machineName: string;
+  http1Only: boolean;
 }
 
 export const toDraft = (s: NetworkSettings): NetworkDraft => ({
@@ -45,6 +46,7 @@ export const toDraft = (s: NetworkSettings): NetworkDraft => ({
   noProxy: s.noProxy.join("\n"),
   nodeMirror: s.nodeMirror,
   machineName: s.machineName,
+  http1Only: s.http1Only,
 });
 
 export const fromDraft = (d: NetworkDraft): NetworkSettings => ({
@@ -52,4 +54,5 @@ export const fromDraft = (d: NetworkDraft): NetworkSettings => ({
   noProxy: parseBypass(d.noProxy),
   nodeMirror: d.nodeMirror.trim(),
   machineName: d.machineName.trim(),
+  http1Only: d.http1Only,
 });

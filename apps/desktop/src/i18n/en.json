@@ -3907,6 +3907,8 @@
   "settings.advanced.nodeMirror.hint": "Package registry for new terminals (npm_config_registry). Leave empty to use the default.",
   "settings.advanced.mirror.scheme": "Use an http or https address, such as https://registry.npmmirror.com.",
   "settings.advanced.mirror.invalid": "Enter a full address with a host, such as https://registry.npmmirror.com.",
+  "settings.advanced.http1": "Use HTTP/1.1",
+  "settings.advanced.http1.hint": "Send update requests over HTTP/1.1 only. Turn it on if your proxy breaks HTTP/2.",
   "settings.advanced.machineName": "Machine name",
   "settings.advanced.machineName.hint": "Shown in About and the diagnostics file. Leave empty to use this computer's host name.",
   "settings.advanced.save": "Save changes",

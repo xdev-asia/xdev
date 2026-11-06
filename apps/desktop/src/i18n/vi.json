@@ -3907,6 +3907,8 @@
   "settings.advanced.nodeMirror.hint": "Kho gói cho terminal mới (npm_config_registry). Để trống để dùng mặc định.",
   "settings.advanced.mirror.scheme": "Dùng địa chỉ http hoặc https, ví dụ https://registry.npmmirror.com.",
   "settings.advanced.mirror.invalid": "Nhập địa chỉ đầy đủ có máy chủ, ví dụ https://registry.npmmirror.com.",
+  "settings.advanced.http1": "Dùng HTTP/1.1",
+  "settings.advanced.http1.hint": "Chỉ gửi yêu cầu cập nhật qua HTTP/1.1. Bật nếu proxy của bạn lỗi với HTTP/2.",
   "settings.advanced.machineName": "Tên máy",
   "settings.advanced.machineName.hint": "Hiện trong phần Giới thiệu và tệp chẩn đoán. Để trống để dùng tên máy của hệ điều hành.",
   "settings.advanced.save": "Lưu thay đổi",

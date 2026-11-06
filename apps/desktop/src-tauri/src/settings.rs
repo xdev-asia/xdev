@@ -557,6 +557,8 @@ pub struct NetworkSettings {
     pub node_mirror: String,
     /// What About and the diagnostics file call this machine; empty: the OS host name.
     pub machine_name: String,
+    /// Force HTTP/1.1 on the updater's requests (for proxies that break HTTP/2).
+    pub http1_only: bool,
 }
 
 impl NetworkSettings {
