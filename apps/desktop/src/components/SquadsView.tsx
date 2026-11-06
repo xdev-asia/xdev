@@ -18,6 +18,8 @@ import {
 } from "@/api";
 import { relativeTime } from "@/changes/changes";
 import { useI18n } from "@/i18n";
+import { openTeamCharts } from "@/orchestration/charts/chartEvents";
+import { pushToast } from "@/workspace/toastStore";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -555,6 +557,21 @@ export function SquadsView({
                 {t("squads.openTask")}
               </button>
             )}
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() =>
+                void api.chartsSaveSquad(v.squad.id).then(
+                  (chart) => {
+                    pushToast({ text: t("charts.savedFromSquad", { name: chart.name }) });
+                    openTeamCharts(chart);
+                  },
+                  (e) => setProblem(toApiError(e)),
+                )
+              }
+            >
+              {t("charts.saveAsChart")}
+            </button>
           </div>
           {s === "running" && (
             <p className="task-working" role="status">

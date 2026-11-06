@@ -10,6 +10,7 @@ import { terminalOf } from "@/terminal/terminalRegistry";
 import type { Sessions } from "@/workspace/sessions";
 import { openCrashDialog } from "@/crash/crashEvents";
 import { missionItems } from "@/orchestration/missionEvents";
+import { chartItems } from "@/orchestration/charts/chartEvents";
 import { resourceItems } from "@/stats/resourceEvents";
 import { foreignTermsItems } from "@/foreignTerms/foreignTermsEvents";
 import { actionItems, crashItems, quickCommandItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
@@ -186,6 +187,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       ...actionItems(t, handlers),
       ...crashItems(t, () => openCrashDialog({ latest: true })),
       ...missionItems(t),
+      ...chartItems(t),
       ...resourceItems(t),
       ...conversationItems(t, front),
       ...foreignTermsItems(t),
