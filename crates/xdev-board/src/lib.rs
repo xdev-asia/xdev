@@ -1,6 +1,7 @@
 //! The file-backed task board: one Markdown file per task in
 //! `.xdev/tasks`. Pure logic, no UI and no Tauri.
 
+pub mod decompose;
 pub mod frontmatter;
 pub mod model;
 pub mod store;
