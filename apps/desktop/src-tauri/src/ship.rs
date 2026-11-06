@@ -41,6 +41,15 @@ const PR_BASE: &str = "Write a pull request title and description for merging th
      Put the title on the first line, then a blank line, then the description in Markdown. \
      Answer with that only, no commentary.";
 
+/// Where the checkout's pull or merge requests live.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewHost {
+    Github,
+    Gitlab,
+}
+
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +76,8 @@ pub struct ShipView {
     /// The repo has remotes named both `origin` and `upstream`, so Sync fork
     /// is offered.
     pub has_fork_upstream: bool,
+    /// `Gitlab` when the repo's remote is a GitLab one, else `Github`.
+    pub review_host: ReviewHost,
 }
 
 /// What the registry knows about a checkout.
@@ -128,7 +139,12 @@ pub(crate) fn gh_account_for(data: &Path, path: &Path) -> Result<Option<GhAccoun
     Ok(locate(data, path)?.gh_account)
 }
 
-fn err(code: &'static str, detail: Option<String>) -> CmdError {
+/// The base ref the checkout's repo is registered with.
+pub(crate) fn base_ref_for(data: &Path, path: &Path) -> Result<String, CmdError> {
+    Ok(locate(data, path)?.base_ref)
+}
+
+pub(crate) fn err(code: &'static str, detail: Option<String>) -> CmdError {
     CmdError { code, detail }
 }
 
@@ -171,6 +187,11 @@ fn view(data: &Path, path: &Path, against_upstream: bool) -> Result<ShipView, Cm
         range_base,
         ahead_of_base,
         has_fork_upstream: repo.has_fork_upstream()?,
+        review_host: if repo.gitlab_remote()?.is_some() {
+            ReviewHost::Gitlab
+        } else {
+            ReviewHost::Github
+        },
     })
 }
 
@@ -364,12 +385,13 @@ fn plain_base(repo: &Repo, base_ref: &str) -> String {
     base_ref.to_owned()
 }
 
-fn create_pr_with(
-    gh: &dyn GhExec,
+/// The checks both pull and merge request creation share. Returns the branch and the draft with
+/// a trimmed title and a plain target branch.
+pub(crate) fn ready_draft(
     repo: &Repo,
     base_ref: &str,
     draft: PrDraft,
-) -> Result<PrView, CmdError> {
+) -> Result<(String, PrDraft), CmdError> {
     let branch = repo
         .current_branch()?
         .ok_or_else(|| err("detached", None))?;
@@ -394,6 +416,16 @@ fn create_pr_with(
         body: draft.body,
         draft: draft.draft,
     };
+    Ok((branch, draft))
+}
+
+fn create_pr_with(
+    gh: &dyn GhExec,
+    repo: &Repo,
+    base_ref: &str,
+    draft: PrDraft,
+) -> Result<PrView, CmdError> {
+    let (branch, draft) = ready_draft(repo, base_ref, draft)?;
     Ok(pr_create(gh, &repo.root(), &branch, &draft)?)
 }
 
@@ -1048,6 +1080,41 @@ mod tests {
 
     fn branch(fx: &Fixture) -> String {
         git(&fx.wt, &["rev-parse", "--abbrev-ref", "HEAD"])
+    }
+
+    #[test]
+    fn review_host_follows_the_remote_url() {
+        let fx = fixture();
+        assert_eq!(
+            view(&fx.data, &fx.wt, false).unwrap().review_host,
+            ReviewHost::Github
+        );
+        let url = "https://gitlab.com/g/p.git";
+        git(&fx.main, &["remote", "set-url", "origin", url]);
+        git(
+            &fx.main,
+            &[
+                "config",
+                &format!("url.{}.insteadOf", fx.origin.to_str().unwrap()),
+                url,
+            ],
+        );
+        assert_eq!(
+            view(&fx.data, &fx.wt, false).unwrap().review_host,
+            ReviewHost::Gitlab
+        );
+    }
+
+    #[test]
+    fn review_host_serializes_lowercase() {
+        assert_eq!(
+            serde_json::to_string(&ReviewHost::Gitlab).unwrap(),
+            "\"gitlab\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ReviewHost::Github).unwrap(),
+            "\"github\""
+        );
     }
 
     #[test]

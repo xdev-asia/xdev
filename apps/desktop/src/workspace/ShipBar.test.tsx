@@ -592,3 +592,88 @@ it("Sync fork is in the menu only with an upstream remote, and says what it did"
   expect(view.html()).toContain(en("ship.syncFork.upToDate"));
   expect(view.html()).not.toContain(en("ship.syncFork.synced", { count: 3 }));
 });
+
+// A GitLab worktree: the ship view says so, and the merge request comes from worktreeMr.
+async function gitlabApi(commit = true): Promise<Api> {
+  const api = seeded();
+  if (commit) await api.worktreeCommit(OAK, ["src/session.ts"], "feat: one");
+  const ship = api.worktreeShip.bind(api);
+  vi.spyOn(api, "worktreeShip").mockImplementation(async (p) => ({ ...(await ship(p)), reviewHost: "gitlab" }));
+  const push = api.worktreePush.bind(api);
+  vi.spyOn(api, "worktreePush").mockImplementation(async (p) => ({ ...(await push(p)), reviewHost: "gitlab" }));
+  return api;
+}
+const MR = { iid: 12, url: "https://gitlab.test/g/p/-/merge_requests/12", state: "open" as const, draft: false, title: "t", source: "oak", target: "main", author: null, updatedAt: "2026-11-07T00:00:00Z", fork: false };
+
+it("GitLab: a branch with no merge request offers Create merge request, and never asks for a pull request", async () => {
+  const api = await gitlabApi();
+  const pr = vi.spyOn(api, "worktreePr");
+  const mr = vi.spyOn(api, "worktreeMr");
+  const view = bar(api);
+  await tick();
+  expect(mr).toHaveBeenCalledWith(OAK);
+  expect(pr).not.toHaveBeenCalled();
+  await api.worktreePush(OAK);
+  view.cleanups.forEach((c) => typeof c === "function" && c());
+  hooks.values = []; hooks.effects = [];
+  const again = bar(api);
+  await tick();
+  expect(again.main().props.children).toBe(en("ship.action.create_mr"));
+  again.main().props.onClick();
+  expect(again.find((n) => n.type === CreatePrDialog)!.props.host).toBe("gitlab");
+});
+
+it("GitLab: an open merge request shows its label, and the button opens its URL", async () => {
+  const api = await gitlabApi();
+  await api.worktreePush(OAK);
+  vi.spyOn(api, "worktreeMr").mockResolvedValue(MR);
+  const openUrl = vi.spyOn(api, "openUrl").mockResolvedValue(undefined);
+  const pr = vi.spyOn(api, "worktreePrOpen");
+  const view = bar(api);
+  await tick();
+  expect(view.html()).toContain(en("ship.mr.label", { number: 12 }));
+  expect(view.main().props.children).toBe(en("ship.action.open_mr"));
+  view.main().props.onClick();
+  await tick();
+  expect(openUrl).toHaveBeenCalledWith(MR.url);
+  expect(pr).not.toHaveBeenCalled();
+});
+
+it("GitLab: a failed lookup offers no create button", async () => {
+  const api = await gitlabApi();
+  vi.spyOn(api, "worktreeMr").mockRejectedValue({ code: "glab_auth" });
+  await api.worktreePush(OAK);
+  const view = bar(api);
+  await tick();
+  expect(view.main().props.children).not.toBe(en("ship.action.create_mr"));
+  expect(view.main().props.children).not.toBe(en("ship.action.create_pr"));
+});
+
+it("GitLab: Push before merge request pushes, then opens the dialog for GitLab", async () => {
+  const api = await gitlabApi();
+  const push = vi.spyOn(api, "worktreePush");
+  const view = bar(api);
+  await tick();
+  view.openMenu();
+  view.item(en("ship.combo.pushThenMr")).props.onClick();
+  await tick();
+  expect(push).toHaveBeenCalledWith(OAK);
+  expect(view.find((n) => n.type === CreatePrDialog)!.props.host).toBe("gitlab");
+});
+
+it("GitLab: a created merge request updates the label without another lookup or a PrStore write", async () => {
+  const api = await gitlabApi();
+  await api.worktreePush(OAK);
+  const mr = vi.spyOn(api, "worktreeMr");
+  const view = bar(api);
+  await tick();
+  const set = vi.spyOn(view.prs, "set");
+  view.main().props.onClick();
+  const dialog = view.find((n) => n.type === CreatePrDialog)!;
+  const calls = mr.mock.calls.length;
+  dialog.props.onCreated({ number: 3, url: "u", state: "open", title: "t", base: "main", head: "oak" });
+  expect(view.html()).toContain(en("ship.mr.label", { number: 3 }));
+  expect(mr.mock.calls.length).toBe(calls);
+  expect(set).not.toHaveBeenCalled();
+  expect(view.main().props.children).toBe(en("ship.action.open_mr"));
+});

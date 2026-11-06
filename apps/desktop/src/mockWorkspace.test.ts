@@ -278,6 +278,19 @@ describe("mock shipping", () => {
     expect((await api.worktreePush(FIRST)).upstream?.ahead).toBe(0);
   });
 
+  it("creates a merge request only from a pushed branch with a title", async () => {
+    const api = createMockWorkspace();
+    expect(await api.worktreeMr(FIRST)).toBeNull();
+    const draft = { base: "main", title: "Add x", body: "", draft: false };
+    await api.worktreeCommit(FIRST, files, "first");
+    await expect(api.worktreeMrCreate(FIRST, draft)).rejects.toMatchObject({ code: "not_pushed" });
+    await api.worktreePush(FIRST);
+    await expect(api.worktreeMrCreate(FIRST, { ...draft, title: "  " })).rejects.toMatchObject({ code: "empty_title" });
+    const mr = await api.worktreeMrCreate(FIRST, draft);
+    expect(mr.url.endsWith("/-/merge_requests/1")).toBe(true);
+    expect(await api.worktreeMr(FIRST)).toEqual(mr);
+  });
+
   it("counts the range against the upstream when the git settings say so", async () => {
     const api = createMockWorkspace({ ...DEMO_WORKSPACE, git: { compareAgainstUpstream: true } });
     await api.worktreeCommit(FIRST, files, "first");

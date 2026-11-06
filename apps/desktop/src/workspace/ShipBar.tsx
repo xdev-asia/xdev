@@ -8,7 +8,7 @@ import { DEFAULT_GIT_SETTINGS } from "@/settings/gitDefaults";
 import { CreatePrDialog } from "./CreatePrDialog";
 import type { PrStore } from "./prs";
 import { PULL_POLICY_CODES, PullPolicyNotice } from "./PullPolicyNotice";
-import { shipAction } from "./ship";
+import { actionKey, mrAsPr, shipAction } from "./ship";
 import { breakdownRows, countsAria } from "./shipBreakdown";
 import { forkSyncText, shipMenu, type MenuId, type Text } from "./shipMenu";
 
@@ -87,6 +87,9 @@ export function ShipBar(props: {
   const [forkNote, setForkNote] = useState<Text | null>(null);
   const [force, setForce] = useState<Force | null>(null);
   const [creating, setCreating] = useState(false);
+  // GitLab worktrees keep their merge request here, in the PrView shape, not in the PrStore.
+  // undefined: not loaded, or the lookup failed; null: the branch has none.
+  const [mr, setMr] = useState<PrView | null | undefined>(undefined);
   // The error on show came from a push, the one action a recipe can fix.
   const [pushFailed, setPushFailed] = useState(false);
   // The update the error on show came from, so its text can name it.
@@ -98,7 +101,10 @@ export function ShipBar(props: {
 
   useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
   const entry = prs.get(worktree);
-  const pr: PrView | null | undefined = entry === undefined || entry.error ? undefined : entry.pr;
+  const gitlab = ship?.reviewHost === "gitlab";
+  const prsOff = useRef(false);
+  prsOff.current = gitlab;
+  const pr: PrView | null | undefined = gitlab ? mr : entry === undefined || entry.error ? undefined : entry.pr;
 
   async function refresh(): Promise<void> {
     const seq = ++reads.current;
@@ -107,6 +113,16 @@ export function ShipBar(props: {
       if (seq === reads.current) {
         setShip(view);
         setError(null);
+      }
+      // The first read of a worktree loads its pull request, once the view names the host.
+      if (view.reviewHost !== "gitlab" && prs.get(worktree) === undefined) void prs.load(worktree);
+      if (view.reviewHost === "gitlab") {
+        // A failed lookup never offers create: the branch may already have a merge request.
+        const found = await api.worktreeMr(worktree).then(
+          (m) => (m ? mrAsPr(m) : null),
+          () => undefined,
+        );
+        if (seq === reads.current) setMr(found);
       }
     } catch (e) {
       if (seq === reads.current) setError(toApiError(e));
@@ -123,7 +139,7 @@ export function ShipBar(props: {
     void refresh();
     const again = () => {
       void refresh();
-      void prs.load(worktree);
+      if (!prsOff.current) void prs.load(worktree);
     };
     window.addEventListener("focus", again);
     return () => {
@@ -131,10 +147,6 @@ export function ShipBar(props: {
       reads.current++;
     };
   }, [api, worktree, prs, props.refreshKey]);
-
-  useEffect(() => {
-    void prs.load(worktree);
-  }, [prs, worktree]);
 
   // Runs one action; its answer is the new state of the branch.
   async function run(act: () => Promise<ShipView | void>, push = false, update: UpdateOp | null = null): Promise<boolean> {
@@ -232,6 +244,7 @@ export function ShipBar(props: {
     else if (action === "publish" || action === "push") void run(() => api.worktreePush(worktree), true);
     else if (action === "pull") void run(() => api.worktreePull(worktree));
     else if (action === "create_pr") setCreating(true);
+    else if (action === "open_pr" && gitlab && mr) void run(() => api.openUrl(mr.url));
     else if (action === "open_pr") void run(() => api.worktreePrOpen(worktree, false));
   }
 
@@ -306,14 +319,14 @@ export function ShipBar(props: {
           )}
           <div className="ws-ship-upstream ws-mono">
             {up ? t("ship.upstream.state", { ahead: up.ahead, behind: up.behind }) : t("ship.upstream.none")}
-            {pr && <span className="ws-ship-pr">{t("ship.pr.label", { number: pr.number })}</span>}
+            {pr && <span className="ws-ship-pr">{t(gitlab ? "ship.mr.label" : "ship.pr.label", { number: pr.number })}</span>}
           </div>
         </div>
       )}
       <div className="ws-ship-actions">
         {/* The Changes surface already has its primary, the Commit button; this one is secondary so the surface keeps one. */}
         <Button type="button" variant="secondary" disabled={busy || action === "none" || action === "diverged"} onClick={main}>
-          {t(`ship.action.${action}`)}
+          {t(actionKey(action, ship?.reviewHost ?? "github"))}
         </Button>
         <button
           type="button"
@@ -395,10 +408,12 @@ export function ShipBar(props: {
           ai={git.sourceControlAi}
           generateOnOpen={git.sourceControlAi && git.prGenerateOnOpen}
           openAfterCreate={git.prOpenAfterCreate}
+          host={ship?.reviewHost}
           onOpenGitSettings={props.onOpenGitSettings}
           onCreated={(created) => {
             setCreating(false);
-            prs.set(worktree, created);
+            if (gitlab) setMr(created);
+            else prs.set(worktree, created);
             onChanged.current();
           }}
           onClose={() => setCreating(false)}

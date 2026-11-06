@@ -60,7 +60,8 @@ pub use gh_review::{
     pr_thread_resolve,
 };
 pub use gitlab::{
-    GlabExec, MrState, MrSummary, SystemGlab, glab_mr_list, glab_mr_view, is_gitlab_remote,
+    GlabExec, MR_BODY_LIMIT, MrState, MrSummary, SystemGlab, glab_mr_create, glab_mr_for_branch,
+    glab_mr_list, glab_mr_view, is_gitlab_remote,
 };
 pub use history::Commit;
 pub use host_url::{HostKind, HostRepo, commit_url, file_url, parse_host_remote};

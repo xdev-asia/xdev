@@ -410,6 +410,7 @@ export type { ReviewData } from "./ReviewData";
 export type { ReviewDecision } from "./ReviewDecision";
 export type { ReviewFile } from "./ReviewFile";
 export type { ReviewFinding } from "./ReviewFinding";
+export type { ReviewHost } from "./ReviewHost";
 export type { ReviewNote } from "./ReviewNote";
 export type { ReviewSeverity } from "./ReviewSeverity";
 export type { ReviewerState } from "./ReviewerState";

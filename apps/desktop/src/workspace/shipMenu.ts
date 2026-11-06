@@ -93,7 +93,7 @@ export function shipMenu(i: MenuInput): MenuEntry[] {
 
   if ((i.action === "push" || i.action === "publish") && !i.hasPr) {
     entries.push({ separator: true });
-    entries.push({ id: "push_then_pr", label: text("ship.combo.pushThenPr"), disabled: i.busy || !attached });
+    entries.push({ id: "push_then_pr", label: text(i.ship?.reviewHost === "gitlab" ? "ship.combo.pushThenMr" : "ship.combo.pushThenPr"), disabled: i.busy || !attached });
   }
   return entries;
 }

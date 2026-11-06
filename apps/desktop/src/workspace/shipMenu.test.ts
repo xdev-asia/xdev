@@ -15,6 +15,7 @@ function view(over: { ahead?: number; behind?: number; rewritten?: boolean; upst
     rangeBase: "origin/main",
     aheadOfBase: true,
     hasForkUpstream: false,
+    reviewHost: "github",
     ...rest,
   };
 }
@@ -47,6 +48,12 @@ describe("shipMenu", () => {
     expect(ids(shipMenu(input({ action: "publish" })))).toContain("push_then_pr");
     expect(ids(shipMenu(input({ action: "push", hasPr: true })))).not.toContain("push_then_pr");
     expect(ids(shipMenu(input({ action: "pull" })))).not.toContain("push_then_pr");
+  });
+
+  it("words Push, then create on GitLab as a merge request", () => {
+    const label = (host: "github" | "gitlab") => item(shipMenu(input({ action: "push", ship: view({ reviewHost: host }) })), "push_then_pr").label.key;
+    expect(label("github")).toBe("ship.combo.pushThenPr");
+    expect(label("gitlab")).toBe("ship.combo.pushThenMr");
   });
 
   it("disables the combos for each missing precondition", () => {

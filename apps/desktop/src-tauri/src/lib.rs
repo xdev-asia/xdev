@@ -716,6 +716,8 @@ pub fn run() {
             gitlab::gitlab_mr_list,
             gitlab::gitlab_mr_view,
             gitlab::gitlab_mr_branch,
+            gitlab::worktree_mr,
+            gitlab::worktree_mr_create,
             prs::projects_list,
             prs::project_open,
             ship::worktree_draft_commit,

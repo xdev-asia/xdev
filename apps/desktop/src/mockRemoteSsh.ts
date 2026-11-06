@@ -369,6 +369,8 @@ export const REMOTE_UNSUPPORTED = {
   worktreeAmend: "worktree_amend",
   worktreePr: "worktree_pr",
   worktreePrCreate: "worktree_pr_create",
+  worktreeMr: "worktree_mr",
+  worktreeMrCreate: "worktree_mr_create",
   worktreePrChecks: "worktree_pr_checks",
   worktreePrComments: "worktree_pr_comments",
   worktreePrCommentPost: "worktree_pr_comment_post",

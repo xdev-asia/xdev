@@ -264,6 +264,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_workspace::SearchQuery::export_all(cfg)?;
     xdev_workspace::SearchEvent::export_all(cfg)?;
     ShipView::export_all(cfg)?;
+    crate::ship::ReviewHost::export_all(cfg)?;
     xdev_git::Upstream::export_all(cfg)?;
     xdev_git::RepoLog::export_all(cfg)?;
     xdev_git::LogCommit::export_all(cfg)?;

@@ -205,3 +205,83 @@ it("opens the new pull request in the browser when asked", async () => {
   expect(view.onCreated).toHaveBeenCalledOnce();
   expect(view.html()).not.toContain(en("error.io"));
 });
+
+// GitLab: the same dialog creates a merge request through glab.
+async function pushedApi() {
+  const api = createMockApi({});
+  await api.worktreeCommit(OAK, ["src/session.ts"], "feat: one");
+  await api.worktreePush(OAK);
+  return api;
+}
+
+it("on GitLab submit creates a merge request and never a pull request", async () => {
+  const api = await pushedApi();
+  const mrCreate = vi.spyOn(api, "worktreeMrCreate");
+  const prCreate = vi.spyOn(api, "worktreePrCreate");
+  const view = dialog(api, { host: "gitlab" });
+  view.title().props.onChange({ target: { value: "Add x" } });
+  view.submit();
+  await tick();
+  expect(mrCreate).toHaveBeenCalledTimes(1);
+  expect(mrCreate).toHaveBeenCalledWith(OAK, { base: "main", title: "Add x", body: "", draft: false });
+  expect(prCreate).not.toHaveBeenCalled();
+});
+
+it("on GitLab the dialog speaks of merge requests and has one primary button", () => {
+  const html = dialog(createMockApi({}), { host: "gitlab" }).html();
+  expect(html).toContain(en("ship.mr.title"));
+  expect(html).toContain(en("ship.mr.create"));
+  expect(html).toContain(en("ship.mr.target"));
+  expect(html).toContain(en("ship.mr.draft"));
+  expect(html.toLowerCase()).not.toContain("pull request");
+  expect(html.match(/class="btn"/g)).toHaveLength(1);
+  expect(dialog(createMockApi({})).html().match(/class="btn"/g)).toHaveLength(1);
+});
+
+it("on GitLab openAfterCreate opens the merge request URL", async () => {
+  const api = await pushedApi();
+  const open = vi.spyOn(api, "openUrl").mockResolvedValue(undefined);
+  const prOpen = vi.spyOn(api, "worktreePrOpen");
+  const view = dialog(api, { host: "gitlab", openAfterCreate: true });
+  view.title().props.onChange({ target: { value: "Add x" } });
+  view.submit();
+  await tick();
+  expect(open).toHaveBeenCalledWith(expect.stringMatching(/\/-\/merge_requests\/1$/));
+  expect(prOpen).not.toHaveBeenCalled();
+});
+
+it("on GitLab onCreated receives the merge request as a PrView", async () => {
+  const api = await pushedApi();
+  const view = dialog(api, { host: "gitlab" });
+  view.title().props.onChange({ target: { value: "Add x" } });
+  view.draft().props.onChange();
+  view.submit();
+  await tick();
+  expect(view.onCreated).toHaveBeenCalledWith({ number: 1, url: expect.stringMatching(/\/-\/merge_requests\/1$/), state: "draft", title: "Add x", base: "main", head: "oak" });
+});
+
+it("on GitLab a glab failure shows its text and detail", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "worktreeMrCreate").mockRejectedValue({ code: "glab_failed", detail: "Another open merge request already exists" });
+  const view = dialog(api, { host: "gitlab" });
+  view.title().props.onChange({ target: { value: "x" } });
+  view.submit();
+  await tick();
+  expect(view.html()).toContain(en("error.glab_failed"));
+  expect(view.html()).toContain("Another open merge request already exists");
+});
+
+it("on GitLab a missing sign-in reads as the glab reason, an over-long description as its error", async () => {
+  const api = createMockApi({});
+  const create = vi.spyOn(api, "worktreeMrCreate").mockRejectedValue({ code: "glab_auth" });
+  const view = dialog(api, { host: "gitlab" });
+  view.title().props.onChange({ target: { value: "x" } });
+  view.submit();
+  await tick();
+  expect(view.html()).toContain(en("gitlab.reason.glab_auth"));
+  create.mockRejectedValue({ code: "body_too_long", detail: "16000" });
+  view.submit();
+  await tick();
+  expect(view.html()).toContain(en("error.body_too_long"));
+  expect(view.html()).toContain("16000");
+});
