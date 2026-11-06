@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import type { WorktreeView } from "@/api";
 import { NO_DETAILS } from "./worktreeDetails";
-import { COLUMN_IDS, DRAG_THRESHOLD, dropColumn, groupByStatus, columnOf, moveCard, moveItems, pastThreshold, statusOf, type ColumnBox } from "./kanbanModel";
+import { COLUMN_IDS, DRAG_THRESHOLD, NO_FILTER, dropColumn, filterCards, matchesQuery, groupByStatus, columnOf, moveCard, moveItems, pastThreshold, statusOf, type ColumnBox } from "./kanbanModel";
 
 const wt = (path: string, status: string | null): WorktreeView => ({
   path, name: path, branch: path, head: null, start: null, primary: false, pinned: false, detached: false, ...NO_DETAILS, status: status as WorktreeView["status"],
@@ -91,4 +91,45 @@ it("does nothing for a move to the column the card is in", async () => {
   await expect(moveCard(wt("a", "todo"), "todo", h.hooks)).resolves.toBe(true);
   await expect(moveCard(wt("b", null), null, h.hooks)).resolves.toBe(true);
   expect(h.log).toEqual([]);
+});
+
+const card = (name: string, over: Partial<WorktreeView> = {}): WorktreeView => ({ ...wt(`/code/${name}`, null), name, branch: `feat/${name}`, ...over });
+
+it("matches every card for an empty or blank query", () => {
+  expect(matchesQuery(card("oak"), "")).toBe(true);
+  expect(matchesQuery(card("oak"), "   ")).toBe(true);
+});
+
+it("matches the name and the branch, ignoring case", () => {
+  expect(matchesQuery(card("oak"), "OAK")).toBe(true);
+  expect(matchesQuery(card("elm"), "feat/el")).toBe(true);
+  expect(matchesQuery(card("elm"), "oak")).toBe(false);
+});
+
+it("folds diacritics so plain typing finds a Vietnamese title", () => {
+  expect(matchesQuery(card("oak", { title: "Sửa lỗi Việt" }), "viet")).toBe(true);
+  expect(matchesQuery(card("oak", { title: "Sửa lỗi Việt" }), "  SUA LOI ")).toBe(true);
+});
+
+it("filters by the pinned flag", () => {
+  const list = [card("a", { pinned: true }), card("b")];
+  expect(filterCards(list, { ...NO_FILTER, pinned: true }, {}).map((w) => w.name)).toEqual(["a"]);
+});
+
+it("keeps a card with an agent open and drops one with only shells or none", () => {
+  const list = [card("a"), card("b"), card("c")];
+  const profiles = { "/code/a": ["claude" as const], "/code/b": ["shell-1" as const] };
+  expect(filterCards(list, { ...NO_FILTER, agents: true }, profiles).map((w) => w.name)).toEqual(["a"]);
+});
+
+it("keeps a card that came from a task, and combines chips with AND", () => {
+  const item = { kind: "task" as const, url: ".xdev/tasks/t.md", title: "Plan" };
+  const list = [card("a", { item, pinned: true }), card("b", { item }), card("c", { pinned: true })];
+  expect(filterCards(list, { ...NO_FILTER, tasks: true }, {}).map((w) => w.name)).toEqual(["a", "b"]);
+  expect(filterCards(list, { ...NO_FILTER, tasks: true, pinned: true }, {}).map((w) => w.name)).toEqual(["a"]);
+});
+
+it("keeps the input order", () => {
+  const list = [card("c"), card("a"), card("b")];
+  expect(filterCards(list, NO_FILTER, {}).map((w) => w.name)).toEqual(["c", "a", "b"]);
 });

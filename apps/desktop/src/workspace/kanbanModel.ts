@@ -1,4 +1,4 @@
-import type { WorkStatus } from "@/api";
+import type { PtyProfile, WorkStatus, WorktreeView } from "@/api";
 import type { MenuItem } from "@/ui/ContextMenu";
 
 /** A column of the board: a work status, or `none` for a worktree without one. */
@@ -98,4 +98,43 @@ export async function moveCard(wt: { path: string; status: string | null }, to: 
   } finally {
     hooks.settle(wt.path);
   }
+}
+
+/** What the board's search box and chips ask for; chips combine with AND. */
+export interface CardFilter {
+  query: string;
+  pinned: boolean;
+  agents: boolean;
+  tasks: boolean;
+}
+
+export const NO_FILTER: CardFilter = { query: "", pinned: false, agents: false, tasks: false };
+
+/** Lower case with diacritics stripped, so "viet" finds "Việt". */
+export function foldText(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").toLowerCase();
+}
+
+type Searchable = Pick<WorktreeView, "name" | "title" | "branch">;
+
+/** Whether the trimmed query is in the title, folder name or branch. A blank query matches all. */
+export function matchesQuery(wt: Searchable, query: string): boolean {
+  const q = foldText(query.trim());
+  if (!q) return true;
+  return [wt.title, wt.name, wt.branch].some((s) => s != null && foldText(s).includes(q));
+}
+
+/** The cards the search and chips leave, in their given order. Run before `groupByStatus`. */
+export function filterCards<T extends Searchable & Pick<WorktreeView, "path" | "pinned" | "item">>(
+  list: readonly T[],
+  filter: CardFilter,
+  profiles: Readonly<Record<string, readonly PtyProfile[]>> = {},
+): T[] {
+  return list.filter((w) => {
+    if (!matchesQuery(w, filter.query)) return false;
+    if (filter.pinned && !w.pinned) return false;
+    if (filter.agents && !(profiles[w.path] ?? []).some((p) => !p.startsWith("shell"))) return false;
+    if (filter.tasks && w.item?.kind !== "task") return false;
+    return true;
+  });
 }
