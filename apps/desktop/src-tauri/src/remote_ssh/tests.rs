@@ -276,9 +276,11 @@ impl SshChild for FakeChild {
     }
 
     fn kill(&mut self) {
-        if !self.0.exited() {
-            *self.0.exit.lock().unwrap() = Some(None);
+        // An `ssh` that already exited: its pipes close on their own.
+        if self.0.exited() {
+            return;
         }
+        *self.0.exit.lock().unwrap() = Some(None);
         for p in &self.0.pipes {
             p.close();
         }
@@ -294,18 +296,38 @@ struct Spawner {
     spawned: Arc<AtomicUsize>,
     args: Arc<Mutex<Vec<Vec<String>>>>,
     procs: Arc<Mutex<Vec<Proc>>>,
+    /// With `fail`: the stderr text comes this long after the exit.
+    late: Arc<Mutex<Option<Duration>>>,
+    /// Runs before each spawn, with the spawns so far.
+    on_spawn: Arc<Mutex<Option<Hook<usize>>>>,
 }
+
+type Hook<T> = Box<dyn Fn(T) + Send>;
 
 impl PipeSpawner for Spawner {
     fn spawn(&self, args: &[String]) -> io::Result<Piped> {
-        self.spawned.fetch_add(1, Ordering::SeqCst);
+        let n = self.spawned.fetch_add(1, Ordering::SeqCst);
+        if let Some(f) = &*self.on_spawn.lock().unwrap() {
+            f(n);
+        }
         self.args.lock().unwrap().push(args.to_vec());
         let (stdin, stdout, stderr) = (Pipe::default(), Pipe::default(), Pipe::default());
         let proc = Proc {
             exit: Arc::default(),
             pipes: vec![stdin.clone(), stdout.clone(), stderr.clone()],
         };
-        if let Some(text) = *self.fail.lock().unwrap() {
+        let late = *self.late.lock().unwrap();
+        if let (Some(text), Some(after)) = (*self.fail.lock().unwrap(), late) {
+            *proc.exit.lock().unwrap() = Some(Some(255));
+            stdin.close();
+            stdout.close();
+            let err = stderr.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(after);
+                err.push(text.as_bytes());
+                err.close();
+            });
+        } else if let Some(text) = *self.fail.lock().unwrap() {
             stderr.push(text.as_bytes());
             proc.exit(255);
         } else if args.iter().any(|a| a == "sftp") {
@@ -341,6 +363,8 @@ impl Spawner {
 struct FakeClock {
     now: Arc<Mutex<Instant>>,
     slept: Arc<Mutex<Vec<Duration>>>,
+    /// Runs during each sleep.
+    on_sleep: Arc<Mutex<Option<Hook<Duration>>>>,
 }
 
 impl FakeClock {
@@ -348,6 +372,7 @@ impl FakeClock {
         FakeClock {
             now: Arc::new(Mutex::new(Instant::now())),
             slept: Arc::default(),
+            on_sleep: Arc::default(),
         }
     }
 
@@ -363,6 +388,9 @@ impl Clock for FakeClock {
 
     fn sleep(&self, d: Duration) {
         self.slept.lock().unwrap().push(d);
+        if let Some(f) = &*self.on_sleep.lock().unwrap() {
+            f(d);
+        }
         self.advance(d);
     }
 }
@@ -531,6 +559,57 @@ fn a_stopped_watcher_does_not_reconnect() {
     rig.hub.disconnect("devbox");
     assert!(!rig.hub.tick(&s, run));
     assert_eq!(rig.spawner.count(), 2);
+}
+
+#[test]
+fn a_stop_while_connecting_leaves_no_connection() {
+    let rig = rig();
+    let hub = rig.hub.clone();
+    // `remote_disconnect` lands between the sftp and the sh spawn.
+    *rig.spawner.on_spawn.lock().unwrap() = Some(Box::new(move |n| {
+        if n == 1 {
+            hub.disconnect("devbox");
+        }
+    }));
+    let e = rig
+        .hub
+        .ensure(&devbox())
+        .err()
+        .expect("connected after a stop");
+    assert_eq!(e.code, "remote_offline");
+    let s = rig.hub.session_of("devbox").unwrap();
+    assert_eq!(s.state(), RemoteState::Idle);
+    assert!(rig.spawner.last_procs().iter().all(Proc::exited));
+}
+
+#[test]
+fn a_reconnect_does_not_hold_the_connect_lock_while_it_waits() {
+    let rig = rig();
+    let (s, _) = rig.hub.ensure(&devbox()).unwrap();
+    let run = s.run_id();
+    let free: Arc<Mutex<Vec<bool>>> = Arc::default();
+    let (seen, held) = (Arc::clone(&free), Arc::clone(&s));
+    *rig.clock.on_sleep.lock().unwrap() = Some(Box::new(move |_| {
+        seen.lock()
+            .unwrap()
+            .push(held.connecting.try_lock().is_ok());
+    }));
+    rig.spawner.last_procs()[0].exit(255);
+    assert!(rig.hub.tick(&s, run));
+    let free = free.lock().unwrap();
+    assert!(!free.is_empty());
+    assert!(free.iter().all(|f| *f), "{free:?}");
+}
+
+#[test]
+fn a_late_stderr_still_names_the_failure() {
+    let rig = rig();
+    rig.spawner
+        .fail_with(Some("devbox: Permission denied (publickey).\n"));
+    // Past the wait for the exit, well inside the wait for stderr.
+    *rig.spawner.late.lock().unwrap() = Some(Duration::from_millis(1500));
+    let e = rig.hub.ensure(&devbox()).err().expect("connected");
+    assert_eq!(e.code, "remote_auth");
 }
 
 // Connect errors.

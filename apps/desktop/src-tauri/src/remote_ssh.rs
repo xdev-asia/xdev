@@ -17,7 +17,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, State};
@@ -37,8 +37,10 @@ pub(crate) const IDLE: Duration = Duration::from_secs(5 * 60);
 const POLL: Duration = Duration::from_secs(1);
 /// How much of `ssh`'s stderr is kept to tell why it failed.
 const STDERR_MAX: usize = 4096;
-/// How long a failed connect waits for `ssh` to exit and say why.
+/// How long a failed connect waits for `ssh` to exit.
 const EXIT_WAIT: Duration = Duration::from_secs(1);
+/// How long it then waits for the rest of what `ssh` printed.
+const STDERR_WAIT: Duration = Duration::from_secs(5);
 
 pub(crate) type Fs = RemoteFs<Box<dyn Write + Send>, Box<dyn Write + Send>>;
 
@@ -151,17 +153,31 @@ impl PipeSpawner for SystemPipeSsh {
     }
 }
 
-/// The last `STDERR_MAX` bytes a process wrote, and whether it closed the pipe.
-#[derive(Clone, Default)]
+/// The last `STDERR_MAX` bytes a process wrote, and when it closed the pipe.
+#[derive(Default)]
 struct Tail {
     bytes: Arc<Mutex<Vec<u8>>>,
-    done: Arc<AtomicBool>,
+    /// Disconnects once the pipe closed and all of it was read.
+    done: Option<mpsc::Receiver<()>>,
+}
+
+impl Tail {
+    /// Waits up to `limit` for the pipe to close.
+    fn wait(&self, limit: Duration) {
+        if let Some(rx) = &self.done {
+            let _ = rx.recv_timeout(limit);
+        }
+    }
 }
 
 /// The last `STDERR_MAX` bytes `r` wrote, read on a thread of its own.
 fn drain(mut r: Box<dyn Read + Send>) -> Tail {
-    let tail = Tail::default();
-    let (out, done) = (Arc::clone(&tail.bytes), Arc::clone(&tail.done));
+    let (done, rx) = mpsc::channel::<()>();
+    let tail = Tail {
+        bytes: Arc::default(),
+        done: Some(rx),
+    };
+    let out = Arc::clone(&tail.bytes);
     let _ = std::thread::Builder::new()
         .name("ssh-stderr".into())
         .spawn(move || {
@@ -175,7 +191,7 @@ fn drain(mut r: Box<dyn Read + Send>) -> Tail {
                 let over = t.len().saturating_sub(STDERR_MAX);
                 t.drain(..over);
             }
-            done.store(true, Ordering::SeqCst);
+            drop(done);
         });
     tail
 }
@@ -378,9 +394,18 @@ impl RemoteHub {
             return r.map(|p| (Arc::clone(&s), p));
         }
         self.set(&s, RemoteState::Connecting);
+        let before = s.run.load(Ordering::SeqCst);
         match self.open(&s) {
             Ok(probe) => {
-                let run = s.run.fetch_add(1, Ordering::SeqCst) + 1;
+                // A stop while it connected: that stop wins.
+                let run = before + 1;
+                if s.run
+                    .compare_exchange(before, run, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_err()
+                {
+                    self.drop_conn(&s);
+                    return Err(offline("closed"));
+                }
                 *lock(&s.probe) = Some(probe.clone());
                 self.touch(&s);
                 let next = RemoteState::after_connect(&mut lock(&s.backoff), probe.tmux, probe.git);
@@ -452,10 +477,12 @@ impl RemoteHub {
                 None => break None,
             }
         };
-        // What `ssh` printed before it exited: read once the pipe closes.
-        while !stderr.done.load(Ordering::SeqCst) && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
+        // One still running is ended, which closes its stderr; what it
+        // printed is read in full once the pipe closes.
+        if exit.is_none() {
+            self.drop_conn(s);
         }
+        stderr.wait(STDERR_WAIT);
         self.drop_conn(s);
         let text = String::from_utf8_lossy(&lock(&stderr.bytes)).into_owned();
         connect_error(exit, &text, e)
@@ -554,7 +581,6 @@ impl RemoteHub {
     /// Tries again after each `Backoff` delay until it connects (true) or
     /// the tries are spent (`Offline`, false).
     pub(crate) fn reconnect(&self, s: &HostSession, run: u64, reason: &str) -> bool {
-        let _connecting = lock(&s.connecting);
         self.drop_conn(s);
         let mut reason = reason.to_owned();
         loop {
@@ -570,7 +596,9 @@ impl RemoteHub {
                 }
             };
             self.set(s, next);
+            // Not under `connecting`: `ensure` fails fast while reconnecting.
             self.inner.clock.sleep(wait);
+            let _connecting = lock(&s.connecting);
             if s.run.load(Ordering::SeqCst) != run {
                 return false;
             }
