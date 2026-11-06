@@ -302,12 +302,15 @@ pub enum TerminalCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Metadata and the last lines of one tab: one `key<TAB>value` line per
-    /// field, then the last 20 lines it printed.
+    /// Metadata and the last lines of one tab (default: this terminal): one
+    /// `key<TAB>value` line per field, then the last lines it printed.
     Show {
-        /// Tab id or a unique prefix of one.
-        #[arg(long, alias = "terminal")]
-        tab: String,
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        /// Lines to show, default 50, at most 5000.
+        #[arg(long)]
+        lines: Option<usize>,
         #[arg(long)]
         json: bool,
     },
@@ -441,9 +444,11 @@ pub fn request(
         AppCommand::Terminal(TerminalCommand::List { worktree, json }) => {
             ("terminal.list", json!({ "worktree": worktree }), *json)
         }
-        AppCommand::Terminal(TerminalCommand::Show { tab, json }) => {
-            ("terminal.show", json!({ "tab": tab }), *json)
-        }
+        AppCommand::Terminal(TerminalCommand::Show { tab, lines, json }) => (
+            "terminal.show",
+            json!({ "tab": tab, "lines": lines }),
+            *json,
+        ),
         AppCommand::Terminal(TerminalCommand::Read {
             tab,
             limit,
@@ -582,7 +587,10 @@ pub fn plain(method: &str, result: &Value) -> String {
                 "title",
                 "kind",
                 "profile",
+                "cli",
+                "account",
                 "state",
+                "exitCode",
                 "lastOutputMs",
                 "cwd",
             ]
@@ -734,6 +742,7 @@ mod tests {
         assert_eq!(p["unread"], false);
         let cmd = worktree(&["set", "--status", "todo"]).unwrap();
         assert_eq!(request(&cmd, none).unwrap().1["unread"], Value::Null);
+        assert!(worktree(&["set", "--title", "a", "--display-name", "b"]).is_err());
         for clash in [
             &["set", "--issue", "1", "--pr", "2"][..],
             &["set", "--parent-worktree", "a", "--no-parent"],
@@ -743,17 +752,44 @@ mod tests {
         }
     }
 
+    #[derive(clap::Parser)]
+    struct TerminalCli {
+        #[command(subcommand)]
+        command: TerminalCommand,
+    }
+
+    #[test]
+    fn show_takes_the_terminal_and_lines_or_neither() {
+        use clap::Parser;
+        let none = &mut &b""[..];
+        let parse = |args: &[&str]| {
+            let argv = [&["terminal"][..], args].concat();
+            AppCommand::Terminal(TerminalCli::try_parse_from(argv).unwrap().command)
+        };
+        let cmd = parse(&["show", "--terminal", "t1", "--lines", "5", "--json"]);
+        let (m, p, json) = request(&cmd, none).unwrap();
+        assert_eq!(m, "terminal.show");
+        assert!(json);
+        assert_eq!(p, json!({ "tab": "t1", "lines": 5 }));
+        let (_, p, json) = request(&parse(&["show"]), none).unwrap();
+        assert!(!json);
+        assert_eq!(p, json!({ "tab": null, "lines": null }));
+        let (_, p, _) = request(&parse(&["show", "--tab", "t2"]), none).unwrap();
+        assert_eq!(p["tab"], "t2");
+    }
+
     #[test]
     fn request_maps_show_read_send() {
         let none = &mut &b""[..];
         let show = AppCommand::Terminal(TerminalCommand::Show {
-            tab: "t1".into(),
+            tab: Some("t1".into()),
+            lines: None,
             json: true,
         });
         let (m, p, json) = request(&show, none).unwrap();
         assert_eq!(
             (m, p, json),
-            ("terminal.show", json!({ "tab": "t1" }), true)
+            ("terminal.show", json!({ "tab": "t1", "lines": null }), true)
         );
         let read = AppCommand::Terminal(TerminalCommand::Read {
             tab: "t1".into(),
@@ -819,11 +855,13 @@ mod tests {
         assert_eq!(plain("terminal.send", &sent), "sent\t5\ttrue\n");
         let show = json!({
             "id": "t1", "worktree": "/w", "title": null, "kind": "agent", "profile": "claude",
-            "state": "idle", "lastOutputMs": 9, "cwd": "/w", "preview": "x\ny\n",
+            "cli": "claude", "account": null, "state": "idle", "exitCode": null,
+            "lastOutputMs": 9, "cwd": "/w", "preview": "x\ny\n",
         });
         assert_eq!(
             plain("terminal.show", &show),
-            "id\tt1\nworktree\t/w\ntitle\t-\nkind\tagent\nprofile\tclaude\nstate\tidle\nlastOutputMs\t9\ncwd\t/w\n\nx\ny\n"
+            "id\tt1\nworktree\t/w\ntitle\t-\nkind\tagent\nprofile\tclaude\ncli\tclaude\n\
+             account\t-\nstate\tidle\nexitCode\t-\nlastOutputMs\t9\ncwd\t/w\n\nx\ny\n"
         );
         assert_eq!(AppError::new("ambiguous", "").exit_code(), 2);
     }

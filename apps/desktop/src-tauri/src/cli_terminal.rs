@@ -19,15 +19,18 @@ pub const READ_LIMIT_DEFAULT: usize = 120;
 pub const READ_LIMIT_MAX: usize = 5000;
 /// What a screen read asks for in chars; the UI goes by lines when asked.
 const SCREEN_MAX_CHARS: u32 = 200_000;
-/// How many lines `terminal show` previews.
-pub const SHOW_PREVIEW_LINES: usize = 20;
+/// How many lines `terminal show` previews without `--lines`.
+pub const SHOW_PREVIEW_LINES: usize = 50;
 /// The most text one `terminal send` types.
 pub const SEND_MAX_BYTES: usize = 64 * 1024;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ShowParams {
-    tab: String,
+    /// Default: the caller's own tab.
+    tab: Option<String>,
+    /// Lines of the preview, 1 to `READ_LIMIT_MAX`.
+    lines: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -55,14 +58,32 @@ fn kind(t: &TabReport) -> &'static str {
     if t.agent { "agent" } else { "shell" }
 }
 
-/// `terminal.show`: what `terminal list` says of one tab, with its folder
-/// and its last lines.
-pub(crate) fn terminal_show(ctx: &Ctx<'_>, req: &Request) -> Result<Value, AppError> {
+/// `terminal.show`: what `terminal list` says of one tab (default: the
+/// caller's), with its folder, its agent and its last lines.
+pub(crate) fn terminal_show(
+    ctx: &Ctx<'_>,
+    req: &Request,
+    caller: &Caller,
+) -> Result<Value, AppError> {
     let p: ShowParams = params(req)?;
-    let t = ctx.board.resolve(&p.tab)?;
+    let tab = match (p.tab, &caller.pty) {
+        (Some(tab), _) => tab,
+        (None, Some(pty)) => pty.clone(),
+        (None, None) => {
+            return Err(AppError::new(
+                "no_terminal",
+                "not called from an xDev terminal; pass --terminal",
+            ));
+        }
+    };
+    let lines = p
+        .lines
+        .unwrap_or(SHOW_PREVIEW_LINES)
+        .clamp(1, READ_LIMIT_MAX);
+    let t = ctx.board.resolve(&tab)?;
     let preview = ctx
         .tails
-        .read(&t.id, None, SHOW_PREVIEW_LINES)
+        .read(&t.id, None, lines)
         .map(|r| r.text)
         .unwrap_or_default();
     let cwd = (ctx.cwd_of)(&t.id).map(|c| c.display().to_string());
@@ -72,7 +93,10 @@ pub(crate) fn terminal_show(ctx: &Ctx<'_>, req: &Request) -> Result<Value, AppEr
         "title": t.title,
         "kind": kind(&t),
         "profile": t.profile,
+        "cli": t.cli,
+        "account": t.account,
         "state": t.state(),
+        "exitCode": t.exit_code,
         "lastOutputMs": t.last_output_ms,
         "cwd": cwd,
         "preview": preview,
@@ -260,10 +284,18 @@ mod tests {
         let mut t = tab("p-child", &f.child, true, "working");
         t.title = Some("fix it".to_owned());
         t.last_output_ms = 42;
+        t.cli = Some("claude".to_owned());
         f.board.replace(vec![t], None);
-        let lines: String = (1..=25).map(|n| format!("line {n}\r\n")).collect();
+        let lines: String = (1..=60)
+            .map(|n| {
+                format!(
+                    "line {n}
+"
+                )
+            })
+            .collect();
         f.tails
-            .feed("p-child", format!("\x1b[32m{lines}\x1b[0m").as_bytes());
+            .feed("p-child", format!("[32m{lines}[0m").as_bytes());
         let r = f
             .call(Some("p-lead"), "terminal.show", json!({"tab": "p-ch"}))
             .unwrap();
@@ -272,13 +304,69 @@ mod tests {
         assert_eq!(r["title"], "fix it");
         assert_eq!(r["kind"], "agent");
         assert_eq!(r["profile"], "claude");
+        assert_eq!(r["cli"], "claude");
+        assert_eq!(r["account"], Value::Null);
         assert_eq!(r["state"], "working");
+        assert_eq!(r["exitCode"], Value::Null);
         assert_eq!(r["lastOutputMs"], 42);
         assert_eq!(r["cwd"], f.child.display().to_string());
         let preview = r["preview"].as_str().unwrap();
-        assert!(preview.starts_with("line 6\n"), "{preview}");
-        assert!(preview.ends_with("line 25\n"), "{preview}");
-        assert_eq!(preview.lines().count(), 20);
+        assert!(
+            preview.starts_with(
+                "line 11
+"
+            ),
+            "{preview}"
+        );
+        assert!(
+            preview.ends_with(
+                "line 60
+"
+            ),
+            "{preview}"
+        );
+        assert_eq!(preview.lines().count(), SHOW_PREVIEW_LINES);
+        let r = f
+            .call(None, "terminal.show", json!({"tab": "p-child", "lines": 3}))
+            .unwrap();
+        assert_eq!(
+            r["preview"],
+            "line 58
+line 59
+line 60
+"
+        );
+        // 0 still shows a line.
+        let r = f
+            .call(None, "terminal.show", json!({"tab": "p-child", "lines": 0}))
+            .unwrap();
+        assert_eq!(
+            r["preview"],
+            "line 60
+"
+        );
+    }
+
+    #[test]
+    fn show_defaults_to_the_callers_own_tab() {
+        let f = fixture();
+        f.board.replace(
+            vec![
+                tab("p-lead", &f.lead, false, "idle"),
+                tab("p-child", &f.child, true, "working"),
+            ],
+            None,
+        );
+        let r = f.call(Some("p-lead"), "terminal.show", json!({})).unwrap();
+        assert_eq!(r["id"], "p-lead");
+        assert_eq!(r["kind"], "shell");
+        let e = f.call(None, "terminal.show", json!({})).unwrap_err();
+        assert_eq!(e.code, "no_terminal");
+        // A PTY the window does not show is not found.
+        let e = f
+            .call(Some("p-other"), "terminal.show", json!({}))
+            .unwrap_err();
+        assert_eq!(e.code, "not_found");
     }
 
     #[test]

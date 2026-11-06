@@ -1058,7 +1058,7 @@ pub fn dispatch(
         "worktree.set" => worktree_set(ctx, req, caller),
         "worktree.create" => worktree_create(ctx, req, caller),
         "terminal.wait" => terminal_wait(ctx, req, gone),
-        "terminal.show" => crate::cli_terminal::terminal_show(ctx, req),
+        "terminal.show" => crate::cli_terminal::terminal_show(ctx, req, caller),
         "terminal.read" => crate::cli_terminal::terminal_read(ctx, req),
         "terminal.send" => crate::cli_terminal::terminal_send(ctx, req, caller),
         "file.open" => crate::cli_file::file_open(ctx, req, caller),
