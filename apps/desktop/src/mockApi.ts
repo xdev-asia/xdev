@@ -60,6 +60,7 @@ import { createMockPipeline, type MockPipeline } from "./mockPipeline";
 import { createMockMission } from "./mockMission";
 import { createMockCharts } from "./mockCharts";
 import { createMockLsp } from "./mockLsp";
+import { captureOptionsFromLocation, createMockCapture, type MockCapture } from "./mockCapture";
 import { createMockTasks } from "./mockTasks";
 import { createMockWorkspace, type MockWorkspaceSeed } from "./mockWorkspace";
 import { mockHash, type MockFiles } from "./mockFiles";
@@ -404,7 +405,8 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   // failed. Resolves with the new tab's id, or null.
   __orchFailWorker(from: WorkerOpen, reason?: FailReason): Promise<string | null>;
 } & Pick<MockNotch, "__notchTabs"> & Pick<MockPipeline, "__pipelineExits" | "__swarmOpened">
-  & Pick<MockPeers, "__peersPairRequest" | "__peersDrop" | "__peersActivity" | "__peersConfirm">;
+  & Pick<MockPeers, "__peersPairRequest" | "__peersDrop" | "__peersActivity" | "__peersConfirm">
+  & Pick<MockCapture, "__captureFail" | "__captureCancel" | "__captureSaved" | "__captureTrigger" | "__capturePrivacyOpens">;
 
 type MockOptions = {
   repo?: boolean;
@@ -1004,6 +1006,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       notify([path]);
     },
     ...createMockLsp(),
+    ...createMockCapture(captureOptionsFromLocation()),
     ...accountRouting,
   };
   // The spread above copied the values; these two stay live views of the profile store.

@@ -353,6 +353,8 @@ import type { JoinTarget, LinkBind, NearbyHost, PairOfferView, PairPending, Peer
 export type { JoinTarget, LinkBind, NearbyHost, PairOfferView, PairPending, PeerActivity, PeerConfirm, PeerKind, PeerPairRequest, PeerPairResult, PeerProject, PeerRole, PeersState, PeerTerm, PeerTermAttached, PeerTermClosed, PeerTermState, PeerView };
 import type { LspCompletionList, LspDocState, LspEvent, LspHover, LspLocation, LspPos, LspRange, LspRunning, LspServerInfo, LspSettings, LspSymbol, LspWorkspaceEdit } from "@xdev/bindings";
 export type { LspCompletionItem, LspCompletionList, LspDiagnostic, LspDocState, LspEvent, LspFileEdit, LspHover, LspLanguage, LspLocation, LspPos, LspRange, LspRunning, LspServerInfo, LspSettings, LspState, LspSymbol, LspTextEdit, LspWorkspaceEdit } from "@xdev/bindings";
+import type { CaptureFailed, CapturePermission, CaptureReady, CaptureSettings, ShortcutStatus } from "@xdev/bindings";
+export type { CaptureFailed, CapturePermission, CaptureReady, CaptureSettings, ShortcutStatus };
 export type { Chart, ChartEdge, ChartKind, ChartMember, ChartProblem, ChartRoute, ChartRun, ChartSeat, SeatTab } from "@xdev/bindings";
 export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind, PathEntry } from "@xdev/bindings";
@@ -835,7 +837,12 @@ export type ErrorCode =
   | "lsp_not_found"
   | "lsp_timeout"
   | "lsp_crashed"
-  | "lsp_unsupported";
+  | "lsp_unsupported"
+  | "capture_denied"
+  | "capture_no_tool"
+  | "capture_timeout"
+  | "capture_busy"
+  | "shortcut_taken";
 export type ApiError = Omit<CmdError, "code"> & { code: ErrorCode };
 
 export type RepoPatch = {
@@ -1923,6 +1930,24 @@ export interface Api {
   /** Restarts the servers of a worktree, or every server for null. */
   lspRestart(worktree: string | null): Promise<void>;
   lspStatus(): Promise<LspRunning[]>;
+  // Screen capture. The OS region picker opens; the image comes as `capture://ready`, an error as
+  // `capture://failed`, a cancel as nothing. Rejects `capture_busy` while one runs.
+  captureStart(): Promise<void>;
+  /** Saves a PNG (an annotated capture) in the paste folder and returns its path. Rejects `io` for other bytes, `too_large`. */
+  captureSavePng(bytes: Uint8Array): Promise<string>;
+  /** The bytes of a capture; only paths inside the paste folder, else `outside`. */
+  captureRead(path: string): Promise<Uint8Array>;
+  /** Screen Recording on macOS; `notNeeded` elsewhere. */
+  capturePermission(): Promise<CapturePermission>;
+  /** Opens System Settings at Privacy & Security, Screen Recording (macOS). */
+  captureOpenPrivacy(): Promise<void>;
+  /** Sets the global shortcut from the stored settings again and says how that went. */
+  captureShortcutApply(): Promise<ShortcutStatus>;
+  captureSettings(): Promise<CaptureSettings>;
+  /** Stores Settings → Screenshots and sets the shortcut again. */
+  captureSettingsPut(v: CaptureSettings): Promise<CaptureSettings>;
+  onCaptureReady(cb: (e: CaptureReady) => void): Promise<() => void>;
+  onCaptureFailed(cb: (e: CaptureFailed) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2130,6 +2155,11 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "lsp_timeout",
   "lsp_crashed",
   "lsp_unsupported",
+  "capture_denied",
+  "capture_no_tool",
+  "capture_timeout",
+  "capture_busy",
+  "shortcut_taken",
 ];
 
 // Tauri can also reject with a plain string (e.g. an unknown command), which the UI must still translate.
@@ -2743,6 +2773,16 @@ const tauriApi: Api = {
   lspWorkspaceSymbols: (worktree, query) => call("lsp_workspace_symbols", { worktree, query }),
   lspRestart: (worktree) => call("lsp_restart", { worktree }),
   lspStatus: () => call("lsp_status"),
+  captureStart: () => call("capture_start"),
+  captureSavePng: (bytes) => call("capture_save_png", { bytes: [...bytes] }),
+  captureRead: (path) => call<number[]>("capture_read", { path }).then(toBytes),
+  capturePermission: () => call("capture_permission"),
+  captureOpenPrivacy: () => call("capture_open_privacy"),
+  captureShortcutApply: () => call("capture_shortcut_apply"),
+  captureSettings: () => call("capture_settings_get"),
+  captureSettingsPut: (settings) => call("capture_settings_put", { settings }),
+  onCaptureReady: (cb) => listen<CaptureReady>("capture://ready", (e) => cb(e.payload)),
+  onCaptureFailed: (cb) => listen<CaptureFailed>("capture://failed", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {
