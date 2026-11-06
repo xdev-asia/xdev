@@ -1,0 +1,95 @@
+/* Remote projects: the folder browser, the sidebar group and the banner. Tokens only; at 360px the
+   rows wrap and nothing sets a fixed width. */
+.remote-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  min-width: 0;
+}
+
+.remote-fields select {
+  max-width: 100%;
+}
+
+.remote-browser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.remote-browser-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+}
+
+.remote-browser-path {
+  flex: 1 1 160px;
+  min-width: 0;
+  font-family: var(--x-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.remote-browser-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.remote-browser-list .x-list-row-main {
+  min-height: 28px;
+}
+
+.remote-group {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--x-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.remote-group-title {
+  margin: var(--x-space-2) var(--x-space-2) var(--x-space-1);
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.remote-row .x-list-row-title {
+  display: flex;
+  align-items: center;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.remote-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.remote-row-more {
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.remote-banner {
+  flex: none;
+  min-width: 0;
+}
+
+.remote-unsupported {
+  margin: var(--x-space-3);
+  color: var(--text-2);
+}

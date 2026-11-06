@@ -1,11 +1,12 @@
 import { Button } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, JSX } from "react";
-import { toApiError, type Api, type Created, type ProjectKind, type RepoView } from "@/api";
+import { toApiError, type Api, type Created, type ProjectKind, type RemoteProjectView, type RepoView } from "@/api";
 import { useI18n } from "@/i18n";
+import { AddRemoteFolder } from "@/remote/AddRemoteFolder";
 import { NestedRepoChecklist } from "./NestedRepoChecklist";
 
-type CloneApi = Pick<Api, "repoClone" | "repoCloneCancel" | "repoCloneName" | "repoCreate" | "pickFolder"> & Partial<Pick<Api, "scanNestedRepos" | "cancelNestedScan">>;
+type CloneApi = Pick<Api, "repoClone" | "repoCloneCancel" | "repoCloneName" | "repoCreate" | "pickFolder"> & Partial<Pick<Api, "scanNestedRepos" | "cancelNestedScan" | "remoteHostsState" | "remoteBrowse" | "remoteProjectAdd">>;
 
 /** Which field a refused Create points at; the rest show under the form. */
 const CREATE_FIELD: Record<string, "name" | "folder"> = { bad_name: "name", exists: "name", not_found: "folder" };
@@ -42,11 +43,15 @@ export function AddProjectDialog(props: {
   scanRoot?: string;
   /** Adds the repositories ticked in the scan step. */
   onAddRepos?(paths: string[]): void;
+  /** A remote project was added over SSH. */
+  onRemoteAdded?(project: RemoteProjectView): void;
+  /** Opens Settings → SSH, for the person with no saved host. */
+  onOpenSettings?(): void;
 }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [mode, setMode] = useState<"choose" | "clone" | "create" | "scan">(props.scanRoot ? "scan" : "choose");
+  const [mode, setMode] = useState<"choose" | "clone" | "create" | "scan" | "remote">(props.scanRoot ? "scan" : "choose");
   const [scanRoot, setScanRoot] = useState(props.scanRoot ?? "");
   const [url, setUrl] = useState("");
   const [folder, setFolder] = useState(props.startFolder);
@@ -183,6 +188,11 @@ export function AddProjectDialog(props: {
             <button type="button" className="btn-secondary" data-choice="create" onClick={() => setMode("create")}>
               {t("addProject.create.choice")}
             </button>
+            {api.remoteHostsState && api.remoteBrowse && api.remoteProjectAdd && props.onRemoteAdded && (
+              <button type="button" className="btn-secondary" data-choice="remote" onClick={() => setMode("remote")}>
+                {t("remote.add.option")}
+              </button>
+            )}
             {api.scanNestedRepos && api.cancelNestedScan && props.onAddRepos && (
               <button type="button" className="btn-secondary" data-choice="scan" onClick={() => void scan()}>
                 {t("nested.choice")}
@@ -201,6 +211,13 @@ export function AddProjectDialog(props: {
           root={scanRoot}
           onAdd={(paths) => props.onAddRepos?.(paths)}
           onBack={back}
+        />
+      ) : mode === "remote" && api.remoteHostsState && api.remoteBrowse && api.remoteProjectAdd ? (
+        <AddRemoteFolder
+          api={{ remoteHostsState: api.remoteHostsState, remoteBrowse: api.remoteBrowse, remoteProjectAdd: api.remoteProjectAdd }}
+          onAdded={(p) => props.onRemoteAdded?.(p)}
+          onBack={back}
+          onOpenSettings={() => props.onOpenSettings?.()}
         />
       ) : mode === "create" ? (
         <form onSubmit={(e) => void create(e)}>
