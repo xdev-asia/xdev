@@ -33,13 +33,13 @@ test("a part moves with Alt+Arrow and the activity bar follows", async ({ page, 
   const region = await openSection(page, "Appearance");
   await region.locator('[data-switch="app-kit"]').getByRole("switch").focus();
   await page.keyboard.press("Alt+ArrowUp");
-  await expect(region.getByRole("status")).toContainText("Agent kit moved to place 5 of 8");
+  await expect(region.getByRole("status").filter({ hasText: "Agent kit moved" })).toContainText("Agent kit moved to place 5 of 8");
   const labels = (bar: import("@playwright/test").Locator) => bar.getByRole("button").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
   const moved = await labels(await openDocs(page));
   expect(moved.indexOf("Agent kit")).toBe(4);
   const again = await openSection(page, "Appearance");
   await again.getByRole("button", { name: "Reset order and visibility" }).click();
-  await expect(again.getByRole("status")).toContainText("Order and visibility reset");
+  await expect(again.getByRole("status").filter({ hasText: "Order and visibility" })).toContainText("Order and visibility reset");
   const reset = await labels(await openDocs(page));
   expect(reset.indexOf("Agent kit")).toBe(5);
 });
