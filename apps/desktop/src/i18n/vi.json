@@ -5720,5 +5720,6 @@
   "update.card.body": "Khởi động lại để cập nhật. Bản cập nhật cũng được cài khi bạn thoát.",
   "update.card.restart": "Khởi động lại để cập nhật",
   "update.card.notes": "Ghi chú phát hành",
-  "update.card.dismiss": "Đóng"
+  "update.card.dismiss": "Đóng",
+  "about.machine": "Máy: {name}"
 }

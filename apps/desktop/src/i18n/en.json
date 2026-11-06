@@ -5720,5 +5720,6 @@
   "update.card.body": "Restart to update. It also updates when you quit.",
   "update.card.restart": "Restart to update",
   "update.card.notes": "Release notes",
-  "update.card.dismiss": "Dismiss"
+  "update.card.dismiss": "Dismiss",
+  "about.machine": "Machine: {name}"
 }

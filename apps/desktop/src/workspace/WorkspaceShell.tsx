@@ -283,6 +283,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [quitting, setQuitting] = useState<{ ask: QuitAsk; answer(choice: QuitChoice): void } | null>(null);
   // The About dialog (its version, once known) and the "quit and end terminals" confirmation.
   const [about, setAbout] = useState<string | null>(null);
+  const [machine, setMachine] = useState("");
   const [boardOpen, setBoardOpen] = useState(false);
   const [confirmEndAll, setConfirmEndAll] = useState(false);
   const [gate] = useState(() => new SetupGate());
@@ -1698,6 +1699,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   function openAbout(): void {
+    void api.machineName().then(setMachine, () => setMachine(""));
     void api.appVersion().then(setAbout, () => setAbout(""));
   }
 
@@ -2608,7 +2610,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         <AccountSwitchDialog provider={switching.provider} to={switching.to} tab={switching.tab} onApply={answerSwitch} onCancel={() => setSwitching(null)} />
       )}
       {quitting && <QuitDialog ask={quitting.ask} onChoose={quitting.answer} />}
-      {about !== null && <AboutDialog version={about} buildDate={import.meta.env.VITE_BUILD_DATE} onLink={(link) => void api.helpOpen(link)} onClose={() => setAbout(null)} />}
+      {about !== null && <AboutDialog version={about} machine={machine} buildDate={import.meta.env.VITE_BUILD_DATE} onLink={(link) => void api.helpOpen(link)} onClose={() => setAbout(null)} />}
       <ConfirmDialog
         open={confirmEndAll}
         title={t("shell.quitEndAll.title")}
