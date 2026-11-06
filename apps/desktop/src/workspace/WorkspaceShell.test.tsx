@@ -1732,3 +1732,19 @@ it("tab jump request focuses the tab", async () => {
   expect(view.list().props.selected).toBe(OAK);
   expect(view.of(WorktreeTabs).find(n => n.props.worktree === OAK)!.props.front).toMatchObject({ id: tab.id });
 });
+
+it("with no repo the empty main area has one primary Add project button that opens the dialog", async () => {
+  const api = createMockApi({});
+  vi.spyOn(api, "workspaceSidebar").mockResolvedValue([]);
+  vi.spyOn(api, "workspaceList").mockResolvedValue([]);
+  const view = await harness(api);
+  const empty = view.all().find(n => String(n.props.className ?? "") === "ws-center-empty")!;
+  expect(empty).toBeDefined();
+  const buttons = nodes(empty.props.children).filter(n => n.props["data-field"] === "add-project");
+  expect(buttons).toHaveLength(1);
+  expect(buttons[0].props.variant).toBe("primary");
+  expect(text(buttons[0])).toBe(en("workspace.center.add"));
+  expect(view.of(AddProjectDialog)).toHaveLength(0);
+  buttons[0].props.onClick();
+  expect(view.of(AddProjectDialog)).toHaveLength(1);
+});

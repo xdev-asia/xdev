@@ -66,7 +66,7 @@ import { admits } from "./attention";
 import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
 import { ActivityFeed } from "@/activity/feed";
-import { Icon } from "@xdev-asia/ui";
+import { Button, Icon } from "@xdev-asia/ui";
 import { ChecksPanel } from "./ChecksPanel";
 import { PortsItem } from "@/ports/PortsItem";
 import { PortsPanel } from "@/ports/PortsPanel";
@@ -2266,6 +2266,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               {!current && repos && (
                 <div className="ws-center-empty">
                   <p>{t("workspace.center.none")}</p>
+                  <Button type="button" variant="primary" data-field="add-project" onClick={addRepo}>
+                    {t("workspace.center.add")}
+                  </Button>
                 </div>
               )}
               {fixNote && (
