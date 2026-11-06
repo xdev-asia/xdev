@@ -208,6 +208,7 @@ import type {
   ProjectSummary,
   CreateRequest,
   ShipView,
+  ReviewHost,
   RepoLog,
   LogCommit,
   CommitRef,
@@ -601,6 +602,7 @@ export type {
   ProjectSummary,
   CreateRequest,
   ShipView,
+  ReviewHost,
   RepoLog,
   LogCommit,
   CommitRef,
@@ -824,6 +826,7 @@ export type ErrorCode =
   | "amend_pushed"
   | "hook_failed"
   | "not_pushed"
+  | "body_too_long"
   | "empty_title"
   | "gh_missing"
   | "gh_auth"
@@ -1467,6 +1470,12 @@ export interface Api {
   // Pull requests through the `gh` tool; null when the branch has none.
   worktreePr(path: string): Promise<PrView | null>;
   worktreePrCreate(path: string, draft: PrDraft): Promise<PrView>;
+  // GitLab worktrees: the merge request of the branch in any state (null when it has none), and
+  // creating one through `glab` from a pushed branch. `draft.base` is the target branch. A create
+  // rejects `not_pushed`, `empty_title`, `detached`, `bad_ref`, `body_too_long` (detail: the limit),
+  // `glab_missing`, `glab_auth`, `not_gitlab` or `glab_failed` (detail: glab's own text).
+  worktreeMr(path: string): Promise<MrSummary | null>;
+  worktreeMrCreate(path: string, draft: PrDraft): Promise<MrSummary>;
   worktreePrChecks(path: string, number: number): Promise<Check[]>;
   // Every review comment of the PR, oldest first, read with one GraphQL call.
   worktreePrComments(path: string, number: number): Promise<PrComments>;
@@ -2366,6 +2375,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "amend_pushed",
   "hook_failed",
   "not_pushed",
+  "body_too_long",
   "empty_title",
   "gh_missing",
   "gh_auth",
@@ -2791,6 +2801,8 @@ const tauriApi: Api = {
   worktreeAmend: (path, files, message, confirmed) => call("worktree_amend", { path, files, message, confirmed }),
   worktreePr: (path) => call("worktree_pr", { path }),
   worktreePrCreate: (path, draft) => call("worktree_pr_create", { path, draft }),
+  worktreeMr: (path) => call("worktree_mr", { path }),
+  worktreeMrCreate: (path, draft) => call("worktree_mr_create", { path, draft }),
   ghLogins: () => call("gh_logins"),
   worktreePrChecks: (path, number) => call("worktree_pr_checks", { path, number }),
   worktreePrComments: (path, number) => call("worktree_pr_comments", { path, number }),

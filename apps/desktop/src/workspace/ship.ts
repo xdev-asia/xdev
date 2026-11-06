@@ -1,4 +1,4 @@
-import type { Check, PrView, PullPolicy, ShipView } from "@/api";
+import type { Check, MrSummary, PrView, PullPolicy, ReviewHost, ShipView } from "@/api";
 
 export type ShipAction = "commit" | "publish" | "push" | "pull" | "diverged" | "create_pr" | "open_pr" | "none";
 
@@ -27,6 +27,27 @@ export function shipAction({
   if (pr === null && ship.aheadOfBase) return "create_pr";
   if (open) return "open_pr";
   return "none";
+}
+
+// The i18n key of the main button's text: the pull request words become merge request words on GitLab.
+export function actionKey(action: ShipAction, host: ReviewHost): string {
+  if (host === "gitlab") {
+    if (action === "create_pr") return "ship.action.create_mr";
+    if (action === "open_pr") return "ship.action.open_mr";
+  }
+  return `ship.action.${action}`;
+}
+
+// A merge request in the one shape the bar and the dialog hand around.
+export function mrAsPr(mr: MrSummary): PrView {
+  return {
+    number: mr.iid,
+    url: mr.url,
+    state: mr.state === "open" ? (mr.draft ? "draft" : "open") : mr.state,
+    title: mr.title,
+    base: mr.target,
+    head: mr.source,
+  };
 }
 
 // Any failure beats pending, and pending beats pass. A cancelled run counts as a failure; a skipped

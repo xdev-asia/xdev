@@ -4,7 +4,7 @@ import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { pushDirHistory } from "./settings/worktreeDir";
 import { mockImageBytes, mockReviewFindings, mockReviewPlan } from "./mockReviewAi";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, NestedRepo, Check, MergeBlock, PrComment, PrDetail, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView, WorktreeUsage } from "./api";
+import type { Api, ApiError, NestedRepo, Check, MergeBlock, PrComment, PrDetail, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, MrSummary, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView, WorktreeUsage } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 import { fromWork } from "@/workspace/branchName";
 import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
@@ -75,6 +75,8 @@ type WorkspaceApi = Pick<
   | "worktreeAmend"
   | "worktreePr"
   | "worktreePrCreate"
+  | "worktreeMr"
+  | "worktreeMrCreate"
   | "worktreePrChecks"
   | "worktreePrComments"
   | "worktreePrCommentPost"
@@ -531,6 +533,7 @@ export function createMockWorkspace(
     return [...repos.map(repoVault), ...named];
   }
   let prNumber = 0;
+  const mrs = new Map<string, MrSummary>();
   const prs = new Map<string, PrView>(Object.entries(structuredClone(seed.prs ?? {})));
   const checks = new Map<string, Check[]>(Object.entries(structuredClone(seed.checks ?? {})));
   const prComments = new Map<string, PrComment[]>(Object.entries(structuredClone(seed.prComments ?? {})));
@@ -597,6 +600,7 @@ export function createMockWorkspace(
       rangeBase: vsUpstream ? `origin/${upstream.branch}` : repo.baseRef,
       aheadOfBase: !wt.primary && r.commits.length > 0,
       hasForkUpstream: seed.forkUpstream?.includes(path) ?? false,
+      reviewHost: "github",
     };
   }
 
@@ -1525,6 +1529,32 @@ export function createMockWorkspace(
       };
       prs.set(path, pr);
       return structuredClone(pr);
+    },
+    async worktreeMr(path) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return structuredClone(mrs.get(path) ?? null);
+    },
+    async worktreeMrCreate(path, draft) {
+      const view = shipView(path);
+      if (view instanceof Promise) return view;
+      if (view.branch === null) return reject("detached");
+      if (!view.headPushed) return reject("not_pushed");
+      if (draft.title.trim() === "") return reject("empty_title");
+      const iid = mrs.size + 1;
+      const mr: MrSummary = {
+        iid,
+        url: `https://gitlab.example.test/g/p/-/merge_requests/${iid}`,
+        state: "open",
+        draft: draft.draft,
+        title: draft.title,
+        source: view.branch,
+        target: draft.base.trim() || view.base.replace(/^origin\//, ""),
+        author: null,
+        updatedAt: new Date(0).toISOString(),
+        fork: false,
+      };
+      mrs.set(path, mr);
+      return structuredClone(mr);
     },
     async worktreePrChecks(path, number) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

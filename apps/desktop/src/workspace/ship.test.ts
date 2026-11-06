@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Check, PrView, ShipView } from "@/api";
-import { checksSummary, shipAction } from "./ship";
+import type { Check, MrSummary, PrView, ShipView } from "@/api";
+import { actionKey, checksSummary, mrAsPr, shipAction } from "./ship";
 
 const commit = { id: "a", author: "x", time: 1, message: "m" };
 
@@ -17,6 +17,7 @@ function ship(over: { ahead?: number; behind?: number; upstream?: boolean; commi
     rangeBase: "main",
     aheadOfBase: commits > 0,
     hasForkUpstream: false,
+    reviewHost: "github",
     ...rest,
   };
 }
@@ -91,5 +92,35 @@ describe("shipAction with a pull policy", () => {
     const s = ship({ ahead: 1, behind: 1 });
     s.upstream = { ...s.upstream!, rewritten: true };
     expect(shipAction({ checked: 0, ship: s, pr: null, policy: "merge" })).toBe("diverged");
+  });
+});
+
+describe("merge requests", () => {
+  const mr = (over: Partial<MrSummary> = {}): MrSummary => ({
+    iid: 4,
+    url: "https://gitlab.example.test/g/p/-/merge_requests/4",
+    state: "open",
+    draft: false,
+    title: "t",
+    source: "feat/a",
+    target: "main",
+    author: null,
+    updatedAt: "",
+    fork: false,
+    ...over,
+  });
+
+  it("maps a merge request to the PrView shape", () => {
+    expect(mrAsPr(mr({ draft: true }))).toEqual({ number: 4, url: mr().url, state: "draft", title: "t", base: "main", head: "feat/a" });
+    expect(mrAsPr(mr()).state).toBe("open");
+    expect(mrAsPr(mr({ state: "merged", draft: true })).state).toBe("merged");
+    expect(mrAsPr(mr({ state: "closed" })).state).toBe("closed");
+  });
+
+  it("words the main button for the host", () => {
+    expect(actionKey("create_pr", "gitlab")).toBe("ship.action.create_mr");
+    expect(actionKey("open_pr", "gitlab")).toBe("ship.action.open_mr");
+    expect(actionKey("create_pr", "github")).toBe("ship.action.create_pr");
+    expect(actionKey("push", "gitlab")).toBe("ship.action.push");
   });
 });
