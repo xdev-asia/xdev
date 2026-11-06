@@ -420,7 +420,11 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
     __spawnRemoteHosts(): Record<string, string>;
   }
   & Pick<MockTargets, "__targetsUntrusted" | "__targetsTyped">
-  & Pick<MockCapture, "__captureFail" | "__captureCancel" | "__captureSaved" | "__captureTrigger" | "__capturePrivacyOpens">;
+  & Pick<MockCapture, "__captureFail" | "__captureCancel" | "__captureSaved" | "__captureTrigger" | "__capturePrivacyOpens" | "__captureSeed">
+  & {
+    // What `clipboardImageSave` returns next: a saved path, or null for no image.
+    __clipboardImage(path: string | null): void;
+  };
 
 type MockOptions = {
   repo?: boolean;
@@ -1035,6 +1039,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     // Last: an `ssh://` worktree's file calls go to the remote mock, every other one to the workspace's.
     ...createMockRemoteSsh(workspace, () => api.sshHostsList()),
     __spawnRemoteHosts: () => ({ ...remoteHosts }),
+    __clipboardImage: (path) => setMockClipboardImage(path),
   };
   // The `worktree_*` calls the desktop guards: refused on an `ssh://` worktree, `worktreeStat` from the remote changes.
   Object.assign(api, guardRemote(api, api));
