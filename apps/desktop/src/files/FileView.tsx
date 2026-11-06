@@ -7,9 +7,12 @@ import { ContextMenu } from "@/ui/ContextMenu";
 import { pushToast } from "@/workspace/toastStore";
 import { PLATFORM } from "@/platform";
 import { Button } from "@xdev-asia/ui";
+import { AltViewPane } from "./AltViewPane";
+import { CsvView } from "./CsvView";
 import { ImageView } from "./ImageView";
 import { MarkdownPane } from "./MarkdownPane";
 import { MediaView } from "./MediaView";
+import { NotebookView } from "./NotebookView";
 import { LoadError } from "./LoadError";
 import { CodeEditor } from "./CodeEditor";
 import { useEditorSettings } from "./editorSettings";
@@ -18,6 +21,7 @@ import { loadFile, saveFile } from "./fileIO";
 import { gutterMenuItems, type GutterSelection, type SelectionCapture } from "./gutterMenu";
 import { fileTabs, useFileEntry } from "./fileTabs";
 import { viewerOf } from "./viewer";
+import { useOpenedAsText } from "./viewMode";
 
 /** One open file: reads it when it first shows, then edits it, or says why it cannot. */
 export function FileView(props: { api: Api; worktree: string; rel: string; secondary?: boolean }): JSX.Element {
@@ -25,6 +29,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
   const { t } = useI18n();
   const entry = useFileEntry(worktree, rel);
   const settings = useEditorSettings();
+  const asText = useOpenedAsText(worktree, rel);
   const status = entry?.status;
   // The gutter's right-click menu: where it opened and for which line.
   const [gutter, setGutter] = useState<{ at: { x: number; y: number }; line: number; selection: GutterSelection | null; capture: SelectionCapture | null } | null>(null);
@@ -108,7 +113,12 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
         {entry.saving && <span className="file-saving" role="status">{t("files.saving")}</span>}
       </>
     );
-    body = viewer === "markdown" ? <MarkdownPane api={api} worktree={worktree} rel={rel} text={entry.text} source={editor} /> : editor;
+    if (viewer === "markdown") body = <MarkdownPane api={api} worktree={worktree} rel={rel} text={entry.text} source={editor} />;
+    else if (viewer === "csv" || viewer === "notebook") {
+      // A read-only view with the code editor behind "Open as text".
+      const view = viewer === "csv" ? <CsvView rel={rel} text={entry.text} /> : <NotebookView api={api} worktree={worktree} rel={rel} text={entry.text} />;
+      body = <AltViewPane worktree={worktree} rel={rel} label={t(viewer === "csv" ? "files.grid.view" : "files.notebook.view")} asText={asText} view={view} editor={editor} />;
+    } else body = editor;
   }
   return (
     <div className="file-view" data-rel={rel} data-kind={entry?.kind}>

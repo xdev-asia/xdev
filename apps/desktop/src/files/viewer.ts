@@ -1,7 +1,7 @@
 import type { FileKind } from "@/api";
 
 /** Which view a file opens in. */
-export type Viewer = "markdown" | "image" | "media" | "text" | "binary";
+export type Viewer = "markdown" | "csv" | "notebook" | "image" | "media" | "text" | "binary";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -27,6 +27,7 @@ const MIME: Record<string, string> = {
 const AUDIO = new Set(["mp3", "wav", "ogg", "oga", "m4a", "flac"]);
 const VIDEO = new Set(["mp4", "webm", "ogv", "mov"]);
 const MARKDOWN = new Set(["md", "markdown"]);
+const CSV = new Set(["csv", "tsv", "tab"]);
 
 function extOf(rel: string): string {
   const name = rel.slice(rel.lastIndexOf("/") + 1);
@@ -37,7 +38,8 @@ function extOf(rel: string): string {
 /**
  * The view for `rel`. `kind` is what the text read said; leave it out before the file is read.
  * Images and media never need that read, so they answer without it. Svg is text on disk: it is an
- * image once a read says it is not too large, and "text" (read it first) until then.
+ * image once a read says it is not too large, and "text" (read it first) until then. A table or a
+ * notebook is text on disk too: it has its view only once the read found text.
  */
 export function viewerOf(rel: string, kind?: FileKind): Viewer {
   const ext = extOf(rel);
@@ -45,6 +47,8 @@ export function viewerOf(rel: string, kind?: FileKind): Viewer {
   if (AUDIO.has(ext) || VIDEO.has(ext)) return "media";
   if (ext in MIME) return "image";
   if (kind === "binary") return "binary";
+  if (kind === "text" && CSV.has(ext)) return "csv";
+  if (kind === "text" && ext === "ipynb") return "notebook";
   return MARKDOWN.has(ext) ? "markdown" : "text";
 }
 
