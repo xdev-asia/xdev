@@ -1,12 +1,11 @@
-import { Button, Select } from "@xdev-asia/ui";
+import { Button, Select, ThemeEditor } from "@xdev-asia/ui";
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type AppTheme, type AppThemeInput } from "@/api";
 import { useI18n } from "@/i18n";
 import { endPreview, paintedMode, previewAppTheme, readBuiltIn, type BuiltIn } from "@/ui/appTheme";
 import { TERMINAL_SCHEMES } from "@/terminal/terminalThemes";
-import { contrastIssues, type ThemeColors } from "@/ui/themeOverrides";
-import { ThemeEditor } from "./standIn/ThemeEditor";
+import { contrastIssues, THEME_GROUPS, THEME_KEYS, type ThemeColors } from "@/ui/themeOverrides";
 
 type Mode = "dark" | "light";
 type Draft = { name: string; dark: ThemeColors; light: ThemeColors; terminalScheme: string };
@@ -67,9 +66,41 @@ export function ThemeEditorPanel(props: {
   }, [draft.dark, draft.light]);
   useEffect(() => endPreview, []);
 
-  const effective = useMemo(() => ({ ...builtIn[mode].colors, ...draft[mode] }) as Required<ThemeColors>, [builtIn, mode, draft]);
+  const effective = useMemo(() => ({ ...builtIn[mode].colors, ...draft[mode] }) as Record<string, string>, [builtIn, mode, draft]);
   const issues = useMemo(() => contrastIssues(effective, { "on-accent": builtIn[mode].onAccent }), [effective, builtIn, mode]);
   const overridden = useMemo(() => new Set(Object.keys(draft[mode])), [draft, mode]);
+
+  const keyLabel = (k: string) => t(`settings.appearance.colours.key.${k}`);
+  const groups = THEME_GROUPS.map((g) => ({
+    id: g,
+    title: t(`settings.appearance.colours.group.${g}`),
+    keys: THEME_KEYS.filter((k) => k.group === g).map((k) => ({ key: k.key, label: keyLabel(k.key) })),
+  }));
+  // The library prints the key's label before each message, so the message starts after it.
+  const themeIssues = issues.map((i) => {
+    const vars = { fg: keyLabel(i.fg), bg: keyLabel(i.bg), ratio: i.ratio, min: i.min };
+    // "on-accent" is not an editable key: the issue sits on the accent it is drawn over.
+    return THEME_KEYS.some((k) => k.key === i.fg)
+      ? { key: i.fg, message: t("settings.appearance.colours.contrast.issue", vars) }
+      : { key: i.bg, message: t("settings.appearance.colours.contrast.issueBehind", vars) };
+  });
+  const editorLabels = {
+    name: t("settings.appearance.colours.name"),
+    mode: t("settings.appearance.colours.mode"),
+    dark: t("settings.appearance.colours.mode.dark"),
+    light: t("settings.appearance.colours.mode.light"),
+    reset: t("settings.appearance.colours.reset", { token: "{token}" }),
+    picker: t("settings.appearance.colours.picker", { token: "{token}" }),
+    invalid: t("settings.appearance.colours.error.colour"),
+    preview: {
+      title: t("settings.appearance.colours.preview"),
+      sample: t("settings.appearance.colours.previewText"),
+      hint: t("settings.appearance.colours.previewHint"),
+      button: t("settings.appearance.colours.previewButton"),
+    },
+    issuesTitle: t("settings.appearance.colours.contrast"),
+    noIssues: t("settings.appearance.colours.contrast.pass"),
+  };
 
   const setColor = (key: string, hex: string) => setDraft((d) => ({ ...d, [mode]: { ...d[mode], [key]: hex } }));
   const resetColor = (key: string) =>
@@ -130,7 +161,9 @@ export function ThemeEditorPanel(props: {
         overridden={overridden}
         onColor={setColor}
         onReset={resetColor}
-        issues={issues}
+        groups={groups}
+        issues={themeIssues}
+        labels={editorLabels}
       >
         <label className="ws-field">
           <span>{t("settings.appearance.colours.terminal")}</span>

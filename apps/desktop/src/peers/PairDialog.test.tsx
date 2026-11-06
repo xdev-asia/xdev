@@ -6,7 +6,7 @@ import { MOCK_PAIR_CODE, MOCK_PAIR_SAS } from "@/mockPeers";
 import { HostCode, PairDialog } from "./PairDialog";
 import { errorText } from "./peersModel";
 import { SasCheck } from "./SasCheck";
-import { groupCode, normalizeCode } from "@xdev-asia/ui";
+import { formatCode, normalizeCode } from "@xdev-asia/ui";
 
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
@@ -37,7 +37,7 @@ it("opens on Show a code with both tabs", () => {
 it("a join with the mock code gives the digits to compare, then the person is paired", async () => {
   const api = createMockApi({});
   // The dialog sends the code as shown, in two groups.
-  const sent = groupCode(normalizeCode("7k4qm 2xd9p"), 5).join("-");
+  const sent = formatCode(normalizeCode("7k4qm 2xd9p"));
   expect(sent).toBe(MOCK_PAIR_CODE);
   const pending = await api.peerPairJoin({ kind: "nearby", hostId: "build-box" }, sent, false);
   expect(pending.sas).toBe(MOCK_PAIR_SAS);

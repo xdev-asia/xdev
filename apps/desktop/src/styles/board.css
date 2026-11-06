@@ -72,10 +72,6 @@
   min-height: 240px;
 }
 
-.board-card-slot {
-  display: contents;
-}
-
 .board-card-meta {
   display: flex;
   flex-wrap: wrap;

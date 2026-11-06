@@ -7,6 +7,8 @@
 
 export type ThemeGroup = "surface" | "text" | "line" | "accent" | "status";
 
+export const THEME_GROUPS: readonly ThemeGroup[] = ["surface", "text", "line", "accent", "status"];
+
 export interface ThemeKeySpec {
   key: string;
   group: ThemeGroup;
