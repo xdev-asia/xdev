@@ -556,3 +556,92 @@ fn sparse_set_limits_a_linked_worktree_only() {
             .is_err()
     );
 }
+
+/// The linked worktree of `with_worktree`, as its own `Repo`.
+fn linked(wt_parent: &TempDir) -> (std::path::PathBuf, Repo) {
+    let path = wt_parent.path().join("wt");
+    let repo = Repo::discover(&path).unwrap();
+    (path, repo)
+}
+
+#[test]
+fn switch_branch_moves_a_worktree_to_a_local_branch() {
+    let (dir, wt_parent, _, base) = with_worktree();
+    git(dir.path(), &["branch", "other", &base]);
+    let (path, wt) = linked(&wt_parent);
+    wt.switch_branch("other").unwrap();
+    assert_eq!(wt.current_branch().unwrap().as_deref(), Some("other"));
+    // The same branch again is not an error.
+    wt.switch_branch("other").unwrap();
+    assert_eq!(
+        git(&path, &["rev-parse", "--abbrev-ref", "HEAD"]).trim(),
+        "other"
+    );
+}
+
+#[test]
+fn switch_branch_tracks_a_branch_that_only_exists_on_a_remote() {
+    let (dir, wt_parent, _, _) = with_worktree();
+    let remote = TempDir::with_prefix("remote ").unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        dir.path(),
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    git(
+        dir.path(),
+        &["push", "-q", "origin", "HEAD:refs/heads/feature"],
+    );
+    git(dir.path(), &["fetch", "-q", "origin"]);
+    let (_, wt) = linked(&wt_parent);
+    assert!(!wt.branch_exists("feature").unwrap());
+    wt.switch_branch("origin/feature").unwrap();
+    assert_eq!(wt.current_branch().unwrap().as_deref(), Some("feature"));
+    assert_eq!(
+        git(dir.path(), &["config", "branch.feature.remote"]).trim(),
+        "origin"
+    );
+}
+
+#[test]
+fn switch_branch_refuses_a_dirty_worktree_and_leaves_it_alone() {
+    let (dir, wt_parent, _, base) = with_worktree();
+    git(dir.path(), &["branch", "other", &base]);
+    let (path, wt) = linked(&wt_parent);
+    fs::write(path.join("a.txt"), "edited\n").unwrap();
+    let err = wt.switch_branch("other").unwrap_err();
+    assert!(matches!(err, GitError::Dirty("checkout")), "{err:?}");
+    assert_eq!(err.code(), "update_dirty");
+    assert_eq!(wt.current_branch().unwrap().as_deref(), Some("task"));
+    assert_eq!(fs::read_to_string(path.join("a.txt")).unwrap(), "edited\n");
+}
+
+#[test]
+fn switch_branch_refuses_a_branch_another_worktree_has() {
+    let (dir, wt_parent, main, _) = with_worktree();
+    let held = main.current_branch().unwrap().unwrap();
+    let (_, wt) = linked(&wt_parent);
+    let err = wt.switch_branch(&held).unwrap_err();
+    match &err {
+        GitError::BranchInUse { branch, path } => {
+            assert_eq!(branch, &held);
+            assert!(!path.is_empty() && !path.contains('\''), "{path}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(err.code(), "branch_in_use");
+    assert_eq!(wt.current_branch().unwrap().as_deref(), Some("task"));
+    drop(dir);
+}
+
+#[test]
+fn switch_branch_rejects_names_that_are_not_branches() {
+    let (_dir, wt_parent, _, _) = with_worktree();
+    let (_, wt) = linked(&wt_parent);
+    for name in ["", "nope", "-c", "origin/HEAD", "bad\nname"] {
+        let err = wt.switch_branch(name).unwrap_err();
+        assert!(matches!(err, GitError::NoSuchBranch(_)), "{name}: {err:?}");
+        assert_eq!(err.code(), "no_such_branch");
+    }
+    assert_eq!(wt.current_branch().unwrap().as_deref(), Some("task"));
+}

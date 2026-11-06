@@ -90,6 +90,7 @@ type WorkspaceApi = Pick<
   | "worktreeReviewFile"
   | "worktreeStage"
   | "worktreeBranches"
+  | "worktreeCheckoutBranch"
   | "worktreeStageState"
   | "worktreeDiscard"
   | "worktreeRenameBranch"
@@ -1335,6 +1336,14 @@ export function createMockWorkspace(
     async worktreeBranches(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       return structuredClone(REVIEW_BRANCHES);
+    },
+    async worktreeCheckoutBranch(path, branch) {
+      const found = findWorktree(path);
+      if (!found) return reject("worktree_unknown", path);
+      if (!REVIEW_BRANCHES.some((b) => b.name === branch)) return reject("no_such_branch", branch);
+      if ((changes.get(path) ?? []).length > 0) return reject("update_dirty", "checkout");
+      if (found.repo.worktrees.some((x) => x.path !== path && x.branch === branch)) return reject("branch_in_use", branch);
+      found.wt.branch = branch.replace(/^origin\//, "");
     },
     async reviewNotes(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

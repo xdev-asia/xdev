@@ -599,6 +599,7 @@ pub fn run() {
             review::worktree_review_file,
             review::worktree_stage,
             review::worktree_branches,
+            review::worktree_checkout_branch,
             review_notes::review_notes_get,
             review_notes::review_notes_put,
             workspace::worktree_commit,

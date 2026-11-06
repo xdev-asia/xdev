@@ -879,6 +879,7 @@ fn local_only_commands_are_guarded() {
                 "worktree_conflict_abort",
                 "worktree_conflict_resolve",
                 "worktree_branches",
+                "worktree_checkout_branch",
             ][..],
         ),
         (

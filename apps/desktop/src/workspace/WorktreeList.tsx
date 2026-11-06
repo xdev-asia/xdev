@@ -71,6 +71,7 @@ export interface WorktreeListProps {
   /** Sets the work status (null clears it); without it the menu has no Move to status. */
   onMoveStatus?(worktree: WorktreeView, status: WorkStatus | null): void;
   onRenameBranch?(worktree: WorktreeView): void;
+  onCheckoutBranch?(worktree: WorktreeView): void;
   onArchive?(worktree: WorktreeView): void;
   /** A click on a work item chip: the shell copies the URL. */
   onCopyLink?(url: string): void;
@@ -725,6 +726,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         ...lineageMenu(wt, entries.find((e) => e.path === menu.key)!.repo),
         onMoveStatus: props.onMoveStatus && ((status: WorkStatus | null) => props.onMoveStatus?.(wt, status)),
         onRenameBranch: props.onRenameBranch && (() => props.onRenameBranch?.(wt)),
+        onCheckoutBranch: props.onCheckoutBranch && (() => props.onCheckoutBranch?.(wt)),
         onArchive: props.onArchive && (() => props.onArchive?.(wt)),
         onHide: props.onPrefs && (() => props.onPrefs?.(setWorktreeShown(prefs, wt.path, false, false))),
         asleep: props.asleep?.[wt.path] === true,

@@ -72,6 +72,7 @@ import { IssuesPanel } from "@/issues/IssuesPanel";
 import { issuesTabVisible } from "@/issues/issuesPreset";
 import { CreateWorktreeDialog, type AgentChoice, type CreateExtra, type CreateTab } from "./CreateWorktreeDialog";
 import { DetailsDialog } from "./DetailsDialog";
+import { CheckoutBranchDialog } from "./CheckoutBranchDialog";
 import { RenameBranchDialog } from "./RenameBranchDialog";
 import { PendingCreates, type CreateArgs } from "./pendingCreates";
 import { FileTree } from "./FileTree";
@@ -293,6 +294,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [removing, setRemoving] = useState<Removing | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [renaming, setRenaming] = useState<WorktreeView | null>(null);
+  const [checkingOut, setCheckingOut] = useState<WorktreeView | null>(null);
   const [parentFor, setParentFor] = useState<{ worktree: WorktreeView; candidates: WorktreeView[] } | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
   const [fixNote, setFixNote] = useState(false);
@@ -353,7 +355,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [quickSeq, setQuickSeq] = useState(0);
   const [settingsAt, setSettingsAt] = useState<{ section?: string; arg?: string; target?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
-  const dialogOpen = creating !== null || removing !== null || adding || groupName !== null || editing !== null || renaming !== null || bulk !== null || review !== null;
+  const dialogOpen = creating !== null || removing !== null || adding || groupName !== null || editing !== null || renaming !== null || checkingOut !== null || bulk !== null || review !== null;
   useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
   // The worktrees in the order the sidebar draws them, which the worktree keys walk.
   const [order, setOrder] = useState<string[]>([]);
@@ -2087,6 +2089,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 if (status !== wt.status) void setDetails(wt, { status }, t("lineage.error"));
               }}
               onRenameBranch={(wt) => setRenaming(wt)}
+              onCheckoutBranch={(wt) => setCheckingOut(wt)}
               onCopyLink={(url) => {
                 void copy(url);
                 pushToast({ text: t("workItem.copied") });
@@ -2756,6 +2759,17 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
             void load();
           }}
           onClose={() => setRenaming(null)}
+        />
+      )}
+      {checkingOut && (
+        <CheckoutBranchDialog
+          api={api}
+          worktree={checkingOut}
+          onDone={() => {
+            setCheckingOut(null);
+            void load();
+          }}
+          onClose={() => setCheckingOut(null)}
         />
       )}
       {bulk && (

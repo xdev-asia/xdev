@@ -21,6 +21,8 @@ export interface WorktreeMenuContext {
   onEditDetails?(): void;
   /** Opens the rename branch dialog; without it the item is left out. */
   onRenameBranch?(): void;
+  /** Opens the branch picker; without it the item is left out. */
+  onCheckoutBranch?(): void;
   /** Archives the worktree (folder goes, branch stays); without it the item is left out. */
   onArchive?(): void;
   /** The worktree's tabs are all asleep: the menu offers Wake in place of Sleep. */
@@ -149,6 +151,7 @@ export function worktreeMenuItems(ctx: WorktreeMenuContext): MenuItem[] {
     SEP("sep1"),
     { id: "pin", labelKey: wt.pinned ? "workspace.unpin" : "workspace.pin", run: ctx.onPin },
     ...(ctx.onRenameBranch && !wt.primary ? [{ id: "renameBranch", labelKey: "branchRename.menu", disabled: wt.branch === null, run: ctx.onRenameBranch }] : []),
+    ...(ctx.onCheckoutBranch ? [{ id: "checkoutBranch", labelKey: "checkout.menu", disabled: wt.detached, run: ctx.onCheckoutBranch }] : []),
     ...(ctx.onEditDetails && !wt.primary ? [{ id: "details", labelKey: "workspace.details.menu", run: ctx.onEditDetails }] : []),
     ...status,
     ...lineage,
