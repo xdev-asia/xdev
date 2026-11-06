@@ -34,6 +34,22 @@ describe("viewerOf", () => {
   });
 });
 
+describe("viewerOf tables and notebooks", () => {
+  it("opens csv, tsv and ipynb in their view once the read found text", () => {
+    expect(viewerOf("a.csv", "text")).toBe("csv");
+    expect(viewerOf("d/B.TSV", "text")).toBe("csv");
+    expect(viewerOf("n.ipynb", "text")).toBe("notebook");
+  });
+
+  it("reads them as text first, and keeps the binary note and the editor for the rest", () => {
+    expect(viewerOf("a.csv")).toBe("text");
+    expect(viewerOf("n.ipynb")).toBe("text");
+    expect(viewerOf("a.csv", "binary")).toBe("binary");
+    expect(viewerOf("n.ipynb", "tooLarge")).toBe("text");
+    expect(viewerOf("a.csvx", "text")).toBe("text");
+  });
+});
+
 describe("mimeOf", () => {
   it("maps extensions to a type, ignoring case", () => {
     expect(mimeOf("a.PNG")).toBe("image/png");

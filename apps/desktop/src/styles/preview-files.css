@@ -197,3 +197,70 @@
 .preview-body .md-code .md-code-copy:focus-visible,
 .preview-body .md-code .md-code-copy[data-copied] { opacity: 1; }
 @media (hover: none) { .preview-body .md-code .md-code-copy { opacity: 1; } }
+
+/* CSV and TSV grid: a sticky header over the first rows; the table scrolls inside the pane. */
+.grid-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  outline: none;
+}
+.grid-view > .md-find { margin: var(--x-space-2); }
+.grid-scroll { flex: 1; min-height: 0; min-width: 0; overflow: auto; }
+.grid-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--x-font-mono);
+  color: var(--x-color-ink);
+}
+.grid-table th,
+.grid-table td {
+  max-width: 24rem;
+  padding: var(--x-space-1) var(--x-space-2);
+  border-right: 1px solid var(--x-color-line);
+  border-bottom: 1px solid var(--x-color-line);
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.grid-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--x-color-surface);
+  font-weight: 600;
+}
+.grid-table .grid-num {
+  min-width: 3ch;
+  color: var(--x-color-muted);
+  text-align: right;
+  font-weight: 400;
+}
+.grid-table .grid-hit { background: var(--x-color-warn-soft); }
+.grid-table .grid-hit.grid-hit-current { background: var(--x-color-signal-soft); outline: 1px solid var(--x-color-signal); outline-offset: -1px; }
+.grid-more { margin: 0; padding: var(--x-space-3); color: var(--x-color-muted); }
+
+/* Jupyter notebook: cells in a column, outputs under the code. */
+.nb-view { display: flex; flex: 1; flex-direction: column; gap: var(--x-space-3); min-width: 0; padding: var(--x-space-3); overflow: auto; }
+.nb-cell { display: flex; gap: var(--x-space-2); min-width: 0; }
+.nb-markdown { display: block; }
+.nb-count { flex: 0 0 auto; min-width: 4ch; color: var(--x-color-muted); font-family: var(--x-font-mono); text-align: right; }
+.nb-body { flex: 1; min-width: 0; }
+.nb-source .md-code, .nb-source pre { margin: 0; overflow-x: auto; }
+.nb-output { margin-top: var(--x-space-2); min-width: 0; }
+.nb-text {
+  margin: 0;
+  padding: var(--x-space-2);
+  border: 1px solid var(--x-color-line);
+  border-radius: var(--x-radius-sm);
+  font-family: var(--x-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.nb-text.nb-stderr { background: var(--x-color-warn-soft); }
+.nb-text.nb-error { background: var(--x-color-danger-soft); border-color: var(--x-color-danger); }
+.nb-image { max-width: 100%; height: auto; }
+@media (max-width: 480px) { .nb-cell { flex-direction: column; gap: var(--x-space-1); } .nb-count { text-align: left; } }
