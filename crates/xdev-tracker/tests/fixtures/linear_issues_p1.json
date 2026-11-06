@@ -1,0 +1,4 @@
+{"data":{"issues":{"nodes":[
+{"id":"i12","identifier":"ENG-12","title":"Fix login","url":"https://linear.app/example/issue/ENG-12/fix-login","updatedAt":"2026-11-05T10:00:00.000Z","state":{"name":"In Progress","type":"started"},"assignee":{"name":"Ada"}},
+{"id":"i9","identifier":"ENG-9","title":"Old chore","url":"https://linear.app/example/issue/ENG-9/old-chore","updatedAt":"2026-11-01T08:00:00.000Z","state":{"name":"Done","type":"completed"},"assignee":null}
+],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}

@@ -1,0 +1,4 @@
+{"issues":[
+{"id":"10001","key":"PROJ-3","fields":{"summary":"Fix login","status":{"name":"In Progress","statusCategory":{"key":"indeterminate"}},"assignee":{"displayName":"Ada"},"updated":"2026-11-05T10:12:00.000+0700"}},
+{"id":"10002","key":"PROJ-1","fields":{"summary":"Write docs","status":{"name":"To Do","statusCategory":{"key":"new"}},"assignee":null,"updated":"2026-11-02T09:00:00.000+0700"}}
+],"nextPageToken":"page-2-token"}

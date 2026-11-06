@@ -109,6 +109,7 @@ mod term_config_import;
 mod term_tail;
 mod terminal_sets;
 mod terminal_themes;
+mod trackers;
 mod tray;
 mod updater;
 mod usage_share;
@@ -493,6 +494,11 @@ pub fn run() {
             ai_keys::ai_keys_list,
             ai_keys::ai_key_set,
             ai_keys::ai_key_remove,
+            trackers::trackers_status,
+            trackers::tracker_connect,
+            trackers::tracker_disconnect,
+            trackers::tracker_pulls_set,
+            trackers::tracker_list,
             board::board_list,
             board::board_get,
             board::board_create,

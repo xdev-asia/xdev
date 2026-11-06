@@ -16,6 +16,7 @@ import { StartTaskDialog } from "./StartTaskDialog";
 import { TaskEditor } from "./TaskEditor";
 import { TaskList } from "./TaskList";
 import { useBoard } from "./useBoard";
+import { TrackerSections } from "@/tasks/trackers/TrackerSections";
 import "@/styles/board.css";
 
 export type BoardTab = "board" | "list" | "runs";
@@ -233,6 +234,7 @@ function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "lis
         <>
           <UnreadableBanner items={board.unreadable} />
           <TaskList tasks={shown} total={board.tasks.length} agentName={agentName} onOpen={(x) => void open(x)} onNew={() => newTask("backlog")} onClearFilters={clear} />
+          <TrackerSections api={api} repo={repo} agents={agents} current={props.current ?? null} onStart={props.onStart} />
         </>
       )}
       {editing ? (

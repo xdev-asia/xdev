@@ -74,6 +74,7 @@ import { createMockForeignTerms } from "./mockForeignTerms";
 import { createMockNotch, type MockNotch } from "./mockNotch";
 import { createMockPeers, type MockPeers } from "./mockPeers";
 import { createMockCloud } from "./mockCloud";
+import { createMockTrackers } from "./mockTrackers";
 import { createMockLicense, type MockLicense } from "./mockLicense";
 import { createMockTargets, type MockTargets } from "./mockTargets";
 
@@ -691,6 +692,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockShell(settingsHub.emit, options.update ?? null),
     ...workspace,
     ...createMockIssues(),
+    ...createMockTrackers(),
     ...settingsApi,
     ...themes,
     ...appThemes,

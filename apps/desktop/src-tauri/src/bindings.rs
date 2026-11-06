@@ -60,6 +60,7 @@ use crate::startup::StartupReport;
 use crate::tasks::{FileDiff, TasksContext};
 use crate::term_config_import::{TermConfigDetected, TermConfigPreview};
 use crate::terminal_themes::{CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview};
+use crate::trackers::{ConnectKind, JiraView, LinearView, TrackerConnect, TrackersView};
 use crate::updater::{ReleaseList, UpdateDeferral, UpdateInfo, UpdatePhase};
 use crate::workspace::{
     CloneProgress, CreateRequest, WorktreeChange, WorktreeCreated, WorktreeFileDiff,
@@ -122,6 +123,18 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_agent::Matched::export_all(cfg)?;
     Models::export_all(cfg)?;
     AiKeyStatus::export_all(cfg)?;
+    ::xdev_tracker::TaskSource::export_all(cfg)?;
+    ::xdev_tracker::TrackerKind::export_all(cfg)?;
+    ::xdev_tracker::JiraMode::export_all(cfg)?;
+    ::xdev_tracker::TrackerStateKind::export_all(cfg)?;
+    ::xdev_tracker::TrackerPulls::export_all(cfg)?;
+    ::xdev_tracker::TrackerItem::export_all(cfg)?;
+    ::xdev_tracker::TrackerList::export_all(cfg)?;
+    ConnectKind::export_all(cfg)?;
+    TrackerConnect::export_all(cfg)?;
+    LinearView::export_all(cfg)?;
+    JiraView::export_all(cfg)?;
+    TrackersView::export_all(cfg)?;
     UpdateInfo::export_all(cfg)?;
     ProfilesView::export_all(cfg)?;
     xdev_agent::LaunchOverrides::export_all(cfg)?;

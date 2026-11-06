@@ -7,7 +7,7 @@ import type { StartWhere } from "./boardModel";
 import "@/styles/board.css";
 
 export interface StartTaskDialogProps {
-  task: BoardTask;
+  task?: BoardTask;
   agents: { value: string; label: string }[];
   /** The agent chosen at first: the task's assignee, else the default agent. */
   defaultAgent: string | null;

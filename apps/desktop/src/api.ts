@@ -303,6 +303,7 @@ export type {
   SetupDecision,
   WorkspaceMode,
 } from "@xdev/bindings";
+import type { TaskSource, TrackerConnect, TrackerKind, TrackerList, TrackerPulls, TrackersView } from "@xdev/bindings";
 import type {
   AgentSession,
   AiKeyStatus,
@@ -397,6 +398,20 @@ export type { FileHits, FileList, LineHit, SearchEvent, SearchQuery };
 export type { FsChanged, FsEvent, FsEventKind, PathEntry } from "@xdev/bindings";
 export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLabels, ShellSettings, UpdateChannel, UpdatePhase, UpdateDeferral, ReleaseBuild, ReleaseList };
 export type { AiKeyStatus } from "@xdev/bindings";
+export type {
+  ConnectKind,
+  JiraMode,
+  JiraView,
+  LinearView,
+  TaskSource,
+  TrackerConnect,
+  TrackerItem,
+  TrackerKind,
+  TrackerList,
+  TrackerPulls,
+  TrackerStateKind,
+  TrackersView,
+} from "@xdev/bindings";
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenDiff, CliOpenFile, CliOpenTab, CliTerminal, CliWorktreeRead, TabReport };
 export type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView };
@@ -731,6 +746,15 @@ export type ErrorCode =
   | "no_codex"
   | "unknown_provider"
   | "secret_store"
+  | "tracker_not_configured"
+  | "tracker_bad_url"
+  | "tracker_auth"
+  | "tracker_rate_limited"
+  | "tracker_offline"
+  | "tracker_redirected"
+  | "tracker_not_found"
+  | "tracker_unavailable"
+  | "tracker_bad_reply"
   | "empty_key"
   | "bad_registry"
   | "bad_reserve"
@@ -1092,6 +1116,13 @@ export interface Api {
   aiKeySet(provider: AiKeyProvider, key: string): Promise<void>;
   /** True when a key was removed. */
   aiKeyRemove(provider: AiKeyProvider): Promise<boolean>;
+  /** Linear and Jira connections and what each source pulls. No token is returned. */
+  trackersStatus(): Promise<TrackersView>;
+  /** Tests the token with one call, then stores it in the keychain; `tracker_*` codes say why not. */
+  trackerConnect(input: TrackerConnect): Promise<TrackersView>;
+  trackerDisconnect(kind: TrackerKind): Promise<TrackersView>;
+  trackerPullsSet(source: TaskSource, pulls: TrackerPulls): Promise<TrackersView>;
+  trackerList(kind: TrackerKind): Promise<TrackerList>;
   tasksContext(): Promise<TasksContext>;
   // Newest first.
   tasks(): Promise<Task[]>;
@@ -2285,6 +2316,15 @@ function seen({ path, hash }: Seen): Seen {
 
 export const ERROR_CODES: readonly ErrorCode[] = [
   "secret_store",
+  "tracker_not_configured",
+  "tracker_bad_url",
+  "tracker_auth",
+  "tracker_rate_limited",
+  "tracker_offline",
+  "tracker_redirected",
+  "tracker_not_found",
+  "tracker_unavailable",
+  "tracker_bad_reply",
   "empty_key",
   "account_keychain",
   "account_unavailable",
@@ -2617,6 +2657,11 @@ const tauriApi: Api = {
   aiKeys: () => call("ai_keys_list"),
   aiKeySet: (provider, key) => call("ai_key_set", { provider, key }),
   aiKeyRemove: (provider) => call("ai_key_remove", { provider }),
+  trackersStatus: () => call("trackers_status"),
+  trackerConnect: (input) => call("tracker_connect", { input }),
+  trackerDisconnect: (kind) => call("tracker_disconnect", { kind }),
+  trackerPullsSet: (source, pulls) => call("tracker_pulls_set", { source, pulls }),
+  trackerList: (kind) => call("tracker_list", { kind }),
   tasksContext: () => call("tasks_context"),
   tasks: () => call("tasks_list"),
   task: (id) => call("task_get", { id }),

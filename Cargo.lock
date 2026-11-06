@@ -7415,6 +7415,7 @@ dependencies = [
  "xdev-pty",
  "xdev-ssh",
  "xdev-store",
+ "xdev-tracker",
  "xdev-workspace",
 ]
 
@@ -7625,6 +7626,20 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "ts-rs",
+]
+
+[[package]]
+name = "xdev-tracker"
+version = "0.8.0"
+dependencies = [
+ "base64 0.23.1",
+ "keyring",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "ureq",
+ "url",
 ]
 
 [[package]]
