@@ -161,6 +161,17 @@ describe("SessionsPanel", () => {
     expect(markup).not.toContain("Old one");
   });
 
+  it("offers Most relevant only while searching", () => {
+    const label = translate("en", "agentSessions.sort.relevance");
+    expect(html(props([], {}))).not.toContain(label);
+    const searching = { query: { ...DEFAULT_QUERY, text: "login", sort: "relevance" as const } };
+    const markup = html(props([], {}, searching));
+    expect(markup).toContain(label);
+    expect(markup).toContain('<option value="relevance" selected="">');
+    const idle = html(props([], {}, { query: { ...DEFAULT_QUERY, sort: "relevance" as const } }));
+    expect(idle).not.toContain(label);
+  });
+
   it("the toolbar menus report the choice", () => {
     const onView = vi.fn();
     const menus = nodes(SessionsPanel(props([], { onView }))).filter((n) => n.props.className === "as-select as-menu");

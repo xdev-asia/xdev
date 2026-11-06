@@ -34,6 +34,15 @@ describe("groupByDay", () => {
     expect(groupByDay([], "lastDesc", NOW)).toEqual([]);
   });
 
+  it("by relevance a day's rows join one group even when ranked apart", () => {
+    const rows = [row("a", at(5)), row("b", at(0)), row("c", at(5, 20)), row("d", at(0, 12))];
+    const groups = groupByDay(rows, "relevance", NOW);
+    expect(groups.map((g) => [g.kind, g.rows.map((r) => r.session.id)])).toEqual([
+      ["date", ["a", "c"]],
+      ["today", ["b", "d"]],
+    ]);
+  });
+
   it("a session with no time (0) falls in the oldest date group", () => {
     const groups = groupByDay([row("a", at(0)), row("z", 0, 0)], "lastDesc", NOW);
     expect(groups.at(-1)).toMatchObject({ kind: "date" });

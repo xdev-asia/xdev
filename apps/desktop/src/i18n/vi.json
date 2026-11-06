@@ -2071,6 +2071,7 @@
   "agentSessions.scope.all": "Tất cả",
   "agentSessions.sort.label": "Sắp xếp phiên",
   "agentSessions.sort.last": "Hoạt động gần nhất",
+  "agentSessions.sort.relevance": "Liên quan nhất",
   "agentSessions.sort.first": "Bắt đầu",
   "agentSessions.agent.label": "Agent",
   "agentSessions.agent.all": "Mọi agent",

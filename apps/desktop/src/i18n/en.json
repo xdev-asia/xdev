@@ -2071,6 +2071,7 @@
   "agentSessions.scope.all": "All",
   "agentSessions.sort.label": "Sort sessions",
   "agentSessions.sort.last": "Last active",
+  "agentSessions.sort.relevance": "Most relevant",
   "agentSessions.sort.first": "Started",
   "agentSessions.agent.label": "Agent",
   "agentSessions.agent.all": "All agents",

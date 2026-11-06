@@ -132,6 +132,8 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
   const { query, rows } = state;
   const view = props.view ?? DEFAULT_VIEW;
   const groups = groupRows(rows, { by: view.groupBy, sort: query.sort, now, history: view.history, hideEmpty: view.hideEmpty });
+  // "Most relevant" ranks a text match; with no text there is nothing to rank.
+  const searching = (query.text ?? "").trim() !== "";
   const filtered = query.text !== null || query.agent !== null || query.homeId !== null || query.scope.kind !== "all";
   const groupLabel = (g: SessionGroup) =>
     g.kind === "today"
@@ -348,7 +350,8 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
           ))}
         </div>
         <div className="as-filters">
-          <select className="as-select" aria-label={t("agentSessions.sort.label")} value={query.sort} onChange={(e) => props.onSort(e.target.value as SessionSort)}>
+          <select className="as-select" aria-label={t("agentSessions.sort.label")} value={searching || query.sort !== "relevance" ? query.sort : "lastDesc"} onChange={(e) => props.onSort(e.target.value as SessionSort)}>
+            {searching && <option value="relevance">{t("agentSessions.sort.relevance")}</option>}
             <option value="lastDesc">{t("agentSessions.sort.last")}</option>
             <option value="firstDesc">{t("agentSessions.sort.first")}</option>
           </select>
