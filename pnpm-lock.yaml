@@ -168,6 +168,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@codemirror/autocomplete':
+        specifier: ^6.20.4
+        version: 6.20.4
       '@codemirror/lang-cpp':
         specifier: ^6.0.3
         version: 6.0.3
@@ -216,6 +219,9 @@ importers:
       '@codemirror/legacy-modes':
         specifier: ^6.5.5
         version: 6.5.5
+      '@codemirror/lint':
+        specifier: ^6.9.7
+        version: 6.9.7
       '@codemirror/merge':
         specifier: 6.12.2
         version: 6.12.2

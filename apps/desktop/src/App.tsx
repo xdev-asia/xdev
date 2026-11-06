@@ -2,6 +2,7 @@ import { api } from "./api";
 import { OnboardingGate } from "./onboarding/OnboardingGate";
 import { useOnboarding } from "./onboarding/onboardingStore";
 import { CliSkillTip } from "./shell/CliSkillTip";
+import { LspHost } from "./files/lsp/LspHost";
 import { WorkspaceShell } from "./workspace/WorkspaceShell";
 
 /** The whole app: the workspace shell, which hosts the docs app as one of its views, behind the first-run wizard. */
@@ -13,6 +14,7 @@ export function App() {
         <WorkspaceShell api={api} />
       </OnboardingGate>
       <CliSkillTip api={api} suppressed={wizardOpen} />
+      <LspHost api={api} />
     </>
   );
 }
