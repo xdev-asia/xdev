@@ -8,7 +8,7 @@ export type FeatureId = "pro.phone" | "pro.usage_history" | "pro.session_replay"
  */
 export const PRO_SURFACES: Record<FeatureId, string[]> = {
   "pro.phone": [],
-  "pro.usage_history": ["settings/UsagePage.tsx", "settings/UsageHistory.tsx"],
+  "pro.usage_history": ["settings/UsagePage.tsx", "settings/UsageHistory.tsx", "settings/UsagePageHistory.test.tsx"],
   "pro.session_replay": [],
   "pro.layouts": ["workspace/LayoutControls.tsx"],
   "pro.early": ["settings/UpdatesSetting.tsx"],
