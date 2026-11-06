@@ -13,6 +13,7 @@ mod providers;
 mod quota;
 pub mod secrets;
 pub mod shim;
+pub mod transcribe;
 
 pub use accounts::{
     AccountEntry, ActiveAccount, Provider, Registry, Routing, account_dir, carry_session,
