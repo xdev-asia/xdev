@@ -345,6 +345,10 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_orch::FailReason::export_all(cfg)?;
     xdev_orch::FailoverKind::export_all(cfg)?;
     crate::conversation::Conversation::export_all(cfg)?;
+    crate::foreign_terms::ForeignTerm::export_all(cfg)?;
+    crate::foreign_terms::ForeignScan::export_all(cfg)?;
+    crate::notch::NotchTab::export_all(cfg)?;
+    crate::notch::NotchState::export_all(cfg)?;
     Ok(())
 }
 

@@ -326,6 +326,7 @@ import { toBytes } from "./terminal/ptyClient";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
+import type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView } from "@xdev/bindings";
 
 export { createMockApi };
 /** The kinds of `HookKind` that are scripts; the others are lists. */
@@ -350,6 +351,7 @@ export type { CloseIntent, CloseRequest, HelpLink, MenuAction, QuitMode, ShellLa
 export type { AiKeyStatus } from "@xdev/bindings";
 export type { FileKind, GhAccount, GhLogin, RepoIcon } from "@xdev/bindings";
 export type { CliAsk, CliOpenFile, CliOpenTab, TabReport };
+export type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView };
 export type { OrchestrationSettings, SkillStatus, WorkerLifetime, WorkerOpen, WorkerOpenOutcome, WorkerClose, ReadTab, WorkerChanged };
 export type { CliStatus } from "@xdev/bindings";
 export type { McpActivityView, McpHealth, McpToolView };
@@ -1770,6 +1772,16 @@ export interface Api {
   onOrchestrationFailover(cb: (e: WorkerFailover) => void): Promise<() => void>;
   /** One page of an agent session's conversation (its CLI session id or `<home id>:<id>` key): messages, tool steps and markers. `from` absent gives the last page; `limit` is 200 when absent, at most 1000. Rejects `not_found`, `bad_path`, `io`. */
   agentConversation(key: string, from?: number, limit?: number): Promise<Conversation>;
+  // Terminals and agent CLIs this app did not start; at most 500 rows, within 2 s. Rejects with `timeout`.
+  foreignTermsScan(): Promise<ForeignScan>;
+  // The main window's agent tabs, for the status strip at the notch.
+  notchReport(tabs: NotchTab[]): Promise<void>;
+  // What the strip shows now.
+  notchState(): Promise<NotchState>;
+  // A click on the strip: the main window comes forward on that tab.
+  notchOpen(ptyId: string | null): Promise<void>;
+  // `notch://state`: the strip's view or the notch width changed.
+  onNotchState(cb: (state: NotchState) => void): Promise<() => void>;
 }
 
 function seen({ path, hash }: Seen): Seen {
@@ -2491,6 +2503,11 @@ const tauriApi: Api = {
   orchestrationWorkerFailover: (tab) => call("orchestration_worker_failover", { tab }),
   onOrchestrationFailover: (cb) => listen<WorkerFailover>("orchestration://failover", (e) => cb(e.payload)),
   agentConversation: (key, from, limit) => call("agent_conversation", { key, from: from ?? null, limit: limit ?? null }),
+  foreignTermsScan: () => call("foreign_terms_scan"),
+  notchReport: (tabs) => call("notch_report", { tabs }),
+  notchState: () => call("notch_state"),
+  notchOpen: (ptyId) => call("notch_open", { ptyId }),
+  onNotchState: (cb) => listen<NotchState>("notch://state", (e) => cb(e.payload)),
 };
 
 const DEMO_CRASH: CrashReport = {

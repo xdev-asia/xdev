@@ -28,5 +28,12 @@ export default defineConfig({
   build: {
     // WebView2 on Windows, WKWebView (Safari 13+) on the oldest supported macOS.
     target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
+    // The status strip at the notch is a second window with its own small page.
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        notch: fileURLToPath(new URL("./notch.html", import.meta.url)),
+      },
+    },
   },
 });

@@ -11,6 +11,7 @@ import type { Sessions } from "@/workspace/sessions";
 import { openCrashDialog } from "@/crash/crashEvents";
 import { missionItems } from "@/orchestration/missionEvents";
 import { resourceItems } from "@/stats/resourceEvents";
+import { foreignTermsItems } from "@/foreignTerms/foreignTermsEvents";
 import { actionItems, crashItems, quickCommandItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
 import { JumpPalette } from "./JumpPalette";
 import { chatItems, taskItems } from "./moreItems";
@@ -187,6 +188,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       ...missionItems(t),
       ...resourceItems(t),
       ...conversationItems(t, front),
+      ...foreignTermsItems(t),
       ...(current && actions.runQuickCommand && actions.newQuickCommand
         ? quickCommandItems([...picked.global, ...picked.project], repoOfCurrent?.shortName ?? "", t, { run: actions.runQuickCommand, create: actions.newQuickCommand })
         : []),

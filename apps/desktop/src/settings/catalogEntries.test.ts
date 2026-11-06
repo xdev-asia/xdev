@@ -48,6 +48,9 @@ it("the tray row is for Windows, the menu bar row for macOS, and the rest of the
   const find = (id: string) => SETTING_ENTRIES.find((x) => x.id === id);
   expect(find("general.minimizeToTray")?.platforms).toEqual(["win"]);
   expect(find("general.menuBarIcon")?.platforms).toEqual(["mac"]);
+  expect(find("general.notchStatus")?.platforms).toEqual(["mac"]);
+  expect(entriesFor("win").map((x) => x.id)).not.toContain("general.notchStatus");
+  expect(entriesFor("linux").map((x) => x.id)).not.toContain("general.notchStatus");
   expect(find("general.updates")?.platforms).toBeUndefined();
   expect(find("general.updateChannel")?.platforms).toBeUndefined();
   expect(entriesFor("linux").map((x) => x.id)).not.toContain("general.minimizeToTray");

@@ -58,6 +58,8 @@ import { createMockMission } from "./mockMission";
 import { createMockTasks } from "./mockTasks";
 import { createMockWorkspace, type MockWorkspaceSeed } from "./mockWorkspace";
 import { mockHash, type MockFiles } from "./mockFiles";
+import { createMockForeignTerms } from "./mockForeignTerms";
+import { createMockNotch, type MockNotch } from "./mockNotch";
 
 export { EXPORT_MARKER } from "./mockExport";
 
@@ -391,7 +393,7 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   // first one takes over in a new tab whose strip reads "Failed over from"; else the worker is marked
   // failed. Resolves with the new tab's id, or null.
   __orchFailWorker(from: WorkerOpen, reason?: FailReason): Promise<string | null>;
-};
+} & Pick<MockNotch, "__notchTabs">;
 
 type MockOptions = {
   repo?: boolean;
@@ -688,6 +690,8 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockPromptQueue(),
     ...createMockTerminalSets(async () => (await profiles.profiles()).profiles.map((p) => p.profile.id), settingsHub.emit),
     ...createMockConversation(),
+    ...createMockForeignTerms(),
+    ...createMockNotch((id) => api.__clickNotification(id)),
     async clipboardImageSave() {
       if (mockClipboardImage === null || typeof mockClipboardImage === "string") return mockClipboardImage;
       throw mockClipboardImage;

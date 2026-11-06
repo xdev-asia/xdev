@@ -208,6 +208,8 @@ pub struct ShellSettings {
     /// [`UPDATE_DELAY_DAYS`], 0 offers it at once.
     #[serde(deserialize_with = "lenient_delay")]
     pub update_delay_days: u8,
+    /// macOS only: the agent status strip at the notch; off unless turned on.
+    pub notch_status: bool,
 }
 
 /// The delays the Updates setting offers, in days.
@@ -241,6 +243,7 @@ impl Default for ShellSettings {
             tray_notice_shown: false,
             update_channel: UpdateChannel::Stable,
             update_delay_days: 0,
+            notch_status: false,
         }
     }
 }
@@ -4173,6 +4176,7 @@ then sum up"
         assert!(!want.minimize_to_tray);
         assert!(want.menu_bar_icon);
         assert!(!want.tray_notice_shown);
+        assert!(!want.notch_status);
         assert_eq!(want.update_channel, UpdateChannel::Stable);
         for text in [
             "{}",
@@ -4205,9 +4209,11 @@ then sum up"
             tray_notice_shown: true,
             update_channel: UpdateChannel::Rc,
             update_delay_days: 3,
+            notch_status: true,
         };
         let json = serde_json::to_value(&shell).unwrap();
         assert_eq!(json["updateDelayDays"], 3);
+        assert_eq!(json["notchStatus"], true);
         assert_eq!(json["minimizeToTray"], true);
         assert_eq!(json["menuBarIcon"], false);
         assert_eq!(json["trayNoticeShown"], true);
@@ -4227,6 +4233,7 @@ then sum up"
         .unwrap();
         let shell = load(&path).shell;
         assert_eq!(shell.update_delay_days, 0);
+        assert!(!shell.notch_status);
         assert!(shell.minimize_to_tray);
         assert_eq!(shell.update_channel, UpdateChannel::Rc);
     }

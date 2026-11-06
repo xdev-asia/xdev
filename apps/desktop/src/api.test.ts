@@ -630,7 +630,7 @@ it("routes shell and update calls through Tauri with the argument names Rust exp
   try {
     const { api } = await import("./api");
     const { invoke } = await import("@tauri-apps/api/core");
-    const settings = { minimizeToTray: true, menuBarIcon: true, trayNoticeShown: false, updateChannel: "rc" as const, updateDelayDays: 3 };
+    const settings = { minimizeToTray: true, menuBarIcon: true, trayNoticeShown: false, updateChannel: "rc" as const, updateDelayDays: 3, notchStatus: false };
     await api.shellSettings(); await api.shellSettingsPut(settings);
     await api.shellCloseRequested("xDev", "Still running"); await api.shellQuit("end-all"); await api.shellQuitCancelled();
     await api.helpOpen("docs"); await api.trayAttention(); await api.windowReload(); await api.windowDevtoolsToggle();

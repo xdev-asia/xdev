@@ -5,7 +5,7 @@ import { createMockShell, SHELL_DEFAULTS } from "./mockShell";
 it("starts from the defaults Rust stores and keeps the notice flag on a put", async () => {
   const emit = vi.fn();
   const shell = createMockShell(emit);
-  expect(await shell.shellSettings()).toEqual({ minimizeToTray: false, menuBarIcon: true, trayNoticeShown: false, updateChannel: "stable", updateDelayDays: 0 });
+  expect(await shell.shellSettings()).toEqual({ minimizeToTray: false, menuBarIcon: true, trayNoticeShown: false, updateChannel: "stable", updateDelayDays: 0, notchStatus: false });
   const stored = await shell.shellSettingsPut({ ...SHELL_DEFAULTS, minimizeToTray: true, trayNoticeShown: true });
   expect(stored).toMatchObject({ minimizeToTray: true, trayNoticeShown: false });
   expect(emit).toHaveBeenCalledWith(["shell"]);

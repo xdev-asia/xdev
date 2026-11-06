@@ -22,4 +22,8 @@ trayNoticeShown: boolean, updateChannel: UpdateChannel,
  * A newer release is offered once it is this many days old; one of
  * [`UPDATE_DELAY_DAYS`], 0 offers it at once.
  */
-updateDelayDays: number, };
+updateDelayDays: number, 
+/**
+ * macOS only: the agent status strip at the notch; off unless turned on.
+ */
+notchStatus: boolean, };

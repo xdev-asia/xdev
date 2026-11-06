@@ -84,7 +84,7 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
   );
 
   // The tray is on Windows and the menu bar on macOS; Linux has neither.
-  const windowIds = PLATFORM === "win" ? ["general.minimizeToTray"] : PLATFORM === "mac" ? ["general.menuBarIcon"] : [];
+  const windowIds = PLATFORM === "win" ? ["general.minimizeToTray"] : PLATFORM === "mac" ? ["general.menuBarIcon", "general.notchStatus"] : [];
 
   return (
     <div className="settings-page">
@@ -190,6 +190,7 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
         <ul className="settings-list">
           {PLATFORM === "win" && settingShown(filter, "general.minimizeToTray") && sw("general.minimizeToTray", "minimizeToTray", t("settings.general.minimizeToTray"), shell.minimizeToTray, () => void patchShell({ minimizeToTray: !shell.minimizeToTray }), t("settings.general.minimizeToTrayHint"))}
           {PLATFORM === "mac" && settingShown(filter, "general.menuBarIcon") && sw("general.menuBarIcon", "menuBarIcon", t("settings.general.menuBarIcon"), shell.menuBarIcon, () => void patchShell({ menuBarIcon: !shell.menuBarIcon }), t("settings.general.menuBarIconHint"))}
+          {PLATFORM === "mac" && settingShown(filter, "general.notchStatus") && sw("general.notchStatus", "notchStatus", t("settings.general.notchStatus"), shell.notchStatus, () => void patchShell({ notchStatus: !shell.notchStatus }), t("settings.general.notchStatusHint"))}
         </ul>
       )}
       </SettingGroup>

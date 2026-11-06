@@ -182,6 +182,7 @@ it("the language row shows the current language and changes it through setLocale
 it("Windows shows Minimize to tray and writes it through the shell settings", async () => {
   const p = await page();
   expect(p.all().some((n) => n.props["data-switch"] === "menuBarIcon")).toBe(false);
+  expect(p.all().some((n) => n.props["data-switch"] === "notchStatus")).toBe(false);
   expect(p.sw("minimizeToTray").props["aria-checked"]).toBe(false);
   await p.sw("minimizeToTray").props.onClick();
   expect(await p.api.shellSettings()).toMatchObject({ minimizeToTray: true, menuBarIcon: true });
@@ -197,10 +198,19 @@ it("macOS shows Show menu bar icon, on by default, and writes it", async () => {
   expect(await p.api.shellSettings()).toMatchObject({ menuBarIcon: false, minimizeToTray: false });
 });
 
+it("macOS shows the notch status switch, off by default, and writes it", async () => {
+  plat.value = "mac";
+  const p = await page();
+  expect(p.sw("notchStatus").props["aria-checked"]).toBe(false);
+  await p.sw("notchStatus").props.onClick();
+  expect(await p.api.shellSettings()).toMatchObject({ notchStatus: true, menuBarIcon: true });
+  expect(p.sw("notchStatus").props["aria-checked"]).toBe(true);
+});
+
 it("Linux has no window group", async () => {
   plat.value = "linux";
   const p = await page();
-  expect(p.all().some((n) => n.props["data-switch"] === "minimizeToTray" || n.props["data-switch"] === "menuBarIcon")).toBe(false);
+  expect(p.all().some((n) => n.props["data-switch"] === "minimizeToTray" || n.props["data-switch"] === "menuBarIcon" || n.props["data-switch"] === "notchStatus")).toBe(false);
   expect(p.all().some((n) => n.type === "h4" && n.props.children === translate("en", "settings.general.window"))).toBe(false);
 });
 

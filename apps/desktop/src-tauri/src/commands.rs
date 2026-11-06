@@ -403,6 +403,7 @@ pub fn shell_settings_put(
     .map(|s| s.shell)?;
     // The tray follows the setting at once.
     crate::tray::sync(&app);
+    crate::notch::sync(&app);
     Ok(stored)
 }
 
