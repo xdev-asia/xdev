@@ -1,5 +1,5 @@
 import { chordLabel } from "@/keys/keymap";
-import type { QuickCommand, RepoView, WorktreeView } from "@/api";
+import type { BoardTask, QuickCommand, RepoView, WorktreeView } from "@/api";
 import { entriesFor } from "@/settings/catalog";
 import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
@@ -135,9 +135,10 @@ export type ActionName =
   | "clearTerminal"
   | "resetTerminal"
   | "copyTerminalContext"
-  | "newTask";
+  | "newTask"
+  | "openTaskBoard";
 
-const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "resumeSession", "stageAll", "discardAll", "pinTab", "unpinTab", "moveTabRight", "clearTerminal", "resetTerminal", "copyTerminalContext", "newTask"];
+const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "showDocs", "resumeSession", "stageAll", "discardAll", "pinTab", "unpinTab", "moveTabRight", "clearTerminal", "resetTerminal", "copyTerminalContext", "newTask", "openTaskBoard"];
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 const HINTS: Partial<Record<ActionName, string>> = {
   searchDocs: MAC ? "⌘ K" : "Ctrl K",
@@ -210,3 +211,18 @@ export function quickCommandItems(
   };
   return [...runs, create];
 }
+
+/** The tasks of the current repo's board as palette items; picking one opens the board and its editor. */
+export function boardTaskItems(tasks: readonly BoardTask[], t: T, repo: string, open: (id: string) => void): PaletteItem[] {
+  return tasks.map((task): PaletteItem => ({
+    id: `ftask:${task.id}`,
+    kind: "task",
+    title: task.title,
+    detail: t(statusKeyOf(task.status)),
+    keywords: [task.id, ...task.labels],
+    repo,
+    run: () => open(task.id),
+  }));
+}
+
+const statusKeyOf = (s: BoardTask["status"]): string => `board.col.${s === "in-progress" ? "inProgress" : s === "in-review" ? "inReview" : s}`;

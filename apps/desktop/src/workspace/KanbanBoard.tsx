@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, PointerEvent as ReactPointerEvent } from "react";
-import type { PtyProfile, WorkStatus, WorktreeView } from "@/api";
+import { Tag } from "@xdev-asia/ui";
+import type { Api, PtyProfile, WorkStatus, WorktreeView } from "@/api";
 import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
 import { ContextMenu } from "@/ui/ContextMenu";
+import { syncTaskStatus } from "@/tasks/board/boardModel";
 import { StatusGlyph } from "./StatusGlyph";
 import type { TabStatus } from "./status";
 import { dropColumn, groupByStatus, moveCard, moveItems, pastThreshold, statusOf, type ColumnBox, type ColumnId } from "./kanbanModel";
@@ -24,6 +26,11 @@ export interface KanbanBoardProps {
   /** A move failed and the card went back. */
   onMoveError(): void;
   onClose(): void;
+  /** With the repo path, lets a move of a task's worktree write the task's status as well. */
+  api?: Pick<Api, "boardUpdate">;
+  repoPath?: string | null;
+  /** The task's status could not be written; the worktree move stands. */
+  onTaskError?(): void;
 }
 
 /** A card being dragged: where the pointer is, and the column under it. */
@@ -64,7 +71,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         }),
       write: () => props.onMove(wt, status),
     }).then((ok) => {
-      if (!ok) props.onMoveError();
+      if (!ok) return props.onMoveError();
+      // A worktree started from a task carries it: the task follows, and a failure there does not undo the move.
+      if (props.api) void syncTaskStatus(props.api, props.repoPath, wt.item, status, props.onTaskError);
     });
   };
 
@@ -139,6 +148,11 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               {wt.branch ?? t("workspace.detached")}
             </span>
           </span>
+          {wt.item?.kind === "task" && (
+            <span className="ws-wt-meta">
+              <Tag>{t("kanban.taskTag")}</Tag>
+            </span>
+          )}
           {agents.length > 0 && (
             <span className="ws-wt-meta">
               {agents.map((p) => (
