@@ -10,6 +10,8 @@ import { saveFile } from "@/files/fileIO";
 import { MarkdownPreview } from "@/files/MarkdownPreview";
 import { isPreviewTab, previewTabId, previewTabRel } from "@/files/previewTabs";
 import { isViewTab, viewTabId, viewTabRel } from "@/files/viewTabs";
+import { PeerTerminalTab } from "@/peers/PeerTerminalTab";
+import { claimPeerTabs, closePeerTab, isPeerTab, usePeerTabs } from "@/peers/peerTabs";
 import { viewerOf } from "@/files/viewer";
 import { UnsavedDialog } from "@/files/UnsavedDialog";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
@@ -240,11 +242,20 @@ export function WorktreeTabs(props: {
   // The same for file tabs: the open files of the store are the tabs; a closed one leaves its pane.
   const files = useOpenFiles(worktree);
   const fileIds = new Set(files.map((f) => fileTabId(f.rel)));
+  // Terminals of other computers: a visible worktree takes the ones nobody holds; a closed one leaves its pane.
+  const allPeerTabs = usePeerTabs();
+  const peerTabs = allPeerTabs.filter((e) => e.owner === worktree);
+  const peerIds = new Set(peerTabs.map((e) => e.id));
+  useEffect(() => {
+    if (visible) claimPeerTabs(worktree);
+  }, [visible, allPeerTabs, worktree]);
   let layout: PaneLayout | null = withReview;
   for (const leaf of layout ? (leaves(layout) as Leaf[]) : []) {
     for (const id of leaf.tabs) {
       // A preview goes with its source: a file that is closed, or never opened, leaves no preview behind.
-      const gone = isFileTab(id)
+      const gone = isPeerTab(id)
+        ? !peerIds.has(id)
+        : isFileTab(id)
         ? !fileIds.has(id)
         : isPreviewTab(id)
           ? !fileIds.has(fileTabId(previewTabRel(id)!))
@@ -253,6 +264,7 @@ export function WorktreeTabs(props: {
     }
   }
   for (const id of fileIds) layout = layout ? addTab(layout, id) : single(id);
+  for (const id of peerIds) layout = layout ? addTab(layout, id) : single(id);
   // Canvas mode: every pane has a card, and a pane that is gone leaves none.
   if (layout?.canvas?.on) {
     const cards = syncCanvas(layout.canvas, (leaves(layout) as Leaf[]).map((n) => n.id));
@@ -279,7 +291,7 @@ export function WorktreeTabs(props: {
   const [everFront] = useState(() => new Set<string>());
   for (const id of frontIds) everFront.add(id);
   // A string, so the shell hears only when the set on screen changes.
-  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && id !== COMMIT_TAB && !isFileTab(id) && !isPreviewTab(id) && !isViewTab(id)).join(" ");
+  const paneKey = [...frontIds].filter((id) => id !== REVIEW_TAB && id !== COMMIT_TAB && !isFileTab(id) && !isPreviewTab(id) && !isViewTab(id) && !isPeerTab(id)).join(" ");
   const { onShown, onPanes, front } = props;
   useEffect(() => onShown?.(shown), [shown]);
   // The focus order for MRU; a walk records only where it ends, not the tabs it passed.
@@ -301,6 +313,12 @@ export function WorktreeTabs(props: {
     setFronted(front.seq);
     if (layout) sessions.setLayout(worktree, selectTab(layout, front.id));
   }, [front?.seq]);
+  // A watch tab asked for again comes to the front.
+  const peerSeq = peerTabs.reduce((m, e) => Math.max(m, e.seq), 0);
+  useEffect(() => {
+    const newest = peerTabs.find((e) => e.seq === peerSeq);
+    if (newest && layout && paneOf(layout, newest.id)) sessions.setLayout(worktree, selectTab(layout, newest.id));
+  }, [peerSeq, peerTabs.length]);
   useEffect(() => {
     if (reveal && layout && paneOf(layout, REVIEW_TAB)) sessions.setLayout(worktree, selectTab(layout, REVIEW_TAB));
   }, [reveal?.seq]);
@@ -398,7 +416,7 @@ export function WorktreeTabs(props: {
 
   // The tab menu's Move to Split: a terminal goes through the sessions store, the other tabs through the tree.
   function moveTab(pane: string, id: string, dir: MoveDir): void {
-    if (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id) || isViewTab(id)) return splitTab(pane, id, dir);
+    if (id === REVIEW_TAB || isFileTab(id) || isPreviewTab(id) || isViewTab(id) || isPeerTab(id)) return splitTab(pane, id, dir);
     if (dir === "right" || dir === "down") return sessions.moveToSplit(id, dir);
     sessions.dropToSplit(worktree, id, pane, moveEdge(dir));
   }
@@ -465,7 +483,7 @@ export function WorktreeTabs(props: {
   // The next / previous tab of the front tab's kind: files with files, terminals with terminals.
   function stepSameKind(step: 1 | -1): boolean {
     const kindOf = (id: string) =>
-      isFileTab(id) || isViewTab(id) ? "file" : isPreviewTab(id) ? "preview" : id === REVIEW_TAB || id === COMMIT_TAB ? id : "terminal";
+      isFileTab(id) || isViewTab(id) ? "file" : isPreviewTab(id) ? "preview" : isPeerTab(id) ? "peer" : id === REVIEW_TAB || id === COMMIT_TAB ? id : "terminal";
     const to = cycleSameKind(focusedLeaf?.tabs ?? [], shown, step, kindOf);
     if (to === null) return false;
     go(to);
@@ -476,7 +494,7 @@ export function WorktreeTabs(props: {
   // Save / Don't save dialog; a running agent asks as a single close does.
   function closeAllTabs(): boolean {
     const kindOf = (id: string): "terminal" | "file" | "other" =>
-      isFileTab(id) ? "file" : isPreviewTab(id) || isViewTab(id) || id === REVIEW_TAB || id === COMMIT_TAB ? "other" : "terminal";
+      isFileTab(id) ? "file" : isPreviewTab(id) || isViewTab(id) || isPeerTab(id) || id === REVIEW_TAB || id === COMMIT_TAB ? "other" : "terminal";
     const pinnedOf = (id: string) => {
       const rel = fileTabRel(id);
       return rel !== null ? !!fileTabs.get(worktree, rel)?.pinned : !!byId.get(id)?.pinned;
@@ -493,6 +511,7 @@ export function WorktreeTabs(props: {
     const rel = fileTabRel(id);
     if (rel !== null) return closeFiles([rel]);
     // A preview or a view leaves its pane; the file stays open, so there is nothing unsaved to ask about.
+    if (isPeerTab(id)) return closePeerTab(id);
     if (isPreviewTab(id) || isViewTab(id)) return void (layout && setLayout(removeTab(layout, id)));
     if (id === COMMIT_TAB) {
       setCommitAsk(null);
@@ -622,6 +641,8 @@ export function WorktreeTabs(props: {
     return list.map((id): SwitcherItem => {
       if (id === REVIEW_TAB) return { id, title: t("review.tab"), icon: <Icon name="diff" /> };
       if (id === COMMIT_TAB) return { id, title: t("commitView.tab", { id: (commitOpen?.id ?? "").slice(0, 7) }), icon: <Icon name="diff" /> };
+      const peerEntry = peerTabs.find((e) => e.id === id);
+      if (peerEntry) return { id, title: t("peers.term.tabTitle", { tab: peerEntry.title, computer: peerEntry.peerName }), icon: <Icon name="terminal" /> };
       const previewRel = previewTabRel(id);
       if (previewRel !== null) return { id, title: t("files.preview.tab", { name: fileName(previewRel) }), icon: <Icon name="eye" />, path: previewRel };
       const rel = fileTabRel(id) ?? viewTabRel(id);
@@ -857,6 +878,8 @@ export function WorktreeTabs(props: {
   const stripOf = (leaf: Leaf) => {
     const items: StripItem[] = leaf.tabs.flatMap((id): StripItem[] => {
       if (id === REVIEW_TAB) return [{ id, tab: null }];
+      const peerEntry = peerTabs.find((e) => e.id === id);
+      if (isPeerTab(id)) return peerEntry ? [{ id, tab: null, peer: { title: t("peers.term.tabTitle", { tab: peerEntry.title, computer: peerEntry.peerName }) } }] : [];
       const previewRel = previewTabRel(id);
       if (previewRel !== null) return [{ id, tab: null, preview: { rel: previewRel } }];
       const viewRel = viewTabRel(id);
@@ -1160,6 +1183,25 @@ export function WorktreeTabs(props: {
               ];
             }),
           )}
+        {peerTabs.map((entry) => {
+          const at = placed(entry.id);
+          return (
+            <div
+              key={entry.id}
+              className="ws-tab-pane"
+              role="tabpanel"
+              data-tab={entry.id}
+              hidden={at.hidden}
+              style={at.style}
+              onPointerDownCapture={() => {
+                const pane = layout ? paneOf(layout, entry.id) : null;
+                if (layout && pane && layout.focused !== pane) setLayout(focusPane(layout, pane));
+              }}
+            >
+              <SurfaceBoundary id="peers.terminal" surface="Terminal" resetKey={entry.id}><PeerTerminalTab api={api} entry={entry} /></SurfaceBoundary>
+            </div>
+          );
+        })}
         {commitOpen && (
           <div className="ws-tab-pane" role="tabpanel" data-tab={COMMIT_TAB} hidden={commitAt.hidden} style={commitAt.style}>
             <CommitView api={api} worktree={worktree} commit={commitOpen} />

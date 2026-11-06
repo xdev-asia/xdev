@@ -9,6 +9,7 @@ import { useQuota } from "@/shell/useQuota";
 import { useUpdate, type Update } from "@/shell/useUpdate";
 import { KeepAwakeItem } from "./KeepAwakeItem";
 import { SshStatusItem } from "./SshStatusItem";
+import { PeersStatusItem } from "@/peers/PeersStatusItem";
 import { UsagePopover } from "./UsagePopover";
 import { pushToast } from "./toastStore";
 import { footerQuota, shownPercent } from "./usageModel";
@@ -118,6 +119,8 @@ export function WorkspaceFooter(props: {
   keepAwake?: ReactNode;
   /** The SSH connections segment; it renders nothing while no host is connected or connecting. */
   ssh?: ReactNode;
+  /** The Computers segment (paired computers), after the SSH one. */
+  peers?: ReactNode;
   hidden?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -200,6 +203,7 @@ export function WorkspaceFooter(props: {
         </>
       )}
       {props.ssh}
+      {props.peers}
       {items.ports && props.ports}
       {items.keepAwake && props.keepAwake}
       {items.version && <span className="ws-mono">{`v${props.version}`}</span>}
@@ -356,6 +360,7 @@ export function LiveWorkspaceFooter(props: {
       ports={rest.ports}
       keepAwake={<KeepAwakeItem api={api} />}
       ssh={onManageSsh && <SshStatusItem api={api} onOpenTerminal={onOpenSshTerminal} onManage={onManageSsh} />}
+      peers={<PeersStatusItem api={api} />}
     />
   );
 }
