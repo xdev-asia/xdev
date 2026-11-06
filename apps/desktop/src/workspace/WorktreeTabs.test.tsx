@@ -1498,6 +1498,23 @@ it("split keys open the default shell in a new pane beside the focused one", () 
   expect((root.children[1] as Extract<PaneNode, { kind: "split" }>).dir).toBe("down");
 });
 
+it("a split starts in the folder the focused terminal's shell reported, inside the worktree", () => {
+  const api = createMockApi({});
+  const live = (sessions = new Sessions(api));
+  const one = live.open(A, "shell");
+  const view = harness(api, live);
+  // The terminal passes the shell's OSC 7 folder on to the sessions.
+  view.terminals().find((n) => n.props.id === one.id)!.props.onCwd!(`${A}/src/lib`);
+  press(view, CTRL_SHIFT_D);
+  const two = live.tabs(A)[1];
+  expect(two.dir).toBe("src/lib");
+  expect(view.terminals().find((n) => n.props.id === two.id)!.props.cwd).toMatch(/src[\/]lib$/);
+  // Outside the worktree: the root.
+  view.terminals().find((n) => n.props.id === two.id)!.props.onCwd!("/tmp");
+  press(view, ALT_SHIFT_D);
+  expect(live.tabs(A)[2].dir).toBeUndefined();
+});
+
 it("pane_next_and_prev_move_focus_and_give_the_terminal_the_keyboard", () => {
   const api = createMockApi({});
   const live = (sessions = new Sessions(api));

@@ -54,7 +54,8 @@ describe("cli terminal", () => {
   it("split puts the new shell in a new pane beside the source tab", async () => {
     const { api, live, host } = setup();
     const shell = (await defaultShell(api))!;
-    const a = live.open(WT, shell);
+    // The backend's folder is where the source started, which the window knows too.
+    const a = live.open(WT, shell, null, undefined, { dir: "src" });
     live.open(WT, shell);
     const before = leaves(live.layout(WT)!).length;
     await runCliTerminal(api, host, ev({ op: "split", source: a.id, dir: "down", cwd: "src" }));
@@ -62,6 +63,19 @@ describe("cli terminal", () => {
     expect(leaves(layout).filter((n) => n.kind === "leaf")).toHaveLength(before + 1);
     expect(paneOf(layout, "t-new")).not.toBe(paneOf(layout, a.id));
     expect(live.tab("t-new")!.dir).toBe("src");
+  });
+
+  it("split starts where the source's shell is now, not where it started", async () => {
+    const { api, live, host } = setup();
+    const shell = (await defaultShell(api))!;
+    const a = live.open(WT, shell);
+    live.noteCwd(a.id, `${WT}/crates/cli`);
+    await runCliTerminal(api, host, ev({ op: "split", source: a.id, dir: "right", cwd: "src" }));
+    expect(live.tab("t-new")!.dir).toBe("crates/cli");
+    // A shell that went outside the worktree splits at its root.
+    live.noteCwd(a.id, "/elsewhere");
+    await runCliTerminal(api, host, ev({ op: "split", id: "t-two", source: a.id, dir: "right", cwd: "src" }));
+    expect(live.tab("t-two")!.dir).toBeUndefined();
   });
 
   it("close closes the tab, and a gone one is nothing", async () => {

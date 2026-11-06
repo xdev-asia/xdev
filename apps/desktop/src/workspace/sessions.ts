@@ -4,6 +4,7 @@ import { setPrime, takePrime } from "@/terminal/restorePrime";
 import { translate } from "@/i18n";
 import { browserTab, closeBrowserTabsOf, isBrowserTab, restoreBrowserTab } from "@/browser/browserTabs";
 import { ownAccount, runAccount } from "./ownAccount";
+import { dirInside } from "./shellDir";
 
 // Where `ownAccount` lives to keep it free of the api import; callers may still take it from here.
 export { ownAccount, runAccount };
@@ -103,6 +104,11 @@ interface Entry {
   programTitle: string | null;
   /** A title made from the first prompt; shown unless the tab was named by hand. */
   autoTitle: string | null;
+  /**
+   * The shell's folder as its last OSC 7 told it, relative to the worktree ("" for the root); null
+   * when it left the worktree, absent while it has not said.
+   */
+  cwd?: string | null;
 }
 
 // Only an exit ends a tab: `failed` can also be a turn that failed, with the pty still alive.
@@ -572,6 +578,9 @@ export class Sessions {
     // The pin and colour belong to the slot, not to the pty; so does the agent's session id, which a restart must not lose.
     // A named account starts pinned, so the new pty reports it as the tab's own.
     next.tab = { ...next.tab, accountSource: account !== null ? null : old.tab.accountSource, pinned: old.tab.pinned, color: old.tab.color, agentSession, renamed: old.tab.renamed, autoTitled: old.tab.autoTitled && !old.tab.renamed };
+    // A restart or a wake starts where the shell last was, inside the worktree.
+    const dir = this.dirOf(id);
+    if (dir) next.tab = { ...next.tab, dir };
     // The auto title is the slot's too: the new pty keeps it, and the title the user clears to returns to it.
     next.autoTitle = old.autoTitle;
     const kept = [...this.entries].map(([key, e]): [string, Entry] => (key === id ? [next.tab.id, next] : [key, e]));
@@ -793,6 +802,24 @@ export class Sessions {
     const entry = this.entries.get(id);
     if (!entry || p === "keep" || (entry.tab.progress ?? null) === p) return;
     this.update(entry, { progress: p });
+  }
+
+  /** The shell reported its folder (OSC 7, an absolute path). Kept quietly: nothing redraws for it. */
+  noteCwd(id: string, path: string): void {
+    const entry = this.entries.get(id);
+    if (entry) entry.cwd = dirInside(entry.tab.worktree, path);
+  }
+
+  /**
+   * The folder, relative to the worktree, a terminal opened from tab `id` starts in: the shell's
+   * current one when it is inside the worktree, else the root (undefined). A shell that has not
+   * reported a folder is taken to be where it started.
+   */
+  dirOf(id: string): string | undefined {
+    const entry = this.entries.get(id);
+    if (!entry) return undefined;
+    const dir = entry.cwd === undefined ? entry.tab.dir : entry.cwd;
+    return dir || undefined;
   }
 
   /** The terminal's title (OSC 0/2) names the tab, unless it was named by hand. */

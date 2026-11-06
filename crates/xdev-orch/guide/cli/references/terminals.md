@@ -39,7 +39,7 @@ xdev terminal close --terminal <id>
 ```
 
 - `create` opens a shell tab in a worktree (default: yours) and prints its id. `--cmd` is one line, typed and run once the shell starts. `--cwd` is a folder inside the worktree, relative to the current folder; a folder outside is refused.
-- `split` opens a shell in a new pane beside a tab's pane (default: this terminal's), in that tab's folder, and prints the new id. Give `--right` or `--down`.
+- `split` opens a shell in a new pane beside a tab's pane (default: this terminal's), in the folder that tab's shell is in now (where it started, if the shell does not report it; the root if it left the worktree), and prints the new id. Give `--right` or `--down`.
 - `stop` ends the tab's process; the tab stays. Exit 5 means it had already ended.
 - `close` closes the tab and prints its id. A tab id may be a unique prefix.
 - Your own worktree passes. Opening in a child worktree passes. Anything else asks the person first; exit 7 means they said no.

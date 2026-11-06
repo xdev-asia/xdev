@@ -11,7 +11,7 @@ import { resetCustomSchemesForTests, setCustomSchemes } from "./customSchemes";
 import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 
 // The first ref is the xterm host; the rest keep their initial value.
-const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown, platform: "win" as string, csi: {} as Record<string, (p: unknown[]) => boolean>, bufType: "normal", bracketedMode: true, providers: [] as unknown[], linkHandler: null as null | { activate(e: unknown, text: string, range: unknown): void; allowNonHttpProtocols?: boolean }, webLinks: null as null | { handler: (e: unknown, uri: string) => void; options: { hover?: unknown; leave?: unknown } | undefined } }));
+const hooks = vi.hoisted(() => ({ refs: 0, focused: 0, store: [] as { current: unknown }[], effects: [] as (() => void | (() => void))[], bell: null as (() => void) | null, fits: 0, select: null as (() => void) | null, selection: "", osc: null as ((d: string) => boolean) | null, osc7: null as ((d: string) => boolean) | null, options: {} as Record<string, unknown>, keyHandler: null as null | ((e: KeyboardEvent) => boolean), calls: [] as string[], listeners: {} as Record<string, (e: unknown) => void>, pasted: [] as string[], renderer: [] as string[], searchOpts: undefined as unknown, platform: "win" as string, csi: {} as Record<string, (p: unknown[]) => boolean>, bufType: "normal", bracketedMode: true, providers: [] as unknown[], linkHandler: null as null | { activate(e: unknown, text: string, range: unknown): void; allowNonHttpProtocols?: boolean }, webLinks: null as null | { handler: (e: unknown, uri: string) => void; options: { hover?: unknown; leave?: unknown } | undefined } }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => [initial, () => {}],
@@ -84,6 +84,7 @@ vi.mock("@xterm/xterm", () => ({
     parser = {
       registerOscHandler(id: number, cb: (d: string) => boolean) {
         if (id === 52) hooks.osc = cb;
+        if (id === 7) hooks.osc7 = cb;
       },
       registerCsiHandler(id: { prefix?: string; intermediates?: string; final: string }, cb: (p: unknown[]) => boolean) {
         hooks.csi[`${id.prefix ?? ""}${id.intermediates ?? ""}${id.final}`] = cb;
@@ -190,6 +191,7 @@ beforeEach(() => {
   hooks.select = null;
   hooks.selection = "";
   hooks.osc = null;
+  hooks.osc7 = null;
   hooks.options = {};
   hooks.keyHandler = null;
   hooks.platform = "win";
@@ -487,6 +489,17 @@ it("the handle in handleRef copies and pastes through the live xterm", async () 
   expect(writeText).toHaveBeenCalledWith("echo hi");
   await h.paste();
   expect(hooks.pasted).toEqual(["pasted"]);
+});
+
+it("OSC 7 tells the owner the shell's folder when it changes, and nothing for a bad one", () => {
+  const onCwd = vi.fn();
+  const { effect } = mount({ api: createMockApi({}), id: "c-7", onCwd });
+  effect();
+  expect(hooks.osc7?.("file://host/C:/w/one/src")).toBe(true);
+  expect(hooks.osc7?.("file://host/C:/w/one/src")).toBe(true);
+  expect(hooks.osc7?.("not a url")).toBe(true);
+  expect(hooks.osc7?.("file:///w/one/docs%20x")).toBe(true);
+  expect(onCwd.mock.calls).toEqual([["C:/w/one/src"], ["/w/one/docs x"]]);
 });
 
 it("OSC 52 writes the clipboard when on, nothing when off, and never reads", () => {

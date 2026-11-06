@@ -4,7 +4,7 @@ import { paneOf, removeTab, selectTab, splitPane } from "./paneTree";
 import type { Sessions } from "./sessions";
 
 export interface CliTerminalHost {
-  sessions: Pick<Sessions, "open" | "close" | "tab" | "layout" | "setLayout" | "setTitle" | "noteTitle">;
+  sessions: Pick<Sessions, "open" | "close" | "tab" | "layout" | "setLayout" | "setTitle" | "noteTitle" | "dirOf">;
   /** Makes sure the worktree's tabs are mounted, so a tab opened there gets its pty. */
   ensureMounted?(worktree: string): void;
   /** Brings an open tab and its worktree to the front. */
@@ -44,10 +44,12 @@ export async function runCliTerminal(api: Pick<Api, "profiles">, host: CliTermin
   const shell = await defaultShell(api);
   if (!shell) return;
   host.ensureMounted?.(e.worktree);
+  // A split starts where the source's shell is now, as the window knows it; the backend's folder is where it started.
+  const dir = e.op === "split" && e.source && sessions.tab(e.source) ? sessions.dirOf(e.source) : e.cwd;
   const tab = sessions.open(e.worktree, shell, null, undefined, {
     id: e.id,
     ...(e.title ? { title: e.title } : {}),
-    ...(e.cwd ? { dir: e.cwd } : {}),
+    ...(dir ? { dir } : {}),
   });
   if (e.op === "split" && e.source && e.dir) {
     const layout = sessions.layout(e.worktree);

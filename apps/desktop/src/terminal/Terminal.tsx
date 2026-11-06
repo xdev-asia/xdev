@@ -75,6 +75,8 @@ export function Terminal(props: {
   onInput?(text: string): void;
   /** The program set the terminal title (OSC 0 or 2). */
   onTitle?(title: string): void;
+  /** The shell reported its folder (OSC 7), as an absolute path. */
+  onCwd?(cwd: string): void;
   /** The program rang the terminal bell (BEL outside an OSC string; xterm tells the two apart). */
   onBell?(): void;
   /** The program reported its own status (OSC 7501). */
@@ -317,7 +319,9 @@ export function Terminal(props: {
       if (text && getTerminalSettings().copyOnSelect) void navigator.clipboard?.writeText(text).catch(() => {});
     });
     term.parser.registerOscHandler(7, (data) => {
-      shellCwd = cwdFromOsc7(data) ?? shellCwd;
+      const cwd = cwdFromOsc7(data);
+      if (cwd !== undefined && cwd !== shellCwd) handlers.current.onCwd?.(cwd);
+      shellCwd = cwd ?? shellCwd;
       return true;
     });
     // Restored output is replayed through the parser: its probes were answered the first time.
