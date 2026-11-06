@@ -78,6 +78,7 @@ export class PdfSession {
 
   async load(): Promise<void> {
     const gen = ++this.gen;
+    this.disposed = false;
     this.searchGen++;
     this.release();
     this.texts = new Map();
