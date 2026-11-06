@@ -14,6 +14,8 @@ use crate::pkce::Secret;
 pub enum Method {
     Get,
     Post,
+    /// Added for the license device and activation calls.
+    Delete,
 }
 
 #[derive(Clone)]

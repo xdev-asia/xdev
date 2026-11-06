@@ -75,6 +75,13 @@ impl Transport for UreqTransport {
                     None => call.send_empty(),
                 }
             }
+            Method::Delete => {
+                let mut call = agent.delete(&req.url);
+                if let Some(token) = &req.bearer {
+                    call = call.header("Authorization", format!("Bearer {}", token.expose()));
+                }
+                call.call()
+            }
         };
         let mut response = result.map_err(|_| Offline)?;
         let status = response.status().as_u16();
