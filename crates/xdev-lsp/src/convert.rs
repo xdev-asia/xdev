@@ -462,7 +462,10 @@ mod tests {
         let one = locations(json!({"uri": uri("src/a.rs"), "range": r(1, 0, 1, 4)}), &w);
         assert_eq!(one.len(), 1);
         assert_eq!(one[0].rel.as_deref(), Some("src/a.rs"));
-        assert_eq!(one[0].path, root().join("src/a.rs").display().to_string());
+        assert_eq!(
+            one[0].path,
+            root().join("src").join("a.rs").display().to_string()
+        );
         let links = locations(
             json!([
                 {"targetUri": uri("b.ts"), "targetRange": r(0, 0, 9, 0), "targetSelectionRange": r(2, 4, 2, 8)},
