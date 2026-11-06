@@ -72,6 +72,7 @@ mod reveal;
 mod review;
 mod review_ai;
 mod review_notes;
+mod run_targets;
 mod scheme_formats;
 mod session;
 mod settings;
@@ -843,6 +844,9 @@ pub fn run() {
             peers::cmd::peer_term_write,
             peers::cmd::peer_agent_start,
             peers::cmd::peer_confirm_reply,
+            run_targets::targets_list,
+            run_targets::targets_trust,
+            run_targets::targets_vps_notes,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")

@@ -414,6 +414,9 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_lsp::State::export_all(cfg)?;
     xdev_license::LicenseState::export_all(cfg)?;
     xdev_license::DeviceRow::export_all(cfg)?;
+    crate::run_targets::TargetsView::export_all(cfg)?;
+    xdev_workspace::deploy::DeployPreset::export_all(cfg)?;
+    xdev_workspace::deploy::VpsTarget::export_all(cfg)?;
     Ok(())
 }
 

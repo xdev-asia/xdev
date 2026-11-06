@@ -1,6 +1,7 @@
 //! The desktop app's list of repos and the worktrees made from them.
 
 mod create;
+pub mod deploy;
 mod env;
 mod files;
 mod groups;
