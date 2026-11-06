@@ -30,6 +30,7 @@ default-members = [
     "crates/xdev-link",
     "crates/xdev-lsp",
     "crates/xdev-license",
+    "crates/xdev-tracker",
 ]
 
 [workspace.package]
@@ -64,6 +65,7 @@ xdev-store = { path = "crates/xdev-store" }
 xdev-vault = { path = "crates/xdev-vault" }
 xdev-workspace = { path = "crates/xdev-workspace" }
 xdev-license = { path = "crates/xdev-license" }
+xdev-tracker = { path = "crates/xdev-tracker" }
 
 # base64url for PKCE; already in the build.
 base64 = "0.23.1"

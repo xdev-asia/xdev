@@ -7473,6 +7473,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "xdev-tracker"
+version = "0.8.0"
+dependencies = [
+ "base64 0.23.1",
+ "keyring",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "ureq",
+ "url",
+]
+
+[[package]]
 name = "xdev-vault"
 version = "0.8.0"
 dependencies = [
