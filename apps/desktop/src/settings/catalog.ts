@@ -236,6 +236,10 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("voice.model", "settings.voice.model", ["voice", "dictation", "model", "transcribe", "whisper", "openai", "mô hình", "mo hinh"]),
   e("voice.permission", "settings.voice.permission", ["voice", "microphone", "mic", "permission", "privacy", "micro", "quyền", "quyen"]),
   e("voice.key", "settings.voice.key", ["voice", "dictation", "openai", "api key", "key", "khóa", "khoa", "giọng nói", "giong noi"], "settings.voice.keyHint"),
+  // Task sources
+  e("trackers.page", "settings.trackers.title", ["tracker", "task", "issues", "github", "linear", "jira", "token", "nguồn công việc", "nguon cong viec", "công việc", "cong viec"], "settings.trackers.readOnly"),
+  e("trackers.linear", "settings.trackers.linear.key", ["linear", "api key", "key", "tracker", "issues", "khóa", "khoa"], "settings.trackers.linear.hint"),
+  e("trackers.jira", "settings.trackers.jira.cloud", ["jira", "atlassian", "cloud", "server", "token", "tracker", "issues"]),
   // Command line
   e("cli.status", "settings.cli.command", ["cli", "xdev", "command", "path", "terminal", "install", "dòng lệnh", "dong lenh", "lệnh", "lenh"], "settings.cli.lead"),
   e("cli.skill", "settings.orchestration.skill.title", ["cli", "skill", "agent", "xdev", "kỹ năng", "ky nang"]),

@@ -83,7 +83,7 @@ it("opens General first and switches to Vaults", () => {
     en("settings.diagnostics.title"),
     en("settings.experimental.title"),
   ]);
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(27).fill(undefined)]);
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(28).fill(undefined)]);
   expect(v.shown().type).toBe(GeneralPage);
   expect(v.shown().props.api).toBe(v.api);
   expect(v.shown().props.onChanged).toBe(v.onChanged);

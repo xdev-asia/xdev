@@ -91,7 +91,7 @@ export function DictationHost(props: {
       toast: (toast: DictationToast) => showToast(api, tRef.current, toast, (s) => openRef.current(s)),
     }),
   ).current;
-  const state = useSyncExternalStore(ctl.subscribe, ctl.state);
+  const state = useSyncExternalStore(ctl.subscribe, ctl.state, ctl.state);
 
   // The mode as stored; read again when Settings → Voice changes it.
   useEffect(() => {

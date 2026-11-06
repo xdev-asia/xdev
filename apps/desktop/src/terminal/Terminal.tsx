@@ -156,6 +156,13 @@ export function Terminal(props: {
   );
   useImperativeHandle(props.handleRef, () => handle.current, []);
 
+  // Declared before the pty effect, which owns the xterm this one focuses.
+  useEffect(() => {
+    if (props.focusSeq === seen.current) return;
+    seen.current = props.focusSeq;
+    if (props.focusSeq) xterm.current?.focus();
+  }, [props.focusSeq]);
+
   // Dictation finds the terminal the focus sits in through its host element.
   useEffect(() => {
     const el = host.current;
@@ -164,13 +171,6 @@ export function Terminal(props: {
     registerTerminalHandle(el, own);
     return () => unregisterTerminalHandle(el, own);
   }, []);
-
-  // Declared before the pty effect, which owns the xterm this one focuses.
-  useEffect(() => {
-    if (props.focusSeq === seen.current) return;
-    seen.current = props.focusSeq;
-    if (props.focusSeq) xterm.current?.focus();
-  }, [props.focusSeq]);
 
   useEffect(() => {
     const el = host.current;
