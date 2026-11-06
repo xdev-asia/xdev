@@ -82,6 +82,26 @@ pub struct ConversationSubagent {
     pub at: i64,
 }
 
+/// A sub-agent of a live session as a status row: a `ConversationSubagent`
+/// without its prompt, result and steps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSubagent {
+    /// The call id of the tool step that started it.
+    pub id: String,
+    pub description: String,
+    /// The kind of sub-agent the call asked for, when it names one.
+    pub agent_type: Option<String>,
+    /// `ok`, `error` or `pending` (no result logged yet: it runs, or the
+    /// session stopped in it).
+    pub status: String,
+    /// Steps it took in all.
+    pub steps_total: u32,
+    /// Unix ms of the call; 0 when it has no time.
+    pub at: i64,
+}
+
 /// One page of a conversation and what holds for the whole session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -197,6 +217,37 @@ pub(crate) fn read_conversation(
     Ok(view(key, &home, page))
 }
 
+/// The sub-agent runs of `session` (a key or a CLI session id), oldest first.
+pub(crate) fn read_subagents(
+    index: &SessionIndex,
+    homes: &[Home],
+    session: &str,
+) -> Result<Vec<AgentSubagent>, CmdError> {
+    let c = read_conversation(index, homes, session, None, Some(1))?;
+    Ok(c.subagents
+        .into_iter()
+        .map(|s| AgentSubagent {
+            id: s.id,
+            description: s.description,
+            agent_type: s.agent_type,
+            status: s.status,
+            steps_total: s.steps_total,
+            at: s.at,
+        })
+        .collect())
+}
+
+/// The sub-agents of an agent session, read again on each call: the status
+/// store asks after the pane's hooks fire.
+#[tauri::command(async)]
+pub fn agent_subagents(
+    state: State<'_, AppState>,
+    session: String,
+) -> Result<Vec<AgentSubagent>, CmdError> {
+    let ctx = Ctx::of(&state)?;
+    read_subagents(&index_copy(&ctx.data), &ctx.homes(), &session)
+}
+
 /// The conversation of an agent session, a page at a time. `from` absent gives
 /// the last page; `limit` is 200 when absent and at most 1000.
 #[tauri::command(async)]
@@ -305,6 +356,37 @@ mod tests {
         assert_eq!(json["status"], "error");
         assert_eq!(json["agentType"], serde_json::Value::Null);
         assert!(json["steps"][0].get("subagent").is_none());
+    }
+
+    #[test]
+    fn the_roster_keeps_each_run_without_its_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        let proj = dir.path().join("projects").join("-work-demo");
+        fs::create_dir_all(&proj).unwrap();
+        let log =
+            include_str!("../../../../crates/xdev-kit/tests/fixtures/subagents/claude-task.jsonl");
+        fs::write(proj.join("s9.jsonl"), log).unwrap();
+        let home = Home {
+            id: "own-claude".into(),
+            agent: Agent::Claude,
+            path: fs::canonicalize(dir.path()).unwrap(),
+            source: HomeSource::Own,
+        };
+        let mut index = SessionIndex::default();
+        index.refresh(std::slice::from_ref(&home));
+        let homes = std::slice::from_ref(&home);
+        let roster = read_subagents(&index, homes, "s9").unwrap();
+        let rows: Vec<(&str, &str, u32)> = roster
+            .iter()
+            .map(|r| (r.id.as_str(), r.status.as_str(), r.steps_total))
+            .collect();
+        assert_eq!(rows[0], ("task-a", "ok", 3));
+        assert_eq!(roster.len(), 2);
+        assert_eq!(roster[1].status, "error");
+        let json = serde_json::to_value(&roster[0]).unwrap();
+        assert!(json.get("steps").is_none() && json.get("prompt").is_none());
+        let e = read_subagents(&index, homes, "nope").unwrap_err();
+        assert_eq!(e.code, "not_found");
     }
 
     #[test]

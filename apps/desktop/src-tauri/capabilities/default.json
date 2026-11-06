@@ -493,6 +493,7 @@
     "allow-orchestration-worker-failover",
     "allow-path-effective",
     "allow-agent-conversation",
+    "allow-agent-subagents",
     "allow-foreign-terms-scan",
     "allow-notch-report",
     "allow-notch-state",

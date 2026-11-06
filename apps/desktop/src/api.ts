@@ -395,8 +395,8 @@ export type { CliStatus } from "@xdev/bindings";
 export type { McpActivityView, McpHealth, McpToolView };
 import type { Grant as LinkGrant, Message as OrchMessage, MissionSettings, MissionTab, MissionView, TabLink, TabWorker, Worker as OrchWorker } from "@xdev/bindings";
 export type { LinkGrant, MissionSettings, MissionTab, MissionView, OrchMessage, OrchWorker, TabLink, TabWorker };
-import type { Conversation, ConversationEntry, ConversationTool } from "@xdev/bindings";
-export type { Conversation, ConversationEntry, ConversationTool };
+import type { AgentSubagent, Conversation, ConversationEntry, ConversationTool } from "@xdev/bindings";
+export type { AgentSubagent, Conversation, ConversationEntry, ConversationTool };
 import type { Cli, CliHooks, HookInstall, HookSupport } from "@xdev/bindings";
 export type { CliHooks, HookInstall, HookSupport };
 import type { ConversationSubagent, HookQuestion, QuestionKind as HookQuestionKind, QuestionOption } from "@xdev/bindings";
@@ -1956,6 +1956,8 @@ export interface Api {
   onOrchestrationFailover(cb: (e: WorkerFailover) => void): Promise<() => void>;
   /** One page of an agent session's conversation (its CLI session id or `<home id>:<id>` key): messages, tool steps and markers. `from` absent gives the last page; `limit` is 200 when absent, at most 1000. Rejects `not_found`, `bad_path`, `io`. */
   agentConversation(key: string, from?: number, limit?: number): Promise<Conversation>;
+  /** The sub-agent runs of an agent session (its CLI session id or key), oldest first, read again on each call; `pending` ones run (or the session stopped in them). Rejects `not_found`, `bad_path`, `io`. */
+  agentSubagents(session: string): Promise<AgentSubagent[]>;
   // Terminals and agent CLIs this app did not start; at most 500 rows, within 2 s. Rejects with `timeout`.
   foreignTermsScan(): Promise<ForeignScan>;
   // The main window's agent tabs, for the status strip at the notch.
@@ -3006,6 +3008,7 @@ const tauriApi: Api = {
   orchestrationWorkerFailover: (tab) => call("orchestration_worker_failover", { tab }),
   onOrchestrationFailover: (cb) => listen<WorkerFailover>("orchestration://failover", (e) => cb(e.payload)),
   agentConversation: (key, from, limit) => call("agent_conversation", { key, from: from ?? null, limit: limit ?? null }),
+  agentSubagents: (session) => call("agent_subagents", { session }),
   foreignTermsScan: () => call("foreign_terms_scan"),
   notchReport: (tabs) => call("notch_report", { tabs }),
   notchState: () => call("notch_state"),

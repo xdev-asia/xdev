@@ -846,6 +846,7 @@ pub fn run() {
             orch_sweep::orchestration_worker_failover,
             commands::path_effective,
             conversation::agent_conversation,
+            conversation::agent_subagents,
             foreign_terms::foreign_terms_scan,
             notch::notch_report,
             notch::notch_state,

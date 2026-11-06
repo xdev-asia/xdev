@@ -7,6 +7,7 @@ export type { Accounts } from "./Accounts";
 export type { ActiveAccount } from "./ActiveAccount";
 export type { Agent } from "./Agent";
 export type { AgentSession } from "./AgentSession";
+export type { AgentSubagent } from "./AgentSubagent";
 export type { AgentsSettings } from "./AgentsSettings";
 export type { AiKeyStatus } from "./AiKeyStatus";
 export type { AppStatsView } from "./AppStatsView";
