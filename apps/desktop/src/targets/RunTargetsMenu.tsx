@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { JSX, ReactNode } from "react";
 import type { Api, DeployPreset, TargetsView } from "@/api";
 import { useI18n } from "@/i18n";
+import { SimsGroup } from "./SimsGroup";
+import { requestTargets } from "./targetsEvents";
 import { deployEntries, isEmpty, needsTrust, serverEntry } from "./targetsModel";
 
 /**
@@ -9,7 +11,7 @@ import { deployEntries, isEmpty, needsTrust, serverEntry } from "./targetsModel"
  * `xdev.toml` first. `simulators` and `devices` are slots for the mobile lane; empty for now.
  */
 export function RunTargetsMenu(props: {
-  api: Pick<Api, "targetsList">;
+  api: Pick<Api, "targetsList" | "simsList">;
   worktree: string;
   onDeploy(preset: DeployPreset): void;
   onServer(view: TargetsView): void;
@@ -31,7 +33,9 @@ export function RunTargetsMenu(props: {
     };
   }, [api, worktree]);
 
-  return <RunTargetsItems view={view} {...props} />;
+  // The simulators block starts a device through the tab strip's owner (`useRunTargets`).
+  const simulators = props.simulators ?? <SimsGroup api={api} onPick={(device) => requestTargets({ kind: "sim", device })} />;
+  return <RunTargetsItems view={view} {...props} simulators={simulators} />;
 }
 
 /** The menu block for a loaded `view` (null while loading). */

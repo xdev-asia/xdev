@@ -5565,5 +5565,22 @@
   "palette.action.openTaskBoard": "Mở bảng tác vụ",
   "palette.action.openTaskBoard.keywords": "tác vụ bảng kanban danh sách tasks",
   "kanban.taskTag": "Tác vụ",
-  "kanban.taskSyncError": "Worktree đã được chuyển, nhưng không cập nhật được tác vụ của nó."
+  "kanban.taskSyncError": "Worktree đã được chuyển, nhưng không cập nhật được tác vụ của nó.",
+  "targets.sim": "Trình giả lập",
+  "targets.sim.ios": "Trình giả lập iOS",
+  "targets.sim.android": "Trình giả lập Android",
+  "targets.sim.booted": "Đang chạy",
+  "targets.sim.shutdown": "Không chạy",
+  "targets.sim.unknown": "Không rõ trạng thái",
+  "targets.sim.boot": "Khởi động và xem log",
+  "targets.sim.logs": "Xem log",
+  "targets.sim.none": "Không tìm thấy trình giả lập. Hãy cài Xcode hoặc Android SDK, rồi tạo trình giả lập ở đó.",
+  "targets.sim.noXcode": "Không tìm thấy công cụ dòng lệnh của Xcode.",
+  "targets.sim.noAndroid": "Không tìm thấy trình giả lập Android. Hãy đặt ANDROID_HOME hoặc thêm thư mục emulator của SDK vào PATH.",
+  "targets.sim.logTab": "Log: {name}",
+  "targets.sim.loading": "Đang tìm trình giả lập",
+  "targets.refresh": "Làm mới",
+  "error.sim_unsupported": "Trình giả lập iOS cần máy Mac.",
+  "error.sim_not_found": "Trình giả lập này không còn nữa. Hãy làm mới danh sách.",
+  "error.sim_tool_missing": "Không tìm thấy công cụ trình giả lập. Hãy cài rồi làm mới."
 }

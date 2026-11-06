@@ -27,3 +27,8 @@
   color: var(--text-2);
   font-size: 11px;
 }
+
+.targets-item .ws-dot {
+  margin-right: 6px;
+  flex: none;
+}

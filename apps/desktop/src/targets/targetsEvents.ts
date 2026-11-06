@@ -1,5 +1,7 @@
-/** What the palette asks of the tab strip: open the Run targets menu, or open the server shell. */
-export type TargetsRequest = { kind: "menu" } | { kind: "serverShell" };
+import type { SimDevice } from "@/api";
+
+/** What the palette and the menu ask of the tab strip: open the Run targets menu, open the server shell, or start a simulator. */
+export type TargetsRequest = { kind: "menu" } | { kind: "serverShell" } | { kind: "sim"; device: SimDevice };
 
 const listeners = new Set<(req: TargetsRequest) => void>();
 

@@ -6,6 +6,8 @@ import { TrustDialog } from "@/workspace/TrustDialog";
 import type { Sessions } from "@/workspace/sessions";
 import { DeployConfirm } from "./DeployConfirm";
 import { openServerShell, runDeploy } from "./runTarget";
+import { runSim } from "./runSim";
+import { pushToast } from "@/workspace/toastStore";
 import { onTargetsRequest } from "./targetsEvents";
 import { needsTrust } from "./targetsModel";
 
@@ -61,9 +63,15 @@ export function useRunTargets(props: {
     if (!visible) return;
     return onTargetsRequest((req) => {
       if (req.kind === "menu") return openMenu.current();
+      if (req.kind === "sim") {
+        void runSim(req.device, { api, sessions, worktree, t }).then((res) => {
+          if (!res.ok) pushToast({ text: t(`error.${res.code}`) });
+        });
+        return;
+      }
       void api.targetsList(worktree).then((view) => server(view), () => {});
     });
-  }, [visible, api, worktree, server]);
+  }, [visible, api, sessions, worktree, server, t]);
 
   async function trust(): Promise<void> {
     if (!trusting) return;
