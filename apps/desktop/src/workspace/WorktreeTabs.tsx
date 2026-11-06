@@ -75,7 +75,7 @@ import { bodyStyle, PaneView, paneRects } from "./PaneView";
 import { CanvasView, cardBodyStyle, cardLayers } from "./canvas/CanvasView";
 import { sync as syncCanvas, screenRect, type CanvasState } from "./canvas/canvasModel";
 import { CommitView, type CommitAsk } from "./CommitView";
-import { cliOf, ownAccount, type Sessions, type Tab, type TabCli } from "./sessions";
+import { cliOf, ownAccount, stepBefore, type Sessions, type Tab, type TabCli } from "./sessions";
 import type { SetupGate } from "./setupGate";
 import { TabStrip, type MenuGroup, type StripItem, type TabDrag } from "./TabStrip";
 import { AgentIcon } from "./AgentIcon";
@@ -88,7 +88,7 @@ import { onOpenFile, openFile } from "@/files/openFile";
 import { absolutePath, relativePath } from "@/search/resultCopy";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { toTabStatus } from "@/terminal/programStatus";
-import { titleStatus } from "./titles";
+import { titleCliOf, titleStatus } from "./titles";
 import { PtydBanner } from "@/terminal/PtydBanner";
 import { WorkerStrip } from "./WorkerStrip";
 import { TerminalSetsDialog } from "@/terminalSets/TerminalSetsDialog";
@@ -552,6 +552,14 @@ export function WorktreeTabs(props: {
   }
 
   // The next / previous tab of the front tab's kind: files with files, terminals with terminals.
+  function moveShown(step: -1 | 1): boolean {
+    if (!shown) return false;
+    const before = stepBefore(focusedLeaf?.tabs ?? [], shown, step);
+    if (before === undefined) return false;
+    sessions.reorderTab(shown, before);
+    return true;
+  }
+
   function stepSameKind(step: 1 | -1): boolean {
     const kindOf = (id: string) =>
       isFileTab(id) || isViewTab(id) ? "file" : isPreviewTab(id) ? "preview" : isPeerTab(id) ? "peer" : isBrowserTab(id) ? "browser" : id === REVIEW_TAB || id === COMMIT_TAB ? id : "terminal";
@@ -796,6 +804,8 @@ export function WorktreeTabs(props: {
         return true;
       },
       "tab.reopenClosed": () => reopenClosed(),
+      "tab.moveLeft": () => moveShown(-1),
+      "tab.moveRight": () => moveShown(1),
       "tab.nextSameKind": () => stepSameKind(1),
       "tab.prevSameKind": () => stepSameKind(-1),
       "tab.closeAll": () => closeAllTabs(),
@@ -1232,7 +1242,7 @@ export function WorktreeTabs(props: {
                 api={api}
                 client={tab.client}
                 id={tab.id}
-                cwd={worktree}
+                cwd={tab.dir ? absolutePath(worktree, tab.dir) : worktree}
                 worktree={worktree}
                 onLinkMenu={(at, items, title) => setLinkMenu({ at, items, title })}
                 onLinkSettings={props.onLinkSettings}
@@ -1251,7 +1261,7 @@ export function WorktreeTabs(props: {
                 onProgress={(p) => sessions.noteProgress(tab.id, p)}
                 onTitle={(title) => {
                   sessions.noteTitle(tab.id, title);
-                  const status = titleStatus(tab.cli, title);
+                  const status = titleStatus(titleCliOf(tab.cli, tab.profileId), title);
                   if (status) sessions.noteTitleStatus(tab.id, status);
                 }}
                 focusSeq={tab.id === shown ? (props.focusSeq ?? 0) + kick : undefined}

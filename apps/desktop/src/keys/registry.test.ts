@@ -24,7 +24,7 @@ const ALL: Record<ActionId, true> = {
   "panel.explorer": true, "panel.search": true, "panel.sourceControl": true, "panel.issues": true, "panel.ports": true,
   "terminal.clear": true, "terminal.copy": true, "terminal.paste": true, "terminal.selectAll": true, "terminal.find": true,
   "zoom.in": true, "zoom.out": true, "zoom.reset": true,
-  "tab.reopenClosed": true, "tab.nextSameKind": true, "tab.prevSameKind": true, "file.closeAll": true, "tab.closeAll": true,
+  "tab.reopenClosed": true, "tab.nextSameKind": true, "tab.prevSameKind": true, "tab.moveLeft": true, "tab.moveRight": true, "file.closeAll": true, "tab.closeAll": true,
   "browser.new": true,
   "settings.open": true, "settings.shortcuts": true,
   "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true, "file.splitRight": true, "file.splitDown": true,
@@ -120,6 +120,8 @@ it("tab keys: close all, cycle by kind, next and previous across every tab", () 
   expect(on("tab.closeAll", "mac")).toEqual(["Alt+Cmd+W"]);
   expect(on("tab.nextSameKind", "linux")).toEqual(["Ctrl+Alt+]"]);
   expect(on("tab.prevSameKind", "mac")).toEqual(["Alt+Cmd+["]);
+  expect(on("tab.moveLeft", "linux")).toEqual(["Ctrl+Shift+PageUp"]);
+  expect(on("tab.moveRight", "mac")).toEqual(["Shift+Cmd+PageDown"]);
   expect(on("tab.next", "win")).toEqual(["Ctrl+Tab", "Ctrl+Shift+]", "Ctrl+PageDown"]);
   expect(on("tab.prev", "mac")).toEqual(["Ctrl+Shift+Tab", "Shift+Cmd+[", "Ctrl+PageUp"]);
   // Ctrl stays Ctrl on every platform for the page keys.

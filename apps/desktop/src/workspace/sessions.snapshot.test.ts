@@ -38,6 +38,16 @@ describe("Sessions.snapshot", () => {
     expect(s.tab(next.id)?.asleep).toBe(true);
   });
 
+  it("keeps the folder a shell was opened in, and none for a shell at the root", () => {
+    const s = make();
+    const sub = s.open(A, "shell", null, undefined, { dir: "src/a" });
+    s.open(A, "shell");
+    expect(sub.dir).toBe("src/a");
+    const tabs = s.snapshot().worktrees[A].tabs;
+    expect(tabs.t1).toMatchObject({ kind: "terminal", dir: "src/a" });
+    expect(tabs.t2).not.toHaveProperty("dir");
+  });
+
   it("is empty without tabs", () => {
     expect(make().snapshot()).toEqual({ version: 1, savedAt: 1000, worktrees: {} });
   });

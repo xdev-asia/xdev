@@ -84,6 +84,7 @@ export interface TreeMenuHandlers {
   copyPath(rel: string): void;
   copyRel(rel: string): void;
   findIn(dir: string): void;
+  openTerminal(dir: string): void;
   ask(a: { kind: "newFile" | "newFolder" | "rename"; dir: string; rel?: string } | { kind: "delete"; rel: string }): void;
   reveal(rel: string): void;
   openOnHost(rel: string): void;
@@ -103,6 +104,7 @@ export function treeMenuItems(target: { rel: string; dir: boolean } | null, h: T
   }
   items.push(
     { id: "findInFolder", labelKey: "files.menu.findInFolder", run: () => h.findIn(dirOf) },
+    { id: "openInTerminal", labelKey: "files.menu.openInTerminal", run: () => h.openTerminal(dirOf) },
     { id: "newFile", labelKey: "files.menu.newFile", run: () => h.ask({ kind: "newFile", dir: dirOf }) },
     { id: "newFolder", labelKey: "files.menu.newFolder", run: () => h.ask({ kind: "newFolder", dir: dirOf }) },
   );

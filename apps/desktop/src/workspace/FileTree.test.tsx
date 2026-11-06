@@ -293,7 +293,7 @@ it("the file menu lists the actions, the folder menu has no Open", async () => {
   const view = tree(createMockApi({}));
   await tick();
   rightClick(view, "README.md");
-  expect(menuOf(view)!.items.map((i: { id: string }) => i.id)).toEqual(["open", "copyPath", "copyRel", "sep1", "findInFolder", "newFile", "newFolder", "rename", "delete", "sep2", "reveal", "openOnHost"]);
+  expect(menuOf(view)!.items.map((i: { id: string }) => i.id)).toEqual(["open", "copyPath", "copyRel", "sep1", "findInFolder", "openInTerminal", "newFile", "newFolder", "rename", "delete", "sep2", "reveal", "openOnHost"]);
   menuOf(view)!.onClose();
   expect(menuOf(view)).toBeUndefined();
   rightClick(view, "docs");

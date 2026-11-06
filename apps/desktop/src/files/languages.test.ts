@@ -65,6 +65,15 @@ it("matches file names before extensions", () => {
   for (const f of [".bashrc", ".zshrc", ".profile", ".bash_profile", ".envrc"]) expect(languageOf(f), f).toBe("shell");
 });
 
+it("maps more extensions and names", () => {
+  const want: Record<string, Language> = {
+    "a.pl": "perl", "a.r": "r", "a.R": "r", "a.ps1": "powershell", "a.proto": "protobuf",
+    "a.scala": "scala", "a.dart": "dart", "App.vue": "html", "App.svelte": "html",
+    "Dockerfile.dev": "dockerfile", "x/Dockerfile.prod": "dockerfile", ".dockerignore": "ini", "Cargo.lock": "toml",
+  };
+  for (const [file, lang] of Object.entries(want)) expect(languageOf(file), file).toBe(lang);
+});
+
 it("matches file names case-insensitively", () => {
   expect(languageOf("MAKEFILE")).toBe("shell");
   expect(languageOf("dockerfile")).toBe("dockerfile");
@@ -89,7 +98,7 @@ it("loads every language it names", async () => {
   const all: Language[] = [
     "js", "ts", "rust", "json", "css", "html", "python", "yaml", "markdown",
     "go", "java", "cpp", "csharp", "php", "sql", "xml", "shell", "toml", "ini", "dockerfile",
-    "lua", "ruby", "swift", "kotlin", "diff", "properties", "groovy", "cmake",
+    "lua", "ruby", "swift", "kotlin", "diff", "properties", "groovy", "cmake", "perl", "r", "powershell", "protobuf", "scala", "dart",
   ];
   for (const lang of all) expect(await loadLanguage(lang), lang).toBeTruthy();
 });

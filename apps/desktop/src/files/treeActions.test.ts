@@ -111,10 +111,19 @@ it("find in folder posts the include glob to the search", () => {
 
 const ids = (target: { rel: string; dir: boolean } | null) => treeMenuItems(target, {} as TreeMenuHandlers).map((i) => i.id);
 
-it("the menu has the items each row kind needs, and no terminal item", () => {
-  expect(ids({ rel: "src/a.ts", dir: false })).toEqual(["open", "copyPath", "copyRel", "sep1", "findInFolder", "newFile", "newFolder", "rename", "delete", "sep2", "reveal", "openOnHost"]);
-  expect(ids({ rel: "src", dir: true })).toEqual(["copyPath", "copyRel", "sep1", "findInFolder", "newFile", "newFolder", "rename", "delete", "sep2", "reveal"]);
-  expect(ids(null)).toEqual(["findInFolder", "newFile", "newFolder"]);
+it("the menu has the items each row kind needs, including open in terminal", () => {
+  expect(ids({ rel: "src/a.ts", dir: false })).toEqual(["open", "copyPath", "copyRel", "sep1", "findInFolder", "openInTerminal", "newFile", "newFolder", "rename", "delete", "sep2", "reveal", "openOnHost"]);
+  expect(ids({ rel: "src", dir: true })).toEqual(["copyPath", "copyRel", "sep1", "findInFolder", "openInTerminal", "newFile", "newFolder", "rename", "delete", "sep2", "reveal"]);
+  expect(ids(null)).toEqual(["findInFolder", "openInTerminal", "newFile", "newFolder"]);
+});
+
+it("open in terminal uses the folder of the row: its parent for a file", () => {
+  const opened: string[] = [];
+  const h = { openTerminal: (dir: string) => opened.push(dir) } as unknown as TreeMenuHandlers;
+  for (const target of [{ rel: "src/a/b.ts", dir: false }, { rel: "src/a", dir: true }, { rel: "top.ts", dir: false }, null]) {
+    treeMenuItems(target, h).find((i) => i.id === "openInTerminal")!.run!();
+  }
+  expect(opened).toEqual(["src/a", "src/a", "", ""]);
 });
 
 it("find in folder on a file uses its parent folder; on a folder, itself; on the root, all", () => {

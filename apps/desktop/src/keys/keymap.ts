@@ -45,6 +45,8 @@ export type ActionId =
   | "tab.reopenClosed"
   // The next / previous tab of the same kind (file or terminal) as the front one.
   | "tab.nextSameKind" | "tab.prevSameKind"
+  // Moves the front tab one place left or right inside its pane.
+  | "tab.moveLeft" | "tab.moveRight"
   // Closes every terminal, agent and file tab of the worktree but the pinned ones; unsaved files ask first.
   | "tab.closeAll"
   // Opens a browser tab in the worktree.
