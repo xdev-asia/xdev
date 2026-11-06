@@ -871,16 +871,22 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          {t("workspace.addRepo")}
+          <span className="ws-add-label">{t("workspace.addRepo")}</span>
         </button>
         {props.onAddFolder && (
-          <button type="button" className="ws-add-repo" onClick={() => props.onAddFolder?.()}>
-            {t("folder.add")}
+          <button type="button" className="ws-add-repo ws-add-secondary" title={t("folder.add")} aria-label={t("folder.add")} onClick={() => props.onAddFolder?.()}>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 7h6l2 2h10v10H3z" />
+            </svg>
+            <span className="ws-add-label">{t("folder.add")}</span>
           </button>
         )}
         {props.onNewGroup && (
-          <button type="button" className="ws-add-repo" onClick={() => props.onNewGroup?.()}>
-            {t("group.new")}
+          <button type="button" className="ws-add-repo ws-add-secondary" title={t("group.new")} aria-label={t("group.new")} onClick={() => props.onNewGroup?.()}>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 5h16M4 12h16M4 19h10" />
+            </svg>
+            <span className="ws-add-label">{t("group.new")}</span>
           </button>
         )}
         <SetupGuideEntry projects={props.items?.length} />
