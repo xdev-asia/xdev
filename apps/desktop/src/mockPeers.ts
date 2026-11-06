@@ -57,6 +57,8 @@ export type MockPeers = PeersApi & {
   __peersSetTheirRole(role: PeerRole, peerId?: string): void;
   /** Every paired computer asks its person before an action and the answer is no (`on = false` undoes it). */
   __peersConfirmDeny(on?: boolean): void;
+  /** The link to `peerId` is back after a drop: it is online again, `peers://changed` fires. */
+  __peersRise(peerId: string): void;
 };
 
 /** The code `build-box` shows; joining it with this code pairs. */
@@ -368,6 +370,13 @@ export function createMockPeers(): MockPeers {
     },
     __peersConfirmDeny(on = true) {
       denied = on;
+    },
+    __peersRise(peerId) {
+      const p = find(peerId);
+      if (!p) return;
+      p.online = true;
+      p.lastSeenMs = Date.now();
+      emitChanged();
     },
   };
 }

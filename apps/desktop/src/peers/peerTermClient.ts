@@ -59,6 +59,11 @@ export class PeerTermClient {
 
   async resize(): Promise<void> {}
 
+  /** A mount that was undone and done again (StrictMode) uses the same client: it is live once more. */
+  revive(): void {
+    this.disposed = false;
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;

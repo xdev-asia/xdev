@@ -93,7 +93,10 @@ export function PeerTerminalTab(props: { api: Api; entry: PeerTabEntry; onClosed
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, client]);
 
-  useEffect(() => () => void client.dispose(), [client]);
+  useEffect(() => {
+    client.revive();
+    return () => void client.dispose();
+  }, [client]);
 
   const title = t("peers.term.tabTitle", { tab: entry.title, computer: entry.peerName });
   return (

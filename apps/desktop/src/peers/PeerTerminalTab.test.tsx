@@ -46,6 +46,18 @@ it("input reaches the other computer only while controlling", async () => {
   await client.dispose();
 }, 5000);
 
+it("a mount undone and done again (StrictMode) leaves the client live", async () => {
+  const api = createMockApi({});
+  const spy = vi.spyOn(api, "peerTermWrite");
+  const client = new PeerTermClient(api, "studio-mac", "review");
+  await client.dispose();
+  client.revive();
+  client.controlling = true;
+  await client.input("ls");
+  expect(spy).toHaveBeenCalledOnce();
+  await client.dispose();
+}, 5000);
+
 it("output of the other computer reaches the view, and a new attach brings it again", async () => {
   const api = createMockApi({});
   const got: string[] = [];
