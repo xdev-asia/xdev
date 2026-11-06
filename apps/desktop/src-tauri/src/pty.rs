@@ -785,6 +785,7 @@ pub(crate) fn spawn_launch(
 
 /// `spawn_launch` that first writes `trust`, once the policy gate has passed:
 /// a launch that is refused trusts nothing.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_launch_trusted(
     ptys: &Ptys,
@@ -795,6 +796,28 @@ pub(crate) fn spawn_launch_trusted(
     cols: u16,
     rows: u16,
     trust: Option<TrustPlan>,
+    on_output: impl FnMut(Vec<u8>) + Send + 'static,
+    on_exit: impl FnOnce(Option<i32>) + Send + 'static,
+) -> Result<PtyInfo, CmdError> {
+    spawn_launch_at(
+        ptys, data_dir, id, cwd, launch, cols, rows, trust, None, on_output, on_exit,
+    )
+}
+
+/// Gates an agent, writes `trust` once the gate has passed (a refused
+/// launch trusts nothing), then starts `launch`. With `remote` the gate
+/// checks the launch as resolved here, then it runs as `ssh -tt` on the host.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spawn_launch_at(
+    ptys: &Ptys,
+    data_dir: &Path,
+    id: String,
+    cwd: PathBuf,
+    launch: Launch,
+    cols: u16,
+    rows: u16,
+    trust: Option<TrustPlan>,
+    remote: Option<crate::remote_launch::RemoteSpec>,
     on_output: impl FnMut(Vec<u8>) + Send + 'static,
     on_exit: impl FnOnce(Option<i32>) + Send + 'static,
 ) -> Result<PtyInfo, CmdError> {
@@ -831,6 +854,13 @@ pub(crate) fn spawn_launch_trusted(
     if let Some(plan) = trust {
         apply_trust(plan);
     }
+    let (launch, listed) = match &remote {
+        Some(spec) => (
+            crate::remote_launch::wrap(launch, spec, &id),
+            PathBuf::from(&spec.worktree),
+        ),
+        None => (launch, cwd.clone()),
+    };
     let (program, args) = launch.command();
     let prompt_after = launch.prompt_after;
     let mut env = launch.env;
@@ -861,12 +891,12 @@ pub(crate) fn spawn_launch_trusted(
     };
     // What the service lists the PTY with; `info` comes back on attach.
     let meta = serde_json::json!({
-        "worktree": cwd.display().to_string(),
+        "worktree": listed.display().to_string(),
         "tabId": id,
         "profile": info.profile,
         "info": info,
     });
-    ptys.cwds().insert(id.clone(), cwd.clone());
+    ptys.cwds().insert(id.clone(), listed);
     if launch.agent {
         ptys.agents
             .lock()
@@ -1128,6 +1158,26 @@ pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdErr
     })
 }
 
+/// The host a launch runs on, with the env names its profile declares.
+fn remote_launch_spec(
+    app: &AppHandle,
+    data: &Path,
+    cwd: &Path,
+    remote_host: Option<&str>,
+    profile_id: &str,
+) -> Result<Option<crate::remote_launch::RemoteSpec>, CmdError> {
+    if remote_host.is_none() && crate::remote_ssh::remote_ref(cwd).is_none() {
+        return Ok(None);
+    }
+    let declared = Profiles::load(data)
+        .map_err(LaunchError::from)?
+        .get(profile_id)
+        .map(|p| p.env.iter().map(|v| v.name.clone()).collect())
+        .unwrap_or_default();
+    let hub = app.state::<crate::remote_ssh::RemoteHub>();
+    crate::remote_ssh::launch_spec(&hub, data, cwd, remote_host, declared)
+}
+
 #[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn pty_spawn(
@@ -1148,8 +1198,20 @@ pub fn pty_spawn(
     extra_args: Option<Vec<String>>,
     // This launch's model, effort and arguments over the profile's.
     overrides: Option<xdev_agent::LaunchOverrides>,
+    // A saved SSH host id: the launch runs there, in the remote project or
+    // the repo's remote target.
+    remote_host: Option<String>,
 ) -> Result<PtyInfo, CmdError> {
     let data = data_dir(&state)?;
+    let remote = remote_launch_spec(&app, data, &cwd, remote_host.as_deref(), &profile_id)?;
+    // A remote launch's local process starts in the home folder.
+    let cwd = match &remote {
+        Some(_) => app.path().home_dir().map_err(|e| CmdError {
+            code: "io",
+            detail: Some(e.to_string()),
+        })?,
+        None => cwd,
+    };
     let mut launch = if profile_id == SETUP_PROFILE {
         setup_launch(data, &cwd)?
     } else {
@@ -1182,7 +1244,9 @@ pub fn pty_spawn(
         );
     }
     // The repo's own variables (Settings → Repos → Environment) win over inherited ones.
-    if let Ok(reg) = xdev_workspace::Registry::load(data) {
+    if remote.is_none()
+        && let Ok(reg) = xdev_workspace::Registry::load(data)
+    {
         crate::network::add_project_env(&mut launch.env, &reg, &crate::repo_env::Keychain, &cwd);
     }
     let starts_agent = crate::app_stats::counts_as_start(launch.agent, resume.as_deref(), fork);
@@ -1192,16 +1256,19 @@ pub fn pty_spawn(
     let feed_cwd = cwd.clone();
     let feed_app = app.clone();
     let stats_app = app.clone();
-    let trust = trust_plan(
-        &launch,
-        &cwd,
-        data,
-        app.path().home_dir().ok(),
-        settings_store::read(&app).agents.workspace_trust,
-        resume.is_none() && !fork.unwrap_or(false),
-        &|name| std::env::var_os(name),
-    );
-    let info = spawn_launch_trusted(
+    let trust = match remote {
+        Some(_) => None,
+        None => trust_plan(
+            &launch,
+            &cwd,
+            data,
+            app.path().home_dir().ok(),
+            settings_store::read(&app).agents.workspace_trust,
+            resume.is_none() && !fork.unwrap_or(false),
+            &|name| std::env::var_os(name),
+        ),
+    };
+    let info = spawn_launch_at(
         &ptys,
         data,
         id,
@@ -1210,6 +1277,7 @@ pub fn pty_spawn(
         cols,
         rows,
         trust,
+        remote,
         move |bytes| {
             crate::ports::feed_output(&feed_app, &feed_id, &feed_cwd, &bytes);
             crate::term_tail::feed(&feed_app, &feed_id, &bytes);

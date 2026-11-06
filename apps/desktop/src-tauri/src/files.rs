@@ -18,6 +18,7 @@ use xdev_workspace::{
 
 use crate::accounts::data_dir;
 use crate::commands::{AppState, CmdError};
+use crate::remote_ssh::{self, RemoteHub, remote_ref};
 use crate::workspace::{allowed, known_checkout};
 
 /// `worktree` as the crate takes it, once the registry knows it.
@@ -72,20 +73,30 @@ fn reveal_path(data: &Path, worktree: &Path, rel: &str) -> Result<PathBuf, CmdEr
 #[tauri::command(async)]
 pub fn file_read(
     state: State<'_, AppState>,
+    hub: State<'_, RemoteHub>,
     worktree: PathBuf,
     rel: String,
 ) -> Result<FileText, CmdError> {
-    read(data_dir(&state)?, &worktree, &rel)
+    let data = data_dir(&state)?;
+    if let Some(r) = remote_ref(&worktree) {
+        return remote_ssh::files::read(&hub, data, &r, &rel);
+    }
+    read(data, &worktree, &rel)
 }
 
 /// The raw bytes of an image, audio or video file within its size cap.
 #[tauri::command(async)]
 pub fn file_bytes(
     state: State<'_, AppState>,
+    hub: State<'_, RemoteHub>,
     worktree: PathBuf,
     rel: String,
 ) -> Result<Response, CmdError> {
-    let bytes = read_bytes(&root(data_dir(&state)?, &worktree)?, &rel)?;
+    let data = data_dir(&state)?;
+    let bytes = match remote_ref(&worktree) {
+        Some(r) => remote_ssh::files::bytes(&hub, data, &r, &rel)?,
+        None => read_bytes(&root(data, &worktree)?, &rel)?,
+    };
     Ok(Response::new(InvokeResponseBody::Raw(bytes)))
 }
 
@@ -94,50 +105,63 @@ pub fn file_bytes(
 #[tauri::command(async)]
 pub fn file_write(
     state: State<'_, AppState>,
+    hub: State<'_, RemoteHub>,
     worktree: PathBuf,
     rel: String,
     text: String,
     eol: Eol,
     expected: Option<String>,
 ) -> Result<WriteOutcome, CmdError> {
-    write(
-        data_dir(&state)?,
-        &worktree,
-        &rel,
-        &text,
-        eol,
-        expected.as_deref(),
-    )
+    let data = data_dir(&state)?;
+    if let Some(r) = remote_ref(&worktree) {
+        return remote_ssh::files::write(&hub, data, &r, &rel, &text, eol, expected.as_deref());
+    }
+    write(data, &worktree, &rel, &text, eol, expected.as_deref())
 }
 
 #[tauri::command(async)]
 pub fn file_create(
     state: State<'_, AppState>,
+    hub: State<'_, RemoteHub>,
     worktree: PathBuf,
     rel: String,
     dir: bool,
 ) -> Result<(), CmdError> {
-    create(data_dir(&state)?, &worktree, &rel, dir)
+    let data = data_dir(&state)?;
+    if let Some(r) = remote_ref(&worktree) {
+        return remote_ssh::files::create(&hub, data, &r, &rel, dir);
+    }
+    create(data, &worktree, &rel, dir)
 }
 
 #[tauri::command(async)]
 pub fn file_rename(
     state: State<'_, AppState>,
+    hub: State<'_, RemoteHub>,
     worktree: PathBuf,
     from: String,
     to: String,
 ) -> Result<(), CmdError> {
-    rename(data_dir(&state)?, &worktree, &from, &to)
+    let data = data_dir(&state)?;
+    if let Some(r) = remote_ref(&worktree) {
+        return remote_ssh::files::rename(&hub, data, &r, &from, &to);
+    }
+    rename(data, &worktree, &from, &to)
 }
 
 /// Asks the policy gate (`Delete`) first, then moves the item to the trash.
 #[tauri::command(async)]
 pub fn file_trash(
     state: State<'_, AppState>,
+    hub: State<'_, RemoteHub>,
     worktree: PathBuf,
     rel: String,
 ) -> Result<(), CmdError> {
-    trash_with(data_dir(&state)?, &worktree, &rel, &OsTrash)
+    let data = data_dir(&state)?;
+    if let Some(r) = remote_ref(&worktree) {
+        return remote_ssh::files::trash(&hub, data, &r, &rel);
+    }
+    trash_with(data, &worktree, &rel, &OsTrash)
 }
 
 /// Opens the OS file manager with the item selected where the OS allows it.
@@ -147,6 +171,7 @@ pub fn file_reveal(
     worktree: PathBuf,
     rel: String,
 ) -> Result<(), CmdError> {
+    remote_ssh::local_only(&worktree, "file_reveal")?;
     let path = reveal_path(data_dir(&state)?, &worktree, &rel)?;
     Ok(crate::reveal::reveal(&path, true)?)
 }
@@ -221,8 +246,16 @@ fn search(
 
 /// Every file of the worktree `.gitignore` keeps, for quick open.
 #[tauri::command(async)]
-pub fn files_list(state: State<'_, AppState>, worktree: PathBuf) -> Result<FileList, CmdError> {
-    list(data_dir(&state)?, &worktree)
+pub fn files_list(
+    state: State<'_, AppState>,
+    hub: State<'_, RemoteHub>,
+    worktree: PathBuf,
+) -> Result<FileList, CmdError> {
+    let data = data_dir(&state)?;
+    if let Some(r) = remote_ref(&worktree) {
+        return remote_ssh::files::list(&hub, data, &r);
+    }
+    list(data, &worktree)
 }
 
 /// Searches the worktree's files on a blocking thread, sending `SearchEvent`s
@@ -236,6 +269,7 @@ pub async fn files_search(
     id: String,
     on_event: Channel<SearchEvent>,
 ) -> Result<(), CmdError> {
+    remote_ssh::local_only(&worktree, "files_search")?;
     let data = data_dir(&state)?.to_path_buf();
     let searches = Searches::clone(&searches);
     tauri::async_runtime::spawn_blocking(move || {

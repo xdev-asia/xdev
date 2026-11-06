@@ -66,6 +66,8 @@ mod ptyd;
 mod quick_commands;
 mod recipes;
 mod redact;
+mod remote_launch;
+mod remote_ssh;
 mod repo_env;
 mod resources;
 mod reveal;
@@ -182,6 +184,7 @@ pub fn run() {
         .manage(crumbs)
         .setup(move |app| {
             app.manage(ssh_connect::SshConnections::system(app.handle().clone()));
+            app.manage(remote_ssh::RemoteHub::system(app.handle().clone()));
             if let Some((data, local)) = &index_dirs {
                 xdev_core::move_indexes(data, local);
             }
@@ -847,6 +850,15 @@ pub fn run() {
             run_targets::targets_list,
             run_targets::targets_trust,
             run_targets::targets_vps_notes,
+            remote_ssh::remote_projects_list,
+            remote_ssh::remote_project_add,
+            remote_ssh::remote_project_remove,
+            remote_ssh::remote_browse,
+            remote_ssh::remote_connect,
+            remote_ssh::remote_disconnect,
+            remote_ssh::remote_hosts_state,
+            remote_ssh::remote_target_get,
+            remote_ssh::remote_target_set,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
@@ -866,6 +878,9 @@ pub fn run() {
                 app.state::<power::Awake>().release();
                 if let Some(ssh) = app.try_state::<ssh_connect::SshConnections>() {
                     ssh.kill_all();
+                }
+                if let Some(hub) = app.try_state::<remote_ssh::RemoteHub>() {
+                    hub.close_all();
                 }
                 if let Some(running) = app.try_state::<endpoint::Running>() {
                     running.stop();
