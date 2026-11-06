@@ -1,6 +1,5 @@
 import type { Api, ApiError, AppTheme, AppThemeInput, OnNameTaken } from "./api";
 import fixtures from "./mockAppThemes.fixtures.json";
-import type { SettingsEmit } from "./mockSettings";
 import { normalizeHex, slugOf } from "./mockThemes";
 
 type AppThemesApi = Pick<Api, "appThemes" | "appThemeSave" | "appThemeRemove" | "appThemeImport" | "appThemeExport">;
@@ -71,10 +70,10 @@ const numberedName = (name: string, n: number): string => {
 
 /**
  * The app themes in memory. A path is a key into `files` (a theme file's JSON or its text;
- * `mockAppThemes.fixtures.json` when left out), so no test touches a disk. Each change calls
- * `emit`, the way Rust emits `settings://changed`.
+ * `mockAppThemes.fixtures.json` when left out), so no test touches a disk. Like Rust, a change
+ * emits nothing: the page reads the list again.
  */
-export function createMockAppThemes(files: Record<string, unknown> = fixtures, emit: SettingsEmit = () => {}): MockAppThemes {
+export function createMockAppThemes(files: Record<string, unknown> = fixtures): MockAppThemes {
   const stored = new Map<string, AppTheme>();
   const exported: { path: string; text: string }[] = [];
   const idOf = (name: string) => slugOf(name, APP_THEME_LIMITS.slug);
@@ -82,7 +81,6 @@ export function createMockAppThemes(files: Record<string, unknown> = fixtures, e
     const theme: AppTheme = { id, name: input.name, dark: input.dark, light: input.light };
     if (input.terminalScheme !== undefined) theme.terminalScheme = input.terminalScheme;
     stored.set(id, theme);
-    emit(["ui"]);
     return structuredClone(theme);
   };
   return {
@@ -109,8 +107,7 @@ export function createMockAppThemes(files: Record<string, unknown> = fixtures, e
     },
     async appThemeRemove(id) {
       if (!stored.delete(id)) throw fail("not_found");
-      emit(["ui"]);
-    },
+      },
     async appThemeImport(path, onTaken: OnNameTaken) {
       if (!(path in files)) throw fail("not_found");
       const raw = files[path];

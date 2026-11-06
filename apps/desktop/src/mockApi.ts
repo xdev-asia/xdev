@@ -605,7 +605,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
   const settingsHub = createSettingsHub();
   const settingsApi = createMockSettings(settingsHub);
   const themes = createMockThemes(undefined, settingsHub.emit);
-  const appThemes = createMockAppThemes(undefined, settingsHub.emit);
+  const appThemes = createMockAppThemes();
   const power = createMockPower(settingsApi);
   const workspace = createMockWorkspace(options.workspace, settingsHub.emit);
   const accountRouting = createMockAccountRouting({

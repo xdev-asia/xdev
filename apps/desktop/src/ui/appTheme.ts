@@ -1,5 +1,5 @@
 import type { Api, AppTheme } from "../api";
-import { applyTokenOverrides, themeOverrideCss, OVERRIDE_STYLE_ID, type ThemeOverrides } from "./themeOverrides";
+import { applyTokenOverrides, readOnAccent, readThemeColors, themeOverrideCss, OVERRIDE_STYLE_ID, type ThemeColors, type ThemeOverrides } from "./themeOverrides";
 import { syncTerminalScheme } from "./terminalScheme";
 
 // The active app theme: painted as a `<style>` of token overrides, its CSS cached in localStorage so
@@ -127,6 +127,24 @@ export function endPreview(): void {
   if (!previewing) return;
   previewing = false;
   paintActive();
+}
+
+export type BuiltIn = { colors: Required<ThemeColors>; onAccent: string };
+
+/** The built-in colours of `mode`, read with the overrides lifted so a painted theme does not leak in. */
+export function readBuiltIn(mode: "dark" | "light"): BuiltIn {
+  const style = document.getElementById(OVERRIDE_STYLE_ID);
+  style?.remove();
+  try {
+    return { colors: readThemeColors(document, mode), onAccent: readOnAccent(document, mode) };
+  } finally {
+    if (style) document.head.appendChild(style);
+  }
+}
+
+/** The mode now painted. */
+export function paintedMode(): "dark" | "light" {
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
 }
 
 /** Tests only. */
