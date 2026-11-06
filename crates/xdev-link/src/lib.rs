@@ -36,7 +36,7 @@ pub use dial::{Connect, Dialer, NoRelay, PairTarget, PendingPair, RelayHook, WsC
 pub use discovery::{Discover, Discovery, FakeDiscover, Nearby};
 pub use error::LinkError;
 pub use frame::{Msg, RpcError};
-pub use identity::{HostKey, KeyStore, KeyringStore, MemoryStore};
+pub use identity::{FileKeyStore, HostKey, KeyStore, KeyringStore, MemoryStore};
 pub use limits::{Limits, TokenBucket};
 pub use link::{Link, LinkOpts, PeerCtx, Serve};
 pub use offer::{PairCode, PairOffer, PairWindow};

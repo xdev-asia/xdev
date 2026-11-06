@@ -546,15 +546,13 @@ impl Listener {
         opts: HostOpts,
     ) -> Result<Handle, LinkError> {
         let ip: IpAddr = crate::net::bind_ip(cfg.bind).ok_or(LinkError::Port)?;
-        let (listener, port) = cfg
+        let listener = cfg
             .port_range
             .clone()
-            .find_map(|p| {
-                TcpListener::bind(SocketAddr::new(ip, p))
-                    .ok()
-                    .map(|l| (l, p))
-            })
+            .find_map(|p| TcpListener::bind(SocketAddr::new(ip, p)).ok())
             .ok_or(LinkError::Port)?;
+        // The bound port, not the asked one: `0` asks the OS for any.
+        let port = listener.local_addr()?.port();
         listener.set_nonblocking(true)?;
         let host = Host::new(key, store, window, serve, events, &cfg, opts);
         let stop = Arc::new(AtomicBool::new(false));
@@ -884,6 +882,29 @@ mod tests {
         assert_eq!(e, LinkError::Denied);
         conn.join().unwrap();
         assert!(w.events.try_recv().is_err(), "no Connected event");
+    }
+
+    #[test]
+    fn port_zero_reports_the_bound_port() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(PeerStore::open(&dir.path().join("p.json")).unwrap());
+        let (tx, _rx) = channel();
+        let handle = Listener::start(
+            ListenCfg {
+                bind: LinkBind::Localhost,
+                port_range: 0..=0,
+                ..ListenCfg::default()
+            },
+            Arc::new(HostKey::from_private([11; 32]).unwrap()),
+            store,
+            Arc::new(Mutex::new(None)),
+            Arc::new(Echo::default()),
+            tx,
+        )
+        .unwrap();
+        assert_ne!(handle.port(), 0);
+        TcpStream::connect(("127.0.0.1", handle.port())).unwrap();
+        handle.stop();
     }
 
     #[test]

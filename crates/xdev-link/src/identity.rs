@@ -47,6 +47,84 @@ fn decode_key(raw: &str) -> Option<[u8; 32]> {
     STANDARD.decode(raw.trim()).ok()?.try_into().ok()
 }
 
+/// The `LinkError::Io` detail of a key file that others may read (Unix).
+pub const KEY_PERMS: &str = "key_perms";
+
+/// A key in a file of its own: 32 raw bytes, for a headless host where the
+/// OS keychain may be missing. On Unix the folder is 0700 and the file 0600,
+/// and a file with group or other bits is refused. On Windows the per-user
+/// data folder's own ACL is what keeps it private.
+pub struct FileKeyStore {
+    path: std::path::PathBuf,
+}
+
+impl FileKeyStore {
+    pub fn new(path: impl Into<std::path::PathBuf>) -> FileKeyStore {
+        FileKeyStore { path: path.into() }
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    fn dir(&self) -> Result<&std::path::Path, LinkError> {
+        self.path.parent().ok_or(LinkError::KeyStore)
+    }
+}
+
+impl KeyStore for FileKeyStore {
+    fn load(&self) -> Result<Option<[u8; 32]>, LinkError> {
+        let bytes = match std::fs::read(&self.path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&self.path)?.permissions().mode();
+            if mode & 0o077 != 0 {
+                return Err(LinkError::Io(KEY_PERMS.into()));
+            }
+        }
+        let key: [u8; 32] = bytes.try_into().map_err(|_| LinkError::KeyStore)?;
+        Ok(Some(key))
+    }
+
+    fn save(&self, k: &[u8; 32]) -> Result<(), LinkError> {
+        use std::io::Write;
+        let dir = self.dir()?;
+        std::fs::create_dir_all(dir)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+        }
+        let mut name = self.path.file_name().ok_or(LinkError::KeyStore)?.to_owned();
+        name.push(format!(".tmp-{}", std::process::id()));
+        let tmp = dir.join(name);
+        let _ = std::fs::remove_file(&tmp);
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let written = (|| {
+            let mut f = opts.open(&tmp)?;
+            f.write_all(k)?;
+            f.sync_all()?;
+            drop(f);
+            std::fs::rename(&tmp, &self.path)
+        })();
+        if written.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        Ok(written?)
+    }
+}
+
 /// An in-memory store for tests, with a switch that makes every call fail.
 #[derive(Default)]
 pub struct MemoryStore {
@@ -185,6 +263,55 @@ mod tests {
         assert_eq!(fp.len(), 19);
         assert_eq!(fp.split('-').count(), 4);
         assert!(fp.chars().all(|c| c == '-' || c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn file_store_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileKeyStore::new(dir.path().join("serve/host-key"));
+        assert_eq!(store.load().unwrap(), None);
+        store.save(&[5; 32]).unwrap();
+        assert_eq!(store.load().unwrap(), Some([5; 32]));
+        let a = HostKey::load_or_create(&FileKeyStore::new(dir.path().join("serve/k2"))).unwrap();
+        let b = HostKey::load_or_create(&FileKeyStore::new(dir.path().join("serve/k2"))).unwrap();
+        assert_eq!(a.host_id(), b.host_id());
+        // The temp file is gone after the rename.
+        let names: Vec<_> = std::fs::read_dir(dir.path().join("serve"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names.len(), 2, "{names:?}");
+    }
+
+    #[test]
+    fn file_store_wrong_length_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("host-key");
+        std::fs::write(&path, [1u8; 31]).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        assert_eq!(
+            FileKeyStore::new(&path).load().unwrap_err(),
+            LinkError::KeyStore
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_store_modes() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("serve/host-key");
+        let store = FileKeyStore::new(&path);
+        store.save(&[3; 32]).unwrap();
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&path), 0o600);
+        assert_eq!(mode(&dir.path().join("serve")), 0o700);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(store.load().unwrap_err(), LinkError::Io(KEY_PERMS.into()));
     }
 
     #[test]
