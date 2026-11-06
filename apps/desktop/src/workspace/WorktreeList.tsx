@@ -715,6 +715,19 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         onDeleteNested: props.onDeleteNested && (() => props.onDeleteNested?.(wt)),
       };
     };
+    const projectItems = (repo: (typeof repoList)[number]) => {
+      const kept = keptOf(repo.id);
+      return projectMenuItems({
+        path: repo.path,
+        apps,
+        openIn: (target) => props.onOpenIn?.(repo.path, target),
+        copy,
+        repoSettings: () => props.onRepoSettings?.(repo),
+        remove: () => props.onRemoveRepo?.(repo),
+        review: kept.length > 0 && props.onReviewBranches ? { label: t("project.review", { count: kept.length }), run: () => props.onReviewBranches?.(repo.id) } : null,
+        ...groupMenu(repo.id),
+      });
+    };
     if (menu.kind === "worktree") {
       const wt = entries.find((e) => e.path === menu.key)?.wt;
       if (!wt) return null;
@@ -743,6 +756,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         nestedSleepable: [wt, ...childrenOf(wt, entries.find((e) => e.path === menu.key)!.repo.worktrees)].some((w) => props.sleepable?.[w.path] !== false),
         onWake: props.onWake && (() => props.onWake?.(wt)),
       });
+      // A lone project has no row of its own (see `hasProjects`), so its menu rides on the card.
+      const lone = !hasProjects ? repoList.find((r) => r.worktrees.some((w) => w.path === wt.path)) : undefined;
+      if (lone) items = [...items, { id: "projectSep", labelKey: "", kind: "separator" as const }, { id: "project", labelKey: "project.menu", children: projectItems(lone) }];
     } else if (menu.kind === "folder") {
       const folder = folderOf(menu.key);
       if (!folder) return null;
@@ -760,17 +776,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     } else {
       const repo = repoList.find((r) => r.id === menu.key);
       if (!repo) return null;
-      const kept = keptOf(repo.id);
-      items = projectMenuItems({
-        path: repo.path,
-        apps,
-        openIn: (target) => props.onOpenIn?.(repo.path, target),
-        copy,
-        repoSettings: () => props.onRepoSettings?.(repo),
-        remove: () => props.onRemoveRepo?.(repo),
-        review: kept.length > 0 && props.onReviewBranches ? { label: t("project.review", { count: kept.length }), run: () => props.onReviewBranches?.(repo.id) } : null,
-        ...groupMenu(repo.id),
-      });
+      items = projectItems(repo);
     }
     return <ContextMenu key={`${menu.kind}:${menu.key}`} at={menu.at} items={items} onClose={() => setMenu(null)} />;
   };
