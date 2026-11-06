@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import type { Api } from "@/api";
+import { toApiError, type Api } from "@/api";
 import { useI18n } from "@/i18n";
 import { copyText } from "@/ui/clipboard";
-import { ContextMenu } from "@/ui/ContextMenu";
+import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { pushToast } from "@/workspace/toastStore";
 import { PLATFORM } from "@/platform";
-import { Button } from "@xdev-asia/ui";
+import { IconButton } from "@xdev-asia/ui";
 import { AltViewPane } from "./AltViewPane";
 import { CsvView } from "./CsvView";
 import { ImageView } from "./ImageView";
@@ -14,8 +14,9 @@ import { MarkdownPane } from "./MarkdownPane";
 import { MediaView } from "./MediaView";
 import { NotebookView } from "./NotebookView";
 import { LoadError } from "./LoadError";
-import { CodeEditor } from "./CodeEditor";
-import { useEditorSettings } from "./editorSettings";
+import { CodeEditor, type EditorControls } from "./CodeEditor";
+import { clampEditorSettings } from "./editorDefaults";
+import { getEditorSettings, setEditorSettings, useEditorSettings } from "./editorSettings";
 import { ExternalChange, needsChoice } from "./ExternalChangeBanner";
 import { loadFile, saveFile } from "./fileIO";
 import { gutterMenuItems, type GutterSelection, type SelectionCapture } from "./gutterMenu";
@@ -33,7 +34,22 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
   const status = entry?.status;
   // The gutter's right-click menu: where it opened and for which line.
   const [gutter, setGutter] = useState<{ at: { x: number; y: number }; line: number; selection: GutterSelection | null; capture: SelectionCapture | null } | null>(null);
+  // The editor's handle for the toolbar, how many changes it shows, and the more-actions menu.
+  const [controls, setControls] = useState<EditorControls | null>(null);
+  const [changes, setChanges] = useState(0);
+  const [more, setMore] = useState<{ x: number; y: number } | null>(null);
   const io = { api, store: fileTabs, t };
+
+  // Word wrap is one setting for every editor: the write returns what was stored, and every open editor follows it.
+  async function toggleWrap(): Promise<void> {
+    try {
+      const stored = await api.editorSettingsPut(clampEditorSettings({ ...getEditorSettings(), wordWrap: !getEditorSettings().wordWrap }));
+      setEditorSettings(stored);
+    } catch (e) {
+      void pushToast({ text: t(`error.${toApiError(e).code}`) });
+    }
+  }
+  const moreItems: MenuItem[] = [{ id: "wrap", labelKey: "files.menu.wordWrap", chord: "Alt+Z", checked: settings.wordWrap, run: () => void toggleWrap() }];
   // Images and media are read as bytes by their own view, so the text read is skipped for them.
   const direct = viewerOf(rel) !== "text" && viewerOf(rel) !== "markdown";
   useEffect(() => {
@@ -99,6 +115,19 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
     const editor = (
       <>
         {needsChoice(entry) && <ExternalChange api={api} entry={entry} io={io} />}
+        <div className="file-toolbar" role="toolbar" aria-label={t("files.toolbar")}>
+          <IconButton icon="arrow-up" label={t("files.change.prev")} disabled={changes === 0} onClick={() => controls?.goChange(-1)} />
+          <IconButton icon="arrow-down" label={t("files.change.next")} disabled={changes === 0} onClick={() => controls?.goChange(1)} />
+          <IconButton
+            icon="more"
+            label={t("files.more")}
+            aria-haspopup="menu"
+            onClick={(e) => {
+              const box = e.currentTarget.getBoundingClientRect();
+              setMore({ x: box.left, y: box.bottom });
+            }}
+          />
+        </div>
         <CodeEditor
           worktree={worktree}
           rel={rel}
@@ -106,6 +135,10 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
           value={entry.text}
           settings={settings}
           goto={entry.goto}
+          base={entry.saved}
+          onToggleWrap={() => void toggleWrap()}
+          onControls={setControls}
+          onChangeCount={setChanges}
           onChange={(text) => fileTabs.edit(worktree, rel, text)}
           onSave={() => void saveFile(io, worktree, rel)}
           onGutterMenu={(at, line, selection, capture) => setGutter({ at, line, selection, capture: capture ?? null })}
@@ -123,6 +156,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
   return (
     <div className="file-view" data-rel={rel} data-kind={entry?.kind}>
       {body}
+      {more && <ContextMenu at={more} label={t("files.more")} items={moreItems} onClose={() => setMore(null)} />}
       {gutter && (
         <ContextMenu
           at={gutter.at}

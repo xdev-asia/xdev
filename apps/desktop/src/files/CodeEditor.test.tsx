@@ -52,10 +52,10 @@ vi.mock("codemirror", async () => {
 });
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string) => translate("en", key) }) }));
 
-const settings = { wordWrap: false, tabSize: 2, fontSize: 13 } as EditorSettings;
+const settings = { wordWrap: false, tabSize: 2, fontSize: 13, fontFamily: "" } as EditorSettings;
 
 // One editor with its own hook slots, drawn again with new props.
-function mount(initial: { value: string; secondary?: boolean; goto?: { line: number; seq: number } }) {
+function mount(initial: { value: string; secondary?: boolean; goto?: { line: number; seq: number }; extra?: Record<string, unknown> }) {
   hooks.slots = [];
   hooks.views = [];
   const edits: string[] = [];
@@ -68,6 +68,7 @@ function mount(initial: { value: string; secondary?: boolean; goto?: { line: num
     settings,
     onChange: (text: string) => void edits.push(text),
     onSave: () => undefined,
+    ...initial.extra,
     ...over,
   });
   const draw = (over: Parameters<typeof props>[0] = {}) => {
@@ -126,4 +127,26 @@ it("a secondary view ignores goto; the primary one jumps", () => {
   expect(second.view().state.selection.main.head).toBe(0);
   second.draw({ goto: { line: 3, seq: 2 } });
   expect(second.view().state.selection.main.head).toBe(0);
+});
+
+it("compares with the base: reports the change count, and the controls walk the changes", () => {
+  let controls: { goChange(dir: 1 | -1): void } | null = null;
+  const counts: number[] = [];
+  const ed = mount({
+    value: ["a", "B", "c", "d", "E"].join("\n"),
+    extra: { base: ["a", "b", "c", "d", "e"].join("\n"), onControls: (c: typeof controls) => (controls = c), onChangeCount: (n: number) => void counts.push(n) },
+  });
+  expect(counts.at(-1)).toBe(2);
+  const line = () => ed.view().state.doc.lineAt(ed.view().state.selection.main.head).number;
+  controls!.goChange(1);
+  expect(line()).toBe(2);
+  controls!.goChange(1);
+  expect(line()).toBe(5);
+  controls!.goChange(-1);
+  expect(line()).toBe(2);
+});
+
+it("the editor font family is the setting, else the terminal's, ending with the mono token", () => {
+  const style = (CodeEditor({ worktree: "/wt", rel: "a.txt", value: "", settings: { ...settings, fontFamily: "Fira Code" }, onChange() {}, onSave() {} }) as { props: { style: Record<string, string> } }).props.style;
+  expect(style["--editor-font-family"]).toBe("Fira Code, var(--x-font-mono)");
 });

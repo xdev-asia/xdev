@@ -244,3 +244,16 @@ it("an image or media view is drawn anew when its file changed on disk", () => {
     expect(keyOf()).not.toBe(before);
   }
 });
+
+it("the editor's wrap key and the more menu flip the shared word wrap setting", async () => {
+  const api = createMockApi({});
+  const put = vi.spyOn(api, "editorSettingsPut").mockImplementation(async (v) => v);
+  ready();
+  draw(api).find((n) => n.type === CodeEditor)!.props.onToggleWrap();
+  await tick();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ wordWrap: false }));
+  // The toolbar has previous and next change buttons, off while the text has no change.
+  const buttons = draw(api).filter((n) => n.props.label === en("files.change.prev") || n.props.label === en("files.change.next"));
+  expect(buttons).toHaveLength(2);
+  expect(buttons.every((b) => b.props.disabled)).toBe(true);
+});

@@ -2933,6 +2933,15 @@ button.ws-tree-row[data-active="true"] {
   color: var(--x-color-muted);
 }
 
+.file-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  gap: var(--x-space-1);
+  padding: var(--x-space-1) var(--x-space-2);
+  border-bottom: 1px solid var(--x-color-line);
+}
+
 .file-saving {
   position: absolute;
   right: var(--x-space-4);
