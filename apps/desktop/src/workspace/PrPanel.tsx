@@ -8,6 +8,7 @@ import { useI18n } from "@/i18n";
 import { ago } from "./ago";
 import { ChecksPanel } from "./ChecksPanel";
 import { CreatePrDialog } from "./CreatePrDialog";
+import { EditPrDialog } from "./EditPrDialog";
 import type { PrCommentStore } from "./prCommentStore";
 import { PrReviewers } from "./PrReviewers";
 import type { SendChoice } from "./agentPrompt";
@@ -55,6 +56,7 @@ export function PrPanel(props: {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [base, setBase] = useState("");
   const [git, setGit] = useState({ prDraft: false, sourceControlAi: false, prGenerateOnOpen: false, prOpenAfterCreate: false });
   // The worktree a response belongs to; an answer for another worktree is dropped.
@@ -83,6 +85,7 @@ export function PrPanel(props: {
     setInfo(null);
     setMethod(null);
     setReply("");
+    setEditing(false);
     setTab("conversation");
   }, [worktree]);
 
@@ -202,6 +205,7 @@ export function PrPanel(props: {
           {detail.mergeState !== "unknown" && <span>{t(`prPanel.mergeState.${detail.mergeState}`)}</span>}
         </div>
         <div className="pr-actions">
+          <Button type="button" variant="secondary" onClick={() => setEditing(true)}>{t("prPanel.edit")}</Button>
           <Button type="button" variant="secondary" onClick={() => void api.worktreePrOpen(worktree, false).catch((e: unknown) => setError(toApiError(e)))}>
             {t("prPanel.openBrowser")}
           </Button>
@@ -334,6 +338,21 @@ export function PrPanel(props: {
             </ul>
           )}
         </section>
+      )}
+      {editing && (
+        <EditPrDialog
+          api={api}
+          worktree={worktree}
+          number={detail.number}
+          title={detail.title}
+          body={detail.body}
+          onSaved={async () => {
+            setEditing(false);
+            await load();
+            void prs.load(worktree);
+          }}
+          onClose={() => setEditing(false)}
+        />
       )}
       <ConfirmDialog
         open={confirm}

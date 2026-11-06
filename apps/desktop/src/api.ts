@@ -827,6 +827,7 @@ export type ErrorCode =
   | "pr_head_moved"
   | "empty_comment"
   | "bad_reviewer"
+  | "bad_pr_edit"
   | "nothing_to_rerun"
   | "merge_blocked"
   | "branch_in_use"
@@ -1441,6 +1442,8 @@ export interface Api {
   worktreePrComment(path: string, number: number, body: string): Promise<void>;
   // Arms auto-merge with `method`; null turns it off.
   worktreePrAutoMerge(path: string, number: number, method: MergeMethod | null): Promise<void>;
+  // Sets the title and body; the body goes to `gh` on stdin. Rejects with `bad_pr_edit` for an empty or long title or a long body.
+  worktreePrEdit(path: string, number: number, title: string, body: string): Promise<void>;
   // Asks `add` for a review and drops the request of `remove` (logins or `org/team`). Rejects with `bad_reviewer`.
   worktreePrReviewers(path: string, number: number, add: string[], remove: string[]): Promise<void>;
   // The collaborators of the worktree's repo, read once per repo per session. Rejects when the list is closed.
@@ -2283,6 +2286,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "pr_head_moved",
   "empty_comment",
   "bad_reviewer",
+  "bad_pr_edit",
   "nothing_to_rerun",
   "merge_blocked",
   "branch_in_use",
@@ -2681,6 +2685,7 @@ const tauriApi: Api = {
   worktreePrDetail: (path) => call("worktree_pr_detail", { path }),
   worktreePrComment: (path, number, body) => call("worktree_pr_comment", { path, number, body }),
   worktreePrAutoMerge: (path, number, method) => call("worktree_pr_auto_merge", { path, number, method }),
+  worktreePrEdit: (path, number, title, body) => call("worktree_pr_edit", { path, number, title, body }),
   worktreePrReviewers: (path, number, add, remove) => call("worktree_pr_reviewers", { path, number, add, remove }),
   worktreePrReviewerCandidates: (path) => call("worktree_pr_reviewer_candidates", { path }),
   issuesList: (repoId, query) => call("issues_list", { repoId, query }),

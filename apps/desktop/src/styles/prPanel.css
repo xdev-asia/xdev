@@ -213,3 +213,25 @@ button.pr-file:hover {
   padding: 0;
   list-style: none;
 }
+
+.pr-edit-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pr-edit textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.pr-edit-preview {
+  max-height: 50vh;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}

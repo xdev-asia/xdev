@@ -8,6 +8,7 @@ import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { translate } from "@/i18n";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PrPanel } from "./PrPanel";
+import { EditPrDialog } from "./EditPrDialog";
 import { PrStore } from "./prs";
 
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -127,6 +128,21 @@ it("opens in the browser and refreshes from the header", async () => {
   read.mockClear();
   button(view, en("prPanel.refresh")).props.onClick();
   expect(read).toHaveBeenCalledTimes(1);
+});
+
+it("Edit opens the edit dialog on the current title and body, and a save reads the PR again", async () => {
+  const api = seeded({ [OAK]: structuredClone(DETAIL) }, { [OAK]: PR });
+  const read = vi.spyOn(api, "worktreePrDetail");
+  const view = mount(api, new PrStore(api));
+  await tick();
+  expect(view.all().some((n) => n.type === EditPrDialog)).toBe(false);
+  button(view, en("prPanel.edit")).props.onClick();
+  const dialog = view.all().find((n) => n.type === EditPrDialog)!;
+  expect(dialog.props).toMatchObject({ number: 7, title: DETAIL.title, body: DETAIL.body });
+  read.mockClear();
+  await dialog.props.onSaved();
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(view.all().some((n) => n.type === EditPrDialog)).toBe(false);
 });
 
 it("the reply goes out as a PR comment and the conversation shows it", async () => {

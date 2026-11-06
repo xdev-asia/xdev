@@ -85,6 +85,7 @@ type WorkspaceApi = Pick<
   | "worktreePrDetail"
   | "worktreePrComment"
   | "worktreePrAutoMerge"
+  | "worktreePrEdit"
   | "worktreePrReviewers"
   | "worktreePrReviewerCandidates"
   | "worktreeCheckLog"
@@ -1608,6 +1609,15 @@ export function createMockWorkspace(
       if (!findWorktree(path)) return reject("worktree_unknown", path);
       const own = prDetails.get(path);
       if (own) own.autoMerge = method === null ? null : { method, enabledBy: "you" };
+    },
+    async worktreePrEdit(path, _number, title, body) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const trimmed = title.trim();
+      if (trimmed === "" || [...trimmed].length > 256 || [...body].length > COMMENT_BODY_MAX) return reject("bad_pr_edit");
+      const own = prDetails.get(path);
+      if (own) Object.assign(own, { title: trimmed, body });
+      const pr = prs.get(path);
+      if (pr) prs.set(path, { ...pr, title: trimmed });
     },
     async worktreePrReviewers(path, _number, add, remove) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

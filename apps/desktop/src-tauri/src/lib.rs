@@ -662,6 +662,7 @@ pub fn run() {
             pr_panel::worktree_pr_detail,
             pr_panel::worktree_pr_comment,
             pr_panel::worktree_pr_auto_merge,
+            pr_panel::worktree_pr_edit,
             pr_panel::worktree_pr_reviewers,
             pr_panel::worktree_pr_reviewer_candidates,
             ship::worktree_pr_open,

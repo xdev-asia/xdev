@@ -50,7 +50,7 @@ pub use gh_pr::{
     PrReviewer, ReviewDecision, ReviewerState, pr_auto_merge_disable, pr_auto_merge_enable,
     pr_comment_add, pr_detail,
 };
-pub use gh_pr_edit::{pr_reviewer_candidates, pr_reviewers_edit, valid_reviewer};
+pub use gh_pr_edit::{pr_edit, pr_reviewer_candidates, pr_reviewers_edit, valid_reviewer};
 pub use gh_review::{
     COMMENT_BODY_MAX, COMMENTS_PER_SOURCE, MergeBlock, MergeMethod, PrComment, PrCommentDraft,
     PrCommentKind, PrComments, PrMergeInfo, PrReaction, Reaction, RerunReport, pr_checks_rerun,
@@ -109,6 +109,8 @@ pub enum GitError {
     BadDraft,
     #[error("no such pull request")]
     PrNotFound,
+    #[error("a pull request needs a title of 1 to 256 chars and a body of at most 64 KiB")]
+    BadPrEdit,
     /// Not a GitHub login or `org/team`; the text is the name.
     #[error("not a reviewer name: {0}")]
     BadReviewer(String),
@@ -210,6 +212,7 @@ impl GitError {
             GitError::BadDraft => "bad_draft",
             GitError::PrNotFound => "pr_not_found",
             GitError::BadReviewer(_) => "bad_reviewer",
+            GitError::BadPrEdit => "bad_pr_edit",
             GitError::GlabMissing => "glab_missing",
             GitError::GlabAuth => "glab_auth",
             GitError::NotGitlab => "not_gitlab",

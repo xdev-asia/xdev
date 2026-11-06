@@ -1,16 +1,19 @@
-//! Changes to a pull request through `gh`: reviewers asked or no longer asked,
-//! and the logins that can be asked. Every call goes through `GhExec`, so a
-//! test runs no `gh`. A reviewer is checked before it reaches argv.
+//! Changes to a pull request through `gh`: its title and body, reviewers
+//! asked or no longer asked, and the logins that can be asked. Every call goes
+//! through `GhExec`, so a test runs no `gh`. A reviewer is checked before it
+//! reaches argv; a body only ever goes on stdin.
 
 use std::path::Path;
 
-use crate::GitError;
 use crate::gh::{GhExec, ok};
+use crate::{GitError, PR_TEXT_MAX};
 
 /// Longest GitHub login.
 const LOGIN_MAX: usize = 39;
 /// Longest team slug kept; GitHub's own limit is higher than any real slug.
 const TEAM_MAX: usize = 100;
+/// Longest title, as for a new pull request.
+const TITLE_MAX: usize = 256;
 
 fn login_ok(s: &str) -> bool {
     (1..=LOGIN_MAX).contains(&s.len())
@@ -31,6 +34,30 @@ pub fn valid_reviewer(name: &str) -> bool {
         }
         None => login_ok(name),
     }
+}
+
+/// Sets the title (trimmed, 1 to 256 chars) and the body (at most
+/// `PR_TEXT_MAX` chars, on stdin) of pull request `number`.
+pub fn pr_edit(
+    gh: &dyn GhExec,
+    cwd: &Path,
+    number: u64,
+    title: &str,
+    body: &str,
+) -> Result<(), GitError> {
+    let title = title.trim();
+    if title.is_empty() || title.chars().count() > TITLE_MAX || body.chars().count() > PR_TEXT_MAX {
+        return Err(GitError::BadPrEdit);
+    }
+    let n = number.to_string();
+    // `--title=` so a title that starts with `-` is still a value.
+    let title = format!("--title={title}");
+    ok(gh.run(
+        cwd,
+        &["pr", "edit", &n, &title, "--body-file", "-"],
+        Some(body),
+    )?)?;
+    Ok(())
 }
 
 /// Asks `add` for a review and drops the request of `remove`, in one
@@ -135,6 +162,52 @@ mod tests {
 
     fn names(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn edit_sends_the_title_as_one_value_and_the_body_on_stdin() {
+        let fake = Fake::new(vec![out(0, "", "")]);
+        pr_edit(&fake, cwd(), 12, "  --web fix  ", "line\n--title=x\n").unwrap();
+        let calls = fake.calls.borrow();
+        assert_eq!(
+            calls[0].0,
+            ["pr", "edit", "12", "--title=--web fix", "--body-file", "-"]
+        );
+        assert_eq!(calls[0].1.as_deref(), Some("line\n--title=x\n"));
+    }
+
+    #[test]
+    fn edit_takes_an_empty_body_and_refuses_a_bad_title_or_long_body() {
+        let fake = Fake::new(vec![out(0, "", "")]);
+        pr_edit(&fake, cwd(), 1, "Fix", "").unwrap();
+        assert_eq!(fake.calls.borrow()[0].1.as_deref(), Some(""));
+        for (title, body) in [
+            ("   ", String::new()),
+            (&*"x".repeat(TITLE_MAX + 1), String::new()),
+            ("Fix", "x".repeat(PR_TEXT_MAX + 1)),
+        ] {
+            assert!(matches!(
+                pr_edit(&fake, cwd(), 1, title, &body),
+                Err(GitError::BadPrEdit)
+            ));
+        }
+        assert_eq!(fake.calls.borrow().len(), 1);
+        // The limit counts chars, not bytes.
+        let fake = Fake::new(vec![out(0, "", "")]);
+        pr_edit(&fake, cwd(), 1, &"é".repeat(TITLE_MAX), "").unwrap();
+    }
+
+    #[test]
+    fn edit_surfaces_a_gh_failure() {
+        let fake = Fake::new(vec![out(
+            1,
+            "",
+            "GraphQL: Resource not accessible by integration",
+        )]);
+        assert!(matches!(
+            pr_edit(&fake, cwd(), 1, "Fix", "b"),
+            Err(GitError::Gh(_))
+        ));
     }
 
     #[test]

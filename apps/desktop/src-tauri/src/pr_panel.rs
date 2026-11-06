@@ -1,5 +1,5 @@
 //! The pull request panel of a worktree: the PR of its branch in full, a
-//! comment, auto-merge on or off, and its reviewers. Every command runs `gh`
+//! comment, auto-merge on or off, its title and body, and its reviewers. Every command runs `gh`
 //! as the login the repo is bound to, in the registered worktree.
 
 use std::collections::HashMap;
@@ -9,7 +9,7 @@ use std::sync::{Mutex, PoisonError};
 use tauri::State;
 use xdev_git::{
     GhExec, MergeMethod, PrDetail, SystemGh, pr_auto_merge_disable, pr_auto_merge_enable,
-    pr_comment_add, pr_detail, pr_reviewer_candidates, pr_reviewers_edit,
+    pr_comment_add, pr_detail, pr_edit, pr_reviewer_candidates, pr_reviewers_edit,
 };
 use xdev_workspace::{Registry, path_key};
 
@@ -80,6 +80,16 @@ fn candidates_with(
     Ok(list)
 }
 
+fn edit_with(
+    gh: &dyn GhExec,
+    path: &Path,
+    number: u64,
+    title: &str,
+    body: &str,
+) -> Result<(), CmdError> {
+    Ok(pr_edit(gh, path, number, title, body)?)
+}
+
 fn reviewers_with(
     gh: &dyn GhExec,
     path: &Path,
@@ -126,6 +136,23 @@ pub fn worktree_pr_auto_merge(
     let account = gh_account_for(data_dir(&state)?, &path)?;
     run_gh(&SystemGh, account, |gh| {
         auto_with(gh, &path, number, method)
+    })
+}
+
+/// Sets the title and body; the body goes to `gh` on stdin. Rejects with
+/// `bad_pr_edit` for an empty or long title or a long body.
+#[tauri::command(async)]
+pub fn worktree_pr_edit(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    number: u64,
+    title: String,
+    body: String,
+) -> Result<(), CmdError> {
+    crate::remote_ssh::local_only(&path, "worktree_pr_edit")?;
+    let account = gh_account_for(data_dir(&state)?, &path)?;
+    run_gh(&SystemGh, account, |gh| {
+        edit_with(gh, &path, number, &title, &body)
     })
 }
 
@@ -234,6 +261,23 @@ mod tests {
         assert_eq!(candidates_with(&cache, "r1", fail).unwrap(), ["ada"]);
         assert_eq!(*reads.borrow(), 2);
         assert!(candidates_with(&cache, "r2", fail).is_err());
+    }
+
+    #[test]
+    fn edit_puts_the_body_on_stdin_and_refuses_an_empty_title() {
+        let fake = Fake {
+            calls: RefCell::default(),
+        };
+        edit_with(&fake, Path::new("."), 9, "New", "Body").unwrap();
+        let err = edit_with(&fake, Path::new("."), 9, " ", "Body").unwrap_err();
+        assert_eq!(err.code, "bad_pr_edit");
+        let calls = fake.calls.borrow();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].0,
+            ["pr", "edit", "9", "--title=New", "--body-file", "-"]
+        );
+        assert_eq!(calls[0].1.as_deref(), Some("Body"));
     }
 
     #[test]

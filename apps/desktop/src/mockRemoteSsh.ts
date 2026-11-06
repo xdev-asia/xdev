@@ -382,6 +382,7 @@ export const REMOTE_UNSUPPORTED = {
   worktreePrDetail: "worktree_pr_detail",
   worktreePrComment: "worktree_pr_comment",
   worktreePrAutoMerge: "worktree_pr_auto_merge",
+  worktreePrEdit: "worktree_pr_edit",
   worktreePrReviewers: "worktree_pr_reviewers",
   worktreePrReviewerCandidates: "worktree_pr_reviewer_candidates",
   worktreeCheckLog: "worktree_check_log",
