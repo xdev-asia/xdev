@@ -13,6 +13,7 @@ use clap::{Parser, ValueEnum};
 use xdev_link::{LinkBind, PeerRole, PeerStore};
 
 pub mod host;
+pub mod pair;
 pub mod projects;
 pub mod terms;
 

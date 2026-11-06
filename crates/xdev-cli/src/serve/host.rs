@@ -435,6 +435,7 @@ pub(crate) mod tests {
         pub store: Arc<PeerStore>,
         pub handle: xdev_link::Handle,
         pub events: mpsc::Receiver<LinkEvent>,
+        pub window: xdev_link::server::Window,
         pub project: String,
     }
 
@@ -460,6 +461,7 @@ pub(crate) mod tests {
             clock.clone(),
         );
         let (tx, events) = mpsc::channel();
+        let window = xdev_link::server::Window::default();
         let handle = Listener::start_with(
             ListenCfg {
                 bind: LinkBind::Localhost,
@@ -468,7 +470,7 @@ pub(crate) mod tests {
             },
             key.clone(),
             store.clone(),
-            Arc::default(),
+            window.clone(),
             serve.clone(),
             tx,
             HostOpts {
@@ -488,6 +490,7 @@ pub(crate) mod tests {
             store,
             handle,
             events,
+            window,
             project,
         }
     }
