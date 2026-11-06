@@ -5,6 +5,7 @@ mod ai;
 mod app;
 mod askpass;
 mod automations;
+mod capture;
 mod context;
 mod file;
 mod mcp;
@@ -131,6 +132,9 @@ enum Command {
     /// Listening ports with their process and worktree; `--all` for every
     /// worktree.
     Ports(ports::PortsArgs),
+    /// Asks the running app to capture a screen region, like the capture
+    /// shortcut. Prints `started`.
+    Capture(capture::CaptureCommand),
     /// Scheduled agent runs: `list`, `show`, `run`, `runs`, `enable`, `disable`, `remove`.
     Automations {
         #[command(subcommand)]
@@ -200,6 +204,7 @@ fn main() -> ExitCode {
         Command::Orchestration(a) => app::AppCommand::Orchestration(Box::new(a)),
         Command::File { command } => app::AppCommand::File(command),
         Command::Ports(a) => app::AppCommand::Ports(a),
+        Command::Capture(a) => app::AppCommand::Capture(a),
         Command::Automations { command } => app::AppCommand::Automations(command),
         other => return finish(run(other)),
     };
@@ -250,6 +255,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         | Command::Terminal { .. }
         | Command::File { .. }
         | Command::Ports(_)
+        | Command::Capture(_)
         | Command::Automations { .. } => return Ok(Outcome::Ok),
         Command::Mcp { dir } => {
             let dir = dir.unwrap_or_else(|| {
