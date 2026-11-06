@@ -50,9 +50,9 @@ export function stateTone(kind: TrackerStateKind): StateTone {
 }
 
 /** Which sections show; all of them when nothing usable is stored. */
-export function loadShown(store: Pick<Storage, "getItem"> = localStorage): Shown {
+export function loadShown(store?: Pick<Storage, "getItem">): Shown {
   try {
-    const raw = store.getItem(SHOWN_KEY);
+    const raw = (store ?? localStorage).getItem(SHOWN_KEY);
     if (raw === null) return { ...ALL_SHOWN };
     const v: unknown = JSON.parse(raw);
     if (typeof v !== "object" || v === null) return { ...ALL_SHOWN };
@@ -67,9 +67,9 @@ export function loadShown(store: Pick<Storage, "getItem"> = localStorage): Shown
   }
 }
 
-export function saveShown(shown: Shown, store: Pick<Storage, "setItem"> = localStorage): void {
+export function saveShown(shown: Shown, store?: Pick<Storage, "setItem">): void {
   try {
-    store.setItem(SHOWN_KEY, JSON.stringify(shown));
+    (store ?? localStorage).setItem(SHOWN_KEY, JSON.stringify(shown));
   } catch {
     // Storage is off: the choice just does not survive a reload.
   }

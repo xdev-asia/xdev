@@ -1,0 +1,101 @@
+/* Task trackers: the List-tab sections (.trk-*) and the Settings page fields. Tokens only; state is a dot, never a side stripe. */
+.trk-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-4);
+  min-width: 0;
+}
+
+.trk-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.trk-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.trk-title {
+  display: flex;
+  align-items: center;
+  gap: var(--x-space-2);
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.trk-count {
+  color: var(--x-color-muted);
+  font-weight: 400;
+}
+
+.trk-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--x-space-2);
+}
+
+.trk-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.trk-key {
+  color: var(--x-color-muted);
+  font-family: var(--x-font-mono);
+}
+
+.trk-note {
+  margin: 0;
+  color: var(--x-color-muted);
+  font-size: 12px;
+}
+
+.trk-jira-fields {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--x-space-3);
+  min-width: 0;
+}
+
+.trk-jira-fields > * {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.trk-pulls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-3);
+}
+
+.trk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+}
+
+@media (max-width: 600px) {
+  .trk-jira-fields {
+    flex-direction: column;
+  }
+
+  .trk-tools {
+    flex-basis: 100%;
+  }
+}
