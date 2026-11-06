@@ -44,7 +44,8 @@ pub enum FileCommand {
     Diff {
         /// Absolute, or relative to the current folder.
         path: String,
-        /// Only what is staged: the index against `HEAD`.
+        /// Only what is staged: the index against `HEAD` (or `--against`). Needs `--print`;
+        /// the review tab shows the working tree.
         #[arg(long)]
         staged: bool,
         /// The ref to compare with.

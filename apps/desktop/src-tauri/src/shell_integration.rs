@@ -113,7 +113,8 @@ fn plan(
                 return None;
             }
             let own = set(var("XDG_DATA_DIRS"));
-            let mut dirs = dir.join("fish").into_os_string();
+            // fish reads `<entry>/fish/vendor_conf.d`, so the entry is the folder that holds `fish/`.
+            let mut dirs = dir.as_os_str().to_owned();
             dirs.push(":");
             dirs.push(own.clone().unwrap_or_else(|| XDG_DATA_DIRS_DEFAULT.into()));
             let env = vec![
@@ -313,7 +314,12 @@ mod tests {
             ("XDEV_ZDOTDIR".to_owned(), "/home/u/.config/zsh".into())
         );
 
-        let fish = dir.join("fish").to_string_lossy().into_owned();
+        let fish = dir.to_string_lossy().into_owned();
+        assert!(
+            Path::new(&fish)
+                .join("fish/vendor_conf.d")
+                .ends_with("si/fish/vendor_conf.d")
+        );
         let (_, env) = plan(Shell::Fish, &args(&["-l"]), dir, false, &none).unwrap();
         assert_eq!(
             env,

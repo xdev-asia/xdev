@@ -1,6 +1,8 @@
 # xDev shell integration: the owner's .zshrc, then the hooks.
 __xdev_ours="$ZDOTDIR"
 ZDOTDIR="${XDEV_ZDOTDIR:-$HOME}"
+# A system zshrc (macOS /etc/zshrc) set HISTFILE from xDev's ZDOTDIR; history stays the owner's.
+[[ "$HISTFILE" == "$__xdev_ours/.zsh_history" ]] && HISTFILE="$ZDOTDIR/.zsh_history"
 [[ -r "$ZDOTDIR/.zshrc" ]] && source "$ZDOTDIR/.zshrc"
 [[ "$ZDOTDIR" != "${XDEV_ZDOTDIR:-$HOME}" ]] && XDEV_ZDOTDIR="$ZDOTDIR"
 ZDOTDIR="$__xdev_ours"

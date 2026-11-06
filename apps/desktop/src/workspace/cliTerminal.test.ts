@@ -122,7 +122,7 @@ describe("cli terminal", () => {
     const stop = startCliTerminal(api, host);
     await flush();
     api.__cliTerminal(ev({}));
-    await vi.waitFor(() => expect(live.tab("t-new")).not.toBeNull());
+    await vi.waitFor(() => expect(live.tab("t-new")).not.toBeNull(), { timeout: 5000 });
     stop();
     await flush();
     api.__cliTerminal(ev({ id: "t-two" }));

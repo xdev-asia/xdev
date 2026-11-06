@@ -196,8 +196,9 @@ struct DiffParams {
 
 /// `file.diff`: shows a file's changes in the review tab of its worktree.
 /// `against` is the ref to compare with, checked here so a typo fails in
-/// the terminal; `staged` alone compares with `HEAD`. Gated as an `open`:
-/// the caller's own worktree passes, another one asks.
+/// the terminal. The review tab shows the working tree, so `staged` (the
+/// index only) is refused here; `--print` has it. Gated as an `open`, before
+/// the ref is looked at: the caller's own worktree passes, another one asks.
 pub fn file_diff(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Value, AppError> {
     let p: DiffParams = params(req)?;
     let cwd = p
@@ -207,21 +208,11 @@ pub fn file_diff(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Value,
     let all = ctx.listed()?;
     let worktrees: Vec<PathBuf> = all.iter().map(|l| PathBuf::from(&l.view.path)).collect();
     let (worktree, path) = locate(&p.path, cwd.as_deref(), &worktrees)?;
-    let base = match (p.against, p.staged) {
-        (Some(name), _) => {
-            let name = name.trim().to_owned();
-            let repo = xdev_git::Repo::discover(&worktree).map_err(CmdError::from)?;
-            match repo.resolve_ref(&name) {
-                Ok(Some(_)) => Some(name),
-                Ok(None) | Err(xdev_git::GitError::BadId(_)) => {
-                    return Err(bad_request(format!("{name} names no commit")));
-                }
-                Err(e) => return Err(CmdError::from(e).into()),
-            }
-        }
-        (None, true) => Some("HEAD".to_owned()),
-        (None, false) => None,
-    };
+    if p.staged {
+        return Err(bad_request(
+            "the review tab shows the working tree; use --staged with --print",
+        ));
+    }
     let registry = ctx.registry()?;
     let me = match ctx.caller_worktree(caller)? {
         Some(me) => Some(me),
@@ -234,6 +225,20 @@ pub fn file_diff(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Value,
         &worktree,
     );
     ctx.gate("file.diff", "open", me.as_deref(), &worktree, scope)?;
+    let base = match p.against {
+        Some(name) => {
+            let name = name.trim().to_owned();
+            let repo = xdev_git::Repo::discover(&worktree).map_err(CmdError::from)?;
+            match repo.resolve_ref(&name) {
+                Ok(Some(_)) => Some(name),
+                Ok(None) | Err(xdev_git::GitError::BadId(_)) => {
+                    return Err(bad_request(format!("{name} names no commit")));
+                }
+                Err(e) => return Err(CmdError::from(e).into()),
+            }
+        }
+        None => None,
+    };
     let out = CliOpenDiff {
         worktree: worktree.display().to_string(),
         path,
@@ -517,10 +522,12 @@ mod tests {
         assert_eq!(diffs(&f), [r]);
         assert_eq!(f.focused.load(std::sync::atomic::Ordering::SeqCst), 1);
         let call = |p: Value| f.call(Some("p-lead"), "file.diff", p);
-        let r = call(json!({ "path": "a.txt", "cwd": lead, "staged": true })).unwrap();
-        assert_eq!(r["base"], "HEAD");
-        let both = json!({ "path": "a.txt", "cwd": lead, "staged": true, "against": " HEAD~0 " });
-        assert_eq!(call(both).unwrap()["base"], "HEAD~0");
+        let r = call(json!({ "path": "a.txt", "cwd": lead, "against": " HEAD~0 " })).unwrap();
+        assert_eq!(r["base"], "HEAD~0");
+        // The review tab has no index-only view: `--staged` is for `--print`.
+        let staged = call(json!({ "path": "a.txt", "cwd": lead, "staged": true })).unwrap_err();
+        assert_eq!(staged.code, "bad_request");
+        assert_eq!(diffs(&f).len(), 2);
     }
 
     #[test]

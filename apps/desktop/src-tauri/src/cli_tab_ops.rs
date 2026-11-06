@@ -426,6 +426,13 @@ pub(crate) fn agent_launch(
         Some(found) if !found.enabled => {
             return Err(bad_request(format!("agent {} is turned off", p.cli)));
         }
+        // The window would refuse it with a toast, and the call would only time out.
+        Some(found) if (ctx.find_agent)(found).is_none() => {
+            return Err(AppError::new(
+                "agent_missing",
+                format!("agent {} is not installed", p.cli),
+            ));
+        }
         Some(_) => {}
     }
     let account = p
@@ -910,6 +917,17 @@ b"}))
         profiles.put(off).unwrap();
         profiles.save(&f.data).unwrap();
         assert_eq!(call(json!({"cli": "claude"})).code, "bad_request");
+        assert!(opened_tabs(&f).is_empty());
+    }
+
+    #[test]
+    fn launch_says_an_agent_is_not_installed_instead_of_waiting() {
+        let mut f = fixture();
+        f.missing_agents = vec!["codex".to_owned()];
+        let e = f
+            .call(Some("p-lead"), "agent.launch", json!({"cli": "codex"}))
+            .unwrap_err();
+        assert_eq!(e.code, "agent_missing");
         assert!(opened_tabs(&f).is_empty());
     }
 

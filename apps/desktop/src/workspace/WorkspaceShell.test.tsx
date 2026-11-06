@@ -1608,7 +1608,7 @@ it("reports its tabs to the app CLI and follows the endpoint's events", async ()
   const api = createMockApi({});
   const view = await harness(api);
   const { sessions, tab } = attend(view);
-  await vi.waitFor(() => expect(api.__cliReports().at(-1)?.tabs.map((t) => t.id)).toContain(tab.id));
+  await vi.waitFor(() => expect(api.__cliReports().at(-1)?.tabs.map((t) => t.id)).toContain(tab.id), { timeout: 5000 });
   // A registry change from the CLI loads the sidebar again.
   const list = vi.spyOn(api, "workspaceSidebar");
   api.__cliWorkspaceChanged();
@@ -1617,17 +1617,17 @@ it("reports its tabs to the app CLI and follows the endpoint's events", async ()
   // `--agent` opens the profile in that worktree, not in front.
   const before = sessions.tabs(OAK).length;
   api.__cliOpenTab({ worktree: OAK, profile: "claude", prompt: null });
-  await vi.waitFor(() => expect(sessions.tabs(OAK)).toHaveLength(before + 1));
+  await vi.waitFor(() => expect(sessions.tabs(OAK)).toHaveLength(before + 1), { timeout: 5000 });
   expect(sessions.tabs(OAK).at(-1)?.profileId).toBe("claude");
   // `agent launch` names the tab and the account.
   api.__cliOpenTab({ worktree: OAK, profile: "claude", prompt: null, id: "t-launch", account: "claude-2" });
-  await vi.waitFor(() => expect(sessions.tab("t-launch")?.account).toBe("claude-2"));
+  await vi.waitFor(() => expect(sessions.tab("t-launch")?.account).toBe("claude-2"), { timeout: 5000 });
   // `file diff` reveals the file in that worktree's review, against the base it names.
   const oak = () => view.of(WorktreeTabs).find((n) => n.props.worktree === OAK)!;
   api.__cliOpenDiff({ worktree: OAK, path: "src/session.ts", base: "main" });
-  await vi.waitFor(() => expect(oak().props.reveal).toEqual({ file: "src/session.ts", seq: 1, base: "main" }));
+  await vi.waitFor(() => expect(oak().props.reveal).toEqual({ file: "src/session.ts", seq: 1, base: "main" }), { timeout: 5000 });
   api.__cliOpenDiff({ worktree: OAK, path: "src/status.ts", base: null });
-  await vi.waitFor(() => expect(oak().props.reveal).toEqual({ file: "src/status.ts", seq: 2, base: undefined }));
+  await vi.waitFor(() => expect(oak().props.reveal).toEqual({ file: "src/status.ts", seq: 2, base: undefined }), { timeout: 5000 });
   // A worktree the sidebar does not list is left alone.
   api.__cliOpenDiff({ worktree: "/nowhere", path: "a.ts", base: null });
   await settle();

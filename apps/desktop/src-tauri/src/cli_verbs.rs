@@ -410,6 +410,8 @@ pub struct Ctx<'a> {
     pub scan_ports: &'a dyn Fn(&[PathBuf]) -> PortScan,
     /// Shows the window and puts it in front.
     pub focus_window: &'a dyn Fn(),
+    /// Where an agent profile's program is installed; `None` when it is not.
+    pub find_agent: crate::profiles::Find<'a>,
 }
 
 /// One worktree as the verbs know it.
@@ -1196,6 +1198,7 @@ impl Handler for AppVerbs {
             announce: &announce,
             scan_ports: &scan_ports,
             focus_window: &focus_window,
+            find_agent: &crate::profiles::detect,
         };
         dispatch(&ctx, req, caller, gone)
     }
@@ -1252,6 +1255,8 @@ pub(crate) mod tests {
         /// The fake UI: puts every tab a `cli://terminal` opens on the board,
         /// and takes off every one it closes.
         pub terminal_ui: bool,
+        /// Agent profiles whose program the fake machine lacks; every other one is installed.
+        pub missing_agents: Vec<String>,
         /// The automations the verbs read and write, in a store of their own.
         pub automations: AutomationService,
         /// Ids the verbs announced.
@@ -1325,6 +1330,7 @@ pub(crate) mod tests {
             pty_writes: Mutex::default(),
             pty_kills: Mutex::default(),
             terminal_ui: true,
+            missing_agents: Vec::new(),
             automations: AutomationService::new(
                 xdev_automations::Store::open(&tmp_path.join("automations")).unwrap(),
                 || 1_000,
@@ -1430,6 +1436,9 @@ pub(crate) mod tests {
                 },
                 focus_window: &|| {
                     self.focused.fetch_add(1, Ordering::SeqCst);
+                },
+                find_agent: &|p| {
+                    (!self.missing_agents.contains(&p.id)).then(|| PathBuf::from("/bin/agent"))
                 },
             };
             let req = Request {

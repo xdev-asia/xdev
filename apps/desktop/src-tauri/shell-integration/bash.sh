@@ -10,6 +10,9 @@ if [ -n "$XDEV_SHELL_LOGIN" ]; then
     fi
   done
   unset __xdev_f
+  # bash runs ~/.bash_logout only for a login shell, which this one is not to bash; unless the
+  # owner's files set their own exit trap, it runs here.
+  [ -z "$(trap -p EXIT)" ] && trap '[ -r "$HOME/.bash_logout" ] && . "$HOME/.bash_logout"' EXIT
 else
   [ -r /etc/bash.bashrc ] && . /etc/bash.bashrc
   [ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"
