@@ -1,4 +1,4 @@
-import { Button, Dialog, Field, IconButton, Kbd, RadioGroup, Segmented, Toolbar } from "@xdev-asia/ui";
+import { Button, Dialog, Field, IconButton, Kbd, Segmented, SwatchGroup, Toolbar, type SwatchTone } from "@xdev-asia/ui";
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { JSX, KeyboardEvent, PointerEvent } from "react";
 import { useI18n } from "@/i18n";
@@ -7,6 +7,9 @@ import { pushToast } from "@/workspace/toastStore";
 import { COLOR_KEYS, DEFAULT_TEXT_SIZE, TOOLS, initialState, reducer, type ColorKey, type Shape, type Tool } from "./annotModel";
 import { exportPng } from "./exportPng";
 import { draw, resolveColors, type Colors, type Drawable } from "./render";
+
+/** Each annotation colour as the library tone that draws it. */
+const SWATCH_TONE = { danger: "danger", warning: "warning", accent: "accent", fg: "neutral" } as const satisfies Record<ColorKey, SwatchTone>;
 
 export interface AnnotateDialogProps {
   image: Drawable;
@@ -119,16 +122,12 @@ export function AnnotateDialog({ image, onSend, onDiscard }: AnnotateDialogProps
                 </>
               }
             />
-            <RadioGroup
-              name="annotate-color"
-              className="annotate-colors"
+            <SwatchGroup
+              size="sm"
               aria-label={t("capture.color")}
               value={color}
               onChange={(value) => dispatch({ type: "setColor", color: value as ColorKey })}
-              options={COLOR_KEYS.map((value) => ({
-                value,
-                label: <span className="annotate-dot" data-color={value} role="img" aria-label={`${t("capture.color")} ${t(`capture.color.${value}`)}`} />,
-              }))}
+              options={COLOR_KEYS.map((value) => ({ value, label: t(`capture.color.${value}`), tone: SWATCH_TONE[value] }))}
             />
           </div>
           <div className="annotate-stage">

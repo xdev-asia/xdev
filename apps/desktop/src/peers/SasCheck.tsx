@@ -1,6 +1,6 @@
+import { PairingCode } from "@xdev-asia/ui";
 import type { JSX } from "react";
 import { useI18n } from "@/i18n";
-import { PairingCode } from "./standins/PairingCode";
 
 /** The six digits both computers must show. The answer buttons are the dialog's own, so a surface keeps one primary. */
 export function SasCheck(props: {

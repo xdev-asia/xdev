@@ -1,4 +1,4 @@
-/* Task board views (.board-*): stand-ins for BoardColumn and BoardCard until xdev-ui has them. Tokens only. */
+/* Task board layout (.board-*): the page around the library Board, the filters, the dialogs. Tokens only. */
 .board-host {
   display: flex;
   flex-direction: column;
@@ -63,30 +63,17 @@
   gap: var(--x-space-3);
 }
 
-/* The columns scroll sideways inside this box; the page does not. */
+/* The library's Board scrolls sideways inside this box; the page does not. */
 .board-cols {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   max-width: 100%;
   min-height: 240px;
 }
 
-.board-col {
-  flex: 1 0 240px;
-  max-width: 320px;
-}
-
-.board-col .kb-col-head .ws-icon-btn {
-  width: 24px;
-  height: 24px;
-}
-
-.board-card .ws-wt-main {
-  gap: var(--x-space-2);
-  cursor: pointer;
-}
-
-.board-card .ws-wt-main:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+.board-card-slot {
+  display: contents;
 }
 
 .board-card-meta {
@@ -114,12 +101,6 @@
 
 .board-linked-gone {
   color: var(--text-3);
-}
-
-/* Large enough to hit, and shown on focus as well as on hover. */
-.board-more {
-  width: 24px;
-  height: 24px;
 }
 
 .board-unreadable-list {
@@ -172,12 +153,6 @@
 .board-list {
   min-width: 0;
   overflow-x: auto;
-}
-
-@media (max-width: 600px) {
-  .board-col {
-    flex-basis: 240px;
-  }
 }
 
 .board-decompose {

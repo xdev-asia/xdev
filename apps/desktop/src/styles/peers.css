@@ -1,4 +1,4 @@
-/* Paired computers: the code stand-ins, the settings page, the pair dialog and the Computers panel.
+/* Paired computers: the settings page, the pair dialog and the Computers panel.
    Tokens only; at 360px every row wraps instead of scrolling sideways. */
 .peers-sr {
   position: absolute;
@@ -10,59 +10,6 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
-}
-
-.peers-code {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: var(--x-space-2);
-}
-
-.peers-code-value {
-  position: relative;
-  min-width: 0;
-}
-
-.peers-code-groups {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--x-space-3);
-  font-family: var(--x-font-mono);
-  letter-spacing: 0.08em;
-}
-
-.peers-code-group {
-  padding: var(--x-space-1) var(--x-space-2);
-  border: 1px solid var(--x-color-line);
-  border-radius: var(--x-radius-sm);
-}
-
-.peers-code[data-size="lg"] .peers-code-groups {
-  font-size: 1.5rem;
-}
-
-.peers-code[data-size="md"] .peers-code-groups {
-  font-size: 1.125rem;
-}
-
-.peers-code-input {
-  box-sizing: border-box;
-  max-width: 100%;
-  min-height: 32px;
-  padding: var(--x-space-1) var(--x-space-2);
-  border: 1px solid var(--x-color-line);
-  border-radius: var(--x-radius-sm);
-  background: var(--x-color-bg);
-  color: var(--x-color-ink);
-  font-family: var(--x-font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.peers-code-input[aria-invalid="true"] {
-  border-color: var(--x-color-danger);
 }
 
 .peers-stack {

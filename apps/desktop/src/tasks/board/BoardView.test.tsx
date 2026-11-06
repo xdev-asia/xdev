@@ -33,7 +33,7 @@ function html(over: Partial<BoardViewProps> = {}): string {
 }
 
 it("draws five columns in order with their counts", () => {
-  const heads = [...html().matchAll(/<span class="kb-col-name">([^<]*)<\/span><span class="ws-group-count">(\d+)</g)].map((m) => [m[1], m[2]]);
+  const heads = [...html().matchAll(/<h3 class="x-board-col-title"[^>]*>([^<]*)<\/h3><span class="badge"[^>]*>(\d+)</g)].map((m) => [m[1], m[2]]);
   expect(heads).toEqual([["Backlog", "1"], ["To do", "2"], ["In progress", "0"], ["In review", "0"], ["Done", "0"]]);
 });
 
