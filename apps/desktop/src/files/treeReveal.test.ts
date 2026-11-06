@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { ancestorsOf, loadReveal, revealOpen, saveReveal } from "./treeReveal";
+import { ancestorsOf, loadReveal, loadShowIgnored, onTreeReveal, requestTreeReveal, revealOpen, saveReveal, saveShowIgnored } from "./treeReveal";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -27,4 +27,23 @@ it("follows the active file unless it was turned off; unreadable storage means o
   vi.stubGlobal("localStorage", { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } });
   expect(loadReveal()).toBe(true);
   expect(() => saveReveal(false)).not.toThrow();
+});
+
+it("shows ignored files unless turned off", () => {
+  const store = new Map<string, string>();
+  vi.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) });
+  expect(loadShowIgnored()).toBe(true);
+  saveShowIgnored(false);
+  expect(loadShowIgnored()).toBe(false);
+  saveShowIgnored(true);
+  expect(loadShowIgnored()).toBe(true);
+});
+
+it("a reveal request reaches the listeners until they stop", () => {
+  const seen: string[] = [];
+  const off = onTreeReveal((r) => seen.push(`${r.worktree}:${r.rel}`));
+  requestTreeReveal("/wt", "a/b.ts");
+  off();
+  requestTreeReveal("/wt", "c.ts");
+  expect(seen).toEqual(["/wt:a/b.ts"]);
 });

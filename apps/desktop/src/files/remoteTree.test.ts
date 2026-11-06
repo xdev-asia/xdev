@@ -6,18 +6,18 @@ const LIST = { files: ["README.md", "src/lib/a.ts", "src/main.ts", "src/z.ts", "
 it("lists one folder of a file list, folders first", () => {
   expect(listingFromFiles(LIST, "")).toEqual({
     entries: [
-      { name: "docs", dir: true },
-      { name: "src", dir: true },
-      { name: "README.md", dir: false },
+      { name: "docs", dir: true, ignored: false },
+      { name: "src", dir: true, ignored: false },
+      { name: "README.md", dir: false, ignored: false },
     ],
     truncated: false,
   });
   expect(listingFromFiles(LIST, "src").entries).toEqual([
-    { name: "lib", dir: true },
-    { name: "main.ts", dir: false },
-    { name: "z.ts", dir: false },
+    { name: "lib", dir: true, ignored: false },
+    { name: "main.ts", dir: false, ignored: false },
+    { name: "z.ts", dir: false, ignored: false },
   ]);
-  expect(listingFromFiles(LIST, "src/lib").entries).toEqual([{ name: "a.ts", dir: false }]);
+  expect(listingFromFiles(LIST, "src/lib").entries).toEqual([{ name: "a.ts", dir: false, ignored: false }]);
   // A name that only starts like the folder is not in it.
   expect(listingFromFiles({ files: ["srcx/a.ts"], truncated: false }, "src").entries).toEqual([]);
 });

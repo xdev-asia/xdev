@@ -9,6 +9,7 @@ import { type Api, type ApiError, type PtyProfile, type RemoteTarget, type Termi
 import { FileView } from "@/files/FileView";
 import { fileName, fileTabId, fileTabRel, fileTabs, isDirty, isFileTab, useOpenFiles } from "@/files/fileTabs";
 import { saveFile } from "@/files/fileIO";
+import { requestTreeReveal } from "@/files/treeReveal";
 import { MarkdownPreview } from "@/files/MarkdownPreview";
 import { isPreviewTab, previewTabId, previewTabRel } from "@/files/previewTabs";
 import { isViewTab, viewTabId, viewTabRel } from "@/files/viewTabs";
@@ -1108,6 +1109,7 @@ export function WorktreeTabs(props: {
           else sessions.setPinned(id, pinned);
         }}
         onCloseFiles={(id, kind: FileCloseKind) => closeFiles(fileCloseTargets(fileInfos(leaf.tabs), fileTabRel(id), kind))}
+        onRevealInTree={(rel) => requestTreeReveal(worktree, rel)}
         onCopyFilePath={(rel, relative) => void copyText(relative ? relativePath(rel) : absolutePath(worktree, rel))}
         onOpenPreview={(rel) => void openPreview(rel, { pane: leaf.id })}
         onSplitView={(rel, dir) => void openView(rel, dir, leaf.id)}

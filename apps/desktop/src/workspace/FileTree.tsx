@@ -1,6 +1,6 @@
 import { Banner, Icon } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
-import type { JSX, KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { JSX, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { toApiError, type Api, type DirListing, type FileList, type FsEvent, type WorktreeChange } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NameDialog } from "@/files/NameDialog";
@@ -8,10 +8,10 @@ import { fileName, fileTabs } from "@/files/fileTabs";
 import { openFile } from "@/files/openFile";
 import { isRemoteWorktree, listingFromFiles } from "@/files/remoteTree";
 import { dirsToReload, drain, type WatchQueue } from "@/files/treeRefresh";
-import { copyAbsolute, copyRelative, createEntry, deleteEntry, findInFolder, parentOf, renameEntry, treeMenuItems, type TreeIo } from "@/files/treeActions";
+import { canMove, copyAbsolute, copyRelative, createEntry, deleteEntry, findInFolder, moveEntry, parentOf, renameEntry, treeMenuItems, type TreeIo } from "@/files/treeActions";
 import { matchFiles } from "@/files/treeFilter";
 import { NAV_KEYS, navigate, type NavKey, type NavRow } from "@/files/treeNav";
-import { loadReveal, revealOpen, saveReveal } from "@/files/treeReveal";
+import { loadReveal, loadShowIgnored, onTreeReveal, revealOpen, saveReveal, saveShowIgnored } from "@/files/treeReveal";
 import { useI18n } from "@/i18n";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
 import { pushToast } from "./toastStore";
@@ -25,17 +25,20 @@ const MARK: Partial<Record<WorktreeChange["kind"], string>> = { added: "A", modi
 type Folder = { listing: DirListing } | { error: string };
 
 type Row =
-  | { type: "dir"; path: string; name: string; depth: number; open: boolean; changed: boolean }
-  | { type: "file"; path: string; name: string; depth: number; kind?: WorktreeChange["kind"] }
+  | { type: "dir"; path: string; name: string; depth: number; open: boolean; changed: boolean; ignored: boolean }
+  | { type: "file"; path: string; name: string; depth: number; kind?: WorktreeChange["kind"]; ignored: boolean }
   | { type: "note"; path: string; depth: number; note: "loading" | "empty" | "truncated" | "error" };
+
+// How long a revealed row stays tinted; the animation in workspace.css lasts as long.
+const FLASH_MS = 1000;
 
 const join = (dir: string, name: string): string => (dir === "" ? name : `${dir}/${name}`);
 
 /**
  * The visible rows, folders first as the listing gives them. A folder not read yet shows a loading
- * row once it is open; a cut listing ends in a note.
+ * row once it is open; a cut listing ends in a note. What git ignores is left out when `showIgnored` is off.
  */
-export function treeRows(folders: Record<string, Folder>, open: string[], changes: WorktreeChange[]): Row[] {
+export function treeRows(folders: Record<string, Folder>, open: string[], changes: WorktreeChange[], showIgnored = true): Row[] {
   const kinds = new Map(changes.map((c) => [c.path, c.kind]));
   const changedDirs = new Set<string>();
   for (const { path } of changes) {
@@ -48,13 +51,14 @@ export function treeRows(folders: Record<string, Folder>, open: string[], change
     if (!folder) return void note("loading");
     if ("error" in folder) return void note("error");
     for (const entry of folder.listing.entries) {
+      if (entry.ignored && !showIgnored) continue;
       const path = join(dir, entry.name);
       if (!entry.dir) {
-        rows.push({ type: "file", path, name: entry.name, depth, kind: kinds.get(path) });
+        rows.push({ type: "file", path, name: entry.name, depth, kind: kinds.get(path), ignored: entry.ignored });
         continue;
       }
       const expanded = open.includes(path);
-      rows.push({ type: "dir", path, name: entry.name, depth, open: expanded, changed: changedDirs.has(path) });
+      rows.push({ type: "dir", path, name: entry.name, depth, open: expanded, changed: changedDirs.has(path), ignored: entry.ignored });
       if (expanded) walk(path, depth + 1);
     }
     if (folder.listing.truncated) note("truncated");
@@ -97,6 +101,15 @@ export function FileTree(props: {
   // Every file of the worktree, read when the filter opens; null until it arrives.
   const [listed, setListed] = useState<string[] | null>(null);
   const [follow, setFollow] = useState(loadReveal);
+  const [showIgnored, setShowIgnored] = useState(loadShowIgnored);
+  // The row that flashes after a manual reveal, and the file whose row will flash once it is drawn.
+  const [flash, setFlash] = useState<string | null>(null);
+  const flashNext = useRef<string | null>(null);
+  // The row being dragged, and the folder it is over ("" is the worktree root).
+  const dragging = useRef<string | null>(null);
+  const [dropOn, setDropOn] = useState<string | null>(null);
+  // A move onto a name that is taken waits for a yes.
+  const [replace, setReplace] = useState<{ rel: string; dest: string } | null>(null);
   // The row the arrow keys are on, and the options menu of the header.
   const [cursor, setCursor] = useState<string | null>(null);
   const [options, setOptions] = useState<{ x: number; y: number } | null>(null);
@@ -109,6 +122,9 @@ export function FileTree(props: {
   const asked = useRef(new Set<string>());
   const openNow = useRef(open);
   openNow.current = open;
+  const foldersNow = useRef(folders);
+  foldersNow.current = folders;
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const treeEl = useRef<HTMLDivElement | null>(null);
   // Set when a key moved the cursor, so the row takes the focus; and the file to scroll to once its row exists.
   const focusCursor = useRef(false);
@@ -201,6 +217,26 @@ export function FileTree(props: {
     scrollTo.current = activeFile;
   }, [activeFile, follow, worktree]);
 
+  // "Reveal in file tree" from an editor tab: open the folders above the file, scroll to it, flash its row.
+  useEffect(
+    () =>
+      onTreeReveal((req) => {
+        if (req.worktree !== worktree) return;
+        const next = revealOpen(openNow.current, req.rel);
+        if (next !== openNow.current) {
+          setOpen(next);
+          for (const dir of next) if (!foldersNow.current[dir]) read(dir);
+        }
+        setFilter("");
+        setFilterOpen(false);
+        setCursor(req.rel);
+        scrollTo.current = req.rel;
+        flashNext.current = req.rel;
+        setRefresh((n) => n + 1);
+      }),
+    [worktree],
+  );
+
   // Runs after every draw: the row to scroll to or to focus is looked up when it is there.
   useEffect(() => {
     const el = treeEl.current;
@@ -211,6 +247,12 @@ export function FileTree(props: {
       if (row) {
         row.scrollIntoView?.({ block: "nearest" });
         scrollTo.current = null;
+        if (flashNext.current === row.dataset.path) {
+          flashNext.current = null;
+          setFlash(row.dataset.path ?? null);
+          if (flashTimer.current) clearTimeout(flashTimer.current);
+          flashTimer.current = setTimeout(() => setFlash(null), FLASH_MS);
+        }
       }
     }
     if (focusCursor.current && cursor !== null) {
@@ -274,7 +316,7 @@ export function FileTree(props: {
     setMenu({ x: e.clientX, y: e.clientY, target });
   };
 
-  const all = treeRows(folders, open, changes);
+  const all = treeRows(folders, open, changes, showIgnored);
   const found = filterOpen && filter.trim() !== "" ? matchFiles(listed ?? [], filter) : null;
   const rows = found ? [] : all;
   // The rows the keys walk: the matches while filtering, else every folder and file shown.
@@ -306,6 +348,8 @@ export function FileTree(props: {
       return;
     }
     if (mod || e.altKey || e.shiftKey || !NAV_KEYS.includes(e.key)) return;
+    // Space and F2 are not the tree's while a text field (the filter) has the focus.
+    if ((e.key === " " || e.key === "F2") && (e.target as HTMLElement).closest?.("input,textarea")) return;
     // The key is the tree's: a focused row would otherwise also click on Enter.
     e.preventDefault();
     const go = navigate(navRows, here, e.key as NavKey);
@@ -314,13 +358,49 @@ export function FileTree(props: {
       focusCursor.current = true;
       setCursor(go.path);
     } else if (go.kind === "open") openFile({ worktree, rel: go.path });
+    else if (go.kind === "preview") openFile({ worktree, rel: go.path, preview: true });
+    else if (go.kind === "rename") setAsk({ kind: "rename", dir: parentOf(go.path), rel: go.path });
     else if (go.kind === "toggle" || (go.kind === "expand") === !open.includes(go.path)) toggle(go.path);
   }
+
+  // A folder row, or the empty space of the tree (the worktree root), takes a dropped row.
+  const dropOver = (dest: string) => ({
+    "data-drop": dropOn === dest || undefined,
+    onDragOver: (e: ReactDragEvent) => {
+      const from = dragging.current;
+      if (from === null || !canMove(from, dest)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      if (dropOn !== dest) setDropOn(dest);
+    },
+    onDrop: (e: ReactDragEvent) => {
+      const from = dragging.current;
+      dragging.current = null;
+      setDropOn(null);
+      if (from === null || !canMove(from, dest)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (namesIn(dest).includes(fileName(from))) setReplace({ rel: from, dest });
+      else void moveEntry(io(), from, dest).then((r) => (r === "exists" ? setReplace({ rel: from, dest }) : Array.isArray(r) ? r.forEach(reload) : undefined));
+    },
+  });
 
   const cell = (path: string) => ({
     "data-path": path,
     "aria-selected": here === path,
     "data-active": activeFile === path || undefined,
+    "data-flash": flash === path || undefined,
+    draggable: true,
+    onDragStart: (e: ReactDragEvent) => {
+      dragging.current = path;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", path);
+    },
+    onDragEnd: () => {
+      dragging.current = null;
+      setDropOn(null);
+    },
     tabIndex: tabbable === path ? 0 : -1,
     onFocus: () => setCursor(path),
   });
@@ -375,7 +455,7 @@ export function FileTree(props: {
         </div>
       )}
       {props.watchHealth === "limit" && <Banner title={t("files.watch.limit.title")}>{t("files.watch.limit.body")}</Banner>}
-    <div ref={treeEl} className="ws-tree ws-mono" role="tree" aria-label={t("workspace.files.tree")} onKeyDown={onKeyDown} onContextMenu={(e) => onMenu(e as unknown as MouseEvent, null)}>
+    <div ref={treeEl} className="ws-tree ws-mono" role="tree" aria-label={t("workspace.files.tree")} onKeyDown={onKeyDown} onContextMenu={(e) => onMenu(e as unknown as MouseEvent, null)} {...dropOver("")}>
       {found && found.hits.length === 0 && listed !== null && <div className="ws-tree-note">{t("files.tree.filterEmpty")}</div>}
       {found?.hits.map((hit) => (
         <button
@@ -417,7 +497,9 @@ export function FileTree(props: {
               aria-expanded={row.open}
               title={row.path}
               style={indent}
+              data-ignored={row.ignored || undefined}
               {...cell(row.path)}
+              {...dropOver(row.path)}
               onClick={() => toggle(row.path)}
               onContextMenu={(e) => onMenu(e as unknown as MouseEvent, { rel: row.path, dir: true })}
             >
@@ -450,6 +532,7 @@ export function FileTree(props: {
             aria-level={row.depth + 1}
             title={row.path}
             style={indent}
+            data-ignored={row.ignored || undefined}
             {...cell(row.path)}
             onClick={() => (diffs && changed ? onOpen(row.path) : openFile({ worktree, rel: row.path }))}
             onDoubleClick={() => openFile({ worktree, rel: row.path })}
@@ -471,6 +554,15 @@ export function FileTree(props: {
               run: () => {
                 saveReveal(!follow);
                 setFollow(!follow);
+              },
+            },
+            {
+              id: "showIgnored",
+              labelKey: "files.tree.showIgnored",
+              checked: showIgnored,
+              run: () => {
+                saveShowIgnored(!showIgnored);
+                setShowIgnored(!showIgnored);
               },
             },
           ]}
@@ -503,6 +595,19 @@ export function FileTree(props: {
           const a = ask;
           setAsk(null);
           if (a?.kind === "delete") void deleteEntry(io(), a.rel).then(reload);
+        }}
+      />
+      <ConfirmDialog
+        open={replace !== null}
+        titleId="move-title"
+        title={t("files.move.title", { name: replace ? fileName(replace.rel) : "" })}
+        body={t("files.move.body")}
+        confirmLabel={t("files.move.confirm")}
+        onCancel={() => setReplace(null)}
+        onConfirm={() => {
+          const r = replace;
+          setReplace(null);
+          if (r) void moveEntry(io(), r.rel, r.dest, true).then((res) => (Array.isArray(res) ? res.forEach(reload) : undefined));
         }}
       />
     </div>

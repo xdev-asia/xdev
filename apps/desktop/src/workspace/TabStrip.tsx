@@ -154,6 +154,8 @@ export function TabStrip(props: {
   onCloseFiles?: (id: string, kind: FileCloseKind) => void;
   /** Copies the path of a file tab: relative to the worktree, or the full one. */
   onCopyFilePath?: (rel: string, relative: boolean) => void;
+  /** Shows a file tab's file in the file tree. */
+  onRevealInTree?: (rel: string) => void;
   /** Opens the Markdown preview of a file tab. */
   onOpenPreview?: (rel: string) => void;
   /** Shows a file tab's file a second time in a new pane. */
@@ -296,6 +298,7 @@ export function TabStrip(props: {
         setPinned: (pinned) => props.onPin(item.id, pinned),
         copyPath: () => props.onCopyFilePath?.(file.rel, false),
         copyRelativePath: () => props.onCopyFilePath?.(file.rel, true),
+        ...(props.onRevealInTree ? { revealInTree: () => props.onRevealInTree?.(file.rel) } : {}),
         close: () => props.onClose(item.id),
         closeOthers: () => props.onCloseFiles?.(item.id, "others"),
         closeToRight: () => props.onCloseFiles?.(item.id, "right"),

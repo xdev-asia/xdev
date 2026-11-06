@@ -7,4 +7,9 @@ export type DirEntry = { name: string,
 /**
  * A real folder; a link is a file here, whatever it points at.
  */
-dir: boolean, };
+dir: boolean, 
+/**
+ * Git ignores it (a `.gitignore` of the worktree, or `.git/info/exclude`), or a folder above it.
+ * The user's global excludes file is not read.
+ */
+ignored: boolean, };

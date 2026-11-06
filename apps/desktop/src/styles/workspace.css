@@ -1542,6 +1542,37 @@ button.ws-tree-row[data-active="true"] {
   background: var(--bg-3);
 }
 
+button.ws-tree-row[data-ignored="true"] {
+  color: var(--text-3);
+}
+
+button.ws-tree-row[data-drop="true"],
+.ws-tree[data-drop="true"] {
+  background: var(--x-color-accent-soft);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+button.ws-tree-row[data-flash="true"] {
+  animation: ws-tree-flash 1s ease-out;
+}
+
+@keyframes ws-tree-flash {
+  from {
+    background: var(--x-color-accent-soft);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.ws-tree-row[data-flash="true"] {
+    animation: none;
+    background: var(--x-color-accent-soft);
+  }
+}
+
 .ws-tree-name:has(+ .ws-tree-dir) {
   flex: 0 1 auto;
 }

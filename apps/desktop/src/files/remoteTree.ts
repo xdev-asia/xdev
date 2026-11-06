@@ -20,7 +20,7 @@ export function listingFromFiles(list: FileList, dir: string): DirListing {
   }
   const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   return {
-    entries: [...[...dirs].sort(byName).map((name) => ({ name, dir: true })), ...files.sort(byName).map((name) => ({ name, dir: false }))],
+    entries: [...[...dirs].sort(byName).map((name) => ({ name, dir: true, ignored: false })), ...files.sort(byName).map((name) => ({ name, dir: false, ignored: false }))],
     truncated: list.truncated,
   };
 }

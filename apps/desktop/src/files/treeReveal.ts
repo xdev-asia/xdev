@@ -30,3 +30,42 @@ export function saveReveal(on: boolean): void {
     // The choice only fails to survive a restart.
   }
 }
+
+const IGNORED_KEY = "xdev.tree.showIgnored";
+
+/** Whether the tree shows what git ignores (dimmed); on when nothing is saved or storage cannot be read. */
+export function loadShowIgnored(): boolean {
+  try {
+    return localStorage.getItem(IGNORED_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export function saveShowIgnored(on: boolean): void {
+  try {
+    if (on) localStorage.removeItem(IGNORED_KEY);
+    else localStorage.setItem(IGNORED_KEY, "0");
+  } catch {
+    // The choice only fails to survive a restart.
+  }
+}
+
+/** A manual "Reveal in file tree": which file of which worktree. */
+export interface TreeRevealRequest {
+  worktree: string;
+  rel: string;
+}
+
+const revealListeners = new Set<(req: TreeRevealRequest) => void>();
+
+/** Asks the file tree of `worktree` to open the folders above `rel`, scroll to it and flash its row. */
+export function requestTreeReveal(worktree: string, rel: string): void {
+  for (const fn of [...revealListeners]) fn({ worktree, rel });
+}
+
+/** Calls `fn` for every request; returns the way to stop. */
+export function onTreeReveal(fn: (req: TreeRevealRequest) => void): () => void {
+  revealListeners.add(fn);
+  return () => void revealListeners.delete(fn);
+}

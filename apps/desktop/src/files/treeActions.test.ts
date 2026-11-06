@@ -5,7 +5,7 @@ import { getToasts, resetToastsForTests } from "@/workspace/toastStore";
 import { FileTabs } from "./fileTabs";
 import { onOpenFile, type OpenFileRequest } from "./openFile";
 import { consumeSearchPrefill, resetSearchPrefill } from "@/search/searchPrefill";
-import { absolutePath, copyRelative, createEntry, deleteEntry, findInFolder, folderGlob, renameEntry, treeMenuItems, type TreeIo, type TreeMenuHandlers } from "./treeActions";
+import { absolutePath, copyRelative, createEntry, deleteEntry, findInFolder, folderGlob, canMove, moveEntry, renameEntry, treeMenuItems, type TreeIo, type TreeMenuHandlers } from "./treeActions";
 
 const W = "C:\\wt\\a";
 const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
@@ -133,4 +133,28 @@ it("find in folder on a file uses its parent folder; on a folder, itself; on the
     treeMenuItems(target, h).find((i) => i.id === "findInFolder")!.run!();
   }
   expect(found).toEqual(["src/a", "src/a", "", ""]);
+});
+
+it("canMove refuses the same folder, itself and its own subfolders", () => {
+  expect(canMove("src/a.ts", "")).toBe(true);
+  expect(canMove("src/a.ts", "src")).toBe(false);
+  expect(canMove("src", "src")).toBe(false);
+  expect(canMove("src", "src/lib")).toBe(false);
+  expect(canMove("src", "src2")).toBe(true);
+});
+
+it("a move renames into the folder, and a taken name asks before the trash", async () => {
+  const api = createMockApi({});
+  const rename = vi.spyOn(api, "fileRename").mockResolvedValue(undefined);
+  const trash = vi.spyOn(api, "fileTrash").mockResolvedValue(undefined);
+  store.open(W, "a.ts");
+  expect(await moveEntry(io(api), "a.ts", "lib")).toEqual(["", "lib"]);
+  expect(rename).toHaveBeenCalledWith(W, "a.ts", "lib/a.ts");
+  expect(store.get(W, "lib/a.ts")).not.toBeNull();
+  rename.mockRejectedValueOnce({ code: "exists", message: "taken" });
+  expect(await moveEntry(io(api), "b.ts", "lib")).toBe("exists");
+  expect(trash).not.toHaveBeenCalled();
+  expect(await moveEntry(io(api), "b.ts", "lib", true)).toEqual(["", "lib"]);
+  expect(trash).toHaveBeenCalledWith(W, "lib/b.ts");
+  expect(await moveEntry(io(api), "lib/c.ts", "lib")).toBeNull();
 });

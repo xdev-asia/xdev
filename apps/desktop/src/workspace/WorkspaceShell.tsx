@@ -1,3 +1,4 @@
+import { onTreeReveal } from "@/files/treeReveal";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import pkg from "../../package.json";
@@ -447,6 +448,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }, [api, sessions]);
 
   // An account crossing a quota threshold raises a toast that can move new tabs to another account.
+  // "Reveal in file tree" from an editor tab shows the files panel.
+  useEffect(() => onTreeReveal(() => { setRightOpen(true); setPanelTab("files"); }), []);
   useEffect(() => watchQuotaAlerts({ api, t: (key, vars) => live.t(key, vars), toast: pushToast }), [api]);
   useEffect(() => watchFailovers({ api, t: (key, vars) => live.t(key, vars), toast: pushToast }), [api]);
 
