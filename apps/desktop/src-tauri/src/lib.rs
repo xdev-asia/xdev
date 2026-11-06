@@ -52,6 +52,7 @@ mod orch_pump;
 mod orch_skill;
 mod orch_sweep;
 mod orchestration;
+mod peers;
 mod ports;
 mod power;
 mod pr_review;
@@ -162,6 +163,7 @@ pub fn run() {
         .manage(keybindings::LastSent::default())
         .manage(notch::Notch::default())
         .manage(lsp::LspHub::default())
+        .manage(peers::cmd::PeersHub::default())
         .manage(startup::Startup::from_env())
         .on_window_event(|window, event| {
             if window.label() == "main"
@@ -210,6 +212,8 @@ pub fn run() {
             }
             // After the settings store: the server setting is read first.
             xdev_id::start(app.handle());
+            // Paired computers: the listener runs only when Settings turn it on.
+            peers::cmd::start(app.handle());
             // The OS request follows the stored mode from the start. Off the main thread: a
             // helper is watched for an early exit, which takes a moment.
             {
@@ -806,6 +810,24 @@ pub fn run() {
             lsp::lsp_workspace_symbols,
             lsp::lsp_restart,
             lsp::lsp_status,
+            peers::cmd::peers_state,
+            peers::cmd::peers_set_enabled,
+            peers::cmd::peers_list,
+            peers::cmd::peers_nearby,
+            peers::cmd::peer_pair_start,
+            peers::cmd::peer_pair_cancel,
+            peers::cmd::peer_pair_join,
+            peers::cmd::peer_pair_confirm,
+            peers::cmd::peer_set_role,
+            peers::cmd::peer_rename,
+            peers::cmd::peer_remove,
+            peers::cmd::peer_projects,
+            peers::cmd::peer_terms,
+            peers::cmd::peer_term_attach,
+            peers::cmd::peer_term_detach,
+            peers::cmd::peer_term_write,
+            peers::cmd::peer_agent_start,
+            peers::cmd::peer_confirm_reply,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
@@ -820,6 +842,7 @@ pub fn run() {
                 automations::stop(app);
                 app.state::<app_stats::AppStatsHub>().close_all();
                 app.state::<lsp::LspHub>().stop_all();
+                app.state::<peers::cmd::PeersHub>().stop();
                 app.state::<pty::Ptys>().quit(on_quit);
                 app.state::<power::Awake>().release();
                 if let Some(ssh) = app.try_state::<ssh_connect::SshConnections>() {

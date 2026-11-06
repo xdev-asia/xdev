@@ -6976,6 +6976,7 @@ name = "xdev-desktop"
 version = "0.7.0"
 dependencies = [
  "arboard",
+ "base64 0.23.1",
  "blake3",
  "block2",
  "dunce",
@@ -6993,6 +6994,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sysinfo",
  "tauri",
  "tauri-build",

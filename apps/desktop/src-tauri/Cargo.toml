@@ -23,6 +23,9 @@ png = "0.18"
 # The updater's own HTTP client, for the releases list of the build picker.
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 semver = "1"
+# A paired computer's terminal input (base64) and the hashed xDev ID (sha2).
+base64.workspace = true
+sha2.workspace = true
 keyring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -93,7 +96,7 @@ xdev-core = { workspace = true, features = ["ts"] }
 xdev-git = { workspace = true, features = ["ts"] }
 xdev-id = { workspace = true, features = ["ts", "test-util"] }
 xdev-kit = { workspace = true, features = ["ts"] }
-xdev-link = { workspace = true, features = ["ts"] }
+xdev-link = { workspace = true, features = ["ts", "test-util"] }
 xdev-lsp = { workspace = true, features = ["ts"] }
 xdev-orch = { workspace = true, features = ["ts"] }
 xdev-ports = { workspace = true, features = ["ts"] }

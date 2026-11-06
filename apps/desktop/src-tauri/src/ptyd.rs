@@ -76,11 +76,12 @@ pub(crate) struct LocalHost;
 impl PtyHost for LocalHost {
     fn spawn(
         &self,
-        _id: &str,
+        id: &str,
         spec: SpawnSpec,
         _meta: serde_json::Value,
         sink: Sink,
     ) -> Result<Box<dyn PtyHandle>, CmdError> {
+        let sink = crate::peers::tap::tee(id, sink);
         let session = Session::spawn(spec, sink.on_output, sink.on_exit)?;
         Ok(Box::new(session))
     }
@@ -99,6 +100,7 @@ impl PtyHost for ServiceHost {
         meta: serde_json::Value,
         sink: Sink,
     ) -> Result<Box<dyn PtyHandle>, CmdError> {
+        let sink = crate::peers::tap::tee(id, sink);
         let pid = self.client.spawn(id, spec, meta, sink)?;
         Ok(Box::new(ServicePty {
             client: self.client.clone(),
@@ -113,6 +115,7 @@ impl PtyHost for ServiceHost {
         from_seq: u64,
         sink: Sink,
     ) -> Result<(Box<dyn PtyHandle>, Attached), CmdError> {
+        let sink = crate::peers::tap::tee(id, sink);
         let attached = self.client.attach(id, from_seq, sink)?;
         let pty = ServicePty {
             client: self.client.clone(),
