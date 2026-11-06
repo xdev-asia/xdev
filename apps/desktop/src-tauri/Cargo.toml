@@ -31,6 +31,8 @@ tauri = { version = "2", features = ["devtools", "image-png"] }
 tauri-plugin-clipboard-manager = "=2.5.0"
 tauri-plugin-deep-link = "2.6.3"
 tauri-plugin-dialog = "2.8.4"
+# The capture shortcut, which works while the window is in the background.
+tauri-plugin-global-shortcut = "2.4.1"
 tauri-plugin-notification = "2.6.0"
 tauri-plugin-opener = "2.7.2"
 tauri-plugin-single-instance = { version = "2.5.5", features = ["deep-link"] }
@@ -69,6 +71,12 @@ objc2-user-notifications = "0.3.2"
 # The Dock icon from Settings → Appearance → App icon.
 objc2 = "0.6.5"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSImage", "NSScreen", "NSWindow"] }
+# Only to read the Screen Recording permission (Settings → Screenshots).
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGWindow"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The desktop portal's screenshot call. async-io, the runtime zbus already uses here.
+ashpd = { version = "0.13.13", default-features = false, features = ["screenshot", "async-io"] }
 
 [target.'cfg(windows)'.dependencies]
 # The user Path in the registry and the environment change broadcast (cli_install).

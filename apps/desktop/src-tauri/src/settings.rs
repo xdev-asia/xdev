@@ -108,6 +108,9 @@ pub struct Settings {
     /// name; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub network: NetworkSettings,
+    /// Settings → Screenshots; lenient the same way.
+    #[serde(default, deserialize_with = "lenient")]
+    pub capture: CaptureSettings,
 }
 
 /// Settings → xDev ID.
@@ -417,6 +420,29 @@ impl NetworkSettings {
         self.no_proxy = crate::network::clean_no_proxy(&self.no_proxy);
         self.machine_name = crate::network::clean_machine_name(&self.machine_name);
         self
+    }
+}
+
+/// Settings → Screenshots.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(default, rename_all = "camelCase")]
+pub struct CaptureSettings {
+    /// The global capture shortcut is on.
+    pub enabled: bool,
+    /// The shortcut as an accelerator, such as `CmdOrCtrl+Alt+Shift+S`.
+    pub shortcut: String,
+    /// A pasted image opens the annotate dialog before it is sent.
+    pub annotate_paste: bool,
+}
+
+impl Default for CaptureSettings {
+    fn default() -> Self {
+        CaptureSettings {
+            enabled: true,
+            shortcut: "CmdOrCtrl+Alt+Shift+S".to_owned(),
+            annotate_paste: false,
+        }
     }
 }
 
@@ -1685,6 +1711,7 @@ pub enum SettingsSection {
     Network,
     /// `terminalSets` and `startupPresets`.
     TerminalSets,
+    Capture,
 }
 
 /// What a `settings://changed` event carries.
@@ -4607,5 +4634,31 @@ then sum up"
         assert_eq!(load(&path), Settings::default());
         fs::write(&path, "{not json").unwrap();
         assert_eq!(load(&path), Settings::default());
+    }
+
+    #[test]
+    fn capture_settings_default_and_stay_lenient() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let want = CaptureSettings::default();
+        assert!(want.enabled && !want.annotate_paste);
+        assert_eq!(want.shortcut, "CmdOrCtrl+Alt+Shift+S");
+        for text in [
+            "{}",
+            r#"{ "capture": {} }"#,
+            r#"{ "capture": 3 }"#,
+            r#"{ "capture": { "enabled": "yes" } }"#,
+        ] {
+            fs::write(&path, text).unwrap();
+            assert_eq!(load(&path).capture, want, "{text}");
+        }
+        fs::write(
+            &path,
+            r#"{ "capture": { "annotatePaste": true, "shortcut": "Ctrl+Shift+P" } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path).capture;
+        assert!(loaded.enabled && loaded.annotate_paste);
+        assert_eq!(loaded.shortcut, "Ctrl+Shift+P");
     }
 }

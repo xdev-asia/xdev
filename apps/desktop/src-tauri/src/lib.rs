@@ -13,6 +13,7 @@ mod automation_runs_summary;
 mod automations;
 #[cfg(test)]
 mod bindings;
+mod capture;
 mod charts;
 mod cli_automations;
 mod cli_file;
@@ -136,6 +137,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(updater::Pending::default())
         .manage(xdev_id::XdevIdHub::production())
         .manage(updater::Phase::default())
@@ -162,6 +164,7 @@ pub fn run() {
         .manage(keybindings::LastSent::default())
         .manage(notch::Notch::default())
         .manage(lsp::LspHub::default())
+        .manage(capture::CaptureHub::default())
         .manage(startup::Startup::from_env())
         .on_window_event(|window, event| {
             if window.label() == "main"
@@ -210,6 +213,8 @@ pub fn run() {
             }
             // After the settings store: the server setting is read first.
             xdev_id::start(app.handle());
+            // After the settings store: the capture shortcut is read from it.
+            capture::init(app.handle());
             // The OS request follows the stored mode from the start. Off the main thread: a
             // helper is watched for an early exit, which takes a moment.
             {
@@ -806,6 +811,14 @@ pub fn run() {
             lsp::lsp_workspace_symbols,
             lsp::lsp_restart,
             lsp::lsp_status,
+            capture::capture_start,
+            capture::capture_save_png,
+            capture::capture_read,
+            capture::capture_permission,
+            capture::capture_open_privacy,
+            capture::capture_shortcut_apply,
+            capture::capture_settings_get,
+            capture::capture_settings_put,
         ])
         .build(tauri::generate_context!())
         .expect("failed to start xDev")
@@ -820,6 +833,7 @@ pub fn run() {
                 automations::stop(app);
                 app.state::<app_stats::AppStatsHub>().close_all();
                 app.state::<lsp::LspHub>().stop_all();
+                app.state::<capture::CaptureHub>().cancel();
                 app.state::<pty::Ptys>().quit(on_quit);
                 app.state::<power::Awake>().release();
                 if let Some(ssh) = app.try_state::<ssh_connect::SshConnections>() {

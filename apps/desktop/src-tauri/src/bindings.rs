@@ -402,6 +402,11 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_lsp::Symbol::export_all(cfg)?;
     xdev_lsp::Diagnostic::export_all(cfg)?;
     xdev_lsp::State::export_all(cfg)?;
+    crate::settings::CaptureSettings::export_all(cfg)?;
+    crate::capture::CapturePermission::export_all(cfg)?;
+    crate::capture::ShortcutStatus::export_all(cfg)?;
+    crate::capture::CaptureReady::export_all(cfg)?;
+    crate::capture::CaptureFailed::export_all(cfg)?;
     Ok(())
 }
 
