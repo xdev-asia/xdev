@@ -181,3 +181,16 @@ it("tab and worktree items carry the repo folder", () => {
   expect(worktreeItems(repos, { dot: () => null, activity: () => null, detached: "d", onPick() {} })[0].repo).toBe(repos[0].path);
   expect(tabItems(repos, () => [{ id: "t", worktree: "/wt/oak", profileId: "p", agent: false, status: "idle" } as unknown as Tab], { name: () => "n", onPick() {} })[0].repo).toBe(repos[0].path);
 });
+
+it("lists the two remote actions only when they have a handler", () => {
+  const none = actionItems(t, {}).map((i) => i.id);
+  expect(none).not.toContain("act:remoteAdd");
+  expect(none).not.toContain("act:remoteReconnect");
+  const add = vi.fn();
+  const some = actionItems(t, { remoteAdd: add });
+  expect(some.map((i) => i.id)).toContain("act:remoteAdd");
+  expect(some.map((i) => i.id)).not.toContain("act:remoteReconnect");
+  expect(some.find((i) => i.id === "act:remoteAdd")!.title).toBe("Open remote folder over SSH");
+  const both = actionItems(t, { remoteAdd: add, remoteReconnect: add });
+  expect(both.find((i) => i.id === "act:remoteReconnect")!.title).toBe("Reconnect to remote host");
+});

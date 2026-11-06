@@ -192,3 +192,6 @@ export function dropMove(items: SidebarItem[], dragged: string, target: string):
   }
   return { member: dragged, group: null, index: before(top).at };
 }
+
+/** The Remote group lives in `@/remote/model`; the sidebar reads it from here with the rest of its model. */
+export { remoteRows, stateDot, type RemoteRow } from "@/remote/model";

@@ -79,7 +79,7 @@ import { HeaderSearch } from "./HeaderSearch";
 import { Titlebar } from "./Titlebar";
 import { RemoteBanner } from "@/remote/RemoteBanner";
 import { RemoteGroup } from "@/remote/RemoteGroup";
-import { projectOf, remoteError, remoteRepo, remoteRows } from "@/remote/model";
+import { projectOf, reconnectCandidate, remoteError, remoteRepo, remoteRows } from "@/remote/model";
 import { useRemoteProjects } from "@/remote/useRemoteProjects";
 import { AddProjectDialog, parentOf } from "./AddProjectDialog";
 import { RemoveRepoDialog } from "./RemoveRepoDialog";
@@ -1707,7 +1707,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   // The first remote project whose host is not connected: what the palette's Reconnect acts on.
-  const pendingReconnect = remote.projects.find((p) => p.state.state !== "connected");
+  const pendingReconnect = reconnectCandidate(remote.projects);
   function remoteProject(id: string) {
     return remote.projects.find((p) => p.id === id);
   }

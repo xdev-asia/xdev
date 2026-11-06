@@ -118,3 +118,8 @@ export function remoteError(t: T, code: ApiError["code"], host: string): string 
   const own = t(key, { host });
   return own === key ? t(`error.${code}`) : own;
 }
+
+/** The project the palette's "Reconnect to remote host" acts on: the first whose host is not connected; undefined when all are. */
+export function reconnectCandidate(projects: readonly RemoteProjectView[]): RemoteProjectView | undefined {
+  return projects.find((p) => p.state.state !== "connected");
+}
