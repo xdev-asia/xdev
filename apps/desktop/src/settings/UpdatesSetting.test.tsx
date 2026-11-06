@@ -221,3 +221,18 @@ it("with Pro the rc channel has no tag", () => {
   const p = view(INITIAL_CHECK, { proEarly: true });
   expect(channelOptions(p).join("|")).not.toContain(t("pro.tag"));
 });
+
+it("while the licence is unknown there is no tag, and early builds wait instead of opening the upsell", () => {
+  const onLocked = vi.fn();
+  const p = view(INITIAL_CHECK, { proEarly: null, onLocked });
+  expect(channelOptions(p).join("|")).not.toContain(t("pro.tag"));
+  const change = p.by("data-field", "update-channel")!.props.onChange as (e: { target: { value: string } }) => void;
+  change({ target: { value: "rc" } });
+  const click = p.by("data-act", "update-check")!.props.onClick as (e: { shiftKey: boolean }) => void;
+  click({ shiftKey: true });
+  expect(onLocked).not.toHaveBeenCalled();
+  expect(p.props.onChannel).not.toHaveBeenCalled();
+  expect(p.props.onCheck).not.toHaveBeenCalled();
+  change({ target: { value: "stable" } });
+  expect(p.props.onChannel).toHaveBeenCalledWith("stable");
+});

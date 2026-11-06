@@ -28,8 +28,8 @@ export type UpdatesViewProps = {
   // The older build waiting for the person to confirm the downgrade.
   confirm: ReleaseBuild | null;
   busy: boolean;
-  /** Whether this device has `pro.early`. Default true: only `UpdatesSetting` knows the license. */
-  proEarly?: boolean;
+  /** Whether this device has `pro.early`; `null` while the licence is not read yet. Default true: only `UpdatesSetting` knows the license. */
+  proEarly?: boolean | null;
   /** Asked for early builds without `pro.early`: open the upsell. */
   onLocked?(): void;
   filter?: SettingsFilter;
@@ -51,6 +51,8 @@ export function UpdatesView(props: UpdatesViewProps): JSX.Element {
   const { state, filter, builds, t } = props;
   // A saved `rc` stays without Pro: it is grandfathered, and shows no tag.
   const locked = props.proEarly === false && props.channel !== "rc";
+  // While the licence is unknown: no tag, and choosing early builds waits instead of opening the upsell.
+  const unknown = props.proEarly === null && props.channel !== "rc";
   const line = phaseLine(state);
   const working = state.phase.kind === "checking" || state.phase.kind === "downloading";
   const ready = state.phase.kind === "ready";
@@ -93,7 +95,11 @@ export function UpdatesView(props: UpdatesViewProps): JSX.Element {
                 className="btn-secondary"
                 data-act="update-check"
                 disabled={working || state.restart === "restarting"}
-                onClick={(e: MouseEvent) => (e.shiftKey && locked ? props.onLocked?.() : props.onCheck(e.shiftKey))}
+                onClick={(e: MouseEvent) => {
+                  if (e.shiftKey && unknown) return;
+                  if (e.shiftKey && locked) props.onLocked?.();
+                  else props.onCheck(e.shiftKey);
+                }}
               >
                 {t("settings.general.updates.check")}
               </button>
@@ -122,6 +128,7 @@ export function UpdatesView(props: UpdatesViewProps): JSX.Element {
               data-field="update-channel"
               onChange={(e) => {
                 const next = e.target.value as UpdateChannel;
+                if (next === "rc" && unknown) return;
                 if (next === "rc" && locked) props.onLocked?.();
                 else props.onChannel(next);
               }}
@@ -248,7 +255,7 @@ export function UpdatesSetting(props: { api: UpdatesApi; filter?: SettingsFilter
   const { api, filter, onError } = props;
   const { t, locale } = useI18n();
   const { state, check, restart } = useUpdateCheck(api);
-  const { allows } = useLicense(api);
+  const { allows, state: licenseState } = useLicense(api);
   const upsell = useContext(LicenseUpsellContext);
   const [version, setVersion] = useState<string | null>(null);
   const [channel, setChannel] = useState<UpdateChannel | null>(null);
@@ -338,7 +345,7 @@ export function UpdatesSetting(props: { api: UpdatesApi; filter?: SettingsFilter
       buildFailed={buildFailed}
       confirm={confirm}
       busy={busy}
-      proEarly={allows("pro.early")}
+      proEarly={licenseState === null ? null : allows("pro.early")}
       onLocked={() => upsell("pro.early")}
       filter={filter}
       onCheck={onCheck}
