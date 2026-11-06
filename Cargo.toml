@@ -26,6 +26,7 @@ default-members = [
     "crates/xdev-workspace",
     "crates/xdev-automations",
     "crates/xdev-cli",
+    "crates/xdev-link",
 ]
 
 [workspace.package]
@@ -47,6 +48,7 @@ xdev-ipc = { path = "crates/xdev-ipc" }
 xdev-awake = { path = "crates/xdev-awake" }
 xdev-input-source = { path = "crates/xdev-input-source" }
 xdev-kit = { path = "crates/xdev-kit" }
+xdev-link = { path = "crates/xdev-link" }
 xdev-mcp = { path = "crates/xdev-mcp" }
 xdev-orch = { path = "crates/xdev-orch" }
 xdev-policy = { path = "crates/xdev-policy" }
@@ -64,6 +66,10 @@ dirs = "7.0.0"
 # Token bytes from the OS; already in the build through uuid.
 getrandom = "0.4.3"
 ignore = "0.4.34"
+# Interface addresses for the paired-computer link's candidates (xdev-link).
+if-addrs = "0.15.0"
+# mDNS announce and browse for xdev-link; pure Rust on its own thread, no async runtime.
+mdns-sd = "0.21.7"
 # Local sockets: a named pipe on Windows, a Unix socket elsewhere, behind one API.
 interprocess = "2.4.7"
 keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
@@ -77,12 +83,16 @@ regex = "1.13.1"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+# The Noise protocol for xdev-link, so the crate carries no hand-written crypto.
+snow = { version = "0.10.0", default-features = false, features = ["default-resolver", "std", "use-chacha20poly1305", "use-blake2", "use-curve25519", "use-getrandom"] }
 # The trust hash codex expects for a hook (sha256 of its definition).
 sha2 = "0.10.9"
 tempfile = "3.27.0"
 # Process table (pid, parent, name, command, working folder) on every OS, no unsafe code here.
 sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
 thiserror = "2.0.21"
+# Sync WebSocket for xdev-link; no TLS, Noise does the encryption.
+tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
 # The OS trash (Recycle Bin, Finder, freedesktop) for Delete in the file tree and a failed
 # clone; never a hard delete.
 trash = { version = "5.2.9", default-features = false, features = ["coinit_apartmentthreaded"] }
