@@ -17,6 +17,7 @@ use crate::hooks::{
 use crate::profiles::{Cli, Permissions, Profile, ProfileError, Profiles};
 use crate::shells::{ShellEntry, default_shell_id};
 use crate::version::{CliVersion, cli_version};
+use crate::wsl::PROMPT_ARGV_MAX;
 
 /// Where a launch's account came from: the tab's own pick, the profile's
 /// account, the provider's active (default) account, or the provider's
@@ -67,6 +68,9 @@ pub struct Launch {
     /// line. `command` puts them last; they are not in `args`, so the policy
     /// fingerprint ignores them.
     pub prompt_argv: Vec<String>,
+    /// The WSL distro the agent runs in (`Profile::wsl`, when the host runs
+    /// WSL). Such a launch takes no account, hooks or folder trust.
+    pub wsl: Option<String>,
 }
 
 impl Launch {
@@ -78,7 +82,12 @@ impl Launch {
     /// The CLI is asked for its version first (once per program path), so
     /// it gets only the hook events it knows. A codex new enough also gets
     /// its private home under `data_dir` (`CODEX_HOME`, see `codex_home`).
+    ///
+    /// A WSL launch gets none: the hooks would run `xdev` inside the distro.
     pub fn add_hooks(&mut self, xdev: &Path, data_dir: &Path) {
+        if self.wsl.is_some() {
+            return;
+        }
         self.add_managed_hooks(xdev, |key| env::var_os(key));
         let asks = matches!(self.cli, Some(Cli::Claude | Cli::Codex));
         if asks && self.agent && !self.hooks {
@@ -92,7 +101,10 @@ impl Launch {
     /// root from the launch's env, else from `var` (the app's env). Nothing
     /// is added to `args`.
     pub fn add_managed_hooks(&mut self, xdev: &Path, var: impl Fn(&str) -> Option<OsString>) {
-        let Some(cli) = self.cli.filter(|_| self.agent && !self.hooks) else {
+        let Some(cli) = self
+            .cli
+            .filter(|_| self.agent && !self.hooks && self.wsl.is_none())
+        else {
             return;
         };
         if hook_support(cli) != HookSupport::Managed {
@@ -125,7 +137,10 @@ impl Launch {
         data_dir: Option<&Path>,
         version: Option<CliVersion>,
     ) {
-        let Some(cli) = self.cli.filter(|_| self.agent && !self.hooks) else {
+        let Some(cli) = self
+            .cli
+            .filter(|_| self.agent && !self.hooks && self.wsl.is_none())
+        else {
             return;
         };
         let flags = hook_args(cli, xdev, version);
@@ -363,6 +378,8 @@ pub struct Context<'a> {
     pub account: Option<&'a str>,
     /// A first prompt for the agent; see `Launch::prompt_after`.
     pub prompt: Option<&'a str>,
+    /// Whether the host runs WSL, so a profile's `wsl` applies (Windows).
+    pub wsl: bool,
 }
 
 /// The account provider of an agent CLI, for the CLIs xDev keeps accounts
@@ -419,13 +436,24 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         .map(|line| line.trim().to_owned())
         .filter(|line| !line.is_empty())
         .collect();
-    let (prompt_argv, prompt_after) = place_prompt(
+    let wsl = profile.wsl.clone().filter(|_| ctx.wsl);
+    // Inside WSL the agent reads POSIX argv; a long prompt is typed so the
+    // `wsl.exe` command line stays under the Windows limit.
+    let (mut prompt_argv, mut prompt_after) = place_prompt(
         profile.cli,
         &program,
         ctx.prompt,
-        cfg!(windows),
+        cfg!(windows) && wsl.is_none(),
         !startup.is_empty(),
     );
+    if let Some(prompt) = ctx
+        .prompt
+        .filter(|p| wsl.is_some() && p.len() > PROMPT_ARGV_MAX)
+        && !prompt_argv.is_empty()
+    {
+        prompt_argv.clear();
+        prompt_after = Some(prompt.to_owned());
+    }
 
     let mut env: Vec<(String, OsString)> = profile
         .env
@@ -445,16 +473,20 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
     // The tab's account, else the profile's own, else the provider's active
     // one. A profile with no provider has no home to switch, so it ignores
     // the active account (R1: a profile's own account never follows it).
+    // A WSL launch runs on the distro's own sign-in.
     let picked = ctx
         .account
+        .filter(|_| wsl.is_none())
         .map(|name| (name, AccountSource::Tab))
         .or_else(|| {
             profile
                 .account
                 .as_deref()
+                .filter(|_| wsl.is_none())
                 .map(|name| (name, AccountSource::Profile))
         })
         .or_else(|| {
+            wsl.is_none().then_some(())?;
             let active = ctx.accounts.active(provider?)?;
             Some((active.name.as_str(), AccountSource::Active))
         });
@@ -495,6 +527,7 @@ pub fn resolve(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         hook_events: Vec::new(),
         prompt_after,
         prompt_argv,
+        wsl,
     })
 }
 
@@ -564,6 +597,7 @@ fn resolve_shell(id: &str, ctx: &Context) -> Result<Launch, LaunchError> {
         hook_events: Vec::new(),
         prompt_after: None,
         prompt_argv: Vec::new(),
+        wsl: None,
     })
 }
 
@@ -733,6 +767,7 @@ mod tests {
                 find,
                 account,
                 prompt: None,
+                wsl: false,
             },
         )
     }
@@ -780,6 +815,7 @@ mod tests {
                 find: &find,
                 account: None,
                 prompt: Some(prompt),
+                wsl: false,
             },
         )
         .unwrap()
@@ -992,6 +1028,7 @@ mod tests {
                 find: &|_| panic!("a shell is not detected as a profile"),
                 account: Some("work"),
                 prompt: None,
+                wsl: false,
             },
         )
     }
@@ -1128,6 +1165,7 @@ mod tests {
                     find: &found,
                     account,
                     prompt: None,
+                    wsl: false,
                 },
             )
         };
@@ -1154,6 +1192,7 @@ mod tests {
                     find: &found,
                     account,
                     prompt: None,
+                    wsl: false,
                 },
             )
         };
@@ -1214,6 +1253,7 @@ mod tests {
                 find: &found,
                 account,
                 prompt: None,
+                wsl: false,
             },
         )
     }
@@ -1361,7 +1401,72 @@ mod tests {
             hook_events: Vec::new(),
             prompt_after: None,
             prompt_argv: Vec::new(),
+            wsl: None,
         }
+    }
+
+    // --- wsl ---
+
+    fn run_wsl(host: bool, prompt: Option<&str>) -> Launch {
+        let mut c = builtin(Cli::Claude);
+        c.wsl = Some("Ubuntu".into());
+        let profiles = with(c);
+        let mut accounts = accounts();
+        accounts.activate(Provider::Claude, Some("work")).unwrap();
+        resolve(
+            "claude",
+            &Context {
+                profiles: &profiles,
+                accounts: &accounts,
+                shells: &[],
+                find: &|_| Some(PathBuf::from("claude")),
+                account: Some("work"),
+                prompt,
+                wsl: host,
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_wsl_launch_takes_no_account() {
+        let l = run_wsl(true, None);
+        assert_eq!(l.wsl.as_deref(), Some("Ubuntu"));
+        assert_eq!((l.account, l.account_source), (None, None));
+        let var = Provider::Claude.home_var().unwrap();
+        assert!(!l.env.iter().any(|(k, _)| k.eq_ignore_ascii_case(var)));
+        // Off WSL the profile's `wsl` is ignored and the account applies.
+        let l = run_wsl(false, None);
+        assert_eq!(l.wsl, None);
+        assert_eq!(l.account.as_deref(), Some("work"));
+        assert_eq!(l.account_source, Some(AccountSource::Tab));
+        assert!(l.env.iter().any(|(k, _)| k == var));
+    }
+
+    #[test]
+    fn a_wsl_launch_places_the_prompt_as_posix_argv() {
+        let l = run_wsl(true, Some("fix it"));
+        assert_eq!(l.prompt_argv, ["fix it"]);
+        assert_eq!(l.prompt_after, None);
+        let long = "x".repeat(PROMPT_ARGV_MAX + 1);
+        let l = run_wsl(true, Some(&long));
+        assert!(l.prompt_argv.is_empty());
+        assert_eq!(l.prompt_after.as_deref(), Some(long.as_str()));
+    }
+
+    #[test]
+    fn a_wsl_launch_gets_no_hooks() {
+        let mut l = run_wsl(true, None);
+        let args = l.args.clone();
+        let data = tempfile::tempdir().unwrap();
+        let xdev = Path::new("/opt/xdev");
+        l.add_hooks(xdev, data.path());
+        l.add_hooks_with(xdev, Some(data.path()), Some(CliVersion(2, 1, 317)));
+        l.add_managed_hooks(xdev, |_| Some(data.path().into()));
+        assert!(!l.hooks);
+        assert!(l.hook_events.is_empty());
+        assert_eq!(l.args, args);
+        assert_eq!(std::fs::read_dir(data.path()).unwrap().count(), 0);
     }
 
     // --- hooks ---
