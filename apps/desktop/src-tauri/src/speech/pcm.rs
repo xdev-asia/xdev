@@ -122,6 +122,7 @@ impl Clip {
         self.capped
     }
 
+    #[cfg(test)]
     pub fn capped(&self) -> bool {
         self.capped
     }

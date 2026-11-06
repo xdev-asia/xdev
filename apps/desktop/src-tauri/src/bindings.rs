@@ -467,6 +467,13 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     crate::capture::ShortcutStatus::export_all(cfg)?;
     crate::capture::CaptureReady::export_all(cfg)?;
     crate::capture::CaptureFailed::export_all(cfg)?;
+    crate::settings::SpeechSettings::export_all(cfg)?;
+    crate::settings::SpeechMode::export_all(cfg)?;
+    crate::speech::SpeechStarted::export_all(cfg)?;
+    crate::speech::SpeechText::export_all(cfg)?;
+    crate::speech::SpeechLevel::export_all(cfg)?;
+    crate::speech::MicDevice::export_all(cfg)?;
+    crate::speech::MicPermission::export_all(cfg)?;
     Ok(())
 }
 
