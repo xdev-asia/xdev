@@ -8,7 +8,7 @@
 //! password or passphrase prompt fails as `remote_auth`.
 
 pub(crate) mod files;
-mod store;
+pub(crate) mod store;
 #[cfg(test)]
 mod tests;
 
@@ -865,7 +865,7 @@ pub(crate) fn launch_spec(
 
 /// The remote target of the repo that `cwd` (the repo or one of its
 /// worktrees) belongs to.
-fn target_of(data: &Path, cwd: &Path) -> Result<Option<RemoteTarget>, CmdError> {
+pub(crate) fn target_of(data: &Path, cwd: &Path) -> Result<Option<RemoteTarget>, CmdError> {
     let key = xdev_workspace::path_key(cwd);
     let reg = xdev_workspace::Registry::load(data)?;
     let repo = reg

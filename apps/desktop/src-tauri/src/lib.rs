@@ -46,6 +46,7 @@ mod gitlab;
 mod history;
 mod hook_install;
 mod hooks;
+mod hosts;
 mod issues;
 mod keybindings;
 mod keyboard;
