@@ -339,6 +339,8 @@
     "allow-worktree-pr-merge-info",
     "allow-worktree-pr-merge",
     "allow-worktree-pr-open",
+    "allow-worktree-mr",
+    "allow-worktree-mr-create",
     "allow-issues-list",
     "allow-issue-view",
     "allow-issue-resolve",
