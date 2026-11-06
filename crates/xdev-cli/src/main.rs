@@ -13,6 +13,7 @@ mod mcp;
 mod orch;
 mod ports;
 mod repo;
+mod serve;
 mod skills;
 mod squad;
 mod task;

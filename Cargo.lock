@@ -7149,6 +7149,7 @@ dependencies = [
  "xdev-core",
  "xdev-ipc",
  "xdev-kit",
+ "xdev-link",
  "xdev-mcp",
  "xdev-orch",
  "xdev-policy",
