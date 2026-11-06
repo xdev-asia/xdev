@@ -6,12 +6,15 @@ import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
 import type { JSX, ReactNode } from "react";
-import { toApiError, type Api, type ReviewFile, type ReviewNote, type WorktreeFileDiff } from "@/api";
+import { toApiError, type Api, type LineAttribution, type ReviewFile, type ReviewNote, type WorktreeFileDiff } from "@/api";
 import type { Problem } from "@/changes/useChanges";
 import { ProblemNote } from "@/components/ChangesPanel";
 import { diffTheme, DiffStats } from "@/components/DiffView";
 import { highlight, theme } from "@/components/Editor";
 import { useI18n, type I18n } from "@/i18n";
+import { attributionGutter, setLineAuthors } from "./attribution/lineGutter";
+import { applicable } from "./attribution/lineGutterModel";
+import { LineLegend } from "./attribution/LineLegend";
 import { ImageDiff } from "./ImageDiff";
 import { isImagePath } from "./imageDiffModel";
 import { noteExtension, setNotes, type NoteHandlers } from "./noteWidgets";
@@ -51,9 +54,26 @@ export type FileDiffProps = {
   extra?: ReactNode;
 };
 
-type Built = { chunks(): readonly Chunk[]; goTo(chunk: number): void; goToLine(line: number): void; destroy(): void; notes(list: ReviewNote[]): void };
+type Strings = I18n["t"];
+type Built = {
+  chunks(): readonly Chunk[];
+  goTo(chunk: number): void;
+  goToLine(line: number): void;
+  destroy(): void;
+  notes(list: ReviewNote[]): void;
+  /** Puts the line authors on the new side; `null` clears them. A no-op when the gutter is off. */
+  authors(attr: LineAttribution | null, strings: Strings): void;
+};
+
+/** The runs fit what the diff shows; otherwise nothing until the next read. */
+export { applicable };
 
 function build(host: HTMLElement, diff: WorktreeFileDiff, opts: ViewOptions, label: string, notes: Extension): Built {
+  // The authors gutter goes first, so it is the leftmost on the new side.
+  const authorsGutter: Extension[] = opts.attribution ? [attributionGutter()] : [];
+  const authorsOf = (view: EditorView, attr: LineAttribution | null, strings: Strings) => {
+    if (opts.attribution) view.dispatch({ effects: setLineAuthors.of(attr && { attr, strings }) });
+  };
   const oldText = diff.old ?? "";
   const newText = diff.new ?? "";
   const quiet = opts.ignoreWhitespace && whitespaceSupported(oldText, newText);
@@ -81,7 +101,7 @@ function build(host: HTMLElement, diff: WorktreeFileDiff, opts: ViewOptions, lab
     const merge = new MergeView({
       parent: host,
       a: { doc: oldText, extensions: common },
-      b: { doc: newText, extensions: [...common, notes] },
+      b: { doc: newText, extensions: [...authorsGutter, ...common, notes] },
       diffConfig,
       collapseUnchanged,
       highlightChanges: true,
@@ -93,13 +113,14 @@ function build(host: HTMLElement, diff: WorktreeFileDiff, opts: ViewOptions, lab
       goToLine: (n) => jumpLine(merge.b, n),
       destroy: () => merge.destroy(),
       notes: (list) => merge.b.dispatch({ effects: setNotes.of(list) }),
+      authors: (attr, strings) => authorsOf(merge.b, attr, strings),
     };
   }
   const view = new EditorView({
     parent: host,
     state: EditorState.create({
       doc: newText,
-      extensions: [...common, notes, unifiedMergeView({ original: oldText, mergeControls: false, syntaxHighlightDeletions: true, collapseUnchanged, diffConfig })],
+      extensions: [...authorsGutter, ...common, notes, unifiedMergeView({ original: oldText, mergeControls: false, syntaxHighlightDeletions: true, collapseUnchanged, diffConfig })],
     }),
   });
   return {
@@ -108,6 +129,7 @@ function build(host: HTMLElement, diff: WorktreeFileDiff, opts: ViewOptions, lab
     goToLine: (n) => jumpLine(view, n),
     destroy: () => view.destroy(),
     notes: (list) => view.dispatch({ effects: setNotes.of(list) }),
+    authors: (attr, strings) => authorsOf(view, attr, strings),
   };
 }
 
@@ -123,6 +145,7 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
   const { t } = i18n;
   const [diff, setDiff] = useState<WorktreeFileDiff | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
+  const [lineAttr, setLineAttr] = useState<LineAttribution | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLElement>(null);
   const built = useRef<Built | null>(null);
@@ -151,6 +174,20 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
   }, [api, worktree, base, file.path, open, rev, image]);
 
   const shown = open && diff && !diff.skip ? diff : null;
+  // Who wrote each changed line; read apart from the diff, so it is kept only when it fits the shown text.
+  useEffect(() => {
+    setLineAttr(null);
+    if (!shown || !opts.attribution || image) return;
+    let alive = true;
+    api.attributionLines(worktree, file.path, base).then(
+      (a) => alive && setLineAttr(applicable(a, shown.new ?? "") ? a : null),
+      () => alive && setLineAttr(null),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [api, worktree, base, file.path, shown, opts.attribution, rev, image]);
+
   useEffect(() => {
     if (!shown || !host.current) return;
     const ext = noteExtension({ file: file.path, handlers: () => live.current.handlers, i18n: () => live.current.i18n });
@@ -165,11 +202,15 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
       built.current = null;
       made.destroy();
     };
-  }, [shown, opts.layout, opts.ignoreWhitespace, opts.collapse, opts.lineNumbers, opts.wrap, t]);
+  }, [shown, opts.layout, opts.ignoreWhitespace, opts.collapse, opts.lineNumbers, opts.wrap, opts.attribution, t]);
 
   useEffect(() => {
     built.current?.notes(props.notes);
-  }, [props.notes, shown, opts.layout, opts.ignoreWhitespace, opts.collapse, opts.lineNumbers, opts.wrap, t]);
+  }, [props.notes, shown, opts.layout, opts.ignoreWhitespace, opts.collapse, opts.lineNumbers, opts.wrap, opts.attribution, t]);
+
+  useEffect(() => {
+    built.current?.authors(lineAttr, live.current.i18n.t);
+  }, [lineAttr, shown, opts.layout, opts.ignoreWhitespace, opts.collapse, opts.lineNumbers, opts.wrap, opts.attribution, t]);
 
   // A reveal scrolls the file's section to the top of the list.
   useEffect(() => {
@@ -208,6 +249,7 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
       {open && !image && diff?.skip === "too_large" && <p className="ws-empty">{t("workspace.diff.tooLarge")}</p>}
       {blank && <p className="ws-empty">{t("review.whitespaceOnly")}</p>}
       {open && !image && !problem && !diff && <p className="ws-empty">{t("review.loading")}</p>}
+      {shown && opts.attribution && <LineLegend attr={lineAttr} />}
       {shown && <div className="rv-file-body editor diff" ref={host} />}
     </section>
   );
