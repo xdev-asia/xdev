@@ -14,6 +14,7 @@ import { lspItems } from "@/files/lsp/lspEvents";
 import { chartItems } from "@/orchestration/charts/chartEvents";
 import { resourceItems } from "@/stats/resourceEvents";
 import { foreignTermsItems } from "@/foreignTerms/foreignTermsEvents";
+import { prPanelItems } from "@/workspace/prPanelEvents";
 import { actionItems, boardTaskItems, crashItems, quickCommandItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
 import { JumpPalette } from "./JumpPalette";
 import { layoutItems } from "@/workspace/layoutEvents";
@@ -265,6 +266,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       ...resourceItems(t),
       ...conversationItems(t, front),
       ...foreignTermsItems(t),
+      ...prPanelItems(t),
       ...(sessions && current ? layoutItems(t) : []),
       ...(current && actions.runQuickCommand && actions.newQuickCommand
         ? quickCommandItems([...picked.global, ...picked.project], repoOfCurrent?.shortName ?? "", t, { run: actions.runQuickCommand, create: actions.newQuickCommand })

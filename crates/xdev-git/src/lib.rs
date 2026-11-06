@@ -10,6 +10,7 @@ mod diff;
 mod fork;
 mod gh;
 mod gh_issue;
+mod gh_pr;
 mod gh_review;
 mod gitlab;
 mod history;
@@ -42,6 +43,11 @@ pub use gh::{
 pub use gh_issue::{
     ISSUE_TIMELINE_MAX, IssueCloseReason, IssueEdit, IssueEditReport, IssueEvent, IssueEventKind,
     IssueLabel, issue_assignable, issue_comment, issue_edit, issue_labels, issue_timeline,
+};
+pub use gh_pr::{
+    MergeState, Mergeable, PR_TEXT_MAX, PrAutoMerge, PrDetail, PrEntry, PrEntryKind, PrFile,
+    PrReviewer, ReviewDecision, ReviewerState, pr_auto_merge_disable, pr_auto_merge_enable,
+    pr_comment_add, pr_detail,
 };
 pub use gh_review::{
     COMMENT_BODY_MAX, COMMENTS_PER_SOURCE, MergeBlock, MergeMethod, PrComment, PrCommentDraft,

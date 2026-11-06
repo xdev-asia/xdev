@@ -1,0 +1,198 @@
+/* The pull request panel. Tokens only; it holds down to 360 px: the tabs scroll, nothing overflows. */
+.pr-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  overflow-wrap: anywhere;
+}
+
+.pr-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pr-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pr-number {
+  flex-shrink: 0;
+  font-family: var(--x-font-mono);
+  color: var(--text-2);
+}
+
+.pr-title {
+  min-width: 0;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.pr-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.pr-branches {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.pr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pr-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The tab strip scrolls sideways instead of wrapping or pushing the panel wider. */
+.pr-tabs {
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.pr-tabs .kit-tabs {
+  flex-wrap: nowrap;
+  width: max-content;
+  min-width: 100%;
+}
+
+.pr-tabs .kit-tab {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.pr-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pr-h {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.pr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.pr-grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.pr-file {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font-family: var(--x-font-mono);
+  font-size: 12px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.pr-file {
+  cursor: pointer;
+}
+
+button.pr-file:hover {
+  text-decoration: underline;
+}
+
+.pr-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}
+
+.pr-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.pr-muted {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.pr-body {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.pr-body img {
+  max-width: 100%;
+}
+
+.pr-reply {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.pr-reply textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.pr-auto {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

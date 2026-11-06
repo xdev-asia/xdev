@@ -62,6 +62,7 @@ mod orchestration;
 mod peers;
 mod ports;
 mod power;
+mod pr_panel;
 mod pr_review;
 mod profiles;
 mod prompt_queue;
@@ -658,6 +659,9 @@ pub fn run() {
             pr_review::worktree_pr_checks_rerun,
             pr_review::worktree_pr_merge_info,
             pr_review::worktree_pr_merge,
+            pr_panel::worktree_pr_detail,
+            pr_panel::worktree_pr_comment,
+            pr_panel::worktree_pr_auto_merge,
             ship::worktree_pr_open,
             issues::issues_list,
             issues::issue_view,

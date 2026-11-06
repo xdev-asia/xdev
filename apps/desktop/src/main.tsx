@@ -37,6 +37,7 @@ import "./styles/peers.css";
 import "katex/dist/katex.min.css";
 import "./styles/preview-files.css";
 import "./styles/paneChrome.css";
+import "./styles/prPanel.css";
 import "./styles/diagnostics.css";
 import "./styles/mcp.css";
 import "./styles/startup.css";

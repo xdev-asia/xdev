@@ -311,6 +311,16 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_git::MergeBlock::export_all(cfg)?;
     xdev_git::PrMergeInfo::export_all(cfg)?;
     xdev_git::RerunReport::export_all(cfg)?;
+    xdev_git::PrDetail::export_all(cfg)?;
+    xdev_git::PrEntry::export_all(cfg)?;
+    xdev_git::PrEntryKind::export_all(cfg)?;
+    xdev_git::PrFile::export_all(cfg)?;
+    xdev_git::PrReviewer::export_all(cfg)?;
+    xdev_git::PrAutoMerge::export_all(cfg)?;
+    xdev_git::ReviewDecision::export_all(cfg)?;
+    xdev_git::Mergeable::export_all(cfg)?;
+    xdev_git::MergeState::export_all(cfg)?;
+    xdev_git::ReviewerState::export_all(cfg)?;
     CreateRequest::export_all(cfg)?;
     xdev_workspace::RepoIcon::export_all(cfg)?;
     KitText::export_all(cfg)?;
