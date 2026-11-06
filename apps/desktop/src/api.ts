@@ -1,4 +1,5 @@
 import { getVersion } from "@tauri-apps/api/app";
+import { homeDir } from "@tauri-apps/api/path";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -985,6 +986,8 @@ export interface Api {
   onUpdateReady(cb: (update: UpdateInfo) => void): Promise<() => void>;
   // The version of this build.
   appVersion(): Promise<string>;
+  /** The person's home folder; floating terminals start here. */
+  homeDir(): Promise<string>;
   // An OS notification; the text comes from here so it follows the UI language.
   notifyUpdate(title: string, body: string): Promise<void>;
   // A check the person asked for; `rc` also stores the release candidate channel. Resolves with where
@@ -2502,6 +2505,7 @@ const tauriApi: Api = {
   updateStatus: () => call("update_status"),
   onUpdateReady: (cb) => listen<UpdateInfo>("update-ready", (e) => cb(e.payload)),
   appVersion: () => getVersion(),
+  homeDir: () => homeDir(),
   notifyUpdate: (title, body) => call("update_notify", { title, body }),
   updateCheck: (rc) => call("update_check", { rc }),
   updatePhase: () => call("update_phase"),

@@ -751,6 +751,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     async updateStatus() { return null; },
     async onUpdateReady() { return () => {}; },
     async appVersion() { return "0.0.0-dev"; },
+    async homeDir() { return "/home/demo"; },
     async notifyUpdate() {},
     async addAccount(name, provider, dir) {
       if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) return reject("bad_name");
