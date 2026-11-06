@@ -84,6 +84,20 @@ describe("CLI events", () => {
     off();
   });
 
+  it("marks a worktree unread or read when the CLI says so", async () => {
+    const api = createMockApi({});
+    const markUnread = vi.fn();
+    const stop = startCliEvents(api, { reload() {}, openTab() {}, markUnread, t });
+    await flush();
+    api.__cliWorktreeRead({ worktree: "/w/lead", unread: true });
+    api.__cliWorktreeRead({ worktree: "/w/other", unread: false });
+    expect(markUnread.mock.calls).toEqual([
+      ["/w/lead", true],
+      ["/w/other", false],
+    ]);
+    stop();
+  });
+
   it("words an automation write as a change to one that runs in the worktree", async () => {
     const api = createMockApi({});
     startCliEvents(api, { reload() {}, openTab() {}, t });
@@ -91,5 +105,20 @@ describe("CLI events", () => {
     api.__cliAsk({ request: 8, caller: "/w/lead", verb: "automation.remove", target: "/w/other" });
     expect(getToasts()[0].text).toBe("lead wants to change an automation that runs in other.");
     expect(translate("vi", "cli.ask.automation")).not.toBe("cli.ask.automation");
+  });
+
+  it("words a repo write as adding it or changing its settings", async () => {
+    const api = createMockApi({});
+    startCliEvents(api, { reload() {}, openTab() {}, t });
+    await flush();
+    api.__cliAsk({ request: 9, caller: null, verb: "repo.add", target: "/src/web" });
+    api.__cliAsk({ request: 10, caller: "/w/lead", verb: "repo.set-base-ref", target: "/src/app" });
+    expect(getToasts().map((x) => x.text)).toEqual([
+      "A script outside xDev wants to add the repository web.",
+      "lead wants to change the settings of the repository app.",
+    ]);
+    for (const key of ["cli.ask.repoAdd", "cli.ask.repo"]) {
+      expect(translate("vi", key)).not.toBe(key);
+    }
   });
 });

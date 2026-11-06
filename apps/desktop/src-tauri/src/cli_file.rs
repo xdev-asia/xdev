@@ -8,8 +8,9 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
 use xdev_workspace::path_key;
 
-use crate::cli_verbs::{Ctx, bad_request, params};
-use crate::endpoint::{AppError, Caller, Request};
+use crate::cli_verbs::{Ctx, bad_request, params, target};
+use crate::commands::CmdError;
+use crate::endpoint::{AppError, Caller, Request, caller_worktree};
 
 /// Emitted for the window to open the file.
 pub const OPEN_FILE_EVENT: &str = "cli://open-file";
@@ -168,6 +169,69 @@ pub fn file_open(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Value,
     Ok(json!(out))
 }
 
+/// At most this many files open at once; the rest are listed, not opened.
+pub const OPEN_CHANGED_MAX: usize = 20;
+
+#[derive(Deserialize)]
+struct OpenChangedParams {
+    /// Id, unique prefix, name or path; default the caller's worktree.
+    worktree: Option<String>,
+    cwd: Option<String>,
+}
+
+/// `file.open-changed`: opens each changed file of a worktree, as git
+/// status lists them, in path order. A deleted file has nothing to open;
+/// past `OPEN_CHANGED_MAX` the rest are skipped.
+pub fn file_open_changed(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Value, AppError> {
+    let p: OpenChangedParams = params(req)?;
+    let me = match ctx.caller_worktree(caller)? {
+        Some(me) => Some(me),
+        None => match p.cwd.as_deref() {
+            Some(d) => caller_worktree(&ctx.registry()?, Path::new(d)),
+            None => None,
+        },
+    };
+    let all = ctx.listed()?;
+    let l = target(&all, p.worktree.as_deref(), me.as_deref())?;
+    let worktree = PathBuf::from(&l.view.path);
+    let mut changed = xdev_git::Repo::discover(&worktree)
+        .and_then(|r| r.status())
+        .map_err(CmdError::from)?;
+    changed.sort_by(|a, b| a.path.cmp(&b.path));
+    let (mut opened, mut skipped) = (Vec::new(), Vec::new());
+    for f in changed {
+        let reason = if f.kind == xdev_git::ChangeKind::Deleted {
+            Some("deleted")
+        } else if !worktree.join(&f.path).is_file() {
+            Some("not_a_file")
+        } else if opened.len() == OPEN_CHANGED_MAX {
+            Some("limit")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            skipped.push(json!({ "path": f.path, "reason": reason }));
+            continue;
+        }
+        let out = CliOpenFile {
+            worktree: worktree.display().to_string(),
+            path: f.path,
+            line: None,
+            column: None,
+        };
+        (ctx.emit)(OPEN_FILE_EVENT, json!(out));
+        opened.push(out.path);
+    }
+    if !opened.is_empty() {
+        (ctx.focus_window)();
+    }
+    Ok(json!({
+        "worktree": worktree.display().to_string(),
+        "opened": opened,
+        "skipped": skipped,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -313,5 +377,66 @@ mod tests {
         assert_eq!(e.code, "outside_worktree");
         assert!(f.events.lock().unwrap().is_empty());
         assert_eq!(f.focused.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn open_changed_opens_each_changed_file_and_skips_deleted_ones() {
+        let f = fixture();
+        std::fs::write(f.lead.join("a.txt"), "two").unwrap();
+        std::fs::create_dir_all(f.lead.join("src")).unwrap();
+        std::fs::write(f.lead.join("src").join("new.rs"), "fn main() {}").unwrap();
+        let r = f
+            .call(Some("p-lead"), "file.open-changed", json!({}))
+            .unwrap();
+        assert_eq!(r["worktree"], f.lead.display().to_string());
+        assert_eq!(r["opened"], json!(["a.txt", "src/new.rs"]));
+        assert_eq!(r["skipped"], json!([]));
+        let events = f.events.lock().unwrap().clone();
+        let paths: Vec<&Value> = events
+            .iter()
+            .filter(|(e, _)| e == OPEN_FILE_EVENT)
+            .map(|(_, p)| &p["path"])
+            .collect();
+        assert_eq!(paths, [&json!("a.txt"), &json!("src/new.rs")]);
+        assert_eq!(f.focused.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // By name from outside; a deleted file is listed, not opened.
+        std::fs::remove_file(f.other.join("a.txt")).unwrap();
+        let r = f
+            .call(None, "file.open-changed", json!({ "worktree": "other" }))
+            .unwrap();
+        assert_eq!(r["opened"], json!([]));
+        assert_eq!(
+            r["skipped"],
+            json!([{ "path": "a.txt", "reason": "deleted" }])
+        );
+        // Nothing opened: the window stays where it is.
+        assert_eq!(f.focused.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn open_changed_stops_at_the_limit_and_finds_the_worktree_by_folder() {
+        let f = fixture();
+        for n in 0..OPEN_CHANGED_MAX + 2 {
+            std::fs::write(f.child.join(format!("f{n:02}.txt")), "x").unwrap();
+        }
+        let r = f
+            .call(
+                None,
+                "file.open-changed",
+                json!({ "cwd": f.child.display().to_string() }),
+            )
+            .unwrap();
+        assert_eq!(r["worktree"], f.child.display().to_string());
+        assert_eq!(r["opened"].as_array().unwrap().len(), OPEN_CHANGED_MAX);
+        assert_eq!(
+            r["skipped"],
+            json!([
+                { "path": "f20.txt", "reason": "limit" },
+                { "path": "f21.txt", "reason": "limit" },
+            ])
+        );
+        let e = f.call(None, "file.open-changed", json!({})).unwrap_err();
+        assert_eq!(e.code, "no_worktree");
     }
 }

@@ -4031,6 +4031,8 @@
   "workspace.tabs.launchOptions": "Launch with options",
   "workspace.agentPicker.launchOptions": "Launch with options",
   "cli.ask.automation": "change an automation that runs in",
+  "cli.ask.repoAdd": "add the repository",
+  "cli.ask.repo": "change the settings of the repository",
   "settings.orchestration.skill.uninstall": "Uninstall",
   "settings.orchestration.skill.uninstallTitle": "Uninstall the skill?",
   "settings.orchestration.skill.uninstallBody": "Removes the copies and links xDev wrote. Folders you edited or added stay.",

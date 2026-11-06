@@ -240,7 +240,8 @@ pub enum WorktreeCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Sets the status, comment or title of a worktree (default: the caller's).
+    /// Sets the details of a worktree (default: the caller's): status,
+    /// comment, title, linked issue or pull request, parent, read state.
     Set {
         #[arg(long)]
         worktree: Option<String>,
@@ -250,8 +251,28 @@ pub enum WorktreeCommand {
         /// At most 2000 characters.
         #[arg(long)]
         comment: Option<String>,
-        #[arg(long)]
+        /// The name the sidebar shows.
+        #[arg(long, visible_alias = "display-name")]
         title: Option<String>,
+        /// Links an issue: its URL, a number on the origin's host, or none.
+        #[arg(long, conflicts_with = "pr")]
+        issue: Option<String>,
+        /// Links a pull request: its URL, a number on the origin's host, or
+        /// none.
+        #[arg(long)]
+        pr: Option<String>,
+        /// Id, unique prefix, name or path of the new parent worktree.
+        #[arg(long, conflicts_with = "no_parent")]
+        parent_worktree: Option<String>,
+        /// Takes the worktree out from under its parent.
+        #[arg(long)]
+        no_parent: bool,
+        /// Marks the worktree unread in the sidebar.
+        #[arg(long, conflicts_with = "read")]
+        unread: bool,
+        /// Marks the worktree read in the sidebar.
+        #[arg(long)]
+        read: bool,
         #[arg(long)]
         json: bool,
     },
@@ -281,12 +302,15 @@ pub enum TerminalCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Metadata and the last lines of one tab: one `key<TAB>value` line per
-    /// field, then the last 20 lines it printed.
+    /// Metadata and the last lines of one tab (default: this terminal): one
+    /// `key<TAB>value` line per field, then the last lines it printed.
     Show {
-        /// Tab id or a unique prefix of one.
-        #[arg(long, alias = "terminal")]
-        tab: String,
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        /// Lines to show, default 50, at most 5000.
+        #[arg(long)]
+        lines: Option<usize>,
         #[arg(long)]
         json: bool,
     },
@@ -366,6 +390,8 @@ pub fn request(
         AppCommand::File(c) => return Ok(crate::file::request(c)),
         AppCommand::Ports(a) => return Ok(crate::ports::request(a)),
         AppCommand::Capture(a) => return Ok(crate::capture::request(a)),
+        AppCommand::AgentContext(a) => return Ok(crate::agent_context::request(a)),
+        AppCommand::Repo(c) => return Ok(crate::repo::request(c)),
         AppCommand::Automations(c) => return crate::automations::request(c),
         AppCommand::Status(a) => ("status", json!({}), a.json),
         AppCommand::Worktree(WorktreeCommand::Ps { all, json }) => {
@@ -391,17 +417,40 @@ pub fn request(
             status,
             comment,
             title,
+            issue,
+            pr,
+            parent_worktree,
+            no_parent,
+            unread,
+            read,
             json,
         }) => {
-            let params = json!({ "worktree": worktree, "status": status, "comment": comment, "title": title });
+            let unread = match (unread, read) {
+                (true, _) => Some(true),
+                (_, true) => Some(false),
+                _ => None,
+            };
+            let params = json!({
+                "worktree": worktree,
+                "status": status,
+                "comment": comment,
+                "title": title,
+                "issue": issue,
+                "pr": pr,
+                "parent": parent_worktree,
+                "noParent": no_parent,
+                "unread": unread,
+            });
             ("worktree.set", params, *json)
         }
         AppCommand::Terminal(TerminalCommand::List { worktree, json }) => {
             ("terminal.list", json!({ "worktree": worktree }), *json)
         }
-        AppCommand::Terminal(TerminalCommand::Show { tab, json }) => {
-            ("terminal.show", json!({ "tab": tab }), *json)
-        }
+        AppCommand::Terminal(TerminalCommand::Show { tab, lines, json }) => (
+            "terminal.show",
+            json!({ "tab": tab, "lines": lines }),
+            *json,
+        ),
         AppCommand::Terminal(TerminalCommand::Read {
             tab,
             limit,
@@ -448,6 +497,8 @@ pub enum AppCommand {
     Ports(crate::ports::PortsArgs),
     Automations(crate::automations::AutomationsCommand),
     Capture(crate::capture::CaptureCommand),
+    AgentContext(crate::agent_context::AgentContextArgs),
+    Repo(crate::repo::RepoCommand),
 }
 
 pub(crate) fn text(v: &Value) -> String {
@@ -491,6 +542,8 @@ pub fn plain(method: &str, result: &Value) -> String {
         .or_else(|| crate::ports::plain(method, result))
         .or_else(|| crate::automations::plain(method, result))
         .or_else(|| crate::capture::plain(method, result))
+        .or_else(|| crate::agent_context::plain(method, result))
+        .or_else(|| crate::repo::plain(method, result))
     {
         return text;
     }
@@ -540,7 +593,10 @@ pub fn plain(method: &str, result: &Value) -> String {
                 "title",
                 "kind",
                 "profile",
+                "cli",
+                "account",
                 "state",
+                "exitCode",
                 "lastOutputMs",
                 "cwd",
             ]
@@ -643,17 +699,103 @@ mod tests {
         assert_eq!(params["parent"], Value::Null);
     }
 
+    #[derive(clap::Parser)]
+    struct WorktreeCli {
+        #[command(subcommand)]
+        command: WorktreeCommand,
+    }
+
+    fn worktree(args: &[&str]) -> Result<AppCommand, clap::Error> {
+        use clap::Parser;
+        let mut argv = vec!["worktree"];
+        argv.extend_from_slice(args);
+        WorktreeCli::try_parse_from(argv).map(|c| AppCommand::Worktree(c.command))
+    }
+
+    #[test]
+    fn set_maps_every_flag() {
+        let none = &mut &b""[..];
+        let cmd = worktree(&[
+            "set",
+            "--worktree",
+            "lead",
+            "--display-name",
+            "Lead",
+            "--issue",
+            "12",
+            "--parent-worktree",
+            "main-ish",
+            "--unread",
+            "--json",
+        ])
+        .unwrap();
+        let (m, p, json) = request(&cmd, none).unwrap();
+        assert_eq!(m, "worktree.set");
+        assert!(json);
+        assert_eq!(
+            p,
+            json!({
+                "worktree": "lead", "status": null, "comment": null, "title": "Lead",
+                "issue": "12", "pr": null, "parent": "main-ish", "noParent": false,
+                "unread": true,
+            })
+        );
+        let cmd = worktree(&["set", "--pr", "none", "--no-parent", "--read"]).unwrap();
+        let (_, p, json) = request(&cmd, none).unwrap();
+        assert!(!json);
+        assert_eq!(p["pr"], "none");
+        assert_eq!(p["noParent"], true);
+        assert_eq!(p["unread"], false);
+        let cmd = worktree(&["set", "--status", "todo"]).unwrap();
+        assert_eq!(request(&cmd, none).unwrap().1["unread"], Value::Null);
+        assert!(worktree(&["set", "--title", "a", "--display-name", "b"]).is_err());
+        for clash in [
+            &["set", "--issue", "1", "--pr", "2"][..],
+            &["set", "--parent-worktree", "a", "--no-parent"],
+            &["set", "--unread", "--read"],
+        ] {
+            assert!(worktree(clash).is_err(), "{clash:?}");
+        }
+    }
+
+    #[derive(clap::Parser)]
+    struct TerminalCli {
+        #[command(subcommand)]
+        command: TerminalCommand,
+    }
+
+    #[test]
+    fn show_takes_the_terminal_and_lines_or_neither() {
+        use clap::Parser;
+        let none = &mut &b""[..];
+        let parse = |args: &[&str]| {
+            let argv = [&["terminal"][..], args].concat();
+            AppCommand::Terminal(TerminalCli::try_parse_from(argv).unwrap().command)
+        };
+        let cmd = parse(&["show", "--terminal", "t1", "--lines", "5", "--json"]);
+        let (m, p, json) = request(&cmd, none).unwrap();
+        assert_eq!(m, "terminal.show");
+        assert!(json);
+        assert_eq!(p, json!({ "tab": "t1", "lines": 5 }));
+        let (_, p, json) = request(&parse(&["show"]), none).unwrap();
+        assert!(!json);
+        assert_eq!(p, json!({ "tab": null, "lines": null }));
+        let (_, p, _) = request(&parse(&["show", "--tab", "t2"]), none).unwrap();
+        assert_eq!(p["tab"], "t2");
+    }
+
     #[test]
     fn request_maps_show_read_send() {
         let none = &mut &b""[..];
         let show = AppCommand::Terminal(TerminalCommand::Show {
-            tab: "t1".into(),
+            tab: Some("t1".into()),
+            lines: None,
             json: true,
         });
         let (m, p, json) = request(&show, none).unwrap();
         assert_eq!(
             (m, p, json),
-            ("terminal.show", json!({ "tab": "t1" }), true)
+            ("terminal.show", json!({ "tab": "t1", "lines": null }), true)
         );
         let read = AppCommand::Terminal(TerminalCommand::Read {
             tab: "t1".into(),
@@ -719,11 +861,13 @@ mod tests {
         assert_eq!(plain("terminal.send", &sent), "sent\t5\ttrue\n");
         let show = json!({
             "id": "t1", "worktree": "/w", "title": null, "kind": "agent", "profile": "claude",
-            "state": "idle", "lastOutputMs": 9, "cwd": "/w", "preview": "x\ny\n",
+            "cli": "claude", "account": null, "state": "idle", "exitCode": null,
+            "lastOutputMs": 9, "cwd": "/w", "preview": "x\ny\n",
         });
         assert_eq!(
             plain("terminal.show", &show),
-            "id\tt1\nworktree\t/w\ntitle\t-\nkind\tagent\nprofile\tclaude\nstate\tidle\nlastOutputMs\t9\ncwd\t/w\n\nx\ny\n"
+            "id\tt1\nworktree\t/w\ntitle\t-\nkind\tagent\nprofile\tclaude\ncli\tclaude\n\
+             account\t-\nstate\tidle\nexitCode\t-\nlastOutputMs\t9\ncwd\t/w\n\nx\ny\n"
         );
         assert_eq!(AppError::new("ambiguous", "").exit_code(), 2);
     }
@@ -884,6 +1028,12 @@ pub(crate) mod endpoint_tests {
             status: Some("in-review".into()),
             comment: None,
             title: None,
+            issue: None,
+            pr: None,
+            parent_worktree: None,
+            no_parent: false,
+            unread: false,
+            read: false,
             json: true,
         });
         assert_eq!(run(&cmd, dir.path(), &prefix), 7);

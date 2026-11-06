@@ -4031,6 +4031,8 @@
   "workspace.tabs.launchOptions": "Chạy với tùy chọn",
   "workspace.agentPicker.launchOptions": "Chạy với tùy chọn",
   "cli.ask.automation": "đổi một automation chạy trong",
+  "cli.ask.repoAdd": "thêm repository",
+  "cli.ask.repo": "đổi cài đặt của repository",
   "settings.orchestration.skill.uninstall": "Gỡ cài đặt",
   "settings.orchestration.skill.uninstallTitle": "Gỡ cài đặt skill?",
   "settings.orchestration.skill.uninstallBody": "Xóa các bản sao và liên kết do xDev tạo. Thư mục bạn đã sửa hoặc thêm vẫn được giữ.",

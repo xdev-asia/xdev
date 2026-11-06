@@ -23,26 +23,41 @@ pub enum FileCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Opens every changed file of a worktree (default: the caller's) in
+    /// the xDev window, at most 20. Prints `opened<TAB>path` per file and
+    /// `skipped<TAB>path<TAB>reason` for deleted files and the rest.
+    OpenChanged {
+        /// Id, unique prefix, name or path of the worktree.
+        #[arg(long)]
+        worktree: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// What one `file` verb sends: method, params and whether to print JSON.
 pub fn request(cmd: &FileCommand) -> (&'static str, Value, bool) {
+    let cwd = || {
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+    };
     match cmd {
+        FileCommand::OpenChanged { worktree, json } => (
+            "file.open-changed",
+            json!({ "worktree": worktree, "cwd": cwd() }),
+            *json,
+        ),
         FileCommand::Open {
             path,
             line,
             column,
             json,
-        } => {
-            let cwd = std::env::current_dir()
-                .ok()
-                .map(|p| p.to_string_lossy().into_owned());
-            (
-                "file.open",
-                json!({ "path": path, "line": line, "column": column, "cwd": cwd }),
-                *json,
-            )
-        }
+        } => (
+            "file.open",
+            json!({ "path": path, "line": line, "column": column, "cwd": cwd() }),
+            *json,
+        ),
     }
 }
 
@@ -56,6 +71,25 @@ pub fn plain(method: &str, result: &Value) -> Option<String> {
             text(&result["line"]),
             text(&result["column"])
         )),
+        "file.open-changed" => {
+            let list = |k: &str| result[k].as_array().map(Vec::as_slice).unwrap_or_default();
+            let opened = list("opened").iter().map(|p| {
+                format!(
+                    "opened	{}
+",
+                    text(p)
+                )
+            });
+            let skipped = list("skipped").iter().map(|s| {
+                format!(
+                    "skipped	{}	{}
+",
+                    text(&s["path"]),
+                    text(&s["reason"])
+                )
+            });
+            Some(opened.chain(skipped).collect())
+        }
         _ => None,
     }
 }
@@ -98,6 +132,42 @@ mod tests {
         let (_, params, json) = request(&parse(&["a", "--json"]).unwrap());
         assert!(json);
         assert_eq!(params["line"], Value::Null);
+    }
+
+    #[test]
+    fn open_changed_takes_a_worktree_or_none() {
+        let cli = |args: &[&str]| {
+            let mut argv = vec!["xdev", "open-changed"];
+            argv.extend_from_slice(args);
+            Cli::try_parse_from(argv).map(|c| request(&c.command))
+        };
+        let (method, params, json) = cli(&[]).unwrap();
+        assert_eq!(method, "file.open-changed");
+        assert!(!json);
+        assert_eq!(params["worktree"], Value::Null);
+        assert!(params["cwd"].is_string());
+        let (_, params, json) = cli(&["--worktree", "lead", "--json"]).unwrap();
+        assert!(json);
+        assert_eq!(params["worktree"], "lead");
+        assert!(cli(&["a.rs"]).is_err());
+    }
+
+    #[test]
+    fn plain_open_changed_lists_opened_then_skipped() {
+        let r = json!({
+            "worktree": "/w",
+            "opened": ["a.rs", "src/b.rs"],
+            "skipped": [{ "path": "gone.rs", "reason": "deleted" }],
+        });
+        assert_eq!(
+            plain("file.open-changed", &r).unwrap(),
+            "opened	a.rs
+opened	src/b.rs
+skipped	gone.rs	deleted
+"
+        );
+        let none = json!({ "worktree": "/w", "opened": [], "skipped": [] });
+        assert_eq!(plain("file.open-changed", &none).unwrap(), "");
     }
 
     #[test]

@@ -1,9 +1,9 @@
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
-import type { Api, CliAsk, CliOpenFile, CliStatus, CliOpenTab, ReadTab, SkillStatus, TabReport, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome } from "./api";
+import type { Api, CliAsk, CliOpenFile, CliWorktreeRead, CliStatus, CliOpenTab, ReadTab, SkillStatus, TabReport, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome } from "./api";
 
 type CliApi = Pick<
   Api,
-  | "cliTabsReport" | "cliApprove" | "onWorkspaceChanged" | "onCliOpenTab" | "onCliAsk" | "onCliOpenFile"
+  | "cliTabsReport" | "cliApprove" | "onWorkspaceChanged" | "onCliOpenTab" | "onCliAsk" | "onCliOpenFile" | "onCliWorktreeRead"
   | "cliStatus" | "cliInstall" | "cliRemove" | "cliRepair" | "cliReveal"
   | "orchestrationSkillStatus"
   | "orchestrationSkillInstall"
@@ -30,6 +30,7 @@ export type MockCli = CliApi & {
   __cliOpenTab(e: CliOpenTab): void;
   __cliAsk(e: CliAsk): void;
   __cliOpenFile(e: CliOpenFile): void;
+  __cliWorktreeRead(e: CliWorktreeRead): void;
   // Orchestration: what the backend would send, and what the UI answered it.
   __orchOpenWorker(e: WorkerOpen): void;
   __orchCloseWorker(e: WorkerClose): void;
@@ -59,6 +60,7 @@ export function createMockCli(): MockCli {
   const opens = new Set<(e: CliOpenTab) => void>();
   const asks = new Set<(e: CliAsk) => void>();
   const openFiles = new Set<(e: CliOpenFile) => void>();
+  const readMarks = new Set<(e: CliWorktreeRead) => void>();
   const openWorker = new Set<(e: WorkerOpen) => void>();
   const closeWorker = new Set<(e: WorkerClose) => void>();
   const readTab = new Set<(e: ReadTab) => void>();
@@ -94,6 +96,9 @@ export function createMockCli(): MockCli {
     },
     async onCliOpenFile(cb) {
       return on(openFiles, cb);
+    },
+    async onCliWorktreeRead(cb) {
+      return on(readMarks, cb);
     },
     async cliStatus() {
       return { ...cli };
@@ -190,5 +195,6 @@ export function createMockCli(): MockCli {
     __cliOpenTab: (e) => [...opens].forEach((cb) => cb(structuredClone(e))),
     __cliAsk: (e) => [...asks].forEach((cb) => cb(structuredClone(e))),
     __cliOpenFile: (e) => [...openFiles].forEach((cb) => cb(structuredClone(e))),
+    __cliWorktreeRead: (e) => [...readMarks].forEach((cb) => cb(structuredClone(e))),
   };
 }
