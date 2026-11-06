@@ -195,6 +195,35 @@ describe("closed file tabs and pins", () => {
     expect(s.list(wt).map((e) => e.rel)).toEqual(["b"]);
   });
 
+  it("a tab closed with unsaved edits comes back dirty over the disk text, and a clean one does not", () => {
+    const s = withOpen("a", "b");
+    for (const rel of ["a", "b"]) s.loaded(wt, rel, { text: "disk", kind: "text", hash: "h", eol: "lf", size: 4 } as FileText);
+    s.edit(wt, "a", "mine");
+    s.closeRemembering(wt, "a");
+    s.closeRemembering(wt, "b");
+    expect(s.takeClosed(wt, "b")?.unsaved).toBeUndefined();
+    expect(s.takeClosed(wt, "a")?.unsaved).toBe("mine");
+    s.open(wt, "a");
+    s.loaded(wt, "a", { text: "disk", kind: "text", hash: "h", eol: "lf", size: 4 } as FileText);
+    const entry = s.get(wt, "a")!;
+    expect([entry.text, entry.saved, isDirty(entry)]).toEqual(["mine", "disk", true]);
+    // The edits are used once: a later reload is the disk text.
+    s.loaded(wt, "a", { text: "disk2", kind: "text", hash: "h2", eol: "lf", size: 5 } as FileText);
+    expect(s.get(wt, "a")!.text).toBe("disk2");
+  });
+
+  it("only the newest closed tabs keep their unsaved text", () => {
+    const rels = Array.from({ length: 12 }, (_, i) => `f${i}`);
+    const s = withOpen(...rels);
+    for (const rel of rels) {
+      s.loaded(wt, rel, { text: "d", kind: "text", hash: "h", eol: "lf", size: 1 } as FileText);
+      s.edit(wt, rel, `edit ${rel}`);
+      s.closeRemembering(wt, rel);
+    }
+    expect(s.takeClosed(wt, "f0")?.unsaved).toBeUndefined();
+    expect(s.takeClosed(wt, "f11")?.unsaved).toBe("edit f11");
+  });
+
   it("a plain close leaves nothing to reopen (a deleted file is no closed tab)", () => {
     const s = withOpen("a");
     s.close(wt, "a");
