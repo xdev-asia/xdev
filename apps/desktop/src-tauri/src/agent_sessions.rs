@@ -67,6 +67,9 @@ pub enum SessionSort {
     LastDesc,
     /// Start time, newest first.
     FirstDesc,
+    /// Best text match first, then last activity. Without text it is
+    /// `LastDesc`.
+    Relevance,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -636,6 +639,31 @@ fn matches(session: &AgentSession, words: &[String]) -> bool {
         .all(|w| id.starts_with(w.as_str()) || fields.iter().any(|f| f.contains(w.as_str())))
 }
 
+/// How well `session` matches `words` (lowercased): each occurrence in the
+/// title (its first prompt) counts 4, in the folder, branch or model 2, an id
+/// that a word starts 2, and a hit in the messages 1. Only the order of
+/// scores matters.
+fn relevance(session: &AgentSession, words: &[String], in_body: bool) -> u32 {
+    let count = |field: &Option<String>, word: &str| -> u32 {
+        field
+            .as_deref()
+            .map_or(0, |f| f.to_lowercase().matches(word).count() as u32)
+    };
+    let id = session.id.to_lowercase();
+    let metadata: u32 = words
+        .iter()
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            4 * count(&session.title, w)
+                + 2 * (count(&session.cwd, w)
+                    + count(&session.branch, w)
+                    + count(&session.model, w))
+                + if id.starts_with(w.as_str()) { 2 } else { 0 }
+        })
+        .sum();
+    metadata + u32::from(in_body)
+}
+
 /// Filters, sorts and cuts `all` for `query`. `exists` tells whether a
 /// folder is still on the disk. `hits` holds the snippet of each session
 /// (by key) whose messages matched the text; such a session is picked even
@@ -681,12 +709,23 @@ fn select(
             path_key(Path::new(have)) == want
         })
         .collect();
+    let by_relevance = query.sort == SessionSort::Relevance && !words.is_empty();
+    let score = |s: &AgentSession| {
+        if by_relevance {
+            relevance(s, &words, hits.contains_key(&s.key))
+        } else {
+            0
+        }
+    };
     picked.sort_by(|(a, _), (b, _)| {
         let (x, y) = match query.sort {
-            SessionSort::LastDesc => (a.last, b.last),
+            SessionSort::LastDesc | SessionSort::Relevance => (a.last, b.last),
             SessionSort::FirstDesc => (a.first, b.first),
         };
-        y.cmp(&x).then_with(|| a.key.cmp(&b.key))
+        score(b)
+            .cmp(&score(a))
+            .then_with(|| y.cmp(&x))
+            .then_with(|| a.key.cmp(&b.key))
     });
     picked.truncate(query.limit as usize);
     picked

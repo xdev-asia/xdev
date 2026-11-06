@@ -4,6 +4,8 @@ mod accounts;
 mod claude;
 mod codex;
 mod codex_rpc;
+mod details;
+mod login;
 pub mod ollama;
 mod pool;
 pub mod process;
@@ -18,6 +20,8 @@ pub use accounts::{
 };
 pub use claude::{AccountStatus, StatusState, claude_command, claude_models};
 pub use codex::{codex_command, codex_context, codex_home, codex_models};
+pub use details::{config_drift, signed_in_at, sync_config};
+pub use login::{LoginHint, scan_line, strip_escapes};
 pub use pool::{AccountId, Policy, Route, Usage, pick_account};
 pub use providers::{Isolation, ProviderSpec, spec};
 pub use quota::{

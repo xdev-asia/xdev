@@ -32,6 +32,14 @@ pub struct Account {
     provider: Provider,
     dir: PathBuf,
     status: AccountStatus,
+    /// Unix ms the sign-in file last changed; none when unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    signed_in_at: Option<i64>,
+    /// `true` for a Codex home whose `config.toml` differs from the CLI's own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    config_drift: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -146,6 +154,11 @@ pub(crate) fn started(provider: Provider, name: &str) {
 pub struct LoginStart {
     opened: bool,
     command: String,
+    /// Set when the login runs captured: its page and code arrive as
+    /// `accounts://login` events instead of a console.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    captured: Option<bool>,
 }
 
 pub(crate) fn data_dir(state: &AppState) -> Result<&Path, CmdError> {
@@ -168,6 +181,8 @@ fn account(entry: &AccountEntry) -> Account {
         provider: entry.provider,
         dir: entry.dir.clone(),
         status: xdev_ai::status(entry),
+        signed_in_at: xdev_ai::signed_in_at(entry),
+        config_drift: xdev_ai::config_drift(entry).then_some(true),
     }
 }
 
@@ -335,6 +350,21 @@ fn import(
     Ok(account(&entry))
 }
 
+/// Copies the CLI's own `config.toml`, and nothing else, into a Codex
+/// account's folder.
+#[tauri::command(async)]
+pub fn account_sync_config(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), CmdError> {
+    let registry = Registry::load(data_dir(&state)?)?;
+    let entry = registry.get(&name).ok_or(AiError::NotFound)?;
+    xdev_ai::sync_config(entry).map_err(AiError::from)?;
+    let _ = app.emit(CHANGED_EVENT, ());
+    Ok(())
+}
+
 #[tauri::command(async)]
 pub fn account_remove(
     app: AppHandle,
@@ -456,22 +486,37 @@ pub fn routing_models() -> Models {
 }
 
 #[tauri::command(async)]
-pub fn account_login(state: State<'_, AppState>, name: String) -> Result<LoginStart, CmdError> {
+pub fn account_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<LoginStart, CmdError> {
     let registry = Registry::load(data_dir(&state)?)?;
     let entry = registry.get(&name).ok_or(AiError::NotFound)?;
     // A single-account CLI is signed in on its own, outside xDev.
     let command = xdev_ai::login_command(entry.provider, &entry.dir, cfg!(windows))
         .ok_or(AiError::SingleAccount)?;
+    // A CLI whose login is its own start (no login arguments) needs a real
+    // terminal; the rest run captured, and their events carry the rest.
+    if entry.provider.login_args().is_empty() {
+        return Ok(LoginStart {
+            opened: open_login(entry)?,
+            command,
+            captured: None,
+        });
+    }
+    crate::account_login::begin(&app, entry, command.clone())?;
     Ok(LoginStart {
-        opened: open_login(entry)?,
+        opened: true,
         command,
+        captured: Some(true),
     })
 }
 
-/// The login flow is interactive (browser, then a code pasted back), so it
-/// needs a real console; the window stays open so the person sees the result.
+/// The console path: the login flow is interactive (browser, then a code
+/// pasted back), so here it gets a real console; the window stays open so the person sees the result.
 #[cfg(windows)]
-fn open_login(entry: &AccountEntry) -> Result<bool, CmdError> {
+pub(crate) fn open_login(entry: &AccountEntry) -> Result<bool, CmdError> {
     use std::os::windows::process::CommandExt;
     const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
 
@@ -490,7 +535,7 @@ fn open_login(entry: &AccountEntry) -> Result<bool, CmdError> {
 }
 
 #[cfg(not(windows))]
-fn open_login(_entry: &AccountEntry) -> Result<bool, CmdError> {
+pub(crate) fn open_login(_entry: &AccountEntry) -> Result<bool, CmdError> {
     Ok(false)
 }
 
@@ -519,6 +564,8 @@ mod tests {
                         plan: None,
                         org: None,
                     },
+                    signed_in_at: Some(5),
+                    config_drift: None,
                 },
                 Account {
                     name: "c".into(),
@@ -530,6 +577,8 @@ mod tests {
                         plan: None,
                         org: None,
                     },
+                    signed_in_at: None,
+                    config_drift: Some(true),
                 },
             ],
         };
@@ -537,19 +586,22 @@ mod tests {
             serde_json::to_value(accounts).unwrap(),
             serde_json::json!({ "reservePercent": 30, "accounts": [{
                 "name": "a", "provider": "claude", "dir": "d",
-                "status": { "state": "logged_out", "email": null, "plan": null, "org": null }
+                "status": { "state": "logged_out", "email": null, "plan": null, "org": null },
+                "signedInAt": 5
             }, {
                 "name": "c", "provider": "codex", "dir": "e",
-                "status": { "state": "no_codex", "email": null, "plan": null, "org": null }
+                "status": { "state": "no_codex", "email": null, "plan": null, "org": null },
+                "configDrift": true
             }], "active": [{ "provider": "claude", "name": "a" }] })
         );
         let login = LoginStart {
             opened: false,
             command: "c".into(),
+            captured: Some(true),
         };
         assert_eq!(
             serde_json::to_value(login).unwrap(),
-            serde_json::json!({ "opened": false, "command": "c" })
+            serde_json::json!({ "opened": false, "command": "c", "captured": true })
         );
     }
 

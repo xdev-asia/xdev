@@ -239,6 +239,58 @@ fn sort_by_last_or_first_and_cut_to_the_limit() {
     assert_eq!(f.ids(&q), ["a1", "b2"]);
 }
 
+#[test]
+fn relevance_weighs_the_title_above_other_fields_and_the_messages() {
+    let tmp = tempfile::tempdir().unwrap();
+    let words = vec!["login".to_string()];
+    let mut s = session("zz", Agent::Claude, tmp.path(), "Fix login login", 1, 2);
+    assert_eq!(relevance(&s, &words, false), 8);
+    s.title = Some("Fix login".into());
+    s.branch = Some("feat/login".into());
+    assert_eq!(relevance(&s, &words, false), 6);
+    assert_eq!(relevance(&s, &words, true), 7);
+    s.title = None;
+    s.branch = None;
+    assert_eq!(relevance(&s, &words, false), 0);
+    assert_eq!(relevance(&s, &words, true), 1);
+    assert_eq!(relevance(&s, &[], false), 0);
+}
+
+#[test]
+fn most_relevant_ranks_by_match_then_last_activity_and_is_last_activity_without_text() {
+    let mut f = fixture();
+    let elsewhere = f.root.join("elsewhere");
+    f.all.push(session(
+        "r1x",
+        Agent::Claude,
+        &elsewhere,
+        "zebra zebra",
+        1,
+        5,
+    ));
+    f.all
+        .push(session("r2x", Agent::Claude, &elsewhere, "zebra", 1, 900));
+    f.all.push(session(
+        "r3x",
+        Agent::Claude,
+        &elsewhere,
+        "zebra zebra",
+        1,
+        950,
+    ));
+    let mut q = query(SessionScope::All);
+    q.sort = SessionSort::Relevance;
+    q.text = Some("zebra".into());
+    assert_eq!(f.ids(&q), ["r3x", "r1x", "r2x"]);
+    q.sort = SessionSort::LastDesc;
+    assert_eq!(f.ids(&q), ["r3x", "r2x", "r1x"]);
+    q.sort = SessionSort::Relevance;
+    q.text = None;
+    let plain = f.ids(&q);
+    q.sort = SessionSort::LastDesc;
+    assert_eq!(plain, f.ids(&q));
+}
+
 /// What the layout restore fallback asks (plan B3): one worktree, one agent,
 /// newest start first, five rows; it then takes the newest resumable row that
 /// started at or after the tab was opened.

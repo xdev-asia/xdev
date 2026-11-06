@@ -6,6 +6,7 @@ import { AgentIcon } from "@/workspace/AgentIcon";
 import { COMPACT, ProblemNote } from "./ChangesPanel";
 import { loginAction, statusBadge } from "./accountStatus";
 import { RoutingRules } from "./RoutingRules";
+import { SignInPrompt } from "./SignInPrompt";
 
 type State = Quota["state"];
 type Filter = "all" | State;
@@ -42,6 +43,7 @@ export function AccountsView({ api }: { api: Api }) {
   const [folder, setFolder] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [command, setCommand] = useState<string>();
+  const [signIn, setSignIn] = useState<{ name: string; url?: string; code?: string; error?: string }>();
   const [copy, setCopy] = useState<"copied" | "copyFailed">();
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -73,10 +75,21 @@ export function AccountsView({ api }: { api: Api }) {
     const timer = setInterval(() => void load(), 300_000);
     // An account made active, added or removed elsewhere (the usage popover) shows here at once.
     const unlisten = api.onAccountsChanged(() => void load());
+    // A captured sign-in reports its page, code and end here.
+    const login = api.onAccountLogin(event => {
+      if (event.phase === "prompt") setSignIn(s => ({ ...s, name: event.name, url: event.url, code: event.code ?? s?.code }));
+      else if (event.phase === "failed") setSignIn(s => ({ ...s, name: event.name, error: event.detail ?? "" }));
+      else {
+        setSignIn(undefined);
+        if (event.phase === "done") setRevision(n => n + 1);
+        else if (!event.opened) { setCommand(event.command); setCopy(undefined); }
+      }
+    });
     return () => {
       disposed = true;
       clearInterval(timer);
       void unlisten.then(off => off(), () => {});
+      void login.then(off => off(), () => {});
     };
   }, [api, revision]);
 
@@ -110,6 +123,7 @@ export function AccountsView({ api }: { api: Api }) {
 
   async function login(name: string) {
     const result = await api.loginAccount(name);
+    setSignIn(result.captured ? { name } : undefined);
     setCommand(result.opened ? undefined : result.command);
     setCopy(undefined);
     setPolling(previous => ({ ...previous, [name]: Date.now() + 300_000 }));
@@ -240,6 +254,15 @@ export function AccountsView({ api }: { api: Api }) {
   function who(account: Account) {
     return [account.status.email, account.status.plan, account.status.org].filter(Boolean).join(" · ");
   }
+  // When the sign-in file last changed, and a Codex config that drifted from the CLI's own.
+  function details(account: Account) {
+    return <>
+      {account.signedInAt !== undefined && <p className="doc-path account-signed-in">{t("accounts.signedInAt", { time: new Date(account.signedInAt).toLocaleString() })}</p>}
+      {account.configDrift && <p className="account-reason account-drift" data-drift="true">{t("accounts.configDrift")}{" "}
+        <Button type="button" style={COMPACT} disabled={busy} aria-label={t("accounts.configSyncAria", { name: account.name })} onClick={() => run(async () => { await api.syncAccountConfig(account.name); setRevision(n => n + 1); })}>{t("accounts.configSync")}</Button>
+      </p>}
+    </>;
+  }
   function card(account: Account) {
     const quota = quotaOf(account);
     const state = stateOf(account);
@@ -255,6 +278,7 @@ export function AccountsView({ api }: { api: Api }) {
         <span className="badge account-state" data-state={state}>{t(`accounts.state.${state}`)}</span>
       </div>
       <p className="doc-path">{who(account)}</p>
+      {details(account)}
       {(state === "unknown" || quota?.reason === "expired") && <p className="account-reason">{t(`accounts.reason.${quota?.reason ?? "unavailable"}`)}</p>}
       {quota?.asOf && <p className="doc-path account-as-of">{asOfText(quota.asOf)}</p>}
       {quota?.windows.map(window => {
@@ -290,7 +314,7 @@ export function AccountsView({ api }: { api: Api }) {
       <div role="row" className="account-tr" key={account.name} data-state={state}>
         <div role="cell" className="account-cell-name">
           <span className="account-dot" data-state={state} aria-hidden="true" />
-          <span className="account-name-text"><strong>{account.name}</strong>{activeChip(account)}<span className="doc-path">{who(account) || t(`accounts.status.${account.status.state}`)}</span>{badge.state === "reauth" && <><span className="badge" data-state={badge.state}>{t(badge.key)}</span><span className="doc-path account-reason">{t("accounts.reason.expired")}</span></>}</span>
+          <span className="account-name-text"><strong>{account.name}</strong>{activeChip(account)}<span className="doc-path">{who(account) || t(`accounts.status.${account.status.state}`)}</span>{badge.state === "reauth" && <><span className="badge" data-state={badge.state}>{t(badge.key)}</span><span className="doc-path account-reason">{t("accounts.reason.expired")}</span></>}{details(account)}</span>
         </div>
         <div role="cell"><span className="badge account-provider" data-provider={account.provider}>{t(`accounts.provider.${account.provider}`)}</span>{singleChip(account)}</div>
         {cell(account, "five_hour")}
@@ -389,6 +413,18 @@ export function AccountsView({ api }: { api: Api }) {
       <Button type="submit" style={COMPACT} disabled={busy}>{t(folder !== null ? "accounts.importSubmit" : isIsolated(provider) ? "accounts.addLogin" : "accounts.add")}</Button>
       <Button type="button" style={COMPACT} disabled={busy} onClick={closeForm}>{t("accounts.cancel")}</Button>
     </form>}
+    {signIn && <SignInPrompt
+      name={signIn.name}
+      url={signIn.url}
+      code={signIn.code}
+      error={signIn.error}
+      copy={copy}
+      onOpen={() => { if (signIn.url) void api.openUrl(signIn.url); }}
+      onCopyLink={async () => { try { await navigator.clipboard.writeText(signIn.url ?? ""); setCopy("copied"); } catch { setCopy("copyFailed"); } }}
+      onCopyCode={async () => { try { await navigator.clipboard.writeText(signIn.code ?? ""); setCopy("copied"); } catch { setCopy("copyFailed"); } }}
+      onCancel={() => { void api.cancelAccountLogin(signIn.name); setSignIn(undefined); }}
+      onClose={() => setSignIn(undefined)}
+    />}
     {command && <div className="account-command">
       <p>{t("accounts.runCommand")}</p><pre className="commands">{command}</pre>
       <Button type="button" style={COMPACT} onClick={async () => { try { await navigator.clipboard.writeText(command); setCopy("copied"); } catch { setCopy("copyFailed"); } }}>{t("connect.copy")}</Button>

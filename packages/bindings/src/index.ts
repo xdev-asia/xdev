@@ -207,6 +207,8 @@ export type { LinksTarget } from "./LinksTarget";
 export type { LocalForward } from "./LocalForward";
 export type { LogCommit } from "./LogCommit";
 export type { LogRef } from "./LogRef";
+export type { LoginEvent } from "./LoginEvent";
+export type { LoginPhase } from "./LoginPhase";
 export type { LoginStart } from "./LoginStart";
 export type { LspCompletionItem } from "./LspCompletionItem";
 export type { LspCompletionList } from "./LspCompletionList";

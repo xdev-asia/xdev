@@ -8,6 +8,7 @@ use std::path::Path;
 use ts_rs::{Config, TS};
 use xdev_automations::{Automation, AutomationInput, AutomationRun, Describe, ExtraArgsError};
 
+use crate::account_login::LoginEvent;
 use crate::accounts::{Account, Accounts, LoginStart, Models};
 use crate::agent_session_log::{ContextUsage, SessionTurn, SkippedLogs};
 use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
@@ -107,6 +108,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     Account::export_all(cfg)?;
     Accounts::export_all(cfg)?;
     LoginStart::export_all(cfg)?;
+    LoginEvent::export_all(cfg)?;
     xdev_ai::Quota::export_all(cfg)?;
     TasksContext::export_all(cfg)?;
     FileDiff::export_all(cfg)?;

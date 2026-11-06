@@ -88,6 +88,16 @@ function matches(row: SessionRow, words: string[]): boolean {
   return words.every((w) => fields.some((f) => f.includes(w)) || id.startsWith(w));
 }
 
+const count = (text: string | null, word: string) => (text ?? "").toLowerCase().split(word).length - 1;
+
+/** The Rust ranking: the title weighs 4 an occurrence, folder, branch and model 2, an id start 2, the messages 1. */
+function relevance(row: SessionRow, words: string[], inBody: boolean): number {
+  const s = row.session;
+  let score = inBody ? 1 : 0;
+  for (const w of words) score += 4 * count(s.title, w) + 2 * (count(s.cwd, w) + count(s.branch, w) + count(s.model, w)) + (s.id.toLowerCase().startsWith(w) ? 2 : 0);
+  return score;
+}
+
 /** A fixed list of sessions across two repos, filtered, sorted and cut like Rust does. */
 export function createMockAgentSessions(consent: SearchConsent, now: () => number = () => Date.now()): AgentSessionsApi {
   const deleted = new Set<string>();
@@ -142,7 +152,8 @@ export function createMockAgentSessions(consent: SearchConsent, now: () => numbe
         return hit !== undefined || matches(r, words);
       });
       const key = query.sort === "firstDesc" ? (r: SessionRow) => r.session.first : (r: SessionRow) => r.session.last;
-      rows.sort((a, b) => key(b) - key(a));
+      const score = (r: SessionRow) => query.sort === "relevance" && words.length > 0 ? relevance(r, words, found.has(r.session.key)) : 0;
+      rows.sort((a, b) => score(b) - score(a) || key(b) - key(a));
       return rows.slice(0, query.limit).map(({ transcript: _t, ...r }) => {
         const hit = found.get(r.session.key);
         return structuredClone(hit === undefined ? r : { ...r, hit });

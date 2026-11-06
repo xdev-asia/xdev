@@ -456,7 +456,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     name, provider: "claude", dir: `/demo/accounts/${name}`,
     status: { state: name === "old" ? "logged_out" : "logged_in", email: name === "old" ? null : `${name}@example.com`, plan: name === "old" ? null : "Max", org: null },
   }));
-  accounts.push({ name: "codex-1", provider: "codex", dir: "/demo/accounts/codex-1", status: { state: "logged_in", email: null, plan: null, org: null } });
+  accounts.push({ name: "codex-1", provider: "codex", dir: "/demo/accounts/codex-1", status: { state: "logged_in", email: null, plan: null, org: null }, signedInAt: Date.UTC(2026, 0, 2, 3, 4), configDrift: true });
   // One Claude account is active; Codex runs on the CLI's own home.
   let active: ActiveAccount[] = [{ provider: "claude", name: "claude-2" }];
   const accountListeners = new Set<() => void>();
@@ -778,6 +778,12 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
         : `CLAUDE_CONFIG_DIR='${account.dir}' claude auth login`;
       return { opened: false, command };
     },
+    async syncAccountConfig(name) {
+      const account = accounts.find(a => a.name === name);
+      if (!account) return reject("not_found");
+      delete account.configDrift;
+      accountsChanged();
+    },
     async removeAccount(name) {
       const index = accounts.findIndex(a => a.name === name);
       if (index === -1) return reject("not_found");
@@ -800,6 +806,8 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(session)) return reject("session_missing");
       return from !== to;
     },
+    async cancelAccountLogin() {},
+    async onAccountLogin() { return () => {}; },
     async onAccountsChanged(cb) {
       accountListeners.add(cb);
       return () => void accountListeners.delete(cb);

@@ -110,6 +110,10 @@
 .account-command p { margin: 0; }
 .account-command .commands { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--x-color-signal); }
 .account-command button { justify-self: start; }
+.signin-prompt { display: grid; gap: var(--x-space-3); min-width: 0; }
+.signin-prompt p { margin: 0; }
+.signin-prompt button { justify-self: start; }
+.signin-output { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
 
 /* Model routing rules */
 .routing { display: grid; gap: var(--x-space-3); margin: var(--x-space-4) var(--x-space-6); padding: var(--x-space-4); background: var(--x-color-panel); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); }

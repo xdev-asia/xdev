@@ -129,6 +129,8 @@
     "allow-account-add",
     "allow-account-login",
     "allow-account-remove",
+    "allow-account-sync-config",
+    "allow-account-login-cancel",
     "allow-account-activate",
     "allow-account-carry-session",
     "allow-routing-get",

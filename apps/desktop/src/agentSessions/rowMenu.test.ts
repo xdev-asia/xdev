@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SessionRow } from "@/api";
-import { resumeCommand, rowMenuItems } from "./rowMenu";
+import { lastUserPrompt, resumeCommand, rowMenuItems } from "./rowMenu";
 
 const row = (agent: string, id = "4f1c-9_ab"): SessionRow =>
   ({ session: { key: `h:${id}`, id, homeId: "local", agent, cwd: "/a", branch: null, title: "t", model: null, first: 0, last: 0, messages: 1 }, worktree: "/a", repo: "/a", resumable: true }) as unknown as SessionRow;
@@ -20,12 +20,35 @@ describe("resumeCommand", () => {
   });
 });
 
+describe("lastUserPrompt", () => {
+  const turn = (role: "user" | "assistant", text: string) => ({ role, text, at: 0 });
+  it("is the text of the last user turn, trimmed", () => {
+    expect(lastUserPrompt([turn("user", "first"), turn("assistant", "ok"), turn("user", "  second \n"), turn("assistant", "done")])).toBe("second");
+  });
+  it("is null with no user turn or a blank one", () => {
+    expect(lastUserPrompt([])).toBeNull();
+    expect(lastUserPrompt([turn("assistant", "hi")])).toBeNull();
+    expect(lastUserPrompt([turn("user", "a"), turn("user", "  ")])).toBeNull();
+  });
+});
+
 describe("rowMenuItems", () => {
   const actions = () => ({ handOff: vi.fn(), copyCommand: vi.fn(), jump: vi.fn() });
 
   it("offers Jump only when the session is open in a tab", () => {
     expect(labels(rowMenuItems(row("claude"), null, t, actions(), true))).toEqual(["agentSessions.menu.handOff", "agentSessions.menu.copyCommand"]);
     expect(labels(rowMenuItems(row("claude"), "tab-1", t, actions(), true))).toEqual(["agentSessions.menu.jump", "agentSessions.menu.handOff", "agentSessions.menu.copyCommand"]);
+  });
+
+  it("puts Copy recent prompt after Copy first prompt, only when given", () => {
+    const copyFirstPrompt = vi.fn();
+    const copyRecentPrompt = vi.fn();
+    const items = rowMenuItems(row("claude"), null, t, { ...actions(), copyFirstPrompt, copyRecentPrompt }, true);
+    expect(labels(items)).toEqual(["agentSessions.menu.handOff", "agentSessions.menu.copyCommand", "agentSessions.menu.copyFirstPrompt", "agentSessions.menu.copyRecentPrompt"]);
+    const recent = items.find((i) => "label" in i && i.label === "agentSessions.menu.copyRecentPrompt");
+    if (recent && "onSelect" in recent) recent.onSelect?.();
+    expect(copyRecentPrompt).toHaveBeenCalledTimes(1);
+    expect(labels(rowMenuItems(row("claude"), null, t, { ...actions(), copyFirstPrompt }, true))).not.toContain("agentSessions.menu.copyRecentPrompt");
   });
 
   it("hides Copy resume command when the agent has none, and disables Hand off without a target", () => {

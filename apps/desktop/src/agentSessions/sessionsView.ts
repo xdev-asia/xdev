@@ -24,8 +24,9 @@ export function groupByDay(rows: SessionRow[], sort: SessionSort, now: number): 
   for (const row of rows) {
     const at = dayStart(sort === "firstDesc" ? row.session.first : row.session.last);
     const kind = at === today ? "today" : at === yesterday ? "yesterday" : "date";
-    const tail = groups.at(-1);
-    if (tail && tail.at === at) tail.rows.push(row);
+    // By relevance the rows are not in day order, so a day's rows join the group it already has.
+    const same = sort === "relevance" ? groups.find((g) => g.at === at) : groups.at(-1)?.at === at ? groups.at(-1) : undefined;
+    if (same) same.rows.push(row);
     else groups.push({ id: `${kind}:${at}`, kind, at, rows: [row] });
   }
   return groups;
