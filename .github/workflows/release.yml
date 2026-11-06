@@ -216,11 +216,11 @@ jobs:
             macOS)
               # tar keeps the executable bit that zip-based artifacts drop.
               tar -czf "out/xdev-${{ matrix.target }}.tar.gz" -C "$rel" xdev
-              # The updater tarball is named xDev.app.tar.gz; adding the target
-              # keeps the bytes the .sig covers.
-              for f in "$bundle"/macos/xDev.app.tar.gz*; do
+              # The updater tarball is named after the product; adding the
+              # target keeps the bytes the .sig covers.
+              for f in "$bundle"/macos/*.app.tar.gz*; do
                 name=$(basename "$f")
-                cp "$f" "out/${name/xDev/xDev-${{ matrix.target }}}"
+                cp "$f" "out/${name/.app.tar.gz/-${{ matrix.target }}.app.tar.gz}"
               done
               cp "$bundle"/dmg/*.dmg out/
               ;;
@@ -229,6 +229,9 @@ jobs:
               cp "$bundle"/appimage/*.AppImage* "$bundle"/deb/*.deb out/
               ;;
           esac
+          # GitHub turns a space in an asset name into a dot, so latest.json
+          # would point at a name that does not exist.
+          for f in out/*' '*; do mv "$f" "${f// /-}"; done
           ls -l out
 
       - uses: actions/upload-artifact@v7
@@ -273,7 +276,7 @@ jobs:
           }
           add windows-x86_64 '*_x64-setup.exe'
           add windows-aarch64 '*_arm64-setup.exe'
-          add darwin-aarch64 'xDev-aarch64-apple-darwin.app.tar.gz'
+          add darwin-aarch64 'xDev-IDE-aarch64-apple-darwin.app.tar.gz'
           add linux-x86_64 '*_amd64.AppImage'
           add linux-aarch64 '*_aarch64.AppImage'
           jq -n \
@@ -328,7 +331,7 @@ jobs:
           }
           add windows-x86_64 '*_x64-setup.exe'
           add windows-aarch64 '*_arm64-setup.exe'
-          add darwin-aarch64 'xDev-aarch64-apple-darwin.app.tar.gz'
+          add darwin-aarch64 'xDev-IDE-aarch64-apple-darwin.app.tar.gz'
           add linux-x86_64 '*_amd64.AppImage'
           add linux-aarch64 '*_aarch64.AppImage'
           jq -n \

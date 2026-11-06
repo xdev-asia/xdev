@@ -298,7 +298,7 @@ mod native {
             return Some(w);
         }
         let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("notch.html".into()))
-            .title("xDev")
+            .title("xDev IDE")
             .inner_size(PILL_W, PILL_H)
             .transparent(true)
             .decorations(false)

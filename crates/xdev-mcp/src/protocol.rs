@@ -237,7 +237,7 @@ impl Server<'_> {
     }
 
     fn server_info(&self) -> Value {
-        json!({"name": "xdev", "title": "xDev", "version": self.version})
+        json!({"name": "xdev", "title": "xDev IDE", "version": self.version})
     }
 }
 

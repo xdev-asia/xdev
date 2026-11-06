@@ -157,17 +157,17 @@ impl Default for ShellLabels {
     fn default() -> Self {
         let s = |v: &str| v.to_string();
         Self {
-            tray_tooltip: s("xDev"),
-            tray_attention: s("xDev – an agent needs you"),
-            tray_open: s("Open xDev"),
-            about: s("About xDev"),
+            tray_tooltip: s("xDev IDE"),
+            tray_attention: s("xDev IDE – an agent needs you"),
+            tray_open: s("Open xDev IDE"),
+            about: s("About xDev IDE"),
             settings: s("Settings…"),
             check_updates: s("Check for updates…"),
-            hide: s("Hide xDev"),
+            hide: s("Hide xDev IDE"),
             hide_others: s("Hide others"),
             show_all: s("Show all"),
             quit_end_all: s("Quit and end terminals…"),
-            quit: s("Quit xDev"),
+            quit: s("Quit xDev IDE"),
             edit: s("Edit"),
             view: s("View"),
             window: s("Window"),

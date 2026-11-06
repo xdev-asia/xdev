@@ -42,7 +42,7 @@ it("titles the run and walks the breadcrumb: when, the product, the workspace", 
   expect(textOf(all.find((n) => n.type === "h2")!)).toBe("Audit run 4");
   const items = all.find((n) => n.type === Breadcrumb)!.props.items as { label: string }[];
   expect(items[0].label).toMatch(/^Scheduled .*2026.* \(5 min\)$/);
-  expect(items[1].label).toBe("xDev");
+  expect(items[1].label).toBe("xDev IDE");
   expect(items[2].label).toBe("auto-audit");
   expect((view(run()).all.find((n) => n.type === Breadcrumb)!.props.items as { label: string }[])[2].label).toBe("No workspace");
 });

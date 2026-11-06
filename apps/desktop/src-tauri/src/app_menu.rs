@@ -229,7 +229,7 @@ mod native {
                                 text,
                                 Some(
                                     AboutMetadataBuilder::new()
-                                        .name(Some("xDev"))
+                                        .name(Some("xDev IDE"))
                                         .version(Some(xdev_core::version()))
                                         .build(),
                                 ),
@@ -313,7 +313,7 @@ mod tests {
     fn the_menu_bar_order() {
         let l = ShellLabels::default();
         let titles: Vec<_> = menu_spec(&l).into_iter().map(|s| s.title).collect();
-        assert_eq!(titles, ["xDev", "Edit", "View", "Window", "Help"]);
+        assert_eq!(titles, ["xDev IDE", "Edit", "View", "Window", "Help"]);
     }
 
     #[test]
