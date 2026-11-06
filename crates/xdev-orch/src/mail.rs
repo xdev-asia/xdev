@@ -247,6 +247,68 @@ impl Store {
             .collect())
     }
 
+    /// The tab a mailbox's owner sits in: a worker's tab, or a run's coordinator.
+    fn address_tab(&self, address: &str) -> Result<Option<String>, OrchError> {
+        if let Some(id) = address.strip_prefix("dispatch:") {
+            return Ok(self
+                .conn
+                .query_row(
+                    "SELECT tab FROM workers WHERE dispatch_id = ?1",
+                    [id],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .optional()?
+                .flatten());
+        }
+        if let Some(id) = address.strip_prefix("run:") {
+            return Ok(self
+                .conn
+                .query_row(
+                    "SELECT coordinator_tab FROM runs WHERE id = ?1",
+                    [id],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .optional()?
+                .flatten());
+        }
+        Ok(address
+            .strip_prefix(crate::links::TAB_ADDRESS)
+            .map(str::to_owned))
+    }
+
+    /// The seat of a chart run the mailbox's owner sits in, if any.
+    fn address_member(
+        &self,
+        address: &str,
+    ) -> Result<Option<crate::charts::ChartMember>, OrchError> {
+        match self.address_tab(address)? {
+            Some(tab) => self.chart_member(&tab),
+            None => Ok(None),
+        }
+    }
+
+    /// Refuses mail the hierarchy rule forbids: from a worker of a hierarchy
+    /// to a teammate other than its lead. Every recipient passes, or none is written.
+    fn check_mail<'a>(
+        &self,
+        from: &str,
+        to: impl Iterator<Item = &'a str>,
+    ) -> Result<(), OrchError> {
+        let Some(sender) = self.address_member(from)? else {
+            return Ok(());
+        };
+        if !sender.is_hierarchy_worker() {
+            return Ok(());
+        }
+        for address in to {
+            let recipient = self.address_member(address)?;
+            if !crate::charts::may_mail(Some(&sender), recipient.as_ref()) {
+                return Err(crate::charts::hierarchy_denied());
+            }
+        }
+        Ok(())
+    }
+
     /// Writes a message under a given id; false when that id already exists.
     pub(crate) fn insert_message_with_id(
         &self,
@@ -305,6 +367,7 @@ impl Store {
             )));
         }
         let targets = self.recipients(from, &m.to, idle)?;
+        self.check_mail(&from.address, targets.iter().map(|(a, _)| a.as_str()))?;
         // A group gets every copy or none.
         let (ids, to) = self.atomic(|s| {
             let mut ids = Vec::new();
@@ -737,6 +800,55 @@ mod tests {
             .unwrap();
         assert!(again.messages.is_empty());
         assert_eq!(s.unread_count("dispatch:disp_b").unwrap(), 0);
+    }
+
+    #[test]
+    fn a_hierarchy_worker_mails_its_lead_but_no_other_teammate() {
+        use crate::charts::{Chart, ChartEdge, ChartKind, ChartSeat, SeatTab};
+        let (s, lead) = world();
+        let seat = |id: &str, lead: bool| ChartSeat {
+            id: id.into(),
+            role: id.into(),
+            agent: "claude".into(),
+            model: None,
+            prompt: String::new(),
+            lead,
+        };
+        let chart = Chart {
+            id: String::new(),
+            name: "T".into(),
+            kind: ChartKind::Hierarchy,
+            seats: vec![seat("l", true), seat("a", false), seat("b", false)],
+            edges: vec![ChartEdge {
+                from: "l".into(),
+                to: "a".into(),
+                transcript: true,
+                screen: false,
+            }],
+            routes: vec![],
+            created_ms: 0,
+            updated_ms: 0,
+        };
+        let c = s.chart_save(chart, 1).unwrap();
+        let tabs = [("l", "lead"), ("a", "tab_a"), ("b", "tab_b")].map(|(seat, tab)| SeatTab {
+            seat: seat.into(),
+            tab: tab.into(),
+        });
+        s.chart_run_bind(&c.id, &tabs, 1).unwrap();
+        let a = s.identity(Some("tab_a"), None).unwrap();
+        let w = |to: &str| note(to, MessageType::Status, "x");
+        // To the lead (the run's coordinator sits in the lead's tab): allowed.
+        s.send(&a, &w(&lead.address), 2, &nobody).unwrap();
+        // To a sibling, directly or through a group: refused, nothing written.
+        let e = s.send(&a, &w("dispatch:disp_b"), 2, &nobody).unwrap_err();
+        assert_eq!(e.code, "denied");
+        assert_eq!(
+            s.send(&a, &w("@all"), 2, &nobody).unwrap_err().code,
+            "denied"
+        );
+        assert_eq!(s.unread_count("dispatch:disp_b").unwrap(), 0);
+        // The lead writes to anyone.
+        s.send(&lead, &w("dispatch:disp_b"), 3, &nobody).unwrap();
     }
 
     #[test]

@@ -2,6 +2,7 @@
 //! one SQLite store. Pure logic: no Tauri, no terminals. The app owns the
 //! only connection and talks to the UI and the PTYs around these functions.
 
+pub mod charts;
 pub mod error;
 pub mod failover;
 pub mod gates;
@@ -19,6 +20,10 @@ pub mod store;
 pub mod tasks;
 pub mod workers;
 
+pub use charts::{
+    Chart, ChartEdge, ChartKind, ChartMember, ChartProblem, ChartRoute, ChartRun, ChartSeat,
+    SeatTab, may_hand_off, may_mail,
+};
 pub use error::OrchError;
 pub use gates::AskAnswer;
 pub use links::{

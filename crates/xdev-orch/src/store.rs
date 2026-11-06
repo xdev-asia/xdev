@@ -16,7 +16,7 @@ use crate::ids::new_id;
 use crate::model::{Dispatch, Gate, Message, Run, Task, Worker};
 
 /// The schema version this build writes.
-pub const SCHEMA_VERSION: i32 = 3;
+pub const SCHEMA_VERSION: i32 = 4;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE runs (
@@ -138,6 +138,29 @@ ALTER TABLE dispatches ADD COLUMN failover_reason TEXT;
 ALTER TABLE dispatches ADD COLUMN failover_kind TEXT;
 ALTER TABLE dispatches ADD COLUMN account TEXT;
 CREATE INDEX dispatches_failover_of ON dispatches(failover_of);
+";
+
+/// Version 4: saved team charts, and the tabs a run of a chart opened (for
+/// the hierarchy rule). Only new tables: older stores open unchanged.
+const SCHEMA_V4: &str = "
+CREATE TABLE IF NOT EXISTS charts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_ms INTEGER NOT NULL,
+    updated_ms INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chart_tabs (
+    tab TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    chart_id TEXT NOT NULL,
+    seat_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    lead_tab TEXT,
+    created_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS chart_tabs_run ON chart_tabs (run_id);
 ";
 
 pub struct Store {
@@ -353,6 +376,12 @@ impl Store {
             tx.pragma_update(None, "user_version", 3)?;
             tx.commit()?;
         }
+        if version < 4 {
+            let tx = self.conn.unchecked_transaction()?;
+            tx.execute_batch(SCHEMA_V4)?;
+            tx.pragma_update(None, "user_version", 4)?;
+            tx.commit()?;
+        }
         Ok(())
     }
 
@@ -434,6 +463,8 @@ mod tests {
         assert_eq!(
             tables,
             [
+                "chart_tabs",
+                "charts",
                 "dispatches",
                 "gates",
                 "messages",
@@ -534,6 +565,40 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM runs", [], |r| r.get(0))
             .unwrap();
         assert_eq!(runs, 1);
+    }
+
+    #[test]
+    fn a_version_3_database_opens_with_its_rows_and_gains_charts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("v3.db");
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(SCHEMA_V1).unwrap();
+            c.execute_batch(SCHEMA_V2).unwrap();
+            c.execute_batch(SCHEMA_V3).unwrap();
+            c.pragma_update(None, "user_version", 3).unwrap();
+            c.execute(
+                "INSERT INTO runs (id, objective, created_ms) VALUES ('run_a', 'x', 1)",
+                [],
+            )
+            .unwrap();
+            c.execute(
+                "INSERT INTO tab_links (from_tab, to_tab, transcript, created_ms, updated_ms)
+                 VALUES ('a', 'b', 1, 1, 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert_eq!(s.version().unwrap(), SCHEMA_VERSION);
+        assert_eq!(s.run_list().unwrap().len(), 1);
+        assert!(s.link_get("a", "b").unwrap().unwrap().transcript);
+        assert!(s.chart_list().unwrap().is_empty());
+        assert!(s.chart_member("a").unwrap().is_none());
+        drop(s);
+        // Opening it again is a no-op.
+        let s = Store::open(&path).unwrap();
+        assert_eq!(s.version().unwrap(), SCHEMA_VERSION);
     }
 
     #[test]
