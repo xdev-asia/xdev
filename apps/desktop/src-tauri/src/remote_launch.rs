@@ -161,6 +161,7 @@ mod tests {
             hook_events: Vec::new(),
             prompt_after: None,
             prompt_argv: if agent { vec!["hi".into()] } else { Vec::new() },
+            wsl: None,
         }
     }
 

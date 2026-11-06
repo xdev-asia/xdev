@@ -533,7 +533,8 @@ pub(crate) fn launch_with_prompt(
 ) -> Result<Launch, CmdError> {
     let profiles = Profiles::load(data_dir).map_err(LaunchError::from)?;
     let accounts = Registry::load(data_dir)?;
-    // Only the shell ids look at the shells; `wsl.exe` is not asked for an agent.
+    // Only the shell ids look at the shells. An agent's WSL distro is checked
+    // against the list when it spawns (`wsl_target`).
     let distros: &[String] = if id == "shell" || id.starts_with("shell:") {
         distros()
     } else {
@@ -552,9 +553,16 @@ pub(crate) fn launch_with_prompt(
         }
         shells.push(entry);
     }
-    let find = |profile: &Profile| match profile.cli {
-        Some(cli) => find_builtin(cli),
-        None => profile.program.as_deref().and_then(find_program),
+    let wsl_host = cfg!(windows);
+    // A WSL profile runs the CLI installed in its distro: nothing to find here.
+    let find = |profile: &Profile| {
+        if wsl_host && profile.wsl.is_some() {
+            return xdev_agent::wsl::program(profile);
+        }
+        match profile.cli {
+            Some(cli) => find_builtin(cli),
+            None => profile.program.as_deref().and_then(find_program),
+        }
     };
     let ctx = Context {
         profiles: &profiles,
@@ -563,11 +571,14 @@ pub(crate) fn launch_with_prompt(
         find: &find,
         account,
         prompt,
+        wsl: wsl_host,
     };
     let mut launch = resolve(id, &ctx)?;
     // A new agent with no account from its tab or profile starts where its
-    // provider's routing says. A resume stays on the home its log is in.
+    // provider's routing says. A resume stays on the home its log is in. A
+    // WSL launch runs on the distro's own sign-in.
     if resume.is_none()
+        && launch.wsl.is_none()
         && matches!(launch.account_source, None | Some(AccountSource::Active))
         && let Some(provider) = launch.cli.and_then(provider_of)
         && let Some(routed) = crate::accounts::routed(&accounts, provider)
@@ -667,7 +678,8 @@ pub(crate) fn trust_plan(
     fresh: bool,
     proc_env: &dyn Fn(&str) -> Option<OsString>,
 ) -> Option<TrustPlan> {
-    if !enabled || !fresh || !launch.agent {
+    // The trust files are on the Windows side; a WSL agent reads its own.
+    if !enabled || !fresh || !launch.agent || launch.wsl.is_some() {
         return None;
     }
     let cli = launch.cli?;
@@ -806,13 +818,14 @@ pub(crate) fn spawn_launch_trusted(
     on_exit: impl FnOnce(Option<i32>) + Send + 'static,
 ) -> Result<PtyInfo, CmdError> {
     spawn_launch_at(
-        ptys, data_dir, id, cwd, launch, cols, rows, trust, None, on_output, on_exit,
+        ptys, data_dir, id, cwd, launch, cols, rows, trust, None, None, on_output, on_exit,
     )
 }
 
 /// Gates an agent, writes `trust` once the gate has passed (a refused
 /// launch trusts nothing), then starts `launch`. With `remote` the gate
 /// checks the launch as resolved here, then it runs as `ssh -tt` on the host.
+/// With `wsl` (and no `remote`) it runs through `wsl.exe` in that distro.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_launch_at(
     ptys: &Ptys,
@@ -824,6 +837,7 @@ pub(crate) fn spawn_launch_at(
     rows: u16,
     trust: Option<TrustPlan>,
     remote: Option<crate::remote_launch::RemoteSpec>,
+    wsl: Option<WslTarget>,
     on_output: impl FnMut(Vec<u8>) + Send + 'static,
     on_exit: impl FnOnce(Option<i32>) + Send + 'static,
 ) -> Result<PtyInfo, CmdError> {
@@ -860,12 +874,13 @@ pub(crate) fn spawn_launch_at(
     if let Some(plan) = trust {
         apply_trust(plan);
     }
-    let (launch, listed) = match &remote {
-        Some(spec) => (
+    let (launch, listed) = match (&remote, &wsl) {
+        (Some(spec), _) => (
             crate::remote_launch::wrap(launch, spec, &id),
             PathBuf::from(&spec.worktree),
         ),
-        None => (launch, cwd.clone()),
+        (None, Some(target)) => (wsl_wrap(launch, target), cwd.clone()),
+        (None, None) => (launch, cwd.clone()),
     };
     let (program, args) = launch.command();
     let prompt_after = launch.prompt_after;
@@ -880,6 +895,9 @@ pub(crate) fn spawn_launch_at(
     // Agents run `xdev orchestration ...` from here.
     if let Ok(exe) = std::env::current_exe() {
         crate::cli_path::cli_env(&exe, &mut env);
+    }
+    if remote.is_none() && wsl.is_some() {
+        add_wslenv(&mut env, std::env::var("WSLENV").ok().as_deref());
     }
     let mut info = PtyInfo {
         id: id.clone(),
@@ -954,7 +972,7 @@ pub(crate) fn approve_launch(
 /// The CLI's own program, args and mode; never the startup wrapper.
 fn fingerprint(launch: &Launch) -> String {
     agent_fingerprint(
-        &launch.program.to_string_lossy(),
+        &gate_program(launch),
         &launch.args,
         launch.permissions.as_str(),
     )
@@ -963,10 +981,94 @@ fn fingerprint(launch: &Launch) -> String {
 fn launch_action(launch: &Launch) -> Action {
     Action::LaunchAgent {
         profile: launch.profile.clone(),
-        program: launch.program.to_string_lossy().into_owned(),
+        program: gate_program(launch),
         args: launch.args.clone(),
         permissions: launch.permissions.as_str().to_owned(),
     }
+}
+
+/// The program as the gate keys it: a WSL launch as `wsl:<distro>:<program>`,
+/// so an approval does not carry between Windows and a distro.
+fn gate_program(launch: &Launch) -> String {
+    let program = launch.program.to_string_lossy();
+    match &launch.wsl {
+        Some(distro) => xdev_agent::wsl::label(distro, &program),
+        None => program.into_owned(),
+    }
+}
+
+/// Where a WSL launch runs: its distro and the folder `wsl.exe --cd` gets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WslTarget {
+    pub distro: String,
+    pub cd: String,
+}
+
+/// The WSL target of a launch whose profile runs in distro `wsl`, from the
+/// worktree `cwd`; `None` for a host launch or a remote one (the SSH wrap
+/// wins). `wsl_distro` when the distro is not in `distros`, `wsl_path` when
+/// the folder cannot be opened there.
+pub(crate) fn wsl_target(
+    wsl: Option<&str>,
+    cwd: &Path,
+    distros: &[String],
+    remote: bool,
+) -> Result<Option<WslTarget>, CmdError> {
+    let Some(distro) = wsl.filter(|_| !remote) else {
+        return Ok(None);
+    };
+    if !distros.iter().any(|d| d.eq_ignore_ascii_case(distro)) {
+        return Err(CmdError {
+            code: "wsl_distro",
+            detail: Some(distro.to_owned()),
+        });
+    }
+    let bad_path = || CmdError {
+        code: "wsl_path",
+        detail: Some(cwd.display().to_string()),
+    };
+    let at = cwd
+        .to_str()
+        .ok_or_else(bad_path)
+        .and_then(|p| xdev_agent::wsl::cwd_for(p).map_err(|_| bad_path()))?;
+    if let xdev_agent::wsl::WslCwd::Linux { distro: own, .. } = &at
+        && !own.eq_ignore_ascii_case(distro)
+    {
+        return Err(bad_path());
+    }
+    Ok(Some(WslTarget {
+        distro: distro.to_owned(),
+        cd: at.cd().to_owned(),
+    }))
+}
+
+/// `launch` as `wsl.exe` running its CLI in `target`: the startup lines,
+/// program, args and prompt travel in the base64 script (`wsl::argv`).
+fn wsl_wrap(mut launch: Launch, target: &WslTarget) -> Launch {
+    let mut args = std::mem::take(&mut launch.args);
+    args.append(&mut launch.prompt_argv);
+    let startup = std::mem::take(&mut launch.startup);
+    let program = launch.program.to_string_lossy().into_owned();
+    launch.args = xdev_agent::wsl::argv(&target.distro, &target.cd, &program, &args, &startup);
+    launch.program = PathBuf::from("wsl.exe");
+    launch
+}
+
+/// Sets `WSLENV` so the launch env reaches the agent inside WSL
+/// (`wsl::wslenv`), after any `WSLENV` the launch or the process
+/// (`existing`) already has.
+fn add_wslenv(env: &mut Vec<(String, OsString)>, existing: Option<&str>) {
+    let own = env
+        .iter()
+        .rev()
+        .find(|(k, _)| k.eq_ignore_ascii_case("WSLENV"))
+        .map(|(_, v)| v.to_string_lossy().into_owned());
+    let existing = own.as_deref().or(existing);
+    let Some(value) = xdev_agent::wsl::wslenv(env, existing) else {
+        return;
+    };
+    env.retain(|(k, _)| !k.eq_ignore_ascii_case("WSLENV"));
+    env.push(("WSLENV".to_owned(), value.into()));
 }
 
 /// The program and args that run `script` in `shell` and end with it, as
@@ -1161,6 +1263,7 @@ pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdErr
         hook_events: Vec::new(),
         prompt_after: None,
         prompt_argv: Vec::new(),
+        wsl: None,
     })
 }
 
@@ -1259,6 +1362,13 @@ pub fn pty_spawn(
     {
         crate::network::add_project_env(&mut launch.env, &reg, &crate::repo_env::Keychain, &cwd);
     }
+    // A WSL agent: its distro is listed and the worktree opens there.
+    let listed: &[String] = if launch.wsl.is_some() && remote.is_none() {
+        distros()
+    } else {
+        &[]
+    };
+    let wsl = wsl_target(launch.wsl.as_deref(), &cwd, listed, remote.is_some())?;
     let starts_agent = crate::app_stats::counts_as_start(launch.agent, resume.as_deref(), fork);
     let routed = routed_start(&launch);
     let exit_id = id.clone();
@@ -1288,6 +1398,7 @@ pub fn pty_spawn(
         rows,
         trust,
         remote,
+        wsl,
         move |bytes| {
             crate::ports::feed_output(&feed_app, &feed_id, &feed_cwd, &bytes);
             crate::term_tail::feed(&feed_app, &feed_id, &bytes);
@@ -1678,6 +1789,7 @@ mod tests {
             hook_events: Vec::new(),
             prompt_after: None,
             prompt_argv: Vec::new(),
+            wsl: None,
         }
     }
 
@@ -2838,6 +2950,7 @@ b",
             hook_events: Vec::new(),
             prompt_after: None,
             prompt_argv: Vec::new(),
+            wsl: None,
         }
     }
 
@@ -2938,5 +3051,114 @@ b",
         reg.save(&f.data).unwrap();
         let err = setup_launch(&f.data, &f.repo).unwrap_err();
         assert_eq!(err.code, "setup_skipped");
+    }
+
+    // --- wsl ---
+
+    fn listed(names: &[&str]) -> Vec<String> {
+        names.iter().map(|n| (*n).to_owned()).collect()
+    }
+
+    #[test]
+    fn wsl_target_checks_the_distro_and_the_folder() {
+        let ubuntu = listed(&["Ubuntu"]);
+        let target = |cwd: &str, distros: &[String]| {
+            wsl_target(Some("Ubuntu"), Path::new(cwd), distros, false)
+        };
+        assert_eq!(
+            target(r"C:\src\app", &ubuntu).unwrap(),
+            Some(WslTarget {
+                distro: "Ubuntu".into(),
+                cd: r"C:\src\app".into(),
+            })
+        );
+        let err = target(r"C:\src\app", &listed(&["Debian"])).unwrap_err();
+        assert_eq!(
+            (err.code, err.detail.as_deref()),
+            ("wsl_distro", Some("Ubuntu"))
+        );
+        assert!(
+            target(r"C:\src\app", &listed(&["ubuntu"]))
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            target(r"\\wsl$\Ubuntu\home\u\app", &ubuntu)
+                .unwrap()
+                .unwrap()
+                .cd,
+            "/home/u/app"
+        );
+        let err = target(r"\\wsl$\Debian\x", &ubuntu).unwrap_err();
+        assert_eq!(
+            (err.code, err.detail.as_deref()),
+            ("wsl_path", Some(r"\\wsl$\Debian\x"))
+        );
+        assert_eq!(target(r"\\server\s", &ubuntu).unwrap_err().code, "wsl_path");
+        // The SSH wrap wins; a host profile has no target.
+        let remote = wsl_target(Some("Ubuntu"), Path::new(r"C:\x"), &[], true);
+        assert_eq!(remote.unwrap(), None);
+        let host = wsl_target(None, Path::new(r"\\server\s"), &[], false);
+        assert_eq!(host.unwrap(), None);
+    }
+
+    #[test]
+    fn approvals_are_per_distro() {
+        let plain = agent();
+        let mut ubuntu = agent();
+        ubuntu.wsl = Some("Ubuntu".into());
+        let mut debian = agent();
+        debian.wsl = Some("Debian".into());
+        assert_ne!(fingerprint(&plain), fingerprint(&ubuntu));
+        assert_ne!(fingerprint(&ubuntu), fingerprint(&debian));
+        let Action::LaunchAgent { program, .. } = launch_action(&ubuntu) else {
+            panic!("an agent launch");
+        };
+        assert!(program.starts_with("wsl:Ubuntu:"));
+    }
+
+    #[test]
+    fn a_wsl_launch_gets_no_trust() {
+        let mut claude = trust_launch(Some(Cli::Claude), true, &[]);
+        claude.wsl = Some("Ubuntu".into());
+        assert!(plan(&claude, true, true).is_none());
+    }
+
+    #[test]
+    fn wsl_wrap_runs_the_cli_through_wsl_exe() {
+        let mut l = trust_launch(Some(Cli::Claude), true, &[("FOO", "1"), ("PATH", "x")]);
+        l.wsl = Some("Ubuntu".into());
+        l.program = PathBuf::from("claude");
+        l.args = vec!["--model".into(), "it's".into()];
+        l.prompt_argv = vec!["fix it".into()];
+        l.startup = vec!["source ~/.nvm/nvm.sh".into()];
+        let target = WslTarget {
+            distro: "Ubuntu".into(),
+            cd: "/home/u/app".into(),
+        };
+        let w = wsl_wrap(l, &target);
+        assert_eq!(w.program, PathBuf::from("wsl.exe"));
+        let args = ["--model", "it's", "fix it"];
+        assert_eq!(
+            w.args,
+            xdev_agent::wsl::argv(
+                "Ubuntu",
+                "/home/u/app",
+                "claude",
+                &args,
+                &["source ~/.nvm/nvm.sh"]
+            )
+        );
+        assert!(w.startup.is_empty() && w.prompt_argv.is_empty());
+        assert_eq!(w.command(), (PathBuf::from("wsl.exe"), w.args.clone()));
+        let mut env = w.env;
+        env.push(("XDEV_CLI".into(), r"C:\x\xdev.exe".into()));
+        add_wslenv(&mut env, Some("X/p"));
+        let wslenv = env.iter().find(|(k, _)| k == "WSLENV").unwrap();
+        assert_eq!(wslenv.1, OsString::from("X/p:FOO/u"));
+        // Nothing to forward: no WSLENV.
+        let mut none: Vec<(String, OsString)> = vec![("PATH".into(), "x".into())];
+        add_wslenv(&mut none, None);
+        assert_eq!(none.len(), 1);
     }
 }
