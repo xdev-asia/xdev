@@ -75,6 +75,24 @@ fn current_means_yesterday_is_there() {
 }
 
 #[test]
+fn a_day_with_no_usage_is_still_current_once_marked() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(ARCHIVE_FILE);
+    // Nothing used: no line is written, and the archive alone stays "not current".
+    assert_eq!(
+        archive_append(&path, &[day("2026-11-05", 0)], "2026-11-06").unwrap(),
+        0
+    );
+    assert!(!archive_current(&path, "2026-11-05"));
+    archive_mark(&path, "2026-11-05").unwrap();
+    assert!(archive_current(&path, "2026-11-05"));
+    // A later day is not covered by yesterday's mark.
+    assert!(!archive_current(&path, "2026-11-06"));
+    // The mark is not an archive line.
+    assert!(archive_read(&path).is_empty());
+}
+
+#[test]
 fn day_keys_follow_the_offset() {
     // 2026-11-05T23:00:00Z
     let ms = 1_793_919_600_000;

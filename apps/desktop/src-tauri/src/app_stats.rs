@@ -293,6 +293,8 @@ pub fn app_stats_busy(
 /// in `<local data>/usage-archive.jsonl`. It is written on every plan, so the history exists when
 /// someone upgrades; only reading past what the agent CLIs keep needs `pro.usage_history`.
 pub const ARCHIVE_FILE: &str = "usage-archive.jsonl";
+/// The last day the archive was brought up to; see `archive_mark`.
+const ARCHIVE_MARK_FILE: &str = "usage-archive.mark";
 pub const ARCHIVE_VERSION: u32 = 1;
 /// The gated feature.
 pub const HISTORY_FEATURE: &str = "pro.usage_history";
@@ -470,11 +472,27 @@ pub(crate) fn archive_append(
     Ok(fresh.len())
 }
 
-/// Whether the archive already holds a day at or after `yesterday`; then there is nothing to do.
+/// Where the last archived day is noted, next to the archive: a day with no usage has no line, so
+/// the archive alone cannot say that it was looked at.
+fn archive_mark_path(path: &Path) -> std::path::PathBuf {
+    path.with_file_name(ARCHIVE_MARK_FILE)
+}
+
+/// Notes that every finished day up to `day` is archived (or had no usage). Best effort.
+pub(crate) fn archive_mark(path: &Path, day: &str) -> std::io::Result<()> {
+    crate::atomic::write_atomic(&archive_mark_path(path), day.as_bytes())
+}
+
+/// Whether the archive already holds a day at or after `yesterday`, or the last archived day noted
+/// is; then there is nothing to do.
 pub(crate) fn archive_current(path: &Path, yesterday: &str) -> bool {
-    archive_read(path)
-        .iter()
-        .any(|d| d.day.as_str() >= yesterday)
+    let marked = std::fs::read_to_string(archive_mark_path(path))
+        .map(|d| is_day(d.trim()) && d.trim() >= yesterday)
+        .unwrap_or(false);
+    marked
+        || archive_read(path)
+            .iter()
+            .any(|d| d.day.as_str() >= yesterday)
 }
 
 /// The days `from_day..=to_day`: the archive's, plus the index's days the archive does not hold
@@ -521,8 +539,14 @@ fn archive_today(app: &tauri::AppHandle) {
     let Ok(index) = ctx.usage_index(true) else {
         return;
     };
-    if let Err(e) = archive_append(&path, &index_days(&index), &day_key(now, offset, 0)) {
-        eprintln!("usage archive: cannot write: {e}");
+    match archive_append(&path, &index_days(&index), &day_key(now, offset, 0)) {
+        // Also when no day had usage: the hourly check then stops until the next day.
+        Ok(_) => {
+            if let Err(e) = archive_mark(&path, &day_key(now, offset, 1)) {
+                eprintln!("usage archive: cannot note the day: {e}");
+            }
+        }
+        Err(e) => eprintln!("usage archive: cannot write: {e}"),
     }
 }
 
