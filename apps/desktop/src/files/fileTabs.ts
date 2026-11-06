@@ -64,12 +64,17 @@ export interface FileEntry {
 /** How many closed file tabs of one worktree `reopenClosed` can give back. */
 export const CLOSED_FILES_KEPT = 20;
 
+/** How many closed file tabs keep their unsaved text for `takeClosed`. */
+export const CLOSED_UNSAVED_KEPT = 10;
+
 /** A file tab the person closed. */
 export interface ClosedFile {
   rel: string;
   pinned: boolean;
   /** When it closed (ms); lets the shell compare with a closed terminal. */
   at: number;
+  /** The edits that were thrown away with the tab; `takeClosed` brings them back as a dirty buffer. */
+  unsaved?: string;
 }
 
 export type ExternalState = "changed" | "deleted" | "renamed";
@@ -140,7 +145,10 @@ export class FileTabs {
     const old = this.get(worktree, rel);
     if (!old) return;
     const text = file.text ?? "";
-    this.put({ ...old, status: "ready", error: undefined, kind: file.kind, text, saved: text, hash: file.hash, eol: file.eol, conflict: null, external: null, saving: false });
+    const k = key(worktree, rel);
+    const edited = this.pendingEdits.get(k);
+    this.pendingEdits.delete(k);
+    this.put({ ...old, status: "ready", error: undefined, kind: file.kind, text: edited !== undefined && file.kind === "text" ? edited : text, saved: text, hash: file.hash, eol: file.eol, conflict: null, external: null, saving: false });
   }
 
   failed(worktree: string, rel: string, code: string): void {
@@ -213,6 +221,9 @@ export class FileTabs {
     if (old && !!old.pinned !== pinned) this.put({ ...old, pinned });
   }
 
+  // Edits of a reopened tab, put on top of the text the first read brings.
+  private readonly pendingEdits = new Map<string, string>();
+
   // Closed file tabs per worktree, newest last.
   private readonly closedFiles = new Map<string, ClosedFile[]>();
 
@@ -222,8 +233,14 @@ export class FileTabs {
     if (!old) return;
     this.close(worktree, rel);
     const stack = (this.closedFiles.get(worktree) ?? []).filter((c) => c.rel !== rel);
-    stack.push({ rel, pinned: !!old.pinned, at: Date.now() });
+    stack.push({ rel, pinned: !!old.pinned, at: Date.now(), ...(isDirty(old) ? { unsaved: old.text } : {}) });
     if (stack.length > CLOSED_FILES_KEPT) stack.shift();
+    // Only the newest few keep their text, so closed tabs do not hold large buffers for long.
+    let kept = 0;
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].unsaved === undefined) continue;
+      if (++kept > CLOSED_UNSAVED_KEPT) delete stack[i].unsaved;
+    }
     this.closedFiles.set(worktree, stack);
   }
 
@@ -242,11 +259,16 @@ export class FileTabs {
    * Takes the newest closed file tab of `worktree` off the stack and returns it, skipping files that
    * are open again. The caller opens it. Null when there is none.
    */
-  takeClosed(worktree: string): ClosedFile | null {
+  takeClosed(worktree: string, rel?: string): ClosedFile | null {
     const stack = this.closedFiles.get(worktree);
     while (stack && stack.length > 0) {
-      const last = stack.pop()!;
-      if (!this.get(worktree, last.rel)) return last;
+      const at = rel === undefined ? stack.length - 1 : stack.map((c) => c.rel).lastIndexOf(rel);
+      if (at < 0) return null;
+      const [taken] = stack.splice(at, 1);
+      if (this.get(worktree, taken.rel)) continue;
+      // The next read of the file shows these edits over the disk text.
+      if (taken.unsaved !== undefined) this.pendingEdits.set(key(worktree, taken.rel), taken.unsaved);
+      return taken;
     }
     return null;
   }
@@ -287,6 +309,7 @@ export class FileTabs {
     this.entries.clear();
     this.lists.clear();
     this.closedFiles.clear();
+    this.pendingEdits.clear();
     this.emit();
   }
 }

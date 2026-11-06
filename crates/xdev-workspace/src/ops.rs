@@ -1796,6 +1796,9 @@ pub struct DirEntry {
     pub name: String,
     /// A real folder; a link is a file here, whatever it points at.
     pub dir: bool,
+    /// Git ignores it (a `.gitignore` of the worktree, or `.git/info/exclude`), or a folder above it.
+    /// The user's global excludes file is not read.
+    pub ignored: bool,
 }
 
 /// One level of a worktree's files: folders first, then files, each A to Z
@@ -1898,12 +1901,78 @@ pub(crate) fn rel_under(worktree: &str, rel: &str) -> Result<PathBuf, WorkspaceE
     under(worktree, rel, true)
 }
 
+/// The ignore rules that apply in folder `rel` of `worktree`, from the top down: one matcher per
+/// folder on the way, each built from its own `.gitignore` (the top one also from `.git/info/exclude`).
+/// A deeper matcher overrides a higher one.
+struct IgnoreChain {
+    /// Folder names on the way down, and the matchers: `levels[i]` is the folder `parts[..i]`.
+    levels: Vec<ignore::gitignore::Gitignore>,
+    /// Some folder above (or at) `rel` is ignored, so everything in it is.
+    all: bool,
+}
+
+impl IgnoreChain {
+    fn new(worktree: &Path, rel: &str) -> IgnoreChain {
+        use ignore::gitignore::GitignoreBuilder;
+        let parts: Vec<&std::ffi::OsStr> = Path::new(rel)
+            .components()
+            .filter_map(|c| match c {
+                Component::Normal(name) => Some(name),
+                _ => None,
+            })
+            .collect();
+        let mut dir = worktree.to_path_buf();
+        let mut chain = IgnoreChain {
+            levels: Vec::new(),
+            all: false,
+        };
+        for i in 0..=parts.len() {
+            let mut builder = GitignoreBuilder::new(&dir);
+            if i == 0 {
+                builder.add(dir.join(".git").join("info").join("exclude"));
+            }
+            builder.add(dir.join(".gitignore"));
+            // A rule that cannot be read or parsed is left out; the tree is only dimmed by this.
+            chain.levels.push(
+                builder
+                    .build()
+                    .unwrap_or_else(|_| ignore::gitignore::Gitignore::empty()),
+            );
+            if i < parts.len() {
+                dir.push(parts[i]);
+                if chain.is_ignored(&dir, true) {
+                    chain.all = true;
+                    break;
+                }
+            }
+        }
+        chain
+    }
+
+    fn is_ignored(&self, path: &Path, is_dir: bool) -> bool {
+        if self.all {
+            return true;
+        }
+        for level in self.levels.iter().rev() {
+            let m = level.matched(path, is_dir);
+            if m.is_ignore() {
+                return true;
+            }
+            if m.is_whitelist() {
+                return false;
+            }
+        }
+        false
+    }
+}
+
 /// The names in folder `rel` of `worktree` (`""` for its top). `.git` is left
 /// out and links are listed as files, never followed. A folder with more than
 /// 2000 names is cut after the first 2000 in order, with `truncated` set.
 pub fn list_dir(worktree: &str, rel: &str) -> Result<DirListing, WorkspaceError> {
     let disk = dir_under(worktree, rel)?;
     let mut entries = Vec::new();
+    let chain = IgnoreChain::new(Path::new(worktree), rel);
     for found in fs::read_dir(&disk)? {
         let found = found?;
         let name = found.file_name();
@@ -1915,6 +1984,7 @@ pub fn list_dir(worktree: &str, rel: &str) -> Result<DirListing, WorkspaceError>
         entries.push(DirEntry {
             name: name.to_string_lossy().into_owned(),
             dir,
+            ignored: chain.is_ignored(&found.path(), dir),
         });
     }
     entries.sort_by(|a, b| {
@@ -1951,6 +2021,80 @@ mod tests {
             path_key(Path::new(r"\\?\UNC\host\share\x")),
             path_key(Path::new(r"\\host\share\x"))
         );
+    }
+
+    #[test]
+    fn list_dir_marks_what_git_ignores() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        fs::create_dir_all(root.join(".git").join("info")).unwrap();
+        fs::write(
+            root.join(".git").join("info").join("exclude"),
+            "secret.txt
+",
+        )
+        .unwrap();
+        fs::write(
+            root.join(".gitignore"),
+            "target/
+*.log
+",
+        )
+        .unwrap();
+        for dir in ["target", "src"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        fs::write(
+            root.join("src").join(".gitignore"),
+            "gen.rs
+!keep.log
+",
+        )
+        .unwrap();
+        for file in [
+            "a.log",
+            "secret.txt",
+            "main.rs",
+            "src/gen.rs",
+            "src/lib.rs",
+            "src/keep.log",
+            "target/out.bin",
+        ] {
+            fs::write(root.join(file), "").unwrap();
+        }
+        let top = list_dir(root.to_str().unwrap(), "").unwrap();
+        let flags = |l: &DirListing| {
+            l.entries
+                .iter()
+                .map(|e| (e.name.clone(), e.ignored))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            flags(&top),
+            [
+                ("src", false),
+                ("target", true),
+                (".gitignore", false),
+                ("a.log", true),
+                ("main.rs", false),
+                ("secret.txt", true)
+            ]
+            .map(|(n, i)| (n.to_owned(), i))
+        );
+        // A deeper file overrides a higher one, and the rest of an ignored folder is ignored too.
+        let src = list_dir(root.to_str().unwrap(), "src").unwrap();
+        assert_eq!(
+            flags(&src),
+            [
+                (".gitignore", false),
+                ("gen.rs", true),
+                ("keep.log", false),
+                ("lib.rs", false)
+            ]
+            .map(|(n, i)| (n.to_owned(), i))
+        );
+        let target = list_dir(root.to_str().unwrap(), "target").unwrap();
+        assert!(target.entries.iter().all(|e| e.ignored));
     }
 
     #[test]

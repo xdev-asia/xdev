@@ -7,7 +7,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NameDialog } from "@/files/NameDialog";
 import { onOpenFile, type OpenFileRequest } from "@/files/openFile";
 import { ContextMenu } from "@/ui/ContextMenu";
-import { FileTree } from "./FileTree";
+import { FileTree, treeRows } from "./FileTree";
 import type { WatchHealth } from "./worktreeWatch";
 import { emptyQueue, enqueue, type WatchQueue } from "@/files/treeRefresh";
 import { DEMO_SEED } from "@/mockApi";
@@ -379,7 +379,7 @@ it("Rename calls fileRename beside the old name", async () => {
 
 it("shows … when truncated", async () => {
   const api = createMockApi({});
-  const cut: DirListing = { entries: [{ name: "a", dir: false }, { name: "b", dir: false }], truncated: true };
+  const cut: DirListing = { entries: [{ name: "a", dir: false, ignored: false }, { name: "b", dir: false, ignored: false }], truncated: true };
   vi.spyOn(api, "worktreeListDir").mockResolvedValue(cut);
   const view = tree(api, []);
   await tick();
@@ -535,4 +535,11 @@ it("a remote worktree's local-only actions say they are not available yet", asyn
     expect(toasts.pushed.at(-1)!.text).toBe(en("remote.unsupported"));
     toasts.pushed.length = 0;
   }
+});
+
+it("rows of ignored entries are marked, and left out when ignored files are hidden", () => {
+  const listing: DirListing = { entries: [{ name: "dist", dir: true, ignored: true }, { name: "src", dir: true, ignored: false }, { name: "a.log", dir: false, ignored: true }, { name: "b.ts", dir: false, ignored: false }], truncated: false };
+  const folders = { "": { listing } };
+  expect(treeRows(folders, [], []).map((r) => [r.path, r.type !== "note" && r.ignored])).toEqual([["dist", true], ["src", false], ["a.log", true], ["b.ts", false]]);
+  expect(treeRows(folders, [], [], false).map((r) => r.path)).toEqual(["src", "b.ts"]);
 });

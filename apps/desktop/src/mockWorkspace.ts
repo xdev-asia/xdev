@@ -308,7 +308,7 @@ function demoListing(files: string[], dirs: Set<string>, dir: string): DirListin
   for (const path of [...files, ...dirs]) {
     if (!path.startsWith(prefix)) continue;
     const [name, ...rest] = path.slice(prefix.length).split("/");
-    found.set(name, { name, dir: rest.length > 0 || dirs.has(path) });
+    found.set(name, { name, dir: rest.length > 0 || dirs.has(path), ignored: false });
   }
   const entries = [...found.values()].sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   return { entries: entries.slice(0, LIST_CAP), truncated: entries.length > LIST_CAP };

@@ -118,6 +118,8 @@ export interface FileTabMenuContext {
   setPinned(pinned: boolean): void;
   copyPath(): void;
   copyRelativePath(): void;
+  /** Set when the file tree can show the file: scrolls the tree to its row and flashes it. */
+  revealInTree?: () => void;
   close(): void;
   closeOthers(): void;
   closeToRight(): void;
@@ -167,6 +169,7 @@ export function fileTabMenuItems(ctx: FileTabMenuContext): MenuItem[] {
     SEP("sep2"),
     { id: "copyPath", labelKey: "tabMenu.copyPath", run: ctx.copyPath },
     { id: "copyRelativePath", labelKey: "tabMenu.copyRelativePath", run: ctx.copyRelativePath },
+    ...(ctx.revealInTree ? [{ id: "revealInTree", labelKey: "tabMenu.revealInTree", run: ctx.revealInTree }] : []),
     SEP("sep3"),
     { id: "close", labelKey: "tabMenu.close", run: ctx.close },
     { id: "closeOthers", labelKey: "tabMenu.closeOthers", disabled: !has("others"), run: ctx.closeOthers },

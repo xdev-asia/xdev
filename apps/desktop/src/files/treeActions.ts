@@ -56,6 +56,34 @@ export async function renameEntry(io: TreeIo, rel: string, name: string): Promis
   return dir;
 }
 
+/** Whether dropping `rel` into the folder `destDir` moves anything: not into its own folder, nor into itself. */
+export function canMove(rel: string, destDir: string): boolean {
+  if (parentOf(rel) === destDir) return false;
+  return destDir !== rel && !destDir.startsWith(`${rel}/`);
+}
+
+/**
+ * Moves `rel` into the folder `destDir` under its own name; open tabs under it follow. With `replace`
+ * a taken name is moved to the trash first. Resolves with the folders to read again, "exists" when the
+ * name is taken and `replace` is off, or null when it failed (a toast says why).
+ */
+export async function moveEntry(io: TreeIo, rel: string, destDir: string, replace = false): Promise<string[] | "exists" | null> {
+  if (!canMove(rel, destDir)) return null;
+  const to = joinRel(destDir, fileName(rel));
+  try {
+    if (replace) await io.api.fileTrash(io.worktree, to);
+    await io.api.fileRename(io.worktree, rel, to);
+  } catch (e) {
+    if (!replace && toApiError(e).code === "exists") return "exists";
+    fail(io, `file-move:${rel}`, e);
+    return null;
+  }
+  // A tab of the file that was replaced is gone with it.
+  if (replace) for (const e of io.store.under(io.worktree, to)) io.store.close(io.worktree, e.rel);
+  io.store.rename(io.worktree, rel, to);
+  return [parentOf(rel), destDir];
+}
+
 /** Moves `rel` to the trash; open tabs under it close, and a toast says it went. */
 export async function deleteEntry(io: TreeIo, rel: string): Promise<string | null> {
   try {

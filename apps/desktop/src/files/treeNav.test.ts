@@ -52,3 +52,20 @@ it("Enter opens a file and toggles a folder", () => {
 it("an empty tree has nothing to do", () => {
   expect(navigate([], null, "ArrowDown")).toBeNull();
 });
+
+const long: NavRow[] = Array.from({ length: 25 }, (_, i) => ({ path: `f${i}`, dir: false, open: false, depth: 0 }));
+
+it("PageDown and PageUp jump a page and stop at the ends", () => {
+  expect(navigate(long, "f3", "PageDown")).toEqual({ kind: "select", path: "f13" });
+  expect(navigate(long, "f20", "PageDown")).toEqual({ kind: "select", path: "f24" });
+  expect(navigate(long, "f13", "PageUp")).toEqual({ kind: "select", path: "f3" });
+  expect(navigate(long, "f2", "PageUp")).toEqual({ kind: "select", path: "f0" });
+  expect(navigate(long, null, "PageDown")).toEqual({ kind: "select", path: "f9" });
+  expect(navigate(long, "f3", "PageDown", 4)).toEqual({ kind: "select", path: "f7" });
+});
+
+it("Space previews a file and toggles a folder; F2 renames", () => {
+  expect(navigate(rows, "README.md", " ")).toEqual({ kind: "preview", path: "README.md" });
+  expect(navigate(rows, "docs", " ")).toEqual({ kind: "toggle", path: "docs" });
+  expect(navigate(rows, "README.md", "F2")).toEqual({ kind: "rename", path: "README.md" });
+});
