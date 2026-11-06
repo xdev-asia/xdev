@@ -15,4 +15,9 @@ account: string | null,
 /**
  * Shell lines run before the CLI.
  */
-startup: Array<string>, enabled: boolean, };
+startup: Array<string>, enabled: boolean, 
+/**
+ * The WSL distro the agent runs in; `None` runs it on the host. Only
+ * read on Windows.
+ */
+wsl?: string, };

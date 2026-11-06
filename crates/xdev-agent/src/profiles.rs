@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalog::modes;
 use crate::flags::efforts;
+use crate::wsl::valid_distro;
 
 const FILE: &str = "profiles.json";
 const VERSION: u32 = 1;
@@ -221,6 +222,11 @@ pub struct Profile {
     pub startup: Vec<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// The WSL distro the agent runs in; `None` runs it on the host. Only
+    /// read on Windows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub wsl: Option<String>,
 }
 
 impl Profile {
@@ -323,6 +329,7 @@ pub fn builtin(cli: Cli) -> Profile {
         account: None,
         startup: Vec::new(),
         enabled: true,
+        wsl: None,
     }
 }
 
@@ -592,6 +599,9 @@ fn checked(mut profile: Profile) -> Result<Profile, ProfileError> {
         .any(|e| e.name.is_empty() || e.name.contains(['=', '\0']) || e.value.contains('\0'))
     {
         return Err(invalid("env"));
+    }
+    if profile.wsl.as_deref().is_some_and(|d| !valid_distro(d)) {
+        return Err(invalid("wsl"));
     }
     Ok(profile)
 }
@@ -927,6 +937,45 @@ mod tests {
         assert_eq!(c.account.as_deref(), Some("work"));
         assert_eq!(c.startup, ["cd src"]);
         assert_eq!(code(p.reset("nope")), "unknown_profile");
+    }
+
+    #[test]
+    fn wsl_is_optional_on_disk() {
+        let json = r#"{"id":"mine","name":"Mine","program":"mine"}"#;
+        let p: Profile = serde_json::from_str(json).unwrap();
+        assert_eq!(p.wsl, None);
+        let v = serde_json::to_value(&p).unwrap();
+        assert!(v.get("wsl").is_none());
+        let mut p = p;
+        p.wsl = Some("Ubuntu".into());
+        let text = serde_json::to_string(&p).unwrap();
+        assert!(text.contains(r#""wsl":"Ubuntu""#));
+        let back: Profile = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, p);
+    }
+
+    #[test]
+    fn wsl_must_be_a_distro_name() {
+        let mut p = Profiles::default();
+        let mut c = p.get("claude").unwrap().clone();
+        c.wsl = Some("-d".into());
+        assert!(matches!(p.put(c.clone()), Err(ProfileError::Invalid(f)) if f == "wsl"));
+        c.wsl = Some("Ubuntu".into());
+        p.put(c).unwrap();
+        assert_eq!(p.get("claude").unwrap().wsl.as_deref(), Some("Ubuntu"));
+    }
+
+    #[test]
+    fn reset_keeps_wsl() {
+        let mut p = Profiles::default();
+        let mut c = p.get("claude").unwrap().clone();
+        c.wsl = Some("Ubuntu".into());
+        c.args = vec!["--verbose".into()];
+        p.put(c).unwrap();
+        p.reset("claude").unwrap();
+        let c = p.get("claude").unwrap();
+        assert!(c.args.is_empty());
+        assert_eq!(c.wsl.as_deref(), Some("Ubuntu"));
     }
 
     #[test]

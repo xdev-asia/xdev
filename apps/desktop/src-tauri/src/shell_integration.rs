@@ -248,6 +248,7 @@ mod tests {
             hook_events: Vec::new(),
             prompt_after: None,
             prompt_argv: Vec::new(),
+            wsl: None,
         }
     }
 

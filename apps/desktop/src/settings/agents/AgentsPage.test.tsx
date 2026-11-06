@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { createMockApi } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Banner, IconButton, RadioGroup, StatusDot, Switch, Tag } from "@xdev-asia/ui";
+import { Banner, Button, IconButton, RadioGroup, StatusDot, Switch, Tag } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { AgentsPage } from "./AgentsPage";
 import { ProfileEditor } from "./ProfileEditor";
@@ -647,4 +647,89 @@ it("a_profile_with_its_own_launch_arguments_shows_the_custom_hint_and_no_flag_ta
   const ed = drawEditor(p.editor()!);
   expect(ed.draw().some((n) => n.props.children === en("settings.agents.perm.customHint"))).toBe(true);
   expect(ed.draw().some((n) => n.type === Tag)).toBe(false);
+});
+
+// --- WSL ---
+
+// The claude editor, with these distros and optionally a saved distro.
+async function wslEditor(distros: string[], wsl?: string) {
+  const p = await page();
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  const el = p.editor()!;
+  const view = el.props.view;
+  const profile = wsl ? { ...view.profile, wsl } : view.profile;
+  return drawEditor({ ...el, props: { ...el.props, distros, view: { ...view, profile } } });
+}
+const optionsOf = (select: Node) => nodes(select.props.children).filter((n) => n.type === "option");
+
+it("wsl_select_is_hidden_without_distros", async () => {
+  const ed = await wslEditor([]);
+  expect(ed.field("wsl")).toBeUndefined();
+  expect(ed.field("account")).toBeDefined();
+});
+
+it("wsl_select_lists_windows_and_the_distros", async () => {
+  const ed = await wslEditor(["Ubuntu", "Debian"]);
+  const options = optionsOf(ed.field("wsl"));
+  expect(options.map((n) => n.props.value)).toEqual(["", "Ubuntu", "Debian"]);
+  expect(options[0]!.props.children).toBe(en("settings.agents.runInWindows"));
+  expect(ed.field("wsl").props.value).toBe("");
+});
+
+it("wsl_select_keeps_a_missing_distro", async () => {
+  const ed = await wslEditor(["Ubuntu"], "Arch");
+  const select = ed.field("wsl");
+  expect(select.props.value).toBe("Arch");
+  const missing = optionsOf(select).find((n) => n.props.value === "Arch")!;
+  expect(missing.props.children).toBe(en("settings.agents.runInMissing", { distro: "Arch" }));
+});
+
+it("choosing_a_distro_shows_the_hint_and_hides_the_account", async () => {
+  const ed = await wslEditor(["Ubuntu", "Debian"]);
+  expect(ed.field("wslHint")).toBeUndefined();
+  ed.type("wsl", "Ubuntu");
+  expect(ed.field("wslHint").props.children).toBe(en("settings.agents.wslHint", { distro: "Ubuntu" }));
+  expect(ed.field("account")).toBeUndefined();
+});
+
+it("choosing_a_distro_saves_it", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "profilePut");
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  const el = p.editor()!;
+  const ed = drawEditor({ ...el, props: { ...el.props, distros: ["Ubuntu"] } });
+  ed.type("wsl", "Ubuntu");
+  ed.click(en("settings.agents.save"));
+  await tick();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ id: "claude", wsl: "Ubuntu" }));
+});
+
+it("the_editor_has_one_primary_button", async () => {
+  const ed = await wslEditor(["Ubuntu"], "Ubuntu");
+  const primary = ed.draw().filter((n) => n.type === Button && (n.props.variant ?? "primary") === "primary");
+  expect(primary).toHaveLength(1);
+});
+
+it("a_wsl_profile_row_shows_its_distro_not_a_path", async () => {
+  const p = await page(async (api) => {
+    const claude = (await api.profiles()).profiles.find((v) => v.profile.id === "claude")!.profile;
+    await api.profilePut({ ...claude, wsl: "Ubuntu" });
+  });
+  const row = nodes(p.row("claude"));
+  expect(row.some((n) => n.type === Tag && n.props.children === en("settings.agents.wslTag", { distro: "Ubuntu" }))).toBe(true);
+  expect(row.some((n) => n.props.className === "ws-mono settings-path")).toBe(false);
+  expect(nodes(p.row("codex")).some((n) => n.props.className === "ws-mono settings-path")).toBe(true);
+});
+
+it("the_page_passes_the_wsl_distros", async () => {
+  const p = await page();
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  expect(p.editor()!.props.distros).toEqual(["Ubuntu"]);
+});
+
+it("the_version_check_of_a_wsl_profile_is_unchecked", async () => {
+  const api = createMockApi({});
+  const claude = (await api.profiles()).profiles.find((v) => v.profile.id === "claude")!.profile;
+  await api.profilePut({ ...claude, wsl: "Ubuntu" });
+  await expect(api.agentProbe("claude")).rejects.toMatchObject({ code: "wsl_unchecked" });
 });

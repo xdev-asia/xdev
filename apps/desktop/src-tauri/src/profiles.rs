@@ -116,10 +116,34 @@ pub(crate) type Find<'a> = &'a dyn Fn(&Profile) -> Option<PathBuf>;
 
 /// Where a profile's program is installed, by the real detectors.
 pub(crate) fn detect(profile: &Profile) -> Option<PathBuf> {
+    detect_on(profile, cfg!(windows))
+}
+
+/// `detect` on a host that runs WSL (`windows`) or not. A WSL profile runs
+/// the CLI installed in its distro: its command name, not a path found here.
+fn detect_on(profile: &Profile, windows: bool) -> Option<PathBuf> {
+    if windows && profile.wsl.is_some() {
+        return xdev_agent::wsl::program(profile);
+    }
     match profile.cli {
         Some(cli) => find_builtin(cli),
         None => profile.program.as_deref().and_then(find_program),
     }
+}
+
+/// The version probe of a WSL profile: it does not run inside the distro.
+/// `wsl_distro` when its distro is not in `distros`, else `wsl_unchecked`.
+fn wsl_probe(profile: &Profile, distros: &[String]) -> Result<LaunchVerdict, CmdError> {
+    let distro = profile.wsl.as_deref().unwrap_or_default();
+    let code = if distros.iter().any(|d| d.eq_ignore_ascii_case(distro)) {
+        "wsl_unchecked"
+    } else {
+        "wsl_distro"
+    };
+    Err(CmdError {
+        code,
+        detail: Some(distro.to_owned()),
+    })
 }
 
 fn lock_guard(lock: &ProfilesLock) -> MutexGuard<'_, ()> {
@@ -295,6 +319,9 @@ pub fn agent_probe(state: State<'_, AppState>, id: String) -> Result<LaunchVerdi
     };
     let profile = profiles.get(&id).ok_or_else(unknown)?;
     let cli = profile.cli.ok_or_else(unknown)?;
+    if cfg!(windows) && profile.wsl.is_some() {
+        return wsl_probe(profile, distros());
+    }
     let Some(program) = detect(profile) else {
         return Ok(LaunchVerdict::NotInstalled);
     };
@@ -359,6 +386,27 @@ mod tests {
             program: Some("my-agent".to_owned()),
             ..builtin(Cli::Claude)
         }
+    }
+
+    #[test]
+    fn a_wsl_profile_is_found_by_its_command_name() {
+        let wsl_claude = Profile {
+            wsl: Some("Ubuntu".into()),
+            ..builtin(Cli::Claude)
+        };
+        assert_eq!(detect_on(&wsl_claude, true), Some(PathBuf::from("claude")));
+    }
+
+    #[test]
+    fn the_version_check_does_not_run_in_wsl() {
+        let wsl_claude = Profile {
+            wsl: Some("Ubuntu".into()),
+            ..builtin(Cli::Claude)
+        };
+        let code = |distros: &[String]| wsl_probe(&wsl_claude, distros).unwrap_err().code;
+        assert_eq!(code(&["Ubuntu".to_owned()]), "wsl_unchecked");
+        assert_eq!(code(&["ubuntu".to_owned()]), "wsl_unchecked");
+        assert_eq!(code(&[]), "wsl_distro");
     }
 
     fn only_claude(p: &Profile) -> Option<PathBuf> {

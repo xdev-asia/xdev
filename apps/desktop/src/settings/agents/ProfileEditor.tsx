@@ -14,6 +14,8 @@ export function ProfileEditor(props: {
   /** The id a new custom profile gets; ignored for an existing one. */
   newId: string;
   accounts: Account[];
+  /** The WSL distros found on this machine; empty off Windows or without WSL. */
+  distros: string[];
   /** The global Approvals switch a following draft takes. */
   approvals: Approvals;
   busy: boolean;
@@ -38,6 +40,9 @@ export function ProfileEditor(props: {
   const customArgs = builtin && draftCustomArgs(draft, props.view);
   const flags = builtin ? draftFlags(draft, props.view, props.approvals).join(" ") : "";
   const approveForMe = flags !== "" && draftMode(draft, props.view, props.approvals) === "auto";
+  // A saved distro that is no longer found stays listed, so the field still reads true.
+  const missing = draft.wsl !== "" && !props.distros.includes(draft.wsl);
+  const showWsl = props.distros.length > 0 || draft.wsl !== "";
 
   const set = (key: keyof Draft) => (e: { target: { value: string } }) => {
     const value = e.target.value;
@@ -65,6 +70,25 @@ export function ProfileEditor(props: {
           <label className="ws-field">
             <span>{t("settings.agents.program")}</span>
             <input className="ws-mono" value={draft.program} onChange={set("program")} />
+          </label>
+        )}
+        {showWsl && (
+          <label className="ws-field">
+            <span>{t("settings.agents.runIn")}</span>
+            <select value={draft.wsl} onChange={set("wsl")} data-field="wsl">
+              <option value="">{t("settings.agents.runInWindows")}</option>
+              {props.distros.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+              {missing && <option value={draft.wsl}>{t("settings.agents.runInMissing", { distro: draft.wsl })}</option>}
+            </select>
+            {draft.wsl !== "" && (
+              <small className="settings-hint" data-field="wslHint">
+                {t("settings.agents.wslHint", { distro: draft.wsl })}
+              </small>
+            )}
           </label>
         )}
         <label className="ws-field">
@@ -112,7 +136,7 @@ export function ProfileEditor(props: {
             </Tag>
           </div>
         )}
-        {(base?.cli === "claude" || base?.cli === "codex") && (
+        {(base?.cli === "claude" || base?.cli === "codex") && draft.wsl === "" && (
           <label className="ws-field">
             <span>{t("settings.agents.account")}</span>
             <select value={draft.account} onChange={set("account")} data-field="account">
