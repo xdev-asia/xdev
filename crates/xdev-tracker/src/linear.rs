@@ -74,12 +74,11 @@ fn graphql_error(body: &Value) -> Option<TrackerError> {
 fn call(h: &dyn HttpSend, req: &HttpRequest) -> Result<Value, TrackerError> {
     let res: HttpResponse = h.send(req).map_err(|_| TrackerError::Offline)?;
     // Linear may answer 400 with a GraphQL error body: read that before the status.
-    if res.status == 400 {
-        if let Ok(body) = serde_json::from_slice::<Value>(&res.body) {
-            if let Some(e) = graphql_error(&body) {
-                return Err(e);
-            }
-        }
+    if res.status == 400
+        && let Ok(body) = serde_json::from_slice::<Value>(&res.body)
+        && let Some(e) = graphql_error(&body)
+    {
+        return Err(e);
     }
     status_error(&res, TrackerError::Unavailable)?;
     let body: Value = serde_json::from_slice(&res.body).map_err(|_| TrackerError::BadReply)?;
