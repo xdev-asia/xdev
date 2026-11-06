@@ -834,6 +834,7 @@ pub(crate) fn launch_spec(
     cwd: &Path,
     remote_host: Option<&str>,
     declared: Vec<String>,
+    hosts: &crate::settings::HostsSettings,
 ) -> Result<Option<crate::remote_launch::RemoteSpec>, CmdError> {
     let (host, path, keep) = match (remote_ref(cwd), remote_host) {
         (Some(r), host_id) => {
@@ -853,7 +854,10 @@ pub(crate) fn launch_spec(
         (None, None) => return Ok(None),
     };
     let (_, probe) = hub.ensure(&host)?;
+    let own = crate::hosts::effective(hosts.0.get(&host.id), &host.alias);
     Ok(Some(crate::remote_launch::RemoteSpec {
+        host_env: own.env.into_iter().map(|v| (v.name, v.value)).collect(),
+        shell: own.shell,
         worktree: format!("ssh://{}{path}", host.id),
         mux: hub.mux(),
         keep_alive: keep && probe.tmux,

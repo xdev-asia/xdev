@@ -22,6 +22,10 @@ pub(crate) struct RemoteSpec {
     pub declared: Vec<String>,
     /// `ssh://<host id><path>`, what the service lists the PTY with.
     pub worktree: String,
+    /// The host's own env (Settings → Host settings); the profile's declared names win.
+    pub host_env: Vec<(String, String)>,
+    /// The host's login shell for shell tabs; `None` is its `"$SHELL"`.
+    pub shell: Option<String>,
 }
 
 /// Names that never go to the host: this machine's PATH, the hook and CLI
@@ -68,6 +72,21 @@ pub(crate) fn env_subset(env: &[(String, OsString)], declared: &[String]) -> Vec
     out
 }
 
+/// `host` first, then `declared`; a declared name replaces the host's. A host variable named
+/// like a local-only one (`PATH`, `XDEV_*`, an account home) is dropped.
+fn merge_env(host: &[(String, String)], declared: Vec<(String, String)>) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for (k, v) in host.iter().filter(|(k, _)| !local_only(k)) {
+        out.retain(|(name, _)| name != k);
+        out.push((k.clone(), v.clone()));
+    }
+    for (k, v) in declared {
+        out.retain(|(name, _)| *name != k);
+        out.push((k, v));
+    }
+    out
+}
+
 /// The program name the host runs: the file stem of the local program
 /// (`claude.cmd` → `claude`).
 fn remote_program(program: &Path) -> String {
@@ -87,10 +106,10 @@ pub(crate) fn wrap(mut launch: Launch, spec: &RemoteSpec, tab_id: &str) -> Launc
         let mut argv = vec![remote_program(&launch.program)];
         argv.extend(launch.args.iter().cloned());
         argv.extend(launch.prompt_argv.iter().cloned());
-        let env = env_subset(&launch.env, &spec.declared);
+        let env = merge_env(&spec.host_env, env_subset(&launch.env, &spec.declared));
         remote_agent_cmd(&spec.path, &argv, &env, keep)
     } else {
-        remote_shell_cmd(&spec.path, keep)
+        remote_shell_cmd(&spec.path, keep, spec.shell.as_deref())
     };
     launch.program = xdev_agent::system_ssh();
     launch.args = tty_argv(&spec.host, spec.mux.as_deref(), &cmd);
@@ -126,6 +145,8 @@ mod tests {
             keep_alive,
             declared: declared.iter().map(|s| (*s).to_owned()).collect(),
             worktree: "ssh://devbox/home/dev/app".into(),
+            host_env: Vec::new(),
+            shell: None,
         }
     }
 
@@ -224,6 +245,36 @@ mod tests {
         let mut want = ssh_head();
         want.push("tmux new-session -A -s 'xdev-t2' -c '/home/dev/app'".into());
         assert_eq!(on.args, want);
+    }
+
+    #[test]
+    fn host_env_goes_first_and_declared_env_wins() {
+        let mut sp = spec(false, &["API_MODE"]);
+        sp.host_env = vec![
+            ("API_MODE".into(), "slow".into()),
+            ("B".into(), "2".into()),
+            ("PATH".into(), "/x".into()),
+            ("XDEV_Y".into(), "1".into()),
+        ];
+        let out = wrap(launch(true), &sp, "t1");
+        let mut want = ssh_head();
+        want.push(
+            "cd '/home/dev/app' && exec env B='2' API_MODE='fast' 'claude' '--model' 'opus' 'hi'"
+                .into(),
+        );
+        assert_eq!(out.args, want);
+    }
+
+    #[test]
+    fn a_host_shell_runs_for_shell_tabs_only() {
+        let mut sp = spec(false, &[]);
+        sp.shell = Some("/bin/zsh".into());
+        let out = wrap(launch(false), &sp, "t2");
+        let mut want = ssh_head();
+        want.push("cd '/home/dev/app' && exec '/bin/zsh' -l".into());
+        assert_eq!(out.args, want);
+        let agent = wrap(launch(true), &sp, "t2");
+        assert!(!agent.args.last().unwrap().contains("zsh"));
     }
 
     #[test]

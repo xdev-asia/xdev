@@ -1284,7 +1284,8 @@ fn remote_launch_spec(
         .map(|p| p.env.iter().map(|v| v.name.clone()).collect())
         .unwrap_or_default();
     let hub = app.state::<crate::remote_ssh::RemoteHub>();
-    crate::remote_ssh::launch_spec(&hub, data, cwd, remote_host, declared)
+    let hosts = crate::settings_store::read(app).hosts;
+    crate::remote_ssh::launch_spec(&hub, data, cwd, remote_host, declared, &hosts)
 }
 
 #[tauri::command(async)]

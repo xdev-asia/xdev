@@ -956,25 +956,54 @@ fn local_only_commands_are_guarded() {
 fn a_remote_project_launch_keeps_alive_only_with_tmux() {
     let rig = rig();
     let cwd = PathBuf::from(format!("ssh://devbox{ROOT}"));
-    let spec = launch_spec(&rig.hub, rig.data.path(), &cwd, None, vec!["A".into()])
-        .unwrap()
-        .unwrap();
+    let spec = launch_spec(
+        &rig.hub,
+        rig.data.path(),
+        &cwd,
+        None,
+        vec!["A".into()],
+        &Default::default(),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(spec.path, ROOT);
     assert_eq!(spec.worktree, format!("ssh://devbox{ROOT}"));
     assert!(spec.keep_alive);
     assert_eq!(spec.declared, ["A"]);
 
     let rig = rig_without_tmux();
-    let spec = launch_spec(&rig.hub, rig.data.path(), &cwd, Some("devbox"), Vec::new())
-        .unwrap()
-        .unwrap();
+    let spec = launch_spec(
+        &rig.hub,
+        rig.data.path(),
+        &cwd,
+        Some("devbox"),
+        Vec::new(),
+        &Default::default(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(!spec.keep_alive);
-    let e = launch_spec(&rig.hub, rig.data.path(), &cwd, Some("other"), Vec::new()).unwrap_err();
+    let e = launch_spec(
+        &rig.hub,
+        rig.data.path(),
+        &cwd,
+        Some("other"),
+        Vec::new(),
+        &Default::default(),
+    )
+    .unwrap_err();
     assert_eq!(e.code, "bad_arg");
     assert!(
-        launch_spec(&rig.hub, rig.data.path(), rig.data.path(), None, Vec::new())
-            .unwrap()
-            .is_none()
+        launch_spec(
+            &rig.hub,
+            rig.data.path(),
+            rig.data.path(),
+            None,
+            Vec::new(),
+            &Default::default()
+        )
+        .unwrap()
+        .is_none()
     );
 }
 

@@ -38,11 +38,14 @@ fn tmux_cmd(path: &str, tab_id: &str, inner: Option<&str>) -> String {
 }
 
 /// A login shell in `path`. `keep_alive` is the tab id when the host has
-/// tmux and the project keeps sessions alive.
-pub fn remote_shell_cmd(path: &str, keep_alive: Option<&str>) -> String {
-    match keep_alive {
-        Some(tab) => tmux_cmd(path, tab, None),
-        None => format!("cd {} && exec \"$SHELL\" -l", sh_quote(path)),
+/// tmux and the project keeps sessions alive. `shell` is the absolute path
+/// of the shell to run; `None` is the host's `"$SHELL"`.
+pub fn remote_shell_cmd(path: &str, keep_alive: Option<&str>, shell: Option<&str>) -> String {
+    let inner = shell.map(|s| format!("exec {} -l", sh_quote(s)));
+    match (keep_alive, inner) {
+        (Some(tab), inner) => tmux_cmd(path, tab, inner.as_deref()),
+        (None, Some(inner)) => format!("cd {} && {inner}", sh_quote(path)),
+        (None, None) => format!("cd {} && exec \"$SHELL\" -l", sh_quote(path)),
     }
 }
 
@@ -88,12 +91,24 @@ mod tests {
     #[test]
     fn shell_without_and_with_tmux() {
         assert_eq!(
-            remote_shell_cmd("/home/dev/my app", None),
+            remote_shell_cmd("/home/dev/my app", None, None),
             "cd '/home/dev/my app' && exec \"$SHELL\" -l"
         );
         assert_eq!(
-            remote_shell_cmd("/home/dev/app", Some("tab:1/x")),
+            remote_shell_cmd("/home/dev/app", Some("tab:1/x"), None),
             "tmux new-session -A -s 'xdev-tab1x' -c '/home/dev/app'"
+        );
+    }
+
+    #[test]
+    fn a_chosen_shell_replaces_the_host_shell() {
+        assert_eq!(
+            remote_shell_cmd("/home/dev/app", None, Some("/bin/zsh")),
+            "cd '/home/dev/app' && exec '/bin/zsh' -l"
+        );
+        assert_eq!(
+            remote_shell_cmd("/home/dev/app", Some("t1"), Some("/bin/zsh")),
+            "tmux new-session -A -s 'xdev-t1' -c '/home/dev/app' 'exec '\\''/bin/zsh'\\'' -l'"
         );
     }
 
