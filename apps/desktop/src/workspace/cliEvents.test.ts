@@ -106,4 +106,19 @@ describe("CLI events", () => {
     expect(getToasts()[0].text).toBe("lead wants to change an automation that runs in other.");
     expect(translate("vi", "cli.ask.automation")).not.toBe("cli.ask.automation");
   });
+
+  it("words a repo write as adding it or changing its settings", async () => {
+    const api = createMockApi({});
+    startCliEvents(api, { reload() {}, openTab() {}, t });
+    await flush();
+    api.__cliAsk({ request: 9, caller: null, verb: "repo.add", target: "/src/web" });
+    api.__cliAsk({ request: 10, caller: "/w/lead", verb: "repo.set-base-ref", target: "/src/app" });
+    expect(getToasts().map((x) => x.text)).toEqual([
+      "A script outside xDev wants to add the repository web.",
+      "lead wants to change the settings of the repository app.",
+    ]);
+    for (const key of ["cli.ask.repoAdd", "cli.ask.repo"]) {
+      expect(translate("vi", key)).not.toBe(key);
+    }
+  });
 });

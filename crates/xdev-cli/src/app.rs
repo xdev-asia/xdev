@@ -391,6 +391,7 @@ pub fn request(
         AppCommand::Ports(a) => return Ok(crate::ports::request(a)),
         AppCommand::Capture(a) => return Ok(crate::capture::request(a)),
         AppCommand::AgentContext(a) => return Ok(crate::agent_context::request(a)),
+        AppCommand::Repo(c) => return Ok(crate::repo::request(c)),
         AppCommand::Automations(c) => return crate::automations::request(c),
         AppCommand::Status(a) => ("status", json!({}), a.json),
         AppCommand::Worktree(WorktreeCommand::Ps { all, json }) => {
@@ -497,6 +498,7 @@ pub enum AppCommand {
     Automations(crate::automations::AutomationsCommand),
     Capture(crate::capture::CaptureCommand),
     AgentContext(crate::agent_context::AgentContextArgs),
+    Repo(crate::repo::RepoCommand),
 }
 
 pub(crate) fn text(v: &Value) -> String {
@@ -541,6 +543,7 @@ pub fn plain(method: &str, result: &Value) -> String {
         .or_else(|| crate::automations::plain(method, result))
         .or_else(|| crate::capture::plain(method, result))
         .or_else(|| crate::agent_context::plain(method, result))
+        .or_else(|| crate::repo::plain(method, result))
     {
         return text;
     }

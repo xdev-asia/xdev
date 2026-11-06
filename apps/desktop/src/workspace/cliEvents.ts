@@ -31,6 +31,9 @@ const VERB_KEYS: Record<string, string> = {
   "automation.enable": "cli.ask.automation",
   "automation.disable": "cli.ask.automation",
   "automation.remove": "cli.ask.automation",
+  "repo.add": "cli.ask.repoAdd",
+  "repo.set": "cli.ask.repo",
+  "repo.set-base-ref": "cli.ask.repo",
 };
 
 /** The toast for one `cli://ask`: Allow / Deny, gone after 60 s with no answer sent. */

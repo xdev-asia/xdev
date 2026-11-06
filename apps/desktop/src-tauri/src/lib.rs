@@ -25,6 +25,7 @@ mod cli_file;
 mod cli_install;
 mod cli_path;
 mod cli_ports;
+mod cli_repo;
 mod cli_terminal;
 mod cli_verbs;
 mod clipboard;

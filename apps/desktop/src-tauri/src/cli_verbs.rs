@@ -1065,6 +1065,7 @@ pub fn dispatch(
         "agent.context" => crate::cli_context::agent_context(ctx, req, caller),
         "capture.start" => crate::capture::cli_start(ctx, req, caller),
         "ports.list" => crate::cli_ports::ports_list(ctx, req, caller),
+        m if m.starts_with("repo.") => crate::cli_repo::handle(ctx, req, caller),
         m if m.starts_with("automation.") => crate::cli_automations::handle(ctx, req, caller),
         m if m.starts_with("orchestration.") => orchestration::handle(ctx, req, caller, gone),
         other => Err(bad_request(format!("unknown method {other}"))),
@@ -1142,7 +1143,7 @@ pub(crate) mod tests {
 
     use super::*;
 
-    fn git(dir: &Path, args: &[&str]) {
+    pub(crate) fn git(dir: &Path, args: &[&str]) {
         let out = Command::new("git")
             .current_dir(dir)
             .args(args)

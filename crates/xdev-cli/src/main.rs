@@ -12,6 +12,7 @@ mod file;
 mod mcp;
 mod orch;
 mod ports;
+mod repo;
 mod skills;
 mod squad;
 mod task;
@@ -133,6 +134,12 @@ enum Command {
     /// Listening ports with their process and worktree; `--all` for every
     /// worktree.
     Ports(ports::PortsArgs),
+    /// The repos in the running app: `list`, `show`, `add`, `set`,
+    /// `set-base-ref`.
+    Repo {
+        #[command(subcommand)]
+        command: repo::RepoCommand,
+    },
     /// Asks the running app to capture a screen region, like the capture
     /// shortcut. Prints `started`.
     Capture(capture::CaptureCommand),
@@ -210,6 +217,7 @@ fn main() -> ExitCode {
         Command::Orchestration(a) => app::AppCommand::Orchestration(Box::new(a)),
         Command::File { command } => app::AppCommand::File(command),
         Command::Ports(a) => app::AppCommand::Ports(a),
+        Command::Repo { command } => app::AppCommand::Repo(command),
         Command::Capture(a) => app::AppCommand::Capture(a),
         Command::AgentContext(a) => app::AppCommand::AgentContext(a),
         Command::Automations { command } => app::AppCommand::Automations(command),
@@ -262,6 +270,7 @@ fn run(command: Command) -> Result<Outcome, &'static str> {
         | Command::Terminal { .. }
         | Command::File { .. }
         | Command::Ports(_)
+        | Command::Repo { .. }
         | Command::Capture(_)
         | Command::AgentContext(_)
         | Command::Automations { .. } => return Ok(Outcome::Ok),
