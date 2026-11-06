@@ -35,6 +35,10 @@ export interface PaletteActions {
   openSettings(section?: string, target?: string): void;
   newWorktree(name?: string): void;
   addRepo(): void;
+  /** Opens Add project on its remote folder step. */
+  remoteAdd?(): void;
+  /** Reconnects the first remote host that is not connected; absent when every remote host is connected or there is none. */
+  remoteReconnect?(): void;
   searchDocs(): void;
   toggleSidebar(): void;
   showDocs(): void;
@@ -160,6 +164,8 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       newAgentTab: sessions && current ? () => openTab(view?.defaultAgent ?? FALLBACK_AGENT) : undefined,
       newShellTab: sessions && current ? () => openTab(view?.shells[0]?.id ?? FALLBACK_SHELL) : undefined,
       addRepo: () => actions.addRepo(),
+      remoteAdd: actions.remoteAdd ? () => actions.remoteAdd?.() : undefined,
+      remoteReconnect: actions.remoteReconnect ? () => actions.remoteReconnect?.() : undefined,
       openSettings: () => actions.openSettings(),
       searchDocs: () => actions.searchDocs(),
       toggleSidebar: () => actions.toggleSidebar(),

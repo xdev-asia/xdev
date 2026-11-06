@@ -45,13 +45,15 @@ export function AddProjectDialog(props: {
   onAddRepos?(paths: string[]): void;
   /** A remote project was added over SSH. */
   onRemoteAdded?(project: RemoteProjectView): void;
+  /** Opens on the remote folder step. */
+  startRemote?: boolean;
   /** Opens Settings → SSH, for the person with no saved host. */
   onOpenSettings?(): void;
 }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [mode, setMode] = useState<"choose" | "clone" | "create" | "scan" | "remote">(props.scanRoot ? "scan" : "choose");
+  const [mode, setMode] = useState<"choose" | "clone" | "create" | "scan" | "remote">(props.scanRoot ? "scan" : props.startRemote ? "remote" : "choose");
   const [scanRoot, setScanRoot] = useState(props.scanRoot ?? "");
   const [url, setUrl] = useState("");
   const [folder, setFolder] = useState(props.startFolder);

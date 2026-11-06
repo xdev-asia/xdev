@@ -340,6 +340,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [forgetting, setForgetting] = useState<{ repo: RepoView; error?: ApiError["code"] } | null>(null);
   // The Add project dialog (Open folder… or Clone from URL).
   const [adding, setAdding] = useState(false);
+  // Add project opened by the palette's remote action starts on its remote step.
+  const [addingRemote, setAddingRemote] = useState(false);
   // The folder the Add project dialog opens scanning, when a picked folder held no repo itself.
   const [scanRoot, setScanRoot] = useState<string>();
   const [openInApps, setOpenInApps] = useState<OpenInApp[]>([]);
@@ -1111,6 +1113,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }
 
   function addRepo(): void {
+    setAddingRemote(false);
     setNotice(undefined);
     setScanRoot(undefined);
     setAdding(true);
@@ -1703,6 +1706,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     show("settings");
   }
 
+  // The first remote project whose host is not connected: what the palette's Reconnect acts on.
+  const pendingReconnect = remote.projects.find((p) => p.state.state !== "connected");
   function remoteProject(id: string) {
     return remote.projects.find((p) => p.id === id);
   }
@@ -2512,6 +2517,13 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           openSettings: (section, target) => openSettings(section, undefined, target),
           newWorktree: (name) => startCreate(undefined, name),
           addRepo,
+          remoteAdd: () => {
+            setNotice(undefined);
+            setScanRoot(undefined);
+            setAddingRemote(true);
+            setAdding(true);
+          },
+          remoteReconnect: pendingReconnect ? () => void reconnectRemote(pendingReconnect.id) : undefined,
           searchDocs: openSearch,
           toggleSidebar: () => setSidebarOpen((o) => !o),
           showDocs: () => show("docs"),
@@ -2614,8 +2626,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           onOpenFolder={() => void addRepoFolder()}
           onCloned={(repo) => void repoCloned(repo)}
           onCreated={(created) => void projectCreated(created)}
+          startRemote={addingRemote}
           onCancel={() => {
             setAdding(false);
+            setAddingRemote(false);
             setScanRoot(undefined);
           }}
           scanRoot={scanRoot}
