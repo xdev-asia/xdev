@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use similar::{Algorithm, DiffOp, capture_diff_slices_deadline};
 use tauri::State;
+use xdev_git::Repo;
 
 use crate::accounts::data_dir;
 use crate::attribution::{FileVersion, Snapshots, folder_of};
@@ -269,6 +270,41 @@ pub fn attribution_lines(
 ) -> Result<LineAttribution, CmdError> {
     crate::remote_ssh::local_only(Path::new(&worktree), "attribution_lines")?;
     lines_of(data_dir(&state)?, &worktree, &path, &base)
+}
+
+/// The authors of `path` against `head`, the worktree's `HEAD` id (`None`
+/// before the first commit). Empty with no commit, and for a file no agent
+/// wrote: the editor's gutter is about agent lines, and the change gutter
+/// already shows the person's.
+fn head_lines(
+    data: &Path,
+    worktree: &str,
+    path: &str,
+    head: Option<&str>,
+) -> Result<LineAttribution, CmdError> {
+    let Some(head) = head else {
+        return Ok(LineAttribution::default());
+    };
+    let snaps = Snapshots::new(folder_of(data, worktree).join("snaps"));
+    if snaps.versions(path).is_empty() {
+        return Ok(LineAttribution::default());
+    }
+    lines_of(data, worktree, path, head)
+}
+
+/// Who wrote each changed line of `path`, against the worktree's `HEAD`. For
+/// the file editor.
+#[tauri::command(async)]
+pub fn attribution_lines_head(
+    state: State<'_, AppState>,
+    worktree: String,
+    path: String,
+) -> Result<LineAttribution, CmdError> {
+    crate::remote_ssh::local_only(Path::new(&worktree), "attribution_lines_head")?;
+    let data = data_dir(&state)?;
+    crate::review::known(data, Path::new(&worktree))?;
+    let head = Repo::discover(Path::new(&worktree))?.head_id()?;
+    head_lines(data, &worktree, &path, head.as_deref())
 }
 
 #[cfg(test)]
@@ -593,5 +629,43 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.code, "worktree_unknown");
+    }
+
+    fn agent_version(data: &Path, wt: &str) {
+        Snapshots::new(folder_of(data, wt).join("snaps"))
+            .record("a.txt", b"x", 1, Some("t1".into()), Some("claude".into()))
+            .unwrap()
+            .unwrap();
+    }
+
+    const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    #[test]
+    fn head_lines_of_an_unknown_worktree_are_refused() {
+        let data = tempfile::tempdir().unwrap();
+        let wt = tempfile::tempdir().unwrap();
+        let wt = wt.path().to_str().unwrap();
+        agent_version(data.path(), wt);
+        let err = head_lines(data.path(), wt, "a.txt", Some(HEAD)).unwrap_err();
+        assert_eq!(err.code, "worktree_unknown");
+    }
+
+    #[test]
+    fn head_lines_without_a_commit_are_empty() {
+        let data = tempfile::tempdir().unwrap();
+        let wt = tempfile::tempdir().unwrap();
+        let wt = wt.path().to_str().unwrap();
+        agent_version(data.path(), wt);
+        let got = head_lines(data.path(), wt, "a.txt", None).unwrap();
+        assert_eq!(got, LineAttribution::default());
+    }
+
+    #[test]
+    fn head_lines_of_a_file_no_agent_wrote_are_empty() {
+        let data = tempfile::tempdir().unwrap();
+        let wt = tempfile::tempdir().unwrap();
+        let wt = wt.path().to_str().unwrap();
+        let got = head_lines(data.path(), wt, "a.txt", Some(HEAD)).unwrap();
+        assert_eq!(got, LineAttribution::default());
     }
 }

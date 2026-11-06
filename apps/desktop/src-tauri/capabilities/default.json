@@ -307,6 +307,7 @@
     "allow-attribution-version-read",
     "allow-attribution-restore",
     "allow-attribution-lines",
+    "allow-attribution-lines-head",
     "allow-worktree-ship",
     "allow-worktree-push",
     "allow-worktree-pull",
