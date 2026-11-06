@@ -13,6 +13,7 @@ import { missionItems } from "@/orchestration/missionEvents";
 import { resourceItems } from "@/stats/resourceEvents";
 import { actionItems, crashItems, quickCommandItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
 import { JumpPalette } from "./JumpPalette";
+import { layoutItems } from "@/workspace/layoutEvents";
 import { chatItems, taskItems } from "./moreItems";
 import { RecentStore } from "./recent";
 
@@ -185,6 +186,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       ...crashItems(t, () => openCrashDialog({ latest: true })),
       ...missionItems(t),
       ...resourceItems(t),
+      ...(sessions && current ? layoutItems(t) : []),
       ...(current && actions.runQuickCommand && actions.newQuickCommand
         ? quickCommandItems([...picked.global, ...picked.project], repoOfCurrent?.shortName ?? "", t, { run: actions.runQuickCommand, create: actions.newQuickCommand })
         : []),

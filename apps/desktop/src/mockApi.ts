@@ -654,7 +654,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockTermLinks(workspace.filesList),
     ...createMockAgentSessions(settingsApi),
     ...createMockPaneChrome(),
-    ...createMockLayout(),
+    ...createMockLayout(null, typeof location !== "undefined" && new URLSearchParams(location.search).has("layoutkeep") ? sessionStorage : undefined),
     ...createMockCrash(),
     ...configEnv,
     ...createMockCli(),
