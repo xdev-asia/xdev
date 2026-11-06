@@ -1569,6 +1569,9 @@ pub struct TerminalSettings {
     pub minimum_contrast: f32,
     #[serde(deserialize_with = "lenient_bool_false")]
     pub focus_follows_mouse: bool,
+    /// Linux only (ignored elsewhere): a middle click pastes the terminal's selection.
+    #[serde(deserialize_with = "lenient_bool_false")]
+    pub middle_click_paste: bool,
     /// What a plain click on a terminal link does.
     #[serde(deserialize_with = "lenient")]
     pub link_click: TerminalLinkClick,
@@ -1640,6 +1643,7 @@ impl Default for TerminalSettings {
             fast_scroll_sensitivity: 5.0,
             minimum_contrast: 1.0,
             focus_follows_mouse: false,
+            middle_click_paste: false,
             link_click: TerminalLinkClick::Actions,
             url_middle_click: TerminalLinkClick::Open,
             mac_option_as_alt: MacOptionAsAlt::Auto,
@@ -3145,6 +3149,8 @@ mod tests {
         assert_eq!(t.word_separators, DEFAULT_WORD_SEPARATORS);
         assert_eq!((t.fast_scroll_sensitivity, t.minimum_contrast), (5.0, 1.0));
         assert!(!t.focus_follows_mouse);
+        // A file written before the switch existed reads it as off.
+        assert!(!t.middle_click_paste);
         assert_eq!(t.scroll_sensitivity, 2.0);
     }
 
@@ -3175,6 +3181,7 @@ mod tests {
             fast_scroll_sensitivity: 8.0,
             minimum_contrast: 4.5,
             focus_follows_mouse: true,
+            middle_click_paste: true,
             link_click: TerminalLinkClick::Open,
             url_middle_click: TerminalLinkClick::None,
             mac_option_as_alt: MacOptionAsAlt::Left,

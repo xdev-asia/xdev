@@ -140,6 +140,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.minimumContrast", "settings.terminal.render.contrast", ["contrast", "readable", "accessibility", "tương phản", "tuong phan", "màu", "mau"], "settings.terminal.render.contrastHint"),
   e("terminal.scrollSensitivity", "settings.terminal.interaction.scroll", ["scroll", "speed", "wheel", "cuộn", "cuon", "tốc độ", "toc do"]),
   e("terminal.fastScrollSensitivity", "settings.terminal.interaction.fastScroll", ["scroll", "fast", "alt", "speed", "cuộn", "cuon", "nhanh"]),
+  only(["linux"], e("terminal.middleClickPaste", "settings.terminal.interaction.middleClickPaste", ["middle", "click", "paste", "selection", "primary", "x11", "linux", "chuột giữa", "chuot giua", "dán", "dan", "vùng chọn", "vung chon"], "settings.terminal.interaction.middleClickPasteHint")),
   e("terminal.focusFollowsMouse", "settings.terminal.interaction.focusFollowsMouse", ["focus", "mouse", "hover", "pointer", "tiêu điểm", "tieu diem", "chuột", "chuot"], "settings.terminal.interaction.focusFollowsMouseHint"),
   e("terminal.linkClick", "settings.terminal.links.click", ["link", "url", "path", "click", "open", "actions", "liên kết", "lien ket", "nhấp", "nhap"], "settings.terminal.links.hint"),
   e("terminal.urlMiddleClick", "settings.terminal.links.middleClick", ["link", "url", "middle", "click", "open", "liên kết", "lien ket", "chuột giữa", "chuot giua", "nhấp", "nhap"]),

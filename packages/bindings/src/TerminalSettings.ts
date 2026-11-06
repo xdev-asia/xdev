@@ -75,6 +75,10 @@ fastScrollSensitivity: number,
  */
 minimumContrast: number, focusFollowsMouse: boolean, 
 /**
+ * Linux only (ignored elsewhere): a middle click pastes the terminal's selection.
+ */
+middleClickPaste: boolean, 
+/**
  * What a plain click on a terminal link does.
  */
 linkClick: TerminalLinkClick, 

@@ -1080,6 +1080,8 @@
   "settings.terminal.interaction.group": "Interaction",
   "settings.terminal.interaction.scroll": "Scroll speed",
   "settings.terminal.interaction.fastScroll": "Fast scroll speed (hold Alt)",
+  "settings.terminal.interaction.middleClickPaste": "Paste on middle click",
+  "settings.terminal.interaction.middleClickPasteHint": "Middle click pastes the selected text into the terminal. Not used while a program takes the mouse.",
   "settings.terminal.interaction.focusFollowsMouse": "Focus follows mouse",
   "settings.terminal.interaction.focusFollowsMouseHint": "A pane takes the keyboard focus when the pointer enters it.",
   "settings.terminal.bell.group": "Bell",

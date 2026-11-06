@@ -1080,6 +1080,8 @@
   "settings.terminal.interaction.group": "Tương tác",
   "settings.terminal.interaction.scroll": "Tốc độ cuộn",
   "settings.terminal.interaction.fastScroll": "Tốc độ cuộn nhanh (giữ Alt)",
+  "settings.terminal.interaction.middleClickPaste": "Dán bằng chuột giữa",
+  "settings.terminal.interaction.middleClickPasteHint": "Nhấp chuột giữa sẽ dán văn bản đang chọn vào terminal. Không dùng khi một chương trình đang nhận chuột.",
   "settings.terminal.interaction.focusFollowsMouse": "Tiêu điểm theo chuột",
   "settings.terminal.interaction.focusFollowsMouseHint": "Ô nhận tiêu điểm bàn phím khi con trỏ đi vào.",
   "settings.terminal.bell.group": "Chuông",
