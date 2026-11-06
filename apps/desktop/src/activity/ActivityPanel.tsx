@@ -17,6 +17,7 @@ import { AgentDashboard } from "./AgentDashboard";
 import { clear as clearSelection, range, toggle, type Selection } from "./selection";
 import { loadActivityOptions, saveActivityOptions, type ActivityFilter, type ActivityGroupBy, type ActivityOptions } from "./options";
 import { activityThreads, hasAgentThreads, type ThreadGroup, type WorktreeName } from "./threads";
+import { subagentBadge, subagentItem } from "./Subagents";
 
 export type ActivityTab = "threads" | "feed" | "agents";
 type T = (key: string, vars?: Record<string, string | number>) => string;
@@ -97,7 +98,7 @@ function groupLabel(group: ThreadGroup, t: T): string {
 function threadRows(groups: ThreadGroup[], now: number, t: T, props: ActivityViewProps): JSX.Element[] {
   const onJump = props.onJump;
   return groups.flatMap((group) => {
-    const rows = group.threads.map((th) => {
+    const rows = group.threads.flatMap((th) => {
       const state = t(`workspace.tabs.status.${th.tab.status}`);
       const title = th.tab.title ?? t("activity.untitled");
       const where = [th.worktreeName, th.branch].filter((x): x is string => !!x).join(" · ");
@@ -106,7 +107,15 @@ function threadRows(groups: ThreadGroup[], now: number, t: T, props: ActivityVie
       const when = [group.kind === "status" ? null : state, age].filter((x): x is string => !!x).join(" · ");
       const reason = th.tab.unread && th.tab.unreadReason ? t(reasonKey(th.tab.unreadReason)) : null;
       const meta = [reason, group.kind === "worktree" ? when : [where, when].filter(Boolean).join(" · ")].filter(Boolean).join(" · ");
-      return (
+      // Compact rows count the sub-agents; full rows list them under the thread.
+      const subs = props.options.compact ? null : subagentItem(th.tab, now, t, onJump);
+      const badge = props.options.compact ? subagentBadge(th.tab, t) : null;
+      const markButton = (
+        <button type="button" className="act-toggle" onClick={() => (th.tab.unread ? props.onMarkRead([th.tab.id]) : props.onMarkUnread([th.tab.id]))}>
+          {t(th.tab.unread ? "attention.markRead" : "attention.markUnread")}
+        </button>
+      );
+      const row = (
         <li
           key={th.tab.id}
           className="act-item"
@@ -141,13 +150,19 @@ function threadRows(groups: ThreadGroup[], now: number, t: T, props: ActivityVie
             meta={meta}
             onClick={() => onJump(th.tab.id)}
             trailing={
-              <button type="button" className="act-toggle" onClick={() => (th.tab.unread ? props.onMarkRead([th.tab.id]) : props.onMarkUnread([th.tab.id]))}>
-                {t(th.tab.unread ? "attention.markRead" : "attention.markUnread")}
-              </button>
+              badge ? (
+                <>
+                  {badge}
+                  {markButton}
+                </>
+              ) : (
+                markButton
+              )
             }
           />
         </li>
       );
+      return subs ? [row, subs] : [row];
     });
     if (group.kind === "none") return rows;
     return [
@@ -355,7 +370,7 @@ export function ActivityPanel(props: ActivityPanelProps): JSX.Element {
               {t("mission.activity.open")}
             </Button>
           </div>
-          <AgentDashboard sources={sources} names={props.names} now={now} onJump={props.onJump} />
+          <AgentDashboard sources={sources} names={props.names} now={now} compact={options.compact} onJump={props.onJump} />
         </>
       }
       now={now}

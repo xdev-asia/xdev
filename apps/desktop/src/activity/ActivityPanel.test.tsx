@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { Button, EmptyState, ListRow, StatusDot, Tooltip, SearchInput, Segmented } from "@xdev-asia/ui";
+import { Badge, Button, Disclosure, EmptyState, ListRow, StatusDot, Tooltip, SearchInput, Segmented } from "@xdev-asia/ui";
 import { ContextMenu } from "@/ui/ContextMenu";
 import { translate } from "@/i18n";
 import type { Tab } from "@/workspace/sessions";
@@ -152,6 +152,23 @@ it("Mark all read passes the visible ids, and waits for something unread", () =>
 it("the compact option sets data-density on the list", () => {
   expect(view().tree.find((n) => n.props.className === "act-list")!.props["data-density"]).toBeUndefined();
   expect(view({ options: { ...off, compact: true } }).tree.find((n) => n.props.className === "act-list")!.props["data-density"]).toBe("compact");
+});
+
+it("a thread with sub-agents lists them under its row, or counts them when compact", () => {
+  const runs = [{ id: "r1", description: "Search", agentType: null, status: "pending", stepsTotal: 2, at: 0 }];
+  const sources = [{ tab: tab("a", { subagents: runs }), lastOutput: NOW }, { tab: tab("b"), lastOutput: NOW - 1 }];
+  const full = view({ groups: activityThreads(sources, names, "", off) }).tree;
+  const items = full.filter((n) => n.type === "li").map((n) => n.props.className);
+  expect(items).toEqual(["act-item", "act-sub", "act-item"]);
+  expect(of(full, Disclosure)[0]!.props.count).toBe(1);
+  expect(of(full, Badge)).toHaveLength(0);
+  const compact = { ...off, compact: true };
+  const small = view({ options: compact, groups: activityThreads(sources, names, "", compact) }).tree;
+  expect(small.some((n) => n.props.className === "act-sub")).toBe(false);
+  const rowA = of(small, ListRow)[0]!;
+  const badge = nodes(rowA.props.trailing).find((n) => n.type === Badge)!;
+  expect(badge.props.children).toBe(en("activity.subagents.countRunning", { count: 1, running: 1 }));
+  expect(nodes(of(small, ListRow)[1]!.props.trailing).some((n) => n.type === Badge)).toBe(false);
 });
 
 it("an unread row shows why, with a dot and a toggle that marks it read", () => {
