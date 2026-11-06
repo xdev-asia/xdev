@@ -128,6 +128,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("sessions.open", "app", []),
   def("quickCommands.open", "app", ["Mod+Shift+;"]),
   def("composer.open", "agents", ["Mod+Shift+M"]),
+  def("floating.toggle", "view", ["Mod+Alt+A"]),
 ];
 
 /** The default chords of `def` on `p`, as written in the list (not normalized). */

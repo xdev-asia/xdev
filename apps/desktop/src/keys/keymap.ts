@@ -67,7 +67,8 @@ export type ActionId =
   // Quick open: a file of the worktree on screen by name.
   | "quickOpen.open"
   // Opens the prompt composer on the focused terminal tab; the composer host registers the handler.
-  | "composer.open";
+  | "composer.open"
+  | "floating.toggle";
 
 export interface Binding {
   action: ActionId;

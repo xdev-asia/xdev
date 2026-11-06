@@ -31,6 +31,7 @@ const ALL: Record<ActionId, true> = {
   "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true, "file.splitRight": true, "file.splitDown": true,
   "quickCommands.open": true, "quickOpen.open": true,
   "composer.open": true,
+  "floating.toggle": true,
 };
 
 it("every ActionId has exactly one def", () => {
@@ -162,4 +163,13 @@ it("the split-editor keys have their defaults and clash with nothing", () => {
     const clash = SHORTCUTS.filter((o) => o.id !== d.id && (o.defaults.all ?? []).some((c) => d.defaults.all!.includes(c)));
     expect(clash.map((o) => o.id)).toEqual([]);
   }
+});
+
+it("floating.toggle is Mod+Alt+A, global, and does not yield to the terminal", () => {
+  expect(on("floating.toggle", "win")).toEqual(["Ctrl+Alt+A"]);
+  expect(on("floating.toggle", "linux")).toEqual(["Ctrl+Alt+A"]);
+  expect(on("floating.toggle", "mac")).toEqual(["Alt+Cmd+A"]);
+  const d = shortcutDef("floating.toggle")!;
+  expect(d.scope).toBe("global");
+  expect(d.yieldsToTerminal).toBeFalsy();
 });
