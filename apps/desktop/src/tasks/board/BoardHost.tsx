@@ -62,6 +62,8 @@ export function BoardHost(props: BoardHostProps): JSX.Element {
   const [repoPath, setRepoPath] = useState(first?.path ?? "");
   const [tab, setTab] = useState<BoardTab>(props.initialTab ?? "board");
   const repo = list.find((r) => r.path === repoPath) ?? first;
+  // Read once: a repo switch remounts RepoBoard and must not reopen the dialog.
+  const decompose = useRef(!!props.initialDecompose);
 
   return (
     <div className="board-host">
@@ -94,7 +96,7 @@ export function BoardHost(props: BoardHostProps): JSX.Element {
           <TasksView api={props.api} initial={props.initialRun} defaultRepo={props.defaultRepo} />
         </div>
       ) : repo ? (
-        <RepoBoard key={repo.path} {...props} repo={repo} tab={tab} />
+        <RepoBoard key={repo.path} {...props} repo={repo} tab={tab} decompose={decompose} />
       ) : (
         <EmptyState size="center" title={t("board.err.noRepo")} />
       )}
@@ -102,7 +104,7 @@ export function BoardHost(props: BoardHostProps): JSX.Element {
   );
 }
 
-function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "list" }): JSX.Element {
+function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "list"; decompose: { current: boolean } }): JSX.Element {
   const { api, repo, tab } = props;
   const { t } = useI18n();
   const { view } = useProfiles();
@@ -110,7 +112,11 @@ function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "lis
   const [filters, setFilters] = useState<BoardFilters>(() => loadFilters(repo.path));
   const [editing, setEditing] = useState<Editing | null>(null);
   const [starting, setStarting] = useState<BoardTask | null>(null);
-  const [deciding, setDeciding] = useState(!!props.initialDecompose);
+  const [deciding, setDeciding] = useState(() => {
+    const first = props.decompose.current;
+    props.decompose.current = false;
+    return first;
+  });
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [, setTick] = useState(0);

@@ -72,8 +72,10 @@ it("a goal the agent cannot split shows the banner and stays on the goal step", 
   const v = view(api);
   await v.goal("Ship it !bad");
   expect(v.dialog().type).toBe(Dialog);
+  vi.useFakeTimers();
   v.dialog().props.onConfirm();
-  await new Promise((r) => setTimeout(r, 400));
+  await vi.advanceTimersByTimeAsync(2000);
+  vi.useRealTimers();
   const banner = v.all().find((n) => n.type === Banner)!;
   expect(banner.props.title).toBe(translate("en", "board.decompose.bad"));
   expect(v.all().some((n) => n.type === Checkbox)).toBe(false);
@@ -89,8 +91,10 @@ it("write sends only the checked drafts and none is written before", async () =>
   const create = vi.spyOn(api, "boardCreateMany");
   const v = view(api);
   await v.goal("Build a thing");
+  vi.useFakeTimers();
   v.dialog().props.onConfirm();
-  await new Promise((r) => setTimeout(r, 400));
+  await vi.advanceTimersByTimeAsync(2000);
+  vi.useRealTimers();
   const boxes = v.all().filter((n) => n.type === Checkbox);
   expect(boxes).toHaveLength(3);
   expect(create).not.toHaveBeenCalled();
