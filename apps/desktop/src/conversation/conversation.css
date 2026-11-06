@@ -693,3 +693,94 @@
   flex-shrink: 0;
   align-items: center;
 }
+
+/* The chat tab: the conversation and a composer over the tab's terminal, same box as the dock's full mode. */
+.cv-chat {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--x-color-bg);
+}
+
+.cv-chat > .cv {
+  flex: 1;
+}
+
+.cv-chat-wait {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.cv-chat-composer {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--x-space-2);
+  padding: var(--x-space-2) var(--x-space-3);
+  border-top: 1px solid var(--x-color-line);
+}
+
+.cv-chat-composer > .ws-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.cv-chat-composer > small {
+  flex-basis: 100%;
+  color: var(--x-color-muted);
+}
+
+.cv-chat-composer > small:empty {
+  display: none;
+}
+
+/* The exit banner stays reachable over the chat. */
+.ws-tab-pane:has(> .cv-chat) > .ws-tab-exit {
+  position: relative;
+  z-index: 5;
+}
+
+.cv-linkchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x-space-1);
+  margin-top: var(--x-space-1);
+}
+
+.cv-linkchip {
+  min-height: 24px;
+  padding: 0;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.cv-linkchip-path {
+  margin-left: var(--x-space-1);
+  color: var(--x-color-muted);
+}
+
+.cv-linkchip:focus-visible {
+  outline: 2px solid var(--x-color-focus, var(--x-color-signal));
+  outline-offset: 1px;
+}
+
+@media (max-width: 480px) {
+  .cv-chat-composer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cv-chat-composer > .btn {
+    width: 100%;
+  }
+}
