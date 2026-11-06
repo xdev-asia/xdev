@@ -1987,6 +1987,7 @@ mod tests {
                 startup: vec![],
                 enabled: true,
                 wsl: None,
+                open_as: None,
             })
             .unwrap();
         profiles.save(dir.path()).unwrap();
