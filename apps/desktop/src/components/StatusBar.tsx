@@ -93,3 +93,26 @@ export function StatusBar(props: {
     </footer>
   );
 }
+
+/** The notices a paying person should see in the status bar; a free person with none sees nothing. */
+export const STATUS_NOTICES = ["clock", "revoked", "expired"] as const;
+export type StatusNotice = (typeof STATUS_NOTICES)[number];
+
+export function statusNoticeOf(notice: string | null): StatusNotice | null {
+  return STATUS_NOTICES.find((n) => n === notice) ?? null;
+}
+
+/** One compact licence notice: a status dot, a tint, and a click that opens Settings → Account. */
+export function LicenseStatus(props: { notice: string | null; onOpen?: () => void }): JSX.Element | null {
+  const { t } = useI18n();
+  const notice = statusNoticeOf(props.notice);
+  if (!notice) return null;
+  return (
+    <span role="status" className="ws-license" data-notice={notice}>
+      <button type="button" className="ws-license-btn" data-action="license-status" onClick={props.onOpen}>
+        <span className="ws-dot" data-tone={notice === "expired" ? "danger" : "warn"} aria-hidden="true" />
+        {t(`license.notice.${notice}.title`)}
+      </button>
+    </span>
+  );
+}
