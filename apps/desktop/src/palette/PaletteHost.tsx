@@ -10,6 +10,7 @@ import { terminalOf } from "@/terminal/terminalRegistry";
 import type { Sessions } from "@/workspace/sessions";
 import { openCrashDialog } from "@/crash/crashEvents";
 import { missionItems } from "@/orchestration/missionEvents";
+import { lspItems } from "@/files/lsp/lspEvents";
 import { chartItems } from "@/orchestration/charts/chartEvents";
 import { resourceItems } from "@/stats/resourceEvents";
 import { foreignTermsItems } from "@/foreignTerms/foreignTermsEvents";
@@ -189,6 +190,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       ...crashItems(t, () => openCrashDialog({ latest: true })),
       ...missionItems(t),
       ...chartItems(t),
+      ...lspItems(t, currentPath),
       ...resourceItems(t),
       ...conversationItems(t, front),
       ...foreignTermsItems(t),

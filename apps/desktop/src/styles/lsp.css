@@ -1,0 +1,154 @@
+/* Language server features in the file editor: hover, diagnostics, trust panel, dialogs. */
+
+.lsp-hover {
+  max-width: min(480px, 90vw);
+  max-height: 240px;
+  overflow: auto;
+  padding: var(--x-space-2) var(--x-space-3);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.lsp-hover p {
+  margin: 0 0 var(--x-space-2);
+}
+
+.lsp-hover p:last-child,
+.lsp-hover pre:last-child {
+  margin-bottom: 0;
+}
+
+.lsp-hover pre {
+  margin: 0 0 var(--x-space-2);
+  white-space: pre-wrap;
+}
+
+.lsp-hover code {
+  font-family: var(--x-font-mono, monospace);
+}
+
+.cm-tooltip-lint {
+  max-width: min(480px, 90vw);
+  color: var(--x-color-ink);
+  background: var(--x-color-surface);
+}
+
+.cm-diagnostic-error {
+  border-left-color: var(--x-color-danger);
+}
+
+.cm-diagnostic-warning {
+  border-left-color: var(--x-color-warn);
+}
+
+.cm-diagnostic-info {
+  border-left-color: var(--x-color-signal);
+}
+
+.cm-lintRange-error,
+.cm-lintRange-warning,
+.cm-lintRange-info {
+  background-image: none;
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.cm-lintRange-error {
+  text-decoration-color: var(--x-color-danger);
+}
+
+.cm-lintRange-warning {
+  text-decoration-color: var(--x-color-warn);
+}
+
+.cm-lintRange-info {
+  text-decoration-color: var(--x-color-signal);
+}
+
+/* The panel above the text: "Start language servers for this repo?" */
+.lsp-trust {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+  padding: var(--x-space-2) var(--x-space-3);
+  color: var(--x-color-ink);
+  background: var(--x-color-surface);
+  border-bottom: 1px solid var(--x-color-line);
+  font-family: inherit;
+}
+
+.lsp-trust-text {
+  flex: 1 1 240px;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.lsp-trust button {
+  min-width: 24px;
+  min-height: 28px;
+}
+
+.lsp-picker {
+  position: fixed;
+  z-index: 60;
+  min-width: 160px;
+  max-width: calc(100vw - var(--x-space-4));
+}
+
+.lsp-symbols {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  min-width: 0;
+}
+
+.lsp-symbols-note {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--x-color-muted);
+}
+
+.lsp-symbols-list {
+  max-height: 280px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.lsp-symbol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--x-space-1) var(--x-space-2);
+  min-height: 28px;
+  padding: var(--x-space-1) var(--x-space-2);
+  border-radius: var(--x-radius-sm);
+  cursor: pointer;
+}
+
+.lsp-symbol[data-active] {
+  background: var(--x-color-surface-2);
+  outline: 1px solid var(--x-color-signal);
+  outline-offset: -1px;
+}
+
+.lsp-symbol-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.lsp-symbol-kind {
+  color: var(--x-color-muted);
+}
+
+.lsp-symbol-rel {
+  flex: 1 1 100%;
+  color: var(--x-color-muted);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
