@@ -23,10 +23,13 @@ xdev terminal list
 ```sh
 xdev worktree create --name <name> --agent <profile>
 xdev worktree set --status in-review --comment <text>
+xdev agent launch codex --prompt-file -
+xdev agent launch claude --worktree <id> --account <name>
 ```
 
 - `worktree create` makes a child of your worktree and prints `id`, `branch`, `path`. The new tab is not focused. `--from <ref>` sets the start point. `--prompt <text>` types text into the agent once it is ready; `-` reads stdin.
 - `worktree set` changes the status, comment or title of a worktree (default: yours). Status is one of `todo`, `in-progress`, `in-review`, `completed`, `none`. A comment is at most 2000 characters.
+- `agent launch <profile>` opens that agent in a new tab of a worktree (default: yours), the way `worktree create --agent` does, and prints the tab id. `--prompt <text>` or `--prompt-file <path>` (`-` reads stdin) is typed to it once it is ready. `--account` picks the account it runs under. Another family's worktree asks the user first.
 
 ## Open a file
 

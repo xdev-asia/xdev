@@ -4,4 +4,12 @@
  * Payload of `cli://open-tab`: open `profile` (empty: the default agent)
  * in `worktree` without focusing it, then type `prompt` once it is ready.
  */
-export type CliOpenTab = { worktree: string, profile: string, prompt: string | null, };
+export type CliOpenTab = { worktree: string, profile: string, prompt: string | null, 
+/**
+ * `agent launch`: the new tab's id, which the CLI waits for.
+ */
+id: string | null, 
+/**
+ * `agent launch`: the account the agent runs under.
+ */
+account: string | null, };

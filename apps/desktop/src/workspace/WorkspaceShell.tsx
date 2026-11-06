@@ -327,7 +327,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const statusSettings = useStatusSettings();
   const automationsSettings = useAutomationsSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
-  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string): boolean => false, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, openPrTab: () => {}, openPrPage: () => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null) => {}, cliPoke: () => {}, automationSetup: async (_w: string, _r: string, _d: SetupDecision) => {} }));
+  const [live] = useState(() => ({ repos: null as RepoView[] | null, t, jump: (_id: string): boolean => false, openShortcuts: (_action?: string) => {}, openFileTab: (_req: OpenFileRequest) => {}, openPrTab: () => {}, openPrPage: () => {}, deleteKey: () => {}, notifier: null as Notifier | null, selected: null as string | null, reload: () => {}, ensureMounted: (_w: string) => {}, prepareSetup: async (_w: string) => {}, cliOpen: (_w: string, _p: string, _prompt: string | null, _o?: { id?: string; account?: string }) => {}, cliPoke: () => {}, automationSetup: async (_w: string, _r: string, _d: SetupDecision) => {} }));
 
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
@@ -847,7 +847,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (!live.repos?.some((r) => r.worktrees.some((x) => x.path === w))) live.reload();
   };
   // `xdev worktree create --agent/--prompt`: the profile opens unfocused and gets the prompt once setup lets agents start.
-  live.cliOpen = (worktree, profile, prompt) => void openDefaultAgent(worktree, profile || undefined, prompt ?? undefined);
+  live.cliOpen = (worktree, profile, prompt, o) => void openDefaultAgent(worktree, profile || undefined, prompt ?? undefined, o);
   // A worktree made for an automation run: `run` starts its setup, `inherit` only when the repo's setup is trusted with a Run policy.
   live.automationSetup = async (worktree, _repoId, decision) => {
     if (decision === "skip") return;
@@ -865,7 +865,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     live.cliPoke = reporter.poke;
     const stopEvents = startCliEvents(api, {
       reload: () => live.reload(),
-      openTab: (w, p, prompt) => live.cliOpen(w, p, prompt),
+      openTab: (w, p, prompt, o) => live.cliOpen(w, p, prompt, o),
       markUnread: (w, unread) => (unread ? sessions.markUnread(w) : sessions.markRead(w)),
       t: (key, vars) => live.t(key, vars),
     });
@@ -1529,7 +1529,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // A new worktree starts with the agent picked for it, else the resolved default agent; with no
   // agent at all, the default shell, and nothing is typed into it. A picked agent that is off or not
   // installed opens nothing, and a toast says why: another agent never takes its place or its prompt.
-  async function openDefaultAgent(path: string, pick?: string | null, prompt?: string): Promise<Tab | null> {
+  async function openDefaultAgent(path: string, pick?: string | null, prompt?: string, o: { id?: string; account?: string } = {}): Promise<Tab | null> {
     if (!sessions || pick === null) return null;
     try {
       const view = await api.profiles();
@@ -1548,7 +1548,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (!id) return null;
       // The prompt goes with the agent tab: on its command line, or typed once it started.
       let opened: Tab | null = null;
-      const launch = (): void => void (opened = sessions.open(path, id, null, undefined, agent && prompt ? { prompt } : {}));
+      const launch = (): void => void (opened = sessions.open(path, id, o.account ?? null, undefined, { ...(agent && prompt ? { prompt } : {}), ...(o.id ? { id: o.id } : {}) }));
       // With the repo set to wait, the tab opens when the setup tab has exited.
       if (!gate.defer(path, launch)) launch();
       return opened;

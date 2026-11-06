@@ -1,7 +1,8 @@
-//! `terminal.create | split | stop | close`: the CLI opening, splitting,
-//! stopping and closing tabs. The window owns the tabs, so all but `stop` go
-//! to it as a `cli://terminal` event; a create or split then waits for the
-//! new tab on the board, a close for it to go.
+//! `terminal.create | split | stop | close` and `agent.launch`: the CLI
+//! opening, splitting, stopping and closing tabs. The window owns the tabs,
+//! so all but `stop` go to it as an event (`cli://terminal`, or for an agent
+//! the `cli://open-tab` of `worktree create --agent`); an open then waits for
+//! the new tab on the board, a close for it to go.
 
 use std::path::{Path, PathBuf};
 
@@ -11,7 +12,7 @@ use xdev_workspace::path_key;
 
 use crate::cli_file::fold;
 use crate::cli_terminal::SEND_MAX_BYTES;
-use crate::cli_verbs::{Ctx, TabReport, bad_request, downward, params, target};
+use crate::cli_verbs::{CliOpenTab, Ctx, TabReport, bad_request, downward, params, target};
 use crate::endpoint::{AppError, Caller, Request, caller_worktree, scope_of};
 
 /// Emitted for the window to act on a tab.
@@ -24,7 +25,7 @@ pub const TITLE_MAX_CHARS: usize = 200;
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "kebab-case")]
 pub enum TerminalOp {
-    /// A new shell tab in the worktree's focused pane, in front.
+    /// A new shell tab in the worktree's focused pane, active there.
     Create,
     /// A new shell tab in a new pane beside the source tab's.
     Split,
@@ -109,6 +110,34 @@ pub(crate) fn inside(worktree: &Path, dir: &Path) -> Result<Option<String>, AppE
         .ok_or_else(outside)
 }
 
+/// The worktree a new tab goes to: `named`, else the caller's terminal's,
+/// else the one holding `here` (the CLI's folder).
+fn worktree_for(
+    ctx: &Ctx<'_>,
+    caller: &Caller,
+    named: Option<&str>,
+    here: Option<&Path>,
+) -> Result<PathBuf, AppError> {
+    let me = match ctx.caller_worktree(caller)? {
+        Some(me) => Some(me),
+        None => here.and_then(|d| caller_worktree(&ctx.registry().ok()?, d)),
+    };
+    let all = ctx.listed()?;
+    Ok(PathBuf::from(
+        &target(&all, named, me.as_deref())?.view.path,
+    ))
+}
+
+/// Waits for the tab `id` to be on the board.
+fn wait_open(ctx: &Ctx<'_>, id: &str, gone: &dyn Fn() -> bool) -> Result<(), AppError> {
+    ctx.board.wait_until(
+        ctx.orch.waits.open_slack,
+        gone,
+        &format!("tab {id} did not open in time"),
+        |tabs| tabs.iter().any(|t| t.id == id).then_some(()),
+    )
+}
+
 /// A title the window takes: trimmed, one line, at most `TITLE_MAX_CHARS`.
 fn clean_title(title: &str) -> Result<String, AppError> {
     let t = title.trim();
@@ -158,13 +187,7 @@ fn gate(
 /// Sends `ev` and waits for its tab to be on the board.
 fn open(ctx: &Ctx<'_>, ev: &CliTerminal, gone: &dyn Fn() -> bool) -> Result<Value, AppError> {
     (ctx.emit)(TERMINAL_EVENT, json!(ev));
-    let id = ev.id.clone();
-    ctx.board.wait_until(
-        ctx.orch.waits.open_slack,
-        gone,
-        &format!("tab {id} did not open in time"),
-        |tabs| tabs.iter().any(|t| t.id == id).then_some(()),
-    )?;
+    wait_open(ctx, &ev.id, gone)?;
     Ok(json!({
         "id": ev.id,
         "worktree": ev.worktree,
@@ -192,19 +215,7 @@ pub(crate) fn terminal_create(
     }
     let title = p.title.as_deref().map(clean_title).transpose()?;
     let here = p.here.as_deref().map(PathBuf::from);
-    // The default worktree: the caller's terminal's, else the CLI's folder's.
-    let me = match ctx.caller_worktree(caller)? {
-        Some(me) => Some(me),
-        None => here
-            .as_deref()
-            .and_then(|d| caller_worktree(&ctx.registry().ok()?, d)),
-    };
-    let all = ctx.listed()?;
-    let worktree = PathBuf::from(
-        &target(&all, p.worktree.as_deref(), me.as_deref())?
-            .view
-            .path,
-    );
+    let worktree = worktree_for(ctx, caller, p.worktree.as_deref(), here.as_deref())?;
     let cwd = match p.cwd.as_deref().map(Path::new) {
         None => None,
         Some(dir) => {
@@ -316,6 +327,77 @@ pub(crate) fn terminal_close(
         |tabs| (!tabs.iter().any(|t| t.id == id)).then_some(()),
     )?;
     Ok(json!({ "id": t.id, "closed": true }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LaunchParams {
+    /// A profile id: a catalogue agent or one of the person's own.
+    cli: String,
+    worktree: Option<String>,
+    account: Option<String>,
+    prompt: Option<String>,
+    here: Option<String>,
+}
+
+/// `agent.launch`: an agent tab in an existing worktree (default: the
+/// caller's), opened the way `worktree create --agent` opens one, on an
+/// account and with a first prompt when given.
+pub(crate) fn agent_launch(
+    ctx: &Ctx<'_>,
+    req: &Request,
+    caller: &Caller,
+    gone: &dyn Fn() -> bool,
+) -> Result<Value, AppError> {
+    let p: LaunchParams = params(req)?;
+    let profiles =
+        xdev_agent::Profiles::load(ctx.data).map_err(|e| AppError::new("io", e.to_string()))?;
+    match profiles.get(&p.cli) {
+        None => {
+            return Err(AppError::new(
+                "unknown_agent",
+                format!("no agent {}", p.cli),
+            ));
+        }
+        Some(found) if !found.enabled => {
+            return Err(bad_request(format!("agent {} is turned off", p.cli)));
+        }
+        Some(_) => {}
+    }
+    let account = p
+        .account
+        .map(|a| a.trim().to_owned())
+        .filter(|a| !a.is_empty());
+    if account
+        .as_ref()
+        .is_some_and(|a| a.chars().any(char::is_control))
+    {
+        return Err(bad_request("an account is one name"));
+    }
+    if p.prompt.as_ref().is_some_and(|t| t.len() > SEND_MAX_BYTES) {
+        return Err(bad_request(format!(
+            "a prompt is at most {SEND_MAX_BYTES} bytes"
+        )));
+    }
+    let here = p.here.as_deref().map(PathBuf::from);
+    let worktree = worktree_for(ctx, caller, p.worktree.as_deref(), here.as_deref())?;
+    gate(ctx, caller, "agent.launch", "create", &worktree)?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let open = CliOpenTab {
+        worktree: worktree.display().to_string(),
+        profile: p.cli.clone(),
+        prompt: p.prompt.filter(|t| !t.trim().is_empty()),
+        id: Some(id.clone()),
+        account: account.clone(),
+    };
+    (ctx.emit)("cli://open-tab", json!(open));
+    wait_open(ctx, &id, gone)?;
+    Ok(json!({
+        "id": id,
+        "worktree": open.worktree,
+        "profile": p.cli,
+        "account": account,
+    }))
 }
 
 #[cfg(test)]
@@ -590,6 +672,87 @@ mod tests {
         f.orch.waits.stop = Duration::from_millis(100);
         let e = f
             .call(Some("p-lead"), "terminal.close", json!({"tab": "p-child"}))
+            .unwrap_err();
+        assert_eq!(e.code, "timeout");
+    }
+
+    fn opened_tabs(f: &Fixture) -> Vec<Value> {
+        f.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(e, _)| e == "cli://open-tab")
+            .map(|(_, p)| p.clone())
+            .collect()
+    }
+
+    #[test]
+    fn launch_opens_the_agent_like_worktree_create_and_returns_its_tab() {
+        let f = fixture();
+        let r = f
+            .call(
+                Some("p-lead"),
+                "agent.launch",
+                json!({"cli": "codex", "account": " codex-2 ", "prompt": "fix the build"}),
+            )
+            .unwrap();
+        let ev = &opened_tabs(&f)[0];
+        assert_eq!(ev["profile"], "codex");
+        assert_eq!(ev["worktree"], f.lead.display().to_string());
+        assert_eq!(ev["prompt"], "fix the build");
+        assert_eq!(ev["account"], "codex-2");
+        assert_eq!(r["id"], ev["id"]);
+        assert_eq!(r["profile"], "codex");
+        assert!(f.board.resolve(r["id"].as_str().unwrap()).is_ok());
+        assert_eq!(asked(&f), 0);
+        // In a named worktree outside the family: asked first.
+        let mut f = f;
+        f.answer = Some(false);
+        let other = f.other.display().to_string();
+        let e = f
+            .call(
+                Some("p-lead"),
+                "agent.launch",
+                json!({"cli": "claude", "worktree": other}),
+            )
+            .unwrap_err();
+        assert_eq!(e.code, "denied");
+        assert_eq!(opened_tabs(&f).len(), 1);
+    }
+
+    #[test]
+    fn launch_refuses_an_unknown_or_turned_off_agent_and_a_bad_account() {
+        let f = fixture();
+        let call = |p: Value| f.call(Some("p-lead"), "agent.launch", p).unwrap_err();
+        assert_eq!(call(json!({"cli": "nope"})).code, "unknown_agent");
+        assert_eq!(
+            call(json!({"cli": "claude", "account": "a
+b"}))
+            .code,
+            "bad_request"
+        );
+        let big = "x".repeat(SEND_MAX_BYTES + 1);
+        assert_eq!(
+            call(json!({"cli": "claude", "prompt": big})).code,
+            "bad_request"
+        );
+        let mut profiles = xdev_agent::Profiles::default();
+        let mut off = profiles.get("claude").unwrap().clone();
+        off.enabled = false;
+        profiles.put(off).unwrap();
+        profiles.save(&f.data).unwrap();
+        assert_eq!(call(json!({"cli": "claude"})).code, "bad_request");
+        assert!(opened_tabs(&f).is_empty());
+    }
+
+    #[test]
+    fn launch_times_out_when_the_window_does_not_open_it() {
+        let mut f = fixture();
+        f.terminal_ui = false;
+        // Meant to expire: the fake UI never opens it.
+        f.orch.waits.open_slack = Duration::from_millis(100);
+        let e = f
+            .call(Some("p-lead"), "agent.launch", json!({"cli": "claude"}))
             .unwrap_err();
         assert_eq!(e.code, "timeout");
     }

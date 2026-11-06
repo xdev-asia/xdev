@@ -4,7 +4,7 @@
 
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use clap::{ArgGroup, Args, Subcommand};
@@ -407,6 +407,28 @@ pub enum TerminalCommand {
     },
 }
 
+/// `xdev agent launch`.
+#[derive(Args)]
+#[command(group(ArgGroup::new("first").args(["prompt", "prompt_file"])))]
+pub struct AgentLaunchArgs {
+    /// The agent profile: a catalogue agent (`claude`, `codex`, ...) or one of yours.
+    pub cli: String,
+    /// Id, unique prefix, name or path; default your worktree.
+    #[arg(long)]
+    pub worktree: Option<String>,
+    /// The account the agent runs under (a name from `xdev accounts list`).
+    #[arg(long)]
+    pub account: Option<String>,
+    /// The first prompt; `-` reads stdin.
+    #[arg(long)]
+    pub prompt: Option<String>,
+    /// A file holding the first prompt; `-` reads stdin.
+    #[arg(long)]
+    pub prompt_file: Option<PathBuf>,
+    #[arg(long)]
+    pub json: bool,
+}
+
 #[derive(Args)]
 pub struct StatusArgs {
     #[arg(long)]
@@ -532,6 +554,27 @@ pub fn request(
             json!({ "tab": tab, "for": state, "timeoutS": timeout }),
             *json,
         ),
+        AppCommand::AgentLaunch(a) => {
+            let prompt = match &a.prompt_file {
+                Some(f) if f.as_os_str() == "-" => or_stdin(Some("-"), stdin)?,
+                Some(f) => Some(
+                    fs::read_to_string(f)
+                        .map_err(|e| bad_request(format!("{}: {e}", f.display())))?,
+                ),
+                None => or_stdin(a.prompt.as_deref(), stdin)?,
+            };
+            let here = std::env::current_dir()
+                .ok()
+                .map(|d| d.display().to_string());
+            let params = json!({
+                "cli": a.cli,
+                "worktree": a.worktree,
+                "account": a.account,
+                "prompt": prompt,
+                "here": here,
+            });
+            ("agent.launch", params, a.json)
+        }
         AppCommand::Terminal(TerminalCommand::Create {
             worktree,
             cmd,
@@ -581,6 +624,7 @@ pub enum AppCommand {
     Capture(crate::capture::CaptureCommand),
     AgentContext(crate::agent_context::AgentContextArgs),
     Repo(crate::repo::RepoCommand),
+    AgentLaunch(AgentLaunchArgs),
 }
 
 pub(crate) fn text(v: &Value) -> String {
@@ -696,7 +740,8 @@ pub fn plain(method: &str, result: &Value) -> String {
             out
         }
         "terminal.read" => result["tail"].as_str().unwrap_or_default().to_owned(),
-        "terminal.create" | "terminal.split" | "terminal.stop" | "terminal.close" => {
+        "terminal.create" | "terminal.split" | "terminal.stop" | "terminal.close"
+        | "agent.launch" => {
             format!(
                 "{}
 ",
@@ -977,6 +1022,89 @@ mod tests {
         );
     }
 
+    #[derive(clap::Parser)]
+    struct LaunchCli {
+        #[command(flatten)]
+        args: AgentLaunchArgs,
+    }
+
+    #[test]
+    fn agent_launch_maps_its_flags_and_reads_the_prompt_from_stdin_or_a_file() {
+        use clap::Parser;
+        let parse = |args: &[&str]| {
+            let argv = [&["launch"][..], args].concat();
+            LaunchCli::try_parse_from(argv).map(|c| AppCommand::AgentLaunch(c.args))
+        };
+        let cmd = parse(&[
+            "codex",
+            "--worktree",
+            "w",
+            "--account",
+            "work",
+            "--prompt",
+            "fix it",
+            "--json",
+        ])
+        .unwrap();
+        let (m, p, json) = request(&cmd, &mut &b""[..]).unwrap();
+        assert_eq!(m, "agent.launch");
+        assert!(json);
+        assert_eq!(p["cli"], "codex");
+        assert_eq!(p["worktree"], "w");
+        assert_eq!(p["account"], "work");
+        assert_eq!(p["prompt"], "fix it");
+        let here = std::env::current_dir().unwrap().display().to_string();
+        assert_eq!(p["here"], here);
+
+        let (_, p, json) = request(&parse(&["claude"]).unwrap(), &mut &b""[..]).unwrap();
+        assert!(!json);
+        assert_eq!(p["worktree"], Value::Null);
+        assert_eq!(p["account"], Value::Null);
+        assert_eq!(p["prompt"], Value::Null);
+
+        let stdin = parse(&["claude", "--prompt-file", "-"]).unwrap();
+        let (_, p, _) = request(
+            &stdin,
+            &mut &b"from stdin
+"[..],
+        )
+        .unwrap();
+        assert_eq!(
+            p["prompt"],
+            "from stdin
+"
+        );
+        let dash = parse(&["claude", "--prompt", "-"]).unwrap();
+        let (_, p, _) = request(&dash, &mut &b"typed"[..]).unwrap();
+        assert_eq!(p["prompt"], "typed");
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("prompt.md");
+        fs::write(&file, "from a file").unwrap();
+        let path = file.display().to_string();
+        let (_, p, _) = request(
+            &parse(&["claude", "--prompt-file", &path]).unwrap(),
+            &mut &b""[..],
+        )
+        .unwrap();
+        assert_eq!(p["prompt"], "from a file");
+        let missing = dir.path().join("nope.md").display().to_string();
+        let e = request(
+            &parse(&["claude", "--prompt-file", &missing]).unwrap(),
+            &mut &b""[..],
+        )
+        .err()
+        .unwrap();
+        assert_eq!(e.code, "bad_request");
+
+        for bad in [
+            &["claude", "--prompt", "a", "--prompt-file", "-"][..],
+            &[][..],
+        ] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
+    }
+
     #[test]
     fn plain_tab_verbs_print_the_id() {
         let r = json!({ "id": "t9", "worktree": "/w", "cwd": null, "title": null });
@@ -985,6 +1113,7 @@ mod tests {
             "terminal.split",
             "terminal.stop",
             "terminal.close",
+            "agent.launch",
         ] {
             assert_eq!(
                 plain(m, &r),

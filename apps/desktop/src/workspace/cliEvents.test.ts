@@ -25,10 +25,13 @@ describe("CLI events", () => {
     api.__cliOpenTab({ worktree: "/w/sub", profile: "claude", prompt: "say hi" });
     expect(reload).toHaveBeenCalledTimes(1);
     expect(openTab).toHaveBeenCalledWith("/w/sub", "claude", "say hi");
+    api.__cliOpenTab({ worktree: "/w/sub", profile: "codex", prompt: null, id: "t-1", account: "codex-2" });
+    expect(openTab).toHaveBeenLastCalledWith("/w/sub", "codex", null, { id: "t-1", account: "codex-2" });
     stop();
     await flush();
     api.__cliWorkspaceChanged();
     expect(reload).toHaveBeenCalledTimes(1);
+    expect(openTab).toHaveBeenCalledTimes(2);
   });
 
   it("asks with Allow / Deny and sends the answer once", async () => {
@@ -66,7 +69,10 @@ describe("CLI events", () => {
       "lead wants to close a terminal of other.",
       "lead wants to stop a terminal of other.",
     ]);
-    for (const k of ["cli.ask.terminalOpen", "cli.ask.terminalStop", "cli.ask.terminalClose"]) expect(translate("vi", k)).not.toBe(k);
+    resetToastsForTests();
+    api.__cliAsk({ request: 10, caller: "/w/lead", verb: "agent.launch", target: "/w/other" });
+    expect(getToasts().map((x) => x.text)).toEqual(["lead wants to start an agent in other."]);
+    for (const k of ["cli.ask.terminalOpen", "cli.ask.terminalStop", "cli.ask.terminalClose", "cli.ask.agentLaunch"]) expect(translate("vi", k)).not.toBe(k);
   });
 
   it("names an outside caller and goes away after 60 s without an answer", async () => {

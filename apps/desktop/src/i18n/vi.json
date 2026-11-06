@@ -4036,6 +4036,7 @@
   "cli.ask.terminalOpen": "mở một terminal trong",
   "cli.ask.terminalStop": "dừng một terminal của",
   "cli.ask.terminalClose": "đóng một terminal của",
+  "cli.ask.agentLaunch": "khởi động một agent trong",
   "settings.orchestration.skill.uninstall": "Gỡ cài đặt",
   "settings.orchestration.skill.uninstallTitle": "Gỡ cài đặt skill?",
   "settings.orchestration.skill.uninstallBody": "Xóa các bản sao và liên kết do xDev tạo. Thư mục bạn đã sửa hoặc thêm vẫn được giữ.",

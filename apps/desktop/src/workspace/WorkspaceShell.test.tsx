@@ -1616,6 +1616,9 @@ it("reports its tabs to the app CLI and follows the endpoint's events", async ()
   api.__cliOpenTab({ worktree: OAK, profile: "claude", prompt: null });
   await vi.waitFor(() => expect(sessions.tabs(OAK)).toHaveLength(before + 1));
   expect(sessions.tabs(OAK).at(-1)?.profileId).toBe("claude");
+  // `agent launch` names the tab and the account.
+  api.__cliOpenTab({ worktree: OAK, profile: "claude", prompt: null, id: "t-launch", account: "claude-2" });
+  await vi.waitFor(() => expect(sessions.tab("t-launch")?.account).toBe("claude-2"));
 });
 
 it("tells the backend it is ready for automation runs only after the layout is restored", async () => {

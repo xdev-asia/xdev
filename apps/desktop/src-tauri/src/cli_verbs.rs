@@ -77,6 +77,10 @@ pub struct CliOpenTab {
     pub worktree: String,
     pub profile: String,
     pub prompt: Option<String>,
+    /// `agent launch`: the new tab's id, which the CLI waits for.
+    pub id: Option<String>,
+    /// `agent launch`: the account the agent runs under.
+    pub account: Option<String>,
 }
 
 /// Payload of `cli://ask`: a CLI write that needs the person; answered with
@@ -989,6 +993,8 @@ pub fn worktree_create(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<
             worktree: view.path.clone(),
             profile: p.agent.unwrap_or_default(),
             prompt: p.prompt,
+            id: None,
+            account: None,
         };
         (ctx.emit)("cli://open-tab", json!(open));
     }
@@ -1098,6 +1104,7 @@ pub fn dispatch(
         "terminal.read" => crate::cli_terminal::terminal_read(ctx, req),
         "terminal.send" => crate::cli_terminal::terminal_send(ctx, req, caller),
         "terminal.create" => crate::cli_tab_ops::terminal_create(ctx, req, caller, gone),
+        "agent.launch" => crate::cli_tab_ops::agent_launch(ctx, req, caller, gone),
         "terminal.split" => crate::cli_tab_ops::terminal_split(ctx, req, caller, gone),
         "terminal.stop" => crate::cli_tab_ops::terminal_stop(ctx, req, caller),
         "terminal.close" => crate::cli_tab_ops::terminal_close(ctx, req, caller, gone),
@@ -1343,6 +1350,16 @@ pub(crate) mod tests {
                 }
                 if event == crate::cli_tab_ops::TERMINAL_EVENT && self.terminal_ui {
                     self.fake_terminal_ui(&payload);
+                }
+                // `agent launch`: the window opens the tab with the given id.
+                if event == "cli://open-tab"
+                    && self.terminal_ui
+                    && let Some(id) = payload["id"].as_str()
+                {
+                    let (mut tabs, selected) = self.board.tabs();
+                    let w = PathBuf::from(payload["worktree"].as_str().unwrap());
+                    tabs.push(tab(id, &w, true, "idle"));
+                    self.board.replace(tabs, selected);
                 }
                 if event == "orchestration://read-tab"
                     && let Some(text) = &self.read_answer
@@ -1932,7 +1949,13 @@ pub(crate) mod tests {
         let open = events.iter().find(|(e, _)| e == "cli://open-tab").unwrap();
         assert_eq!(
             open.1,
-            json!({ "worktree": made["path"], "profile": "claude", "prompt": "say hi" })
+            json!({
+                "worktree": made["path"],
+                "profile": "claude",
+                "prompt": "say hi",
+                "id": null,
+                "account": null,
+            })
         );
     }
 

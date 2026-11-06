@@ -108,7 +108,7 @@ enum Command {
         #[command(subcommand)]
         command: squad::SquadCommand,
     },
-    /// Agent CLI integration: `hooks status|on|off`.
+    /// Agent CLI integration: `hooks status|on|off`, `launch` in the app.
     Agent {
         #[command(subcommand)]
         command: agent::AgentCommand,
@@ -221,6 +221,9 @@ fn main() -> ExitCode {
         Command::Capture(a) => app::AppCommand::Capture(a),
         Command::AgentContext(a) => app::AppCommand::AgentContext(a),
         Command::Automations { command } => app::AppCommand::Automations(command),
+        Command::Agent {
+            command: agent::AgentCommand::Launch(a),
+        } => app::AppCommand::AgentLaunch(a),
         other => return finish(run(other)),
     };
     // The app verbs need only the local folder, where the endpoint lives.
