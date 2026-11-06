@@ -176,6 +176,7 @@ mod tests {
             "-o",
             "ServerAliveCountMax=3",
             "-tt",
+            "--",
             "devbox",
         ]
         .iter()

@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 use xdev_ssh::{
     Backoff, CMD_TIMEOUT, ExecChannel, MAX_TRIES, Probe, RemoteDirListing, RemoteError, RemoteFs,
     RemoteHostView, RemoteProject, RemoteProjectView, RemoteRef, RemoteState, RemoteTarget, Sftp,
@@ -240,13 +240,30 @@ pub struct RemoteHub {
     inner: Arc<Inner>,
 }
 
-/// `<dir>/ssh`, private to the user, for ControlMaster sockets; `None`
-/// on Windows, where `ssh` has no multiplexing.
-fn mux_dir(dir: Option<&Path>) -> Option<PathBuf> {
+/// The longest ControlPath kept, before `ssh` expands `%C`: a Unix socket
+/// path has room for about 104 bytes, and `%C` grows by 38.
+const CONTROL_PATH_MAX: usize = 80;
+
+/// `~/.ssh/xdev-cm`, private to the user, for ControlMaster sockets; see
+/// `mux_dir_in`.
+pub(crate) fn mux_dir() -> Option<PathBuf> {
+    mux_dir_in(&crate::applog::home_dir()?)
+}
+
+/// `<home>/.ssh/xdev-cm`, made 0700. `None` on Windows, where `ssh` has no
+/// multiplexing, and when the socket path would hold whitespace (it would
+/// split the `-o ControlPath=` value) or be longer than `CONTROL_PATH_MAX`:
+/// then each process logs in on its own.
+pub(crate) fn mux_dir_in(home: &Path) -> Option<PathBuf> {
     if cfg!(windows) {
         return None;
     }
-    let dir = dir?.join("ssh");
+    let dir = home.join(".ssh").join("xdev-cm");
+    let socket = dir.join("cm-%C");
+    let socket = socket.to_str()?;
+    if socket.len() > CONTROL_PATH_MAX || socket.chars().any(char::is_whitespace) {
+        return None;
+    }
     std::fs::create_dir_all(&dir).ok()?;
     #[cfg(unix)]
     {
@@ -279,9 +296,6 @@ impl RemoteHub {
 
     /// The real one: the system `ssh`, `remote://state` to the window.
     pub fn system(app: AppHandle) -> RemoteHub {
-        let dir = app
-            .try_state::<AppState>()
-            .and_then(|s| s.local_dir.clone().or_else(|| s.data_dir.clone()));
         let emit: Emit = Box::new(move |view| {
             let _ = app.emit("remote://state", view);
         });
@@ -289,7 +303,7 @@ impl RemoteHub {
             Box::new(SystemPipeSsh),
             Box::new(SystemClock),
             emit,
-            mux_dir(dir.as_deref()),
+            mux_dir(),
             true,
         )
     }
@@ -629,13 +643,17 @@ pub(crate) fn connect_error(exit: Option<i32>, stderr: &str, e: RemoteError) -> 
 
 // Projects and targets.
 
-/// The saved host `host_id`; `not_found` when there is none.
+/// The saved host `host_id`, checked again as when it was saved (the file
+/// may have been edited by hand, and an alias like `-oProxyCommand=..`
+/// must not reach `ssh`); `not_found` when there is none, `bad_arg` for one
+/// that fails the check.
 fn host_of(data: &Path, host_id: &str) -> Result<SshHost, CmdError> {
-    xdev_ssh::load(data)
+    let host = xdev_ssh::load(data)
         .map_err(crate::ssh::cmd_error)?
         .into_iter()
         .find(|h| h.id == host_id)
-        .ok_or_else(|| crate::ssh::cmd_error(xdev_ssh::SshError::NotFound))
+        .ok_or_else(|| crate::ssh::cmd_error(xdev_ssh::SshError::NotFound))?;
+    xdev_ssh::validate(&host).map_err(crate::ssh::cmd_error)
 }
 
 /// The host of a known remote project at `r`; `worktree_unknown` for a

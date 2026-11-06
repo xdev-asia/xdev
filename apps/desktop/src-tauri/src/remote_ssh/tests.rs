@@ -693,6 +693,64 @@ fn file_commands_refuse_links_and_git() {
     assert_eq!(t.text.as_deref(), Some("hello\n"));
 }
 
+#[test]
+fn a_hand_edited_host_is_checked_before_ssh_runs() {
+    let rig = rig();
+    let evil = SshHost {
+        id: "evil".into(),
+        alias: "-oProxyCommand=touch /tmp/x".into(),
+        host_name: "devbox".into(),
+        ..SshHost::default()
+    };
+    xdev_ssh::save(rig.data.path(), &[devbox(), evil]).unwrap();
+    let e = add_project(&rig.hub, rig.data.path(), "evil", "~", None).unwrap_err();
+    assert_eq!(e.code, "bad_arg");
+    let target = RemoteTarget {
+        host_id: "evil".into(),
+        path: "/srv".into(),
+    };
+    let e = set_target(&rig.hub, rig.data.path(), "repo1", Some(target)).unwrap_err();
+    assert_eq!(e.code, "bad_arg");
+    assert_eq!(rig.spawner.count(), 0);
+}
+
+/// The ControlPath `ssh` gets: no space (it would end the option) and short
+/// enough for a socket path once `%C` grows to 40 hex digits.
+#[test]
+fn the_mux_folder_is_short_and_has_no_space() {
+    if let Some(dir) = mux_dir() {
+        let argv = xdev_ssh::exec_argv(&devbox(), Some(&dir));
+        let path = argv
+            .iter()
+            .find_map(|a| a.strip_prefix("ControlPath="))
+            .unwrap();
+        assert!(!path.chars().any(char::is_whitespace), "{path}");
+        assert!(path.len() <= 80, "{path} is {} bytes", path.len());
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let spaced = tmp.path().join("Application Support");
+    assert_eq!(mux_dir_in(&spaced), None);
+    let long = tmp.path().join("x".repeat(80));
+    assert_eq!(mux_dir_in(&long), None);
+    let got = mux_dir_in(tmp.path());
+    let want = tmp.path().join(".ssh").join("xdev-cm");
+    let fits = want.join("cm-%C").to_string_lossy().len() <= 80;
+    if cfg!(windows) || !fits {
+        assert_eq!(got, None);
+    } else {
+        assert_eq!(got, Some(want));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(got.unwrap())
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o700);
+        }
+    }
+}
+
 /// Each command with no remote form starts with a `local_only` guard.
 #[test]
 fn local_only_commands_are_guarded() {
