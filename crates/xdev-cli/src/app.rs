@@ -4,7 +4,7 @@
 
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use clap::{ArgGroup, Args, Subcommand};
@@ -357,6 +357,106 @@ pub enum TerminalCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Open a shell tab in a worktree (default: yours), in front; prints its
+    /// id. Outside your worktree and its family the person is asked first.
+    Create {
+        #[arg(long)]
+        worktree: Option<String>,
+        /// One line, typed into the shell once it runs, then Enter.
+        #[arg(long)]
+        cmd: Option<String>,
+        /// The tab's name.
+        #[arg(long)]
+        title: Option<String>,
+        /// A folder inside the worktree to start in; relative to here.
+        #[arg(long)]
+        cwd: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Split a tab's pane (default: this terminal's) and open a shell in the
+    /// new pane, in the tab's folder; prints the new tab's id.
+    #[command(group(ArgGroup::new("side").required(true).args(["right", "down"])))]
+    Split {
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        right: bool,
+        #[arg(long)]
+        down: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// End a tab's process (default: this terminal's); the tab stays.
+    Stop {
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Close a tab (default: this terminal), ending its process. Outside
+    /// your own worktree the person is asked first.
+    Close {
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Bring a tab (default: this terminal) to the front: its worktree, its
+    /// pane and the window.
+    Switch {
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Name a tab by hand (default: this terminal); titles the program sets
+    /// no longer change it. An empty name gives the program's title back.
+    Rename {
+        name: String,
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set the title a tab's pane shows (default: this terminal), as the
+    /// program's own title does; the program's next title or a name given by
+    /// hand wins.
+    SetPaneTitle {
+        title: String,
+        /// Tab id or a unique prefix of one; default this terminal.
+        #[arg(long, visible_alias = "terminal")]
+        tab: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// `xdev agent launch`.
+#[derive(Args)]
+#[command(group(ArgGroup::new("first").args(["prompt", "prompt_file"])))]
+pub struct AgentLaunchArgs {
+    /// The agent profile: a catalogue agent (`claude`, `codex`, ...) or one of yours.
+    pub cli: String,
+    /// Id, unique prefix, name or path; default your worktree.
+    #[arg(long)]
+    pub worktree: Option<String>,
+    /// The account the agent runs under (a name from `xdev accounts list`).
+    #[arg(long)]
+    pub account: Option<String>,
+    /// The first prompt; `-` reads stdin.
+    #[arg(long)]
+    pub prompt: Option<String>,
+    /// A file holding the first prompt; `-` reads stdin.
+    #[arg(long)]
+    pub prompt_file: Option<PathBuf>,
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Args)]
@@ -484,6 +584,74 @@ pub fn request(
             json!({ "tab": tab, "for": state, "timeoutS": timeout }),
             *json,
         ),
+        AppCommand::AgentLaunch(a) => {
+            let prompt = match &a.prompt_file {
+                Some(f) if f.as_os_str() == "-" => or_stdin(Some("-"), stdin)?,
+                Some(f) => Some(
+                    fs::read_to_string(f)
+                        .map_err(|e| bad_request(format!("{}: {e}", f.display())))?,
+                ),
+                None => or_stdin(a.prompt.as_deref(), stdin)?,
+            };
+            let here = std::env::current_dir()
+                .ok()
+                .map(|d| d.display().to_string());
+            let params = json!({
+                "cli": a.cli,
+                "worktree": a.worktree,
+                "account": a.account,
+                "prompt": prompt,
+                "here": here,
+            });
+            ("agent.launch", params, a.json)
+        }
+        AppCommand::Terminal(TerminalCommand::Create {
+            worktree,
+            cmd,
+            title,
+            cwd,
+            json,
+        }) => {
+            let here = std::env::current_dir()
+                .ok()
+                .map(|d| d.display().to_string());
+            let params = json!({
+                "worktree": worktree,
+                "cmd": cmd,
+                "title": title,
+                "cwd": cwd,
+                "here": here,
+            });
+            ("terminal.create", params, *json)
+        }
+        AppCommand::Terminal(TerminalCommand::Split {
+            tab,
+            right: _,
+            down,
+            json,
+        }) => {
+            let dir = if *down { "down" } else { "right" };
+            ("terminal.split", json!({ "tab": tab, "dir": dir }), *json)
+        }
+        AppCommand::Terminal(TerminalCommand::Stop { tab, json }) => {
+            ("terminal.stop", json!({ "tab": tab }), *json)
+        }
+        AppCommand::Terminal(TerminalCommand::Close { tab, json }) => {
+            ("terminal.close", json!({ "tab": tab }), *json)
+        }
+        AppCommand::Terminal(TerminalCommand::Switch { tab, json }) => {
+            ("terminal.switch", json!({ "tab": tab }), *json)
+        }
+        AppCommand::Terminal(TerminalCommand::Rename { name, tab, json }) => (
+            "terminal.rename",
+            json!({ "tab": tab, "name": name }),
+            *json,
+        ),
+        AppCommand::Terminal(TerminalCommand::SetPaneTitle { title, tab, json }) => (
+            "terminal.set-pane-title",
+            json!({ "tab": tab, "title": title }),
+            *json,
+        ),
     })
 }
 
@@ -499,6 +667,7 @@ pub enum AppCommand {
     Capture(crate::capture::CaptureCommand),
     AgentContext(crate::agent_context::AgentContextArgs),
     Repo(crate::repo::RepoCommand),
+    AgentLaunch(AgentLaunchArgs),
 }
 
 pub(crate) fn text(v: &Value) -> String {
@@ -614,6 +783,20 @@ pub fn plain(method: &str, result: &Value) -> String {
             out
         }
         "terminal.read" => result["tail"].as_str().unwrap_or_default().to_owned(),
+        "terminal.create"
+        | "terminal.split"
+        | "terminal.stop"
+        | "terminal.close"
+        | "terminal.switch"
+        | "terminal.rename"
+        | "terminal.set-pane-title"
+        | "agent.launch" => {
+            format!(
+                "{}
+",
+                text(&result["id"])
+            )
+        }
         "terminal.send" => format!(
             "sent\t{}\t{}\n",
             text(&result["bytes"]),
@@ -830,6 +1013,190 @@ mod tests {
         assert!(
             answer_limit("terminal.send", &json!({ "enter": true })) >= Duration::from_secs(11)
         );
+    }
+
+    #[test]
+    fn create_split_stop_close_map_their_flags() {
+        use clap::Parser;
+        let none = &mut &b""[..];
+        let parse = |args: &[&str]| {
+            let argv = [&["terminal"][..], args].concat();
+            TerminalCli::try_parse_from(argv).map(|c| AppCommand::Terminal(c.command))
+        };
+        let cmd = parse(&[
+            "create",
+            "--worktree",
+            "w",
+            "--cmd",
+            "make test",
+            "--title",
+            "build",
+            "--cwd",
+            "src",
+            "--json",
+        ])
+        .unwrap();
+        let (m, p, json) = request(&cmd, none).unwrap();
+        assert_eq!(m, "terminal.create");
+        assert!(json);
+        assert_eq!(p["worktree"], "w");
+        assert_eq!(p["cmd"], "make test");
+        assert_eq!(p["title"], "build");
+        assert_eq!(p["cwd"], "src");
+        let here = std::env::current_dir().unwrap().display().to_string();
+        assert_eq!(p["here"], here);
+        let (_, p, json) = request(&parse(&["create"]).unwrap(), none).unwrap();
+        assert!(!json);
+        assert_eq!(p["worktree"], Value::Null);
+        assert_eq!(p["cmd"], Value::Null);
+
+        let (m, p, _) = request(&parse(&["split", "--right"]).unwrap(), none).unwrap();
+        assert_eq!(
+            (m, p),
+            ("terminal.split", json!({ "tab": null, "dir": "right" }))
+        );
+        let split = parse(&["split", "--down", "--terminal", "t1"]).unwrap();
+        let (_, p, _) = request(&split, none).unwrap();
+        assert_eq!(p, json!({ "tab": "t1", "dir": "down" }));
+        for bad in [&["split"][..], &["split", "--right", "--down"]] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
+
+        let (m, p, _) = request(&parse(&["stop", "--tab", "t1"]).unwrap(), none).unwrap();
+        assert_eq!((m, p), ("terminal.stop", json!({ "tab": "t1" })));
+        let (m, p, json) = request(&parse(&["close", "--json"]).unwrap(), none).unwrap();
+        assert_eq!(
+            (m, p, json),
+            ("terminal.close", json!({ "tab": null }), true)
+        );
+
+        let (m, p, _) = request(&parse(&["switch", "--terminal", "t1"]).unwrap(), none).unwrap();
+        assert_eq!((m, p), ("terminal.switch", json!({ "tab": "t1" })));
+        let (m, p, _) = request(&parse(&["rename", "build"]).unwrap(), none).unwrap();
+        assert_eq!(
+            (m, p),
+            ("terminal.rename", json!({ "tab": null, "name": "build" }))
+        );
+        let (_, p, _) = request(&parse(&["rename", ""]).unwrap(), none).unwrap();
+        assert_eq!(p["name"], "");
+        let title = parse(&["set-pane-title", "tests", "--tab", "t1", "--json"]).unwrap();
+        let (m, p, json) = request(&title, none).unwrap();
+        assert_eq!(
+            (m, p, json),
+            (
+                "terminal.set-pane-title",
+                json!({ "tab": "t1", "title": "tests" }),
+                true
+            )
+        );
+        for bad in [&["rename"][..], &["set-pane-title"]] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[derive(clap::Parser)]
+    struct LaunchCli {
+        #[command(flatten)]
+        args: AgentLaunchArgs,
+    }
+
+    #[test]
+    fn agent_launch_maps_its_flags_and_reads_the_prompt_from_stdin_or_a_file() {
+        use clap::Parser;
+        let parse = |args: &[&str]| {
+            let argv = [&["launch"][..], args].concat();
+            LaunchCli::try_parse_from(argv).map(|c| AppCommand::AgentLaunch(c.args))
+        };
+        let cmd = parse(&[
+            "codex",
+            "--worktree",
+            "w",
+            "--account",
+            "work",
+            "--prompt",
+            "fix it",
+            "--json",
+        ])
+        .unwrap();
+        let (m, p, json) = request(&cmd, &mut &b""[..]).unwrap();
+        assert_eq!(m, "agent.launch");
+        assert!(json);
+        assert_eq!(p["cli"], "codex");
+        assert_eq!(p["worktree"], "w");
+        assert_eq!(p["account"], "work");
+        assert_eq!(p["prompt"], "fix it");
+        let here = std::env::current_dir().unwrap().display().to_string();
+        assert_eq!(p["here"], here);
+
+        let (_, p, json) = request(&parse(&["claude"]).unwrap(), &mut &b""[..]).unwrap();
+        assert!(!json);
+        assert_eq!(p["worktree"], Value::Null);
+        assert_eq!(p["account"], Value::Null);
+        assert_eq!(p["prompt"], Value::Null);
+
+        let stdin = parse(&["claude", "--prompt-file", "-"]).unwrap();
+        let (_, p, _) = request(
+            &stdin,
+            &mut &b"from stdin
+"[..],
+        )
+        .unwrap();
+        assert_eq!(
+            p["prompt"],
+            "from stdin
+"
+        );
+        let dash = parse(&["claude", "--prompt", "-"]).unwrap();
+        let (_, p, _) = request(&dash, &mut &b"typed"[..]).unwrap();
+        assert_eq!(p["prompt"], "typed");
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("prompt.md");
+        fs::write(&file, "from a file").unwrap();
+        let path = file.display().to_string();
+        let (_, p, _) = request(
+            &parse(&["claude", "--prompt-file", &path]).unwrap(),
+            &mut &b""[..],
+        )
+        .unwrap();
+        assert_eq!(p["prompt"], "from a file");
+        let missing = dir.path().join("nope.md").display().to_string();
+        let e = request(
+            &parse(&["claude", "--prompt-file", &missing]).unwrap(),
+            &mut &b""[..],
+        )
+        .err()
+        .unwrap();
+        assert_eq!(e.code, "bad_request");
+
+        for bad in [
+            &["claude", "--prompt", "a", "--prompt-file", "-"][..],
+            &[][..],
+        ] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn plain_tab_verbs_print_the_id() {
+        let r = json!({ "id": "t9", "worktree": "/w", "cwd": null, "title": null });
+        for m in [
+            "terminal.create",
+            "terminal.split",
+            "terminal.stop",
+            "terminal.close",
+            "terminal.switch",
+            "terminal.rename",
+            "terminal.set-pane-title",
+            "agent.launch",
+        ] {
+            assert_eq!(
+                plain(m, &r),
+                "t9
+",
+                "{m}"
+            );
+        }
     }
 
     #[test]

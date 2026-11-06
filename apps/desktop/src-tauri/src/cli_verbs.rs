@@ -77,6 +77,10 @@ pub struct CliOpenTab {
     pub worktree: String,
     pub profile: String,
     pub prompt: Option<String>,
+    /// `agent launch`: the new tab's id, which the CLI waits for.
+    pub id: Option<String>,
+    /// `agent launch`: the account the agent runs under.
+    pub account: Option<String>,
 }
 
 /// Payload of `cli://ask`: a CLI write that needs the person; answered with
@@ -239,6 +243,40 @@ impl TabBoard {
         }
     }
 
+    /// Blocks until `done` finds what it looks for on the board: `timeout`
+    /// (with `late` as the message), `app_stopped`, or `closed` when the
+    /// client leaves.
+    pub(crate) fn wait_until<T>(
+        &self,
+        timeout: Duration,
+        gone: &dyn Fn() -> bool,
+        late: &str,
+        done: impl Fn(&[TabReport]) -> Option<T>,
+    ) -> Result<T, AppError> {
+        let deadline = Instant::now() + timeout;
+        let mut board = self.lock();
+        loop {
+            if board.stopped {
+                return Err(AppError::new("app_stopped", "xDev is quitting"));
+            }
+            if let Some(found) = done(&board.tabs) {
+                return Ok(found);
+            }
+            if gone() {
+                return Err(AppError::new("closed", "the caller left"));
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err(AppError::new("timeout", late));
+            }
+            board = self
+                .changed
+                .wait_timeout(board, left.min(WAIT_SLICE))
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+
     /// The tab `tab` names, by id or a unique prefix of one.
     pub fn resolve(&self, tab: &str) -> Result<TabReport, AppError> {
         find_tab(&self.lock().tabs, tab).cloned()
@@ -362,6 +400,8 @@ pub struct Ctx<'a> {
     /// Types into a live PTY; false when there is none to write to.
     #[allow(dead_code)]
     pub write_pty: &'a dyn Fn(&str, &[u8]) -> bool,
+    /// Ends a live PTY's process; false when there is none.
+    pub kill_pty: &'a dyn Fn(&str) -> bool,
     /// The automations store the UI's Automations page reads.
     pub automations: &'a AutomationService,
     /// Tells the window an automation changed and asks the tick for a pass.
@@ -953,6 +993,8 @@ pub fn worktree_create(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<
             worktree: view.path.clone(),
             profile: p.agent.unwrap_or_default(),
             prompt: p.prompt,
+            id: None,
+            account: None,
         };
         (ctx.emit)("cli://open-tab", json!(open));
     }
@@ -1061,8 +1103,32 @@ pub fn dispatch(
         "terminal.show" => crate::cli_terminal::terminal_show(ctx, req, caller),
         "terminal.read" => crate::cli_terminal::terminal_read(ctx, req),
         "terminal.send" => crate::cli_terminal::terminal_send(ctx, req, caller),
+        "terminal.create" => crate::cli_tab_ops::terminal_create(ctx, req, caller, gone),
+        "agent.launch" => crate::cli_tab_ops::agent_launch(ctx, req, caller, gone),
+        "terminal.split" => crate::cli_tab_ops::terminal_split(ctx, req, caller, gone),
+        "terminal.stop" => crate::cli_tab_ops::terminal_stop(ctx, req, caller),
+        "terminal.close" => crate::cli_tab_ops::terminal_close(ctx, req, caller, gone),
+        "terminal.switch" => crate::cli_tab_ops::terminal_arrange(
+            ctx,
+            req,
+            caller,
+            crate::cli_tab_ops::TerminalOp::Switch,
+        ),
+        "terminal.rename" => crate::cli_tab_ops::terminal_arrange(
+            ctx,
+            req,
+            caller,
+            crate::cli_tab_ops::TerminalOp::Rename,
+        ),
+        "terminal.set-pane-title" => crate::cli_tab_ops::terminal_arrange(
+            ctx,
+            req,
+            caller,
+            crate::cli_tab_ops::TerminalOp::Title,
+        ),
         "file.open" => crate::cli_file::file_open(ctx, req, caller),
         "file.open-changed" => crate::cli_file::file_open_changed(ctx, req, caller),
+        "file.diff" => crate::cli_file::file_diff(ctx, req, caller),
         "agent.context" => crate::cli_context::agent_context(ctx, req, caller),
         "capture.start" => crate::capture::cli_start(ctx, req, caller),
         "ports.list" => crate::cli_ports::ports_list(ctx, req, caller),
@@ -1097,6 +1163,7 @@ impl Handler for AppVerbs {
         let tails = app.state::<TermTails>();
         let cwd_of = |id: &str| ptys.cwd_of(id);
         let write_pty = |id: &str, bytes: &[u8]| ptys.with(id, |s| s.write(bytes.to_vec())).is_ok();
+        let kill_pty = |id: &str| ptys.with(id, |s| s.kill()).is_ok();
         let orch = app.state::<OrchHub>();
         let emit = |event: &str, payload: Value| {
             let _ = app.emit(event, payload);
@@ -1124,6 +1191,7 @@ impl Handler for AppVerbs {
             orch: &orch,
             orch_settings: settings_store::read(app).orchestration,
             write_pty: &write_pty,
+            kill_pty: &kill_pty,
             automations: &automations,
             announce: &announce,
             scan_ports: &scan_ports,
@@ -1179,6 +1247,11 @@ pub(crate) mod tests {
         /// Whether a write to a PTY lands; what was written.
         pub pty_alive: bool,
         pub pty_writes: Mutex<Vec<(String, Vec<u8>)>>,
+        /// The PTYs a verb ended.
+        pub pty_kills: Mutex<Vec<String>>,
+        /// The fake UI: puts every tab a `cli://terminal` opens on the board,
+        /// and takes off every one it closes.
+        pub terminal_ui: bool,
         /// The automations the verbs read and write, in a store of their own.
         pub automations: AutomationService,
         /// Ids the verbs announced.
@@ -1250,6 +1323,8 @@ pub(crate) mod tests {
             max_depth: 1,
             pty_alive: true,
             pty_writes: Mutex::default(),
+            pty_kills: Mutex::default(),
+            terminal_ui: true,
             automations: AutomationService::new(
                 xdev_automations::Store::open(&tmp_path.join("automations")).unwrap(),
                 || 1_000,
@@ -1292,6 +1367,19 @@ pub(crate) mod tests {
                     let id = payload["dispatch"].as_str().unwrap().to_owned();
                     self.orch.opens.answer(&id, outcome.clone());
                 }
+                if event == crate::cli_tab_ops::TERMINAL_EVENT && self.terminal_ui {
+                    self.fake_terminal_ui(&payload);
+                }
+                // `agent launch`: the window opens the tab with the given id.
+                if event == "cli://open-tab"
+                    && self.terminal_ui
+                    && let Some(id) = payload["id"].as_str()
+                {
+                    let (mut tabs, selected) = self.board.tabs();
+                    let w = PathBuf::from(payload["worktree"].as_str().unwrap());
+                    tabs.push(tab(id, &w, true, "idle"));
+                    self.board.replace(tabs, selected);
+                }
                 if event == "orchestration://read-tab"
                     && let Some(text) = &self.read_answer
                 {
@@ -1328,6 +1416,10 @@ pub(crate) mod tests {
                         .push((id.to_owned(), bytes.to_vec()));
                     self.pty_alive
                 },
+                kill_pty: &|id: &str| {
+                    self.pty_kills.lock().unwrap().push(id.to_owned());
+                    self.pty_alive
+                },
                 automations: &self.automations,
                 announce: &|id: Option<&str>| {
                     self.announced.lock().unwrap().push(id.map(str::to_owned));
@@ -1350,6 +1442,26 @@ pub(crate) mod tests {
                 pty: pty.map(str::to_owned),
             };
             dispatch(&ctx, &req, &caller, &|| false)
+        }
+    }
+
+    impl Fixture {
+        /// What the window does with a `cli://terminal`: a new tab goes on the
+        /// board, a closed one off it.
+        fn fake_terminal_ui(&self, ev: &Value) {
+            let (mut tabs, selected) = self.board.tabs();
+            let id = ev["id"].as_str().unwrap();
+            match ev["op"].as_str().unwrap() {
+                "create" | "split" => tabs.push(tab(
+                    id,
+                    Path::new(ev["worktree"].as_str().unwrap()),
+                    false,
+                    "idle",
+                )),
+                "close" => tabs.retain(|t| t.id != id),
+                _ => return,
+            }
+            self.board.replace(tabs, selected);
         }
     }
 
@@ -1856,7 +1968,13 @@ pub(crate) mod tests {
         let open = events.iter().find(|(e, _)| e == "cli://open-tab").unwrap();
         assert_eq!(
             open.1,
-            json!({ "worktree": made["path"], "profile": "claude", "prompt": "say hi" })
+            json!({
+                "worktree": made["path"],
+                "profile": "claude",
+                "prompt": "say hi",
+                "id": null,
+                "account": null,
+            })
         );
     }
 

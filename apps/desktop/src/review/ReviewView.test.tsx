@@ -119,6 +119,21 @@ it("a reveal opens the file and scrolls to it", async () => {
   expect(v.diff("src/session.ts").props.revealSeq).toBe(0);
 });
 
+it("a reveal with a base reads the review against it, once per reveal", async () => {
+  const api = createMockApi({});
+  const read = vi.spyOn(api, "worktreeReview");
+  review(api, { reveal: { file: "src/status.ts", seq: 2, base: "main" } });
+  await tick();
+  expect(read.mock.calls).toEqual([
+    [OAK, null],
+    [OAK, "main"],
+  ]);
+  // A focus reads again and keeps the base the reveal set.
+  window.dispatchEvent(new Event("focus"));
+  await tick();
+  expect(read).toHaveBeenLastCalledWith(OAK, "main");
+});
+
 it("switching the base reads again and a bad base keeps the view", async () => {
   const api = createMockApi({});
   const read = vi.spyOn(api, "worktreeReview");

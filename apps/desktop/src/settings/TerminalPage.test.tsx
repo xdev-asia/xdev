@@ -291,6 +291,16 @@ it("focus follows mouse is a switch that puts only its field", async () => {
   expect(put).toHaveBeenCalledWith({ ...TERMINAL_DEFAULTS, focusFollowsMouse: true });
 });
 
+it("shell integration is on by default and its switch puts only its field", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  expect(p.sw("shellIntegration").props["aria-checked"]).toBe(true);
+  p.sw("shellIntegration").props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(1);
+  expect(put).toHaveBeenCalledWith({ ...TERMINAL_DEFAULTS, shellIntegration: false });
+});
+
 it("bell radios put once with only the bell; the hint points to Notifications", async () => {
   const p = await page();
   const put = vi.spyOn(p.api, "terminalSettingsPut");

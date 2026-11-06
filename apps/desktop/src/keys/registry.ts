@@ -75,7 +75,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("pane.prev", "panes", ["Mod+["], TUI),
   def("pane.expand", "panes", ["Mod+Shift+Enter"]),
   def("pane.equalize", "panes", ["Mod+Shift+="]),
-  def("pane.close", "panes", [], TUI),
+  def("pane.close", "panes", ["Mod+Shift+W"], TUI),
   def("pane.clearTitle", "panes", []),
   // Worktrees.
   def("worktree.prev", "worktrees", ["Mod+Shift+Up"]),
@@ -91,6 +91,9 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("terminal.paste", "terminal", { all: ["Ctrl+Shift+V", "Shift+Insert"], mac: ["Cmd+V"] }, TERMINAL),
   def("terminal.selectAll", "terminal", ["Mod+Shift+A"], { ...TERMINAL, ...TUI }),
   def("terminal.find", "terminal", ["Mod+F"], { ...TERMINAL, ...TUI }),
+  // Not Mod+Up/Down: on macOS Cmd+Up/Down already scroll to the top and the bottom.
+  def("terminal.prevPrompt", "terminal", ["Mod+Alt+Up"], { ...TERMINAL, ...TUI }),
+  def("terminal.nextPrompt", "terminal", ["Mod+Alt+Down"], { ...TERMINAL, ...TUI }),
   // View. Zoom in has no Ctrl+Shift+= by default: Panes › Equalize has held it since panes-tabs-keys.
   def("sidebar.left.toggle", "view", ["Mod+B"]),
   def("sidebar.right.toggle", "view", ["Mod+L"]),

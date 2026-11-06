@@ -24,7 +24,7 @@ describe("mock app CLI", () => {
     api.__cliOpenTab({ worktree: "/w", profile: "claude", prompt: "hi" });
     api.__cliAsk({ request: 1, caller: null, verb: "worktree.set", target: "/w" });
     expect(changed).toHaveBeenCalledTimes(1);
-    expect(opened).toHaveBeenCalledWith({ worktree: "/w", profile: "claude", prompt: "hi" });
+    expect(opened).toHaveBeenCalledWith({ worktree: "/w", profile: "claude", prompt: "hi", id: null, account: null });
     expect(asked).toHaveBeenCalledWith({ request: 1, caller: null, verb: "worktree.set", target: "/w" });
     offChanged();
     api.__cliWorkspaceChanged();

@@ -74,6 +74,24 @@ describe("Sessions sleep", () => {
     expect(woke).toMatchObject({ profileId: "shell", resumeOf: null });
   });
 
+  it("a shell wakes in the folder it was in, inside the worktree", async () => {
+    const live = make();
+    const tab = live.open(A, "shell", null, null, { dir: "src" });
+    expect(live.dirOf(tab.id)).toBe("src");
+    live.noteCwd(tab.id, `${A}/docs/api`);
+    expect(live.dirOf(tab.id)).toBe("docs/api");
+    const woke = live.wake((await live.hibernate(tab.id, none))!.id)!;
+    expect(woke.dir).toBe("docs/api");
+    // Outside the worktree, or at its root, it wakes at the root.
+    live.noteCwd(woke.id, "/tmp");
+    expect(live.dirOf(woke.id)).toBeUndefined();
+    expect(live.wake((await live.hibernate(woke.id, none))!.id)!.dir).toBeUndefined();
+    const root = live.open(A, "shell", null, null, { dir: "src" });
+    live.noteCwd(root.id, A);
+    expect(live.restart(root.id)!.dir).toBeUndefined();
+    expect(live.dirOf("gone")).toBeUndefined();
+  });
+
   it("wake resumes the agent session in the same slot and leaves it for the view to start", async () => {
     const api = createMockApi({});
     const live = make(api);

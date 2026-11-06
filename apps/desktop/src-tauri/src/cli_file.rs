@@ -1,5 +1,6 @@
-//! `file.open`: shows a file of a known worktree in the window. Resolving
-//! the path is pure; the verb only reads the registry and emits the event.
+//! `file.open` and `file.diff`: show a file of a known worktree in the
+//! window. Resolving the path is pure; the verbs read the registry and emit
+//! the event.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -8,9 +9,9 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
 use xdev_workspace::path_key;
 
-use crate::cli_verbs::{Ctx, bad_request, params, target};
+use crate::cli_verbs::{Ctx, bad_request, downward, params, target};
 use crate::commands::CmdError;
-use crate::endpoint::{AppError, Caller, Request, caller_worktree};
+use crate::endpoint::{AppError, Caller, Request, caller_worktree, scope_of};
 
 /// Emitted for the window to open the file.
 pub const OPEN_FILE_EVENT: &str = "cli://open-file";
@@ -25,6 +26,21 @@ pub struct CliOpenFile {
     pub path: String,
     pub line: Option<u32>,
     pub column: Option<u32>,
+}
+
+/// Emitted for the window to show the file in its review tab.
+pub const OPEN_DIFF_EVENT: &str = "cli://open-diff";
+
+/// The payload of `OPEN_DIFF_EVENT`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct CliOpenDiff {
+    pub worktree: String,
+    /// Relative to `worktree`, with `/` separators.
+    pub path: String,
+    /// The ref the review tab compares with; `None` keeps the one it shows.
+    pub base: Option<String>,
 }
 
 /// Shows the main window and puts it in front.
@@ -63,7 +79,7 @@ pub fn split_position(text: &str) -> (&str, Option<u32>, Option<u32>) {
 
 /// `path` without `.` parts and with `..` folded in; none when a `..` would
 /// climb above the start of the path.
-fn fold(path: &Path) -> Option<PathBuf> {
+pub(crate) fn fold(path: &Path) -> Option<PathBuf> {
     let mut out = PathBuf::new();
     for c in path.components() {
         match c {
@@ -165,6 +181,65 @@ pub fn file_open(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Value,
         column,
     };
     (ctx.emit)(OPEN_FILE_EVENT, json!(out));
+    (ctx.focus_window)();
+    Ok(json!(out))
+}
+
+#[derive(Deserialize)]
+struct DiffParams {
+    path: String,
+    cwd: Option<String>,
+    #[serde(default)]
+    staged: bool,
+    against: Option<String>,
+}
+
+/// `file.diff`: shows a file's changes in the review tab of its worktree.
+/// `against` is the ref to compare with, checked here so a typo fails in
+/// the terminal; `staged` alone compares with `HEAD`. Gated as an `open`:
+/// the caller's own worktree passes, another one asks.
+pub fn file_diff(ctx: &Ctx<'_>, req: &Request, caller: &Caller) -> Result<Value, AppError> {
+    let p: DiffParams = params(req)?;
+    let cwd = p
+        .cwd
+        .map(PathBuf::from)
+        .or_else(|| caller.pty.as_deref().and_then(|id| (ctx.cwd_of)(id)));
+    let all = ctx.listed()?;
+    let worktrees: Vec<PathBuf> = all.iter().map(|l| PathBuf::from(&l.view.path)).collect();
+    let (worktree, path) = locate(&p.path, cwd.as_deref(), &worktrees)?;
+    let base = match (p.against, p.staged) {
+        (Some(name), _) => {
+            let name = name.trim().to_owned();
+            let repo = xdev_git::Repo::discover(&worktree).map_err(CmdError::from)?;
+            match repo.resolve_ref(&name) {
+                Ok(Some(_)) => Some(name),
+                Ok(None) | Err(xdev_git::GitError::BadId(_)) => {
+                    return Err(bad_request(format!("{name} names no commit")));
+                }
+                Err(e) => return Err(CmdError::from(e).into()),
+            }
+        }
+        (None, true) => Some("HEAD".to_owned()),
+        (None, false) => None,
+    };
+    let registry = ctx.registry()?;
+    let me = match ctx.caller_worktree(caller)? {
+        Some(me) => Some(me),
+        None => cwd.as_deref().and_then(|d| caller_worktree(&registry, d)),
+    };
+    let scope = downward(
+        scope_of(me.as_deref(), &worktree, &registry),
+        &all,
+        me.as_deref(),
+        &worktree,
+    );
+    ctx.gate("file.diff", "open", me.as_deref(), &worktree, scope)?;
+    let out = CliOpenDiff {
+        worktree: worktree.display().to_string(),
+        path,
+        base,
+    };
+    (ctx.emit)(OPEN_DIFF_EVENT, json!(out));
     (ctx.focus_window)();
     Ok(json!(out))
 }
@@ -412,6 +487,72 @@ mod tests {
         );
         // Nothing opened: the window stays where it is.
         assert_eq!(f.focused.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    fn diffs(f: &crate::cli_verbs::tests::Fixture) -> Vec<Value> {
+        f.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(e, _)| e == OPEN_DIFF_EVENT)
+            .map(|(_, p)| p.clone())
+            .collect()
+    }
+
+    #[test]
+    fn diff_shows_the_file_in_the_review_tab_of_its_worktree() {
+        let f = fixture();
+        let lead = f.lead.display().to_string();
+        let r = f
+            .call(
+                Some("p-lead"),
+                "file.diff",
+                json!({ "path": "a.txt", "cwd": lead }),
+            )
+            .unwrap();
+        assert_eq!(
+            r,
+            json!({ "worktree": lead, "path": "a.txt", "base": null })
+        );
+        assert_eq!(diffs(&f), [r]);
+        assert_eq!(f.focused.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let call = |p: Value| f.call(Some("p-lead"), "file.diff", p);
+        let r = call(json!({ "path": "a.txt", "cwd": lead, "staged": true })).unwrap();
+        assert_eq!(r["base"], "HEAD");
+        let both = json!({ "path": "a.txt", "cwd": lead, "staged": true, "against": " HEAD~0 " });
+        assert_eq!(call(both).unwrap()["base"], "HEAD~0");
+    }
+
+    #[test]
+    fn diff_refuses_an_unknown_ref_and_a_path_outside_without_an_event() {
+        let f = fixture();
+        let lead = f.lead.display().to_string();
+        let call = |p: Value| f.call(Some("p-lead"), "file.diff", p);
+        for against in ["no-such-ref", "--output=x", ""] {
+            let e = call(json!({ "path": "a.txt", "cwd": lead, "against": against })).unwrap_err();
+            assert_eq!(e.code, "bad_request", "{against}");
+        }
+        let e = call(json!({ "path": "../a.txt", "cwd": lead })).unwrap_err();
+        assert_eq!(e.code, "outside_worktree");
+        assert!(diffs(&f).is_empty());
+    }
+
+    #[test]
+    fn diff_in_another_worktree_asks_first() {
+        let mut f = fixture();
+        f.answer = Some(false);
+        let path = f.other.join("a.txt").display().to_string();
+        let e = f
+            .call(Some("p-lead"), "file.diff", json!({ "path": path }))
+            .unwrap_err();
+        assert_eq!(e.code, "denied");
+        assert!(diffs(&f).is_empty());
+        f.answer = Some(true);
+        let r = f
+            .call(Some("p-lead"), "file.diff", json!({ "path": path }))
+            .unwrap();
+        assert_eq!(r["worktree"], f.other.display().to_string());
+        assert_eq!(diffs(&f).len(), 1);
     }
 
     #[test]

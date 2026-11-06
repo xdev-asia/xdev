@@ -125,7 +125,8 @@ const PR_TAB = "pr:";
 type Leaf = Extract<PaneNode, { kind: "leaf" }>;
 
 /** A file to show in the review tab; a new `seq` asks for it again. */
-export type Reveal = { file: string; seq: number };
+/** `base`, from `xdev file diff`, is the ref the review tab compares with. */
+export type Reveal = { file: string; seq: number; base?: string };
 
 /** How long the side preview waits after the last keystroke before it renders the live text. */
 export const PREVIEW_DEBOUNCE_MS = 200;
@@ -436,13 +437,13 @@ export function WorktreeTabs(props: {
   const setLayout = (next: PaneLayout | null) => sessions.setLayout(worktree, next);
 
   // A new tab in `pane`: `open` puts it in the focused pane, so that one is focused first.
-  function launch(profile: PtyProfile, pane?: string): Tab {
+  function launch(profile: PtyProfile, pane?: string, dir?: string): Tab {
     setMenuPane(null);
     setPickerPane(null);
     setError(null);
     const at = sessions.layout(worktree);
     if (pane && at && at.focused !== pane) setLayout(focusPane(at, pane));
-    return sessions.open(worktree, profile, null, cliFor(profile));
+    return sessions.open(worktree, profile, null, cliFor(profile), dir ? { dir } : {});
   }
 
   // A new agent or terminal on the project's remote target.
@@ -487,9 +488,10 @@ export function WorktreeTabs(props: {
     launch(profile, pane);
   }
 
-  // A new pane beside `pane`, with a new terminal in it.
+  // A new pane beside `pane`, with a new terminal in it, in the folder of the pane's terminal.
   function splitWith(pane: string, dir: PaneDir, profile: PtyProfile): void {
-    const tab = launch(profile, pane);
+    const source = panes.find((n) => n.id === pane)?.active;
+    const tab = launch(profile, pane, source ? sessions.dirOf(source) : undefined);
     const now = sessions.layout(worktree);
     const without = now && removeTab(now, tab.id);
     if (without) setLayout(splitPane(without, pane, dir, tab.id));
@@ -1286,6 +1288,7 @@ export function WorktreeTabs(props: {
                   if (status) sessions.noteProgramStatus(tab.id, status, r.progress, r.msg);
                 }}
                 onProgress={(p) => sessions.noteProgress(tab.id, p)}
+                onCwd={(cwd) => sessions.noteCwd(tab.id, cwd)}
                 onTitle={(title) => {
                   sessions.noteTitle(tab.id, shellTitle(title, profileName(view, tab.profileId, t)));
                   const status = titleStatus(titleCliOf(tab.cli, tab.profileId), title);

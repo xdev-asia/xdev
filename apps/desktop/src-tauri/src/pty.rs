@@ -1237,6 +1237,10 @@ pub fn pty_spawn(
     }
     add_extra_args(&mut launch, extra_args.as_deref().unwrap_or_default())?;
     add_network_env(&mut launch.env, &settings_store::read(&app).network);
+    // A local shell marks its prompts and reports its folder, unless turned off.
+    if remote.is_none() && settings_store::read(&app).terminal.shell_integration {
+        crate::shell_integration::apply(&mut launch, data);
+    }
     {
         // Settings → Agents → PATH: the owner's entries over the PATH this launch gets.
         let agents = settings_store::read(&app).agents;

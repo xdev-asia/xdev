@@ -1,9 +1,9 @@
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
-import type { Api, CliAsk, CliOpenFile, CliWorktreeRead, CliStatus, CliOpenTab, ReadTab, SkillStatus, TabReport, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome } from "./api";
+import type { Api, CliAsk, CliOpenDiff, CliOpenFile, CliTerminal, CliWorktreeRead, CliStatus, CliOpenTab, ReadTab, SkillStatus, TabReport, WorkerChanged, WorkerClose, WorkerLifetime, WorkerOpen, WorkerOpenOutcome } from "./api";
 
 type CliApi = Pick<
   Api,
-  | "cliTabsReport" | "cliApprove" | "onWorkspaceChanged" | "onCliOpenTab" | "onCliAsk" | "onCliOpenFile" | "onCliWorktreeRead"
+  | "cliTabsReport" | "cliApprove" | "onWorkspaceChanged" | "onCliOpenTab" | "onCliAsk" | "onCliOpenFile" | "onCliOpenDiff" | "onCliTerminal" | "onCliWorktreeRead"
   | "cliStatus" | "cliInstall" | "cliRemove" | "cliRepair" | "cliReveal"
   | "orchestrationSkillStatus"
   | "orchestrationSkillInstall"
@@ -27,9 +27,12 @@ export type MockCli = CliApi & {
   __cliAnswers(): { request: number; allow: boolean }[];
   // What the endpoint would send: a registry change, a tab to open, a question for the person.
   __cliWorkspaceChanged(): void;
-  __cliOpenTab(e: CliOpenTab): void;
+  // `id` and `account` (from `agent launch`) default to null.
+  __cliOpenTab(e: Omit<CliOpenTab, "id" | "account"> & Partial<Pick<CliOpenTab, "id" | "account">>): void;
   __cliAsk(e: CliAsk): void;
   __cliOpenFile(e: CliOpenFile): void;
+  __cliOpenDiff(e: CliOpenDiff): void;
+  __cliTerminal(e: CliTerminal): void;
   __cliWorktreeRead(e: CliWorktreeRead): void;
   // Orchestration: what the backend would send, and what the UI answered it.
   __orchOpenWorker(e: WorkerOpen): void;
@@ -60,6 +63,8 @@ export function createMockCli(): MockCli {
   const opens = new Set<(e: CliOpenTab) => void>();
   const asks = new Set<(e: CliAsk) => void>();
   const openFiles = new Set<(e: CliOpenFile) => void>();
+  const openDiffs = new Set<(e: CliOpenDiff) => void>();
+  const terminals = new Set<(e: CliTerminal) => void>();
   const readMarks = new Set<(e: CliWorktreeRead) => void>();
   const openWorker = new Set<(e: WorkerOpen) => void>();
   const closeWorker = new Set<(e: WorkerClose) => void>();
@@ -96,6 +101,12 @@ export function createMockCli(): MockCli {
     },
     async onCliOpenFile(cb) {
       return on(openFiles, cb);
+    },
+    async onCliOpenDiff(cb) {
+      return on(openDiffs, cb);
+    },
+    async onCliTerminal(cb) {
+      return on(terminals, cb);
     },
     async onCliWorktreeRead(cb) {
       return on(readMarks, cb);
@@ -192,9 +203,11 @@ export function createMockCli(): MockCli {
     __cliReports: () => structuredClone(reports),
     __cliAnswers: () => structuredClone(answers),
     __cliWorkspaceChanged: () => [...changed].forEach((cb) => cb()),
-    __cliOpenTab: (e) => [...opens].forEach((cb) => cb(structuredClone(e))),
+    __cliOpenTab: (e) => [...opens].forEach((cb) => cb(structuredClone({ id: null, account: null, ...e }))),
     __cliAsk: (e) => [...asks].forEach((cb) => cb(structuredClone(e))),
     __cliOpenFile: (e) => [...openFiles].forEach((cb) => cb(structuredClone(e))),
+    __cliOpenDiff: (e) => [...openDiffs].forEach((cb) => cb(structuredClone(e))),
+    __cliTerminal: (e) => [...terminals].forEach((cb) => cb(structuredClone(e))),
     __cliWorktreeRead: (e) => [...readMarks].forEach((cb) => cb(structuredClone(e))),
   };
 }

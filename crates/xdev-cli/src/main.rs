@@ -108,7 +108,7 @@ enum Command {
         #[command(subcommand)]
         command: squad::SquadCommand,
     },
-    /// Agent CLI integration: `hooks status|on|off`.
+    /// Agent CLI integration: `hooks status|on|off`, `launch` in the app.
     Agent {
         #[command(subcommand)]
         command: agent::AgentCommand,
@@ -210,6 +210,27 @@ fn main() -> ExitCode {
         agent_hook::run(event, &rest);
         return ExitCode::SUCCESS;
     }
+    if let Command::File {
+        command:
+            file::FileCommand::Diff {
+                path,
+                staged,
+                against,
+                print: true,
+                ..
+            },
+    } = &cli.command
+    {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let out = &mut std::io::stdout().lock();
+        return ExitCode::from(file::print_diff(
+            &cwd,
+            path,
+            *staged,
+            against.as_deref(),
+            out,
+        ));
+    }
     let app_cmd = match cli.command {
         Command::Status(a) => app::AppCommand::Status(a),
         Command::Worktree { command } => app::AppCommand::Worktree(command),
@@ -221,6 +242,9 @@ fn main() -> ExitCode {
         Command::Capture(a) => app::AppCommand::Capture(a),
         Command::AgentContext(a) => app::AppCommand::AgentContext(a),
         Command::Automations { command } => app::AppCommand::Automations(command),
+        Command::Agent {
+            command: agent::AgentCommand::Launch(a),
+        } => app::AppCommand::AgentLaunch(a),
         other => return finish(run(other)),
     };
     // The app verbs need only the local folder, where the endpoint lives.

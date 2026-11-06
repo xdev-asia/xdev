@@ -23,6 +23,9 @@ pub enum AgentCommand {
         #[command(subcommand)]
         command: HooksCommand,
     },
+    /// Start an agent in a new tab of an existing worktree (default: yours),
+    /// as `worktree create --agent` does; prints the tab id. Needs the app.
+    Launch(crate::app::AgentLaunchArgs),
 }
 
 #[derive(Subcommand)]
@@ -45,7 +48,10 @@ pub enum HooksCommand {
 }
 
 pub fn run(command: AgentCommand, local_dir: &Path) -> Result<Outcome, &'static str> {
-    let AgentCommand::Hooks { command } = command;
+    let AgentCommand::Hooks { command } = command else {
+        // `launch` goes to the app; `main` sends it there.
+        return Ok(Outcome::Ok);
+    };
     let settings = xdev_core::config_dir().ok_or("io")?.join(SETTINGS_FILE);
     let json = match command {
         HooksCommand::Status { json } => json,
