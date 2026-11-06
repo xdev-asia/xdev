@@ -2,6 +2,8 @@
 //! OpenAI speech-to-text with the user's key, and only the text goes back to
 //! the renderer.
 
+mod pcm;
+
 #[cfg(test)]
 mod tests {
     #[test]
