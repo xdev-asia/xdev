@@ -55,6 +55,7 @@ import { createMockSettings, createSettingsHub } from "./mockSettings";
 import { createMockShell, type MockShell } from "./mockShell";
 import { createMockStatus, type MockStatus } from "./mockStatus";
 import { createMockSquads } from "./mockSquads";
+import { createMockPipeline, type MockPipeline } from "./mockPipeline";
 import { createMockMission } from "./mockMission";
 import { createMockTasks } from "./mockTasks";
 import { createMockWorkspace, type MockWorkspaceSeed } from "./mockWorkspace";
@@ -395,7 +396,7 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   // first one takes over in a new tab whose strip reads "Failed over from"; else the worker is marked
   // failed. Resolves with the new tab's id, or null.
   __orchFailWorker(from: WorkerOpen, reason?: FailReason): Promise<string | null>;
-} & Pick<MockNotch, "__notchTabs">;
+} & Pick<MockNotch, "__notchTabs"> & Pick<MockPipeline, "__pipelineExits" | "__swarmOpened">;
 
 type MockOptions = {
   repo?: boolean;
@@ -631,6 +632,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
       accountNames: () => accounts.map((a) => a.name),
       runDelayMs: options.runDelayMs,
     }),
+    ...createMockPipeline(),
     ...createMockSquads({
       defaultRepo: repo ? DEMO_ROOT : null,
       accounts: () => accounts,
@@ -755,6 +757,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     async routing() { return structuredClone(routing); },
     async setRouting(next) {
       if (next.rules.some(r => !r.model.trim())) return reject("empty_text");
+      if (next.table?.some(r => !r.target.agent.trim()) || (next.fallback && !next.fallback.agent.trim())) return reject("empty_text");
       routing = structuredClone(next);
     },
     async aiKeys() {

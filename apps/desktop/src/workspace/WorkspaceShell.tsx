@@ -845,6 +845,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       ensureMounted: (w) => live.ensureMounted(w),
       prepareSetup: (w) => live.prepareSetup(w),
       failed: (open, stage) => void openFailedToast(open, stage, (key, vars) => live.t(key, vars)),
+      reveal: (tab) => void live.jump(tab),
     });
     return () => {
       reporter.stop();

@@ -1,0 +1,35 @@
+/* Stage strip and the routing match table. Tokens only; state is a tint, a 1px border or a status dot. */
+
+.pipeline { display: grid; gap: var(--x-space-3); min-width: 0; }
+.pipeline-run { display: grid; gap: var(--x-space-2); min-width: 0; }
+.pipeline-name { overflow-wrap: anywhere; }
+.pipeline-status, .swarm-status, .routing-match { margin: 0; min-height: 1.4em; color: var(--x-color-muted); font-size: 13px; }
+
+.stage-strip { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--x-space-2); min-width: 0; }
+.stage { flex: 1 1 14ch; min-width: 0; display: grid; gap: var(--x-space-1); align-content: start; padding: var(--x-space-3); background: var(--x-color-surface); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-md); }
+.stage[aria-current="step"] { border-color: var(--x-color-signal); }
+.stage[data-status="failed"] { background: var(--x-color-danger-soft); border-color: var(--x-color-danger); }
+.stage[data-status="waiting"] { background: var(--x-color-warn-soft); border-color: var(--x-color-warn-line); }
+.stage[data-status="passed"] { background: var(--x-color-surface-2); }
+.stage-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-space-2); min-width: 0; }
+.stage-name { font-weight: 600; color: var(--x-color-ink); overflow-wrap: anywhere; }
+.stage-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--x-color-muted); flex: none; }
+.stage-dot[data-status="running"] { background: var(--x-color-signal); }
+.stage-dot[data-status="waiting"] { background: var(--x-color-warn); }
+.stage-dot[data-status="failed"] { background: var(--x-color-danger); }
+.stage-dot[data-status="passed"] { background: var(--x-color-ok); }
+.stage-state { border: 1px solid transparent; }
+.stage-gate { font-size: 12px; color: var(--x-color-muted); overflow-wrap: anywhere; font-family: var(--x-font-mono); }
+.stage-reason { font-size: 12px; color: var(--x-color-ink); overflow-wrap: anywhere; }
+.stage-reason[data-status="failed"] { color: var(--x-color-danger); }
+.stage-actions { flex-wrap: wrap; }
+.stage-actions button, .swarm-row button { min-height: 24px; min-width: 24px; }
+.pipeline-form { display: grid; gap: var(--x-space-2); }
+
+.routing-table { display: grid; gap: var(--x-space-3); min-width: 0; }
+.routing-rule[data-hit="true"] { border-color: var(--x-color-signal); background: var(--x-color-signal-soft); }
+.routing-test { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--x-space-3); }
+.routing-test label { display: grid; gap: var(--x-space-1); font-size: 12px; color: var(--x-color-muted); }
+.routing-test input { padding: var(--x-space-2); font: inherit; font-size: 13px; color: var(--x-color-ink); background: var(--x-color-panel); border: 1px solid var(--x-color-line); border-radius: var(--x-radius-sm); min-width: 0; }
+.routing-problem { margin: 0; color: var(--x-color-danger); }
+.routing-rule button, .routing-test button, .routing-footer button { min-height: 24px; min-width: 24px; }

@@ -13,11 +13,14 @@ export function ConfirmDialog(props: {
   /** Extra controls between the warning and the buttons, such as an option checkbox. */
   children?: ReactNode;
   confirmLabel: string;
+  /** The title's id. Dialogs mounted side by side on one page give their own, or the first one names them all. */
+  titleId?: string;
   onConfirm(): void;
   onCancel(): void;
 }): JSX.Element {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = props.titleId ?? "dialog-title";
 
   useEffect(() => {
     const d = dialog.current;
@@ -30,14 +33,14 @@ export function ConfirmDialog(props: {
     <dialog
       ref={dialog}
       className="dialog"
-      aria-labelledby="dialog-title"
+      aria-labelledby={titleId}
       onCancel={(e) => {
         // Escape: let React state close it, so `open` stays the single source of truth.
         e.preventDefault();
         props.onCancel();
       }}
     >
-      <h2 id="dialog-title" className="dialog-title">
+      <h2 id={titleId} className="dialog-title">
         {props.title}
       </h2>
       <p className="dialog-body">{props.body}</p>
