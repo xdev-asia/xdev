@@ -270,6 +270,8 @@ export function createMockProfiles(): MockProfiles {
     },
     __launchError(id) {
       if (id === "shell") return null;
+      // A saved SSH host opens as `shell:ssh:<alias>`; the mock does not check the alias.
+      if (id.startsWith("shell:ssh:")) return null;
       if (id.startsWith("shell:")) return shellViews().some((s) => s.id === id) ? null : "unknown_profile";
       const found = profiles.find((p) => p.id === id);
       if (!found) return "unknown_profile";

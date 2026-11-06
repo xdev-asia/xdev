@@ -69,6 +69,7 @@ import { createMockForeignTerms } from "./mockForeignTerms";
 import { createMockNotch, type MockNotch } from "./mockNotch";
 import { createMockPeers, type MockPeers } from "./mockPeers";
 import { createMockLicense, type MockLicense } from "./mockLicense";
+import { createMockTargets, type MockTargets } from "./mockTargets";
 
 export { EXPORT_MARKER } from "./mockExport";
 
@@ -408,7 +409,8 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   __orchFailWorker(from: WorkerOpen, reason?: FailReason): Promise<string | null>;
 } & Pick<MockNotch, "__notchTabs"> & Pick<MockPipeline, "__pipelineExits" | "__swarmOpened">
   & Pick<MockPeers, "__peersPairRequest" | "__peersDrop" | "__peersActivity" | "__peersConfirm" | "__peersSetTheirRole" | "__peersConfirmDeny" | "__peersRise">
-  & Pick<MockLicense, "__licenseCheckoutComplete" | "__licenseSet">;
+  & Pick<MockLicense, "__licenseCheckoutComplete" | "__licenseSet">
+  & Pick<MockTargets, "__targetsUntrusted" | "__targetsTyped">;
 
 type MockOptions = {
   repo?: boolean;
@@ -719,6 +721,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockNotch((id) => api.__clickNotification(id)),
     ...createMockPeers(),
     ...createMockLicense(),
+    ...createMockTargets(() => api.__ptyWrittenAll()),
     async clipboardImageSave() {
       if (mockClipboardImage === null || typeof mockClipboardImage === "string") return mockClipboardImage;
       throw mockClipboardImage;
