@@ -349,6 +349,9 @@ fn pair(mut wire: Box<dyn Wire>, host: &Arc<Host>, tag: u8, msg1: &[u8], deadlin
         proto::M_RESULT,
         json!({ "accept": accept }),
     );
+    if !accept {
+        drain(w);
+    }
     w.close();
     drop(busy);
     match result {
@@ -359,6 +362,21 @@ fn pair(mut wire: Box<dyn Wire>, host: &Arc<Host>, tag: u8, msg1: &[u8], deadlin
         }),
     }
 }
+
+/// After a refusal, waits briefly for the joiner's own answer or its hang-up.
+/// Closing with that answer still unread makes the OS reset the connection,
+/// and the reset can drop the refusal before the joiner reads it.
+fn drain(w: &mut dyn Wire) {
+    let deadline = Instant::now() + DRAIN;
+    while Instant::now() < deadline {
+        match w.poll() {
+            Ok(None) => {}
+            Ok(Some(_)) | Err(_) => return,
+        }
+    }
+}
+
+const DRAIN: Duration = Duration::from_secs(2);
 
 /// Waits for this side's answer and the joiner's, whichever comes first.
 /// `Ok(role)` when both said yes.
