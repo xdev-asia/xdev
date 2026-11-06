@@ -779,14 +779,16 @@ mod tests {
         let crumbs = Arc::new(Breadcrumbs::default());
         crumbs.push(1, "before", &[], None);
         install_panic_hook(Some(local.clone()), crumbs);
-        let handle = std::thread::Builder::new()
-            .name("hook-test".into())
-            .spawn(|| panic!("hook test panic"))
-            .unwrap();
-        assert!(handle.join().is_err());
         let path = store_path(&local);
         let mut found = None;
+        // The hook skips the write while another test holds the store lock, so panic again
+        // until a report lands.
         for _ in 0..40 {
+            let handle = std::thread::Builder::new()
+                .name("hook-test".into())
+                .spawn(|| panic!("hook test panic"))
+                .unwrap();
+            assert!(handle.join().is_err());
             if let Ok(reports) = load(&path)
                 && let Some(r) = reports
                     .into_iter()
