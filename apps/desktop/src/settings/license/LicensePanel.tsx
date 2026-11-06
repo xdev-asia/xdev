@@ -1,5 +1,5 @@
 import { Banner, Button, Dialog, Spinner } from "@xdev-asia/ui";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import type { DeviceRow } from "@xdev/bindings";
 import { toApiError, type Api, type ApiError } from "@/api";
@@ -32,13 +32,14 @@ export function LicensePanel({ api, filter, signedIn, now = Date.now() }: Props)
   const [noSeat, setNoSeat] = useState(false);
   const [removing, setRemoving] = useState<DeviceRow | null>(null);
 
-  const loadDevices = useCallback(() => {
+  const loadDevices = (): void => {
     api.licenseDevices().then(setDevices, () => undefined);
-  }, [api]);
+  };
   // The device list follows the license: a seat that moved, or a purchase that arrived.
   useEffect(() => {
     if (state) loadDevices();
-  }, [state, loadDevices]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, api]);
   // A purchase that reached this device ends the wait.
   const pro = state?.state === "active";
   useEffect(() => {

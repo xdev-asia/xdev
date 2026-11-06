@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { LicenseState } from "@xdev/bindings";
 import { api as defaultApi, type Api } from "@/api";
 
@@ -43,37 +43,53 @@ export function noticeOf(state: LicenseState | null): LicenseNotice | null {
   }
 }
 
+/** Whether `state` carries the Pro feature `feature`. */
+export function allowsIn(state: LicenseState | null, feature: string): boolean {
+  return state?.state === "active" && state.features.includes(feature);
+}
+
+/**
+ * Reports the current state, then every change. The listener is attached before the read, so a
+ * change in between is not lost; an event that already arrived is newer than the read, so it wins.
+ * Returns the function that stops it.
+ */
+export function watchLicense(api: LicenseApi, onState: (s: LicenseState) => void): () => void {
+  let live = true;
+  let seen = false;
+  let stop: (() => void) | undefined;
+  void api.onLicenseChanged((next) => {
+    if (!live) return;
+    seen = true;
+    onState(next);
+  }).then((off) => {
+    if (live) stop = off;
+    else off();
+  });
+  void api.licenseState().then(
+    (s) => {
+      if (live && !seen) onState(s);
+    },
+    () => undefined,
+  );
+  return () => {
+    live = false;
+    stop?.();
+  };
+}
+
 /** The license of this device: read once, then kept current by `license://changed`. */
 export function useLicense(api: LicenseApi = defaultApi): License {
   const [state, setState] = useState<LicenseState | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    let stop: (() => void) | undefined;
-    void api.onLicenseChanged((next) => live && setState(next)).then((off) => {
-      if (live) stop = off;
-      else off();
-    });
-    // The read after the listener is attached, so a change in between is not lost; an event that
-    // already arrived is newer than this answer, so it stays.
-    void api.licenseState().then(
-      (s) => live && setState((now) => now ?? s),
-      () => undefined,
-    );
-    return () => {
-      live = false;
-      stop?.();
-    };
-  }, [api]);
-
-  const allows = useCallback((feature: string) => state?.state === "active" && state.features.includes(feature), [state]);
-  const refresh = useCallback(
-    () =>
+  useEffect(() => watchLicense(api, setState), [api]);
+  return {
+    state,
+    plan: state?.state === "active" ? state.plan : [],
+    allows: (feature) => allowsIn(state, feature),
+    notice: noticeOf(state),
+    refresh: () =>
       api.licenseRefresh().then(
         (s) => setState(s),
         () => undefined,
       ),
-    [api],
-  );
-  return { state, plan: state?.state === "active" ? state.plan : [], allows, notice: noticeOf(state), refresh };
+  };
 }

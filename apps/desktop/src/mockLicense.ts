@@ -114,6 +114,8 @@ export function createMockLicense(
   let state = initialState(mode);
   let devices = initialDevices(mode);
   const listeners = new Set<(s: LicenseState) => void>();
+  // The account owns a Pro grant: bought in the mock, or already held by a device in the mode.
+  let purchased = devices.some((d) => d.proGrant !== null);
   let checkout: { resolve: () => void; reject: (e: ApiError) => void } | null = null;
 
   const set = (next: LicenseState) => {
@@ -133,7 +135,7 @@ export function createMockLicense(
       // The one seat is on another device until that device is moved off.
       if (mode === "noseat" && seatsInUse() >= 1) return reject("license_no_seat");
       // No grant to activate: the crate maps the service's no_grant to unavailable.
-      if (!devices.some((d) => d.proGrant !== null)) return reject("license_unavailable");
+      if (!purchased) return reject("license_unavailable");
       setGrant(MOCK_DEVICE_ID, MOCK_GRANT);
       set(proState({ kind: "fresh" }, seatsInUse()));
       return Promise.resolve(structuredClone(state));
@@ -164,6 +166,7 @@ export function createMockLicense(
       return Promise.resolve(() => void listeners.delete(cb));
     },
     __licenseCheckoutComplete() {
+      purchased = true;
       setGrant(MOCK_DEVICE_ID, MOCK_GRANT);
       // A purchase buys one seat.
       set(proState({ kind: "fresh" }, seatsInUse(), 1));
