@@ -51,6 +51,7 @@ import { createMockMcp } from "./mockMcp";
 import { createMockPorts } from "./mockPorts";
 import { createMockAttribution, type MockAttribution } from "./mockAttribution";
 import { createMockSsh, type MockSsh } from "./mockSsh";
+import { createMockRemoteSsh, type MockRemoteSsh } from "./mockRemoteSsh";
 import { createMockComposer } from "./mockComposer";
 import { createMockPromptQueue } from "./mockPromptQueue";
 import { createMockSettings, createSettingsHub } from "./mockSettings";
@@ -408,7 +409,8 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   __orchFailWorker(from: WorkerOpen, reason?: FailReason): Promise<string | null>;
 } & Pick<MockNotch, "__notchTabs"> & Pick<MockPipeline, "__pipelineExits" | "__swarmOpened">
   & Pick<MockPeers, "__peersPairRequest" | "__peersDrop" | "__peersActivity" | "__peersConfirm" | "__peersSetTheirRole" | "__peersConfirmDeny" | "__peersRise">
-  & Pick<MockLicense, "__licenseCheckoutComplete" | "__licenseSet">;
+  & Pick<MockLicense, "__licenseCheckoutComplete" | "__licenseSet">
+  & Pick<MockRemoteSsh, "__remoteDrop" | "__remoteOffline">;
 
 type MockOptions = {
   repo?: boolean;
@@ -1015,6 +1017,8 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     },
     ...createMockLsp(),
     ...accountRouting,
+    // Last: an `ssh://` worktree's file calls go to the remote mock, every other one to the workspace's.
+    ...createMockRemoteSsh(workspace, () => api.sshHostsList()),
   };
   // The spread above copied the values; these two stay live views of the profile store.
   Object.defineProperties(api, {

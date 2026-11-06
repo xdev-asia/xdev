@@ -5345,5 +5345,13 @@
   "peers.confirm.action.shell": "mở shell trong",
   "peers.confirm.action.kill": "đóng",
   "peers.confirm.action.handoff": "chuyển việc cho",
-  "peers.pair.otherComputer": "máy kia"
+  "peers.pair.otherComputer": "máy kia",
+  "error.remote_offline": "Máy chủ SSH đang ngoại tuyến. Thay đổi của bạn vẫn được giữ; hãy thử lại khi kết nối lại.",
+  "error.remote_auth": "Máy chủ SSH từ chối đăng nhập. Hãy kiểm tra khóa hoặc mật khẩu trong Cài đặt → SSH.",
+  "error.remote_no_sftp": "Máy chủ SSH không có máy chủ SFTP. Hãy nhờ quản trị viên bật hệ con sftp.",
+  "error.remote_no_git": "Máy chủ SSH chưa cài git.",
+  "error.remote_path": "Thư mục hoặc tệp đó không tồn tại trên máy chủ SSH.",
+  "error.remote_too_large": "Tệp quá lớn để mở qua SSH.",
+  "error.remote_denied": "Máy chủ SSH từ chối quyền truy cập tệp đó.",
+  "error.remote_unsupported": "Chưa hỗ trợ cho dự án từ xa."
 }

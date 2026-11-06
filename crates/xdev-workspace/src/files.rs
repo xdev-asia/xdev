@@ -132,16 +132,8 @@ pub fn read_file(worktree: &str, rel: &str) -> Result<FileText, WorkspaceError> 
     if meta.is_dir() {
         return Err(WorkspaceError::BadPath(rel.to_owned()));
     }
-    let too_large = |size| FileText {
-        rel: rel.to_owned(),
-        text: None,
-        kind: FileKind::TooLarge,
-        size,
-        hash: String::new(),
-        eol: Eol::Lf,
-    };
     if meta.len() > READ_MAX {
-        return Ok(too_large(meta.len()));
+        return Ok(too_large_text(rel, meta.len()));
     }
     // One byte past the limit tells a file that grew since the check.
     let mut bytes = Vec::new();
@@ -149,11 +141,30 @@ pub fn read_file(worktree: &str, rel: &str) -> Result<FileText, WorkspaceError> 
         .map_err(|e| missing(e, rel))?
         .take(READ_MAX + 1)
         .read_to_end(&mut bytes)?;
+    Ok(file_text(rel, bytes))
+}
+
+/// What the editor shows for a file that is over `READ_MAX`.
+pub fn too_large_text(rel: &str, size: u64) -> FileText {
+    FileText {
+        rel: rel.to_owned(),
+        text: None,
+        kind: FileKind::TooLarge,
+        size,
+        hash: String::new(),
+        eol: Eol::Lf,
+    }
+}
+
+/// What the editor shows for the bytes of `rel`, read from anywhere: too
+/// large over `READ_MAX`, binary with a NUL in the first 8 KiB or when not
+/// UTF-8, else text; with the blake3 hash and the line break.
+pub fn file_text(rel: &str, bytes: Vec<u8>) -> FileText {
     let size = bytes.len() as u64;
     if size > READ_MAX {
-        return Ok(too_large(size));
+        return too_large_text(rel, size);
     }
-    let hash = hash_of(&bytes);
+    let hash = content_hash(&bytes);
     let eol = eol_of(&bytes);
     let head = &bytes[..bytes.len().min(BINARY_SNIFF)];
     let text = if head.contains(&0) {
@@ -166,21 +177,31 @@ pub fn read_file(worktree: &str, rel: &str) -> Result<FileText, WorkspaceError> 
     } else {
         FileKind::Binary
     };
-    Ok(FileText {
+    FileText {
         rel: rel.to_owned(),
         text,
         kind,
         size,
         hash,
         eol,
-    })
+    }
 }
 
 /// How much of a file is searched for a NUL byte.
 pub(crate) const BINARY_SNIFF: usize = 8 * 1024;
 
-fn hash_of(bytes: &[u8]) -> String {
+/// The hash a `FileText` and a `WriteOutcome` carry: blake3 hex.
+pub fn content_hash(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
+}
+
+/// The bytes a save writes for `text`: every line break made `eol`.
+pub fn text_with_eol(text: &str, eol: Eol) -> String {
+    let lf = text.replace("\r\n", "\n").replace('\r', "\n");
+    match eol {
+        Eol::Lf => lf,
+        Eol::Crlf => lf.replace('\n', "\r\n"),
+    }
 }
 
 /// From the first line break; `Lf` when there is none.
@@ -222,14 +243,10 @@ pub fn write_file(
             disk_hash: on_disk.unwrap_or_default(),
         });
     }
-    let lf = text.replace("\r\n", "\n").replace('\r', "\n");
-    let bytes = match eol {
-        Eol::Lf => lf,
-        Eol::Crlf => lf.replace('\n', "\r\n"),
-    };
+    let bytes = text_with_eol(text, eol);
     replace(&disk, bytes.as_bytes(), |from, to| fs::rename(from, to))?;
     Ok(WriteOutcome::Saved {
-        hash: hash_of(bytes.as_bytes()),
+        hash: content_hash(bytes.as_bytes()),
     })
 }
 

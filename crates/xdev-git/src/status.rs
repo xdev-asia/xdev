@@ -20,13 +20,15 @@ impl Repo {
         ];
         args.extend_from_slice(paths);
         let out = run::run(&self.workdir, &args, None)?;
-        Ok(parse(&out, &self.prefix))
+        Ok(parse_status_z(&out, &self.prefix))
     }
 }
 
-/// Porcelain paths are relative to the repo root; `prefix` is the vault's
-/// folder inside the repo.
-fn parse(out: &[u8], prefix: &str) -> Vec<FileStatus> {
+/// The output of `git status --porcelain=v1 -z --no-renames` as one entry
+/// per path, sorted. Porcelain paths are relative to the repo root; only
+/// those under `prefix` (`""` for all) are kept, with it stripped. Public so
+/// a status run elsewhere (over SSH) reads the same way.
+pub fn parse_status_z(out: &[u8], prefix: &str) -> Vec<FileStatus> {
     let mut found = BTreeMap::new();
     for entry in out.split(|b| *b == 0) {
         // `XY path`; with `--no-renames` no entry carries a second path.
@@ -72,7 +74,7 @@ mod tests {
     use super::*;
 
     fn kinds(out: &str, prefix: &str) -> Vec<(String, ChangeKind)> {
-        parse(out.as_bytes(), prefix)
+        parse_status_z(out.as_bytes(), prefix)
             .into_iter()
             .map(|s| (s.path, s.kind))
             .collect()
@@ -95,6 +97,29 @@ mod tests {
                 ("i.md".into(), ChangeKind::Modified),
             ]
         );
+    }
+
+    #[test]
+    fn parse_status_z_reads_bytes_directly() {
+        let out = b"?? new.txt\0 M src/a.rs\0D  gone.md\0?? \xff.txt\0";
+        assert_eq!(
+            parse_status_z(out, ""),
+            [
+                FileStatus {
+                    path: "gone.md".into(),
+                    kind: ChangeKind::Deleted
+                },
+                FileStatus {
+                    path: "new.txt".into(),
+                    kind: ChangeKind::Added
+                },
+                FileStatus {
+                    path: "src/a.rs".into(),
+                    kind: ChangeKind::Modified
+                },
+            ]
+        );
+        assert!(parse_status_z(b"", "").is_empty());
     }
 
     #[test]

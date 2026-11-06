@@ -3,19 +3,37 @@
 //! of a host, and the pure parts of testing and keeping a connection.
 
 mod argv;
+mod chan;
 mod config;
 mod connection;
+mod reconnect;
+mod remote_cmd;
+mod remote_fs;
+mod remote_view;
+mod rpath;
+mod sftp;
 mod store;
 
 use serde::{Deserialize, Serialize};
 
 pub use argv::{
-    CONNECT_TIMEOUT_DEFAULT, connect_argv, effective_timeout, forward_spec, ssh_argv, test_argv,
+    CONNECT_TIMEOUT_DEFAULT, connect_argv, effective_timeout, exec_argv, forward_spec, sftp_argv,
+    ssh_argv, test_argv, tty_argv,
 };
+pub use chan::{ChanOutput, ExecChannel, OUTPUT_MAX};
 pub use config::{ParsedConfig, parse_config};
 pub use connection::{
     Connection, SETTLE, SshConnState, SshPromptKind, SshTestOutcome, classify, prompt_kind,
 };
+pub use reconnect::{Backoff, MAX_TRIES, RemoteState};
+pub use remote_cmd::{remote_agent_cmd, remote_shell_cmd, tmux_session_name};
+pub use remote_fs::{CMD_TIMEOUT, DIRS_MAX, LIST_TIMEOUT, Probe, REMOVE_DEPTH, RemoteFs};
+pub use remote_view::{
+    RemoteConnState, RemoteDir, RemoteDirListing, RemoteHostView, RemoteProject, RemoteProjectView,
+    RemoteTarget,
+};
+pub use rpath::{RemoteError, RemoteRef, join_rel, parent_of, sh_quote, valid_host_id};
+pub use sftp::{Attrs, DirEntry, EntryKind, MAX_PACKET, Sftp, SftpError};
 pub use store::{SyncCounts, load, merge_config, remove, remove_many, save, upsert};
 
 /// The file name in the app's config dir.

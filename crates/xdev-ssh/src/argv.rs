@@ -1,6 +1,8 @@
 //! The arguments `ssh` is given for a host: one builder for the terminal, and
 //! the test and connect runs that add their own options in front.
 
+use std::path::Path;
+
 use crate::{LocalForward, SshHost, TIMEOUT_MAX, TIMEOUT_MIN};
 
 /// The connect timeout of a host that sets none, in seconds.
@@ -104,6 +106,59 @@ pub fn connect_argv(host: &SshHost) -> Vec<String> {
     out.push(format!("ConnectTimeout={}", effective_timeout(host)));
     out.extend(ssh_argv(host));
     out
+}
+
+/// The options every remote-project process starts with: keep-alives, and
+/// with `mux` a shared master connection in `mux`, so later processes skip
+/// the login. The caller passes `None` where ssh has no multiplexing
+/// (Windows).
+fn remote_opts(mux: Option<&Path>) -> Vec<String> {
+    let mut out: Vec<String> = [
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
+    ]
+    .iter()
+    .map(|s| (*s).to_owned())
+    .collect();
+    if let Some(dir) = mux {
+        out.push("-o".to_owned());
+        out.push("ControlMaster=auto".to_owned());
+        out.push("-o".to_owned());
+        out.push(format!("ControlPath={}", dir.join("cm-%C").display()));
+        out.push("-o".to_owned());
+        out.push("ControlPersist=60".to_owned());
+    }
+    out
+}
+
+/// The remote options, the host's own, then `flags`, the destination and
+/// `tail`.
+fn remote_argv(host: &SshHost, mux: Option<&Path>, flags: &[&str], tail: &[&str]) -> Vec<String> {
+    let mut out = remote_opts(mux);
+    let mut base = ssh_argv(host);
+    let dest = base.pop().unwrap_or_default();
+    out.extend(base);
+    out.extend(flags.iter().map(|s| (*s).to_owned()));
+    out.push(dest);
+    out.extend(tail.iter().map(|s| (*s).to_owned()));
+    out
+}
+
+/// The SFTP session of a remote project: `-T -s <dest> sftp`.
+pub fn sftp_argv(host: &SshHost, mux: Option<&Path>) -> Vec<String> {
+    remote_argv(host, mux, &["-T", "-s"], &["sftp"])
+}
+
+/// The exec channel of a remote project: `-T <dest> sh`.
+pub fn exec_argv(host: &SshHost, mux: Option<&Path>) -> Vec<String> {
+    remote_argv(host, mux, &["-T"], &["sh"])
+}
+
+/// A terminal or agent on the host: `-tt <dest> <remote_cmd>`.
+pub fn tty_argv(host: &SshHost, mux: Option<&Path>, remote_cmd: &str) -> Vec<String> {
+    remote_argv(host, mux, &["-tt"], &[remote_cmd])
 }
 
 #[cfg(test)]
@@ -239,5 +294,58 @@ mod tests {
         assert!(argv.iter().any(|a| a == "ConnectTimeout=10"));
         assert!(!argv.iter().any(|a| a == "BatchMode=yes"));
         assert_eq!(argv.last().map(String::as_str), Some("web"));
+    }
+
+    #[test]
+    fn remote_argv_without_mux() {
+        let mut h = host("web");
+        h.host_name = "web".into();
+        h.user = Some("dev".into());
+        let keep = [
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
+        ];
+        let with = |rest: &[&'static str]| [&keep[..], &["-l", "dev"], rest].concat();
+        assert_eq!(
+            strs(&sftp_argv(&h, None)),
+            with(&["-T", "-s", "web", "sftp"])
+        );
+        assert_eq!(strs(&exec_argv(&h, None)), with(&["-T", "web", "sh"]));
+        assert_eq!(
+            strs(&tty_argv(&h, None, "cd '/srv' && exec \"$SHELL\" -l")),
+            with(&["-tt", "web", "cd '/srv' && exec \"$SHELL\" -l"])
+        );
+    }
+
+    #[test]
+    fn remote_argv_with_mux() {
+        let mut h = host("web");
+        h.host_name = "web".into();
+        let dir = Path::new("/data/ssh");
+        assert_eq!(
+            strs(&exec_argv(&h, Some(dir))),
+            [
+                "-o",
+                "ServerAliveInterval=15",
+                "-o",
+                "ServerAliveCountMax=3",
+                "-o",
+                "ControlMaster=auto",
+                "-o",
+                "ControlPath=/data/ssh/cm-%C",
+                "-o",
+                "ControlPersist=60",
+                "-T",
+                "web",
+                "sh"
+            ]
+        );
+        let sftp = sftp_argv(&host("db"), Some(dir));
+        assert_eq!(
+            strs(&sftp[10..]),
+            ["-o", "HostName=db.example.com", "-T", "-s", "db", "sftp"]
+        );
     }
 }

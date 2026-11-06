@@ -5345,5 +5345,13 @@
   "peers.confirm.action.shell": "open a shell in",
   "peers.confirm.action.kill": "close",
   "peers.confirm.action.handoff": "hand work to",
-  "peers.pair.otherComputer": "the other computer"
+  "peers.pair.otherComputer": "the other computer",
+  "error.remote_offline": "The SSH host is offline. Your changes are kept; try again when it reconnects.",
+  "error.remote_auth": "The SSH host refused the login. Check the key or password in Settings → SSH.",
+  "error.remote_no_sftp": "The SSH host has no SFTP server. Ask the admin to enable the sftp subsystem.",
+  "error.remote_no_git": "git is not installed on the SSH host.",
+  "error.remote_path": "That folder or file does not exist on the SSH host.",
+  "error.remote_too_large": "The file is too large to open over SSH.",
+  "error.remote_denied": "The SSH host denied access to that file.",
+  "error.remote_unsupported": "Not available for remote projects yet."
 }

@@ -414,6 +414,13 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_lsp::State::export_all(cfg)?;
     xdev_license::LicenseState::export_all(cfg)?;
     xdev_license::DeviceRow::export_all(cfg)?;
+    xdev_ssh::RemoteProject::export_all(cfg)?;
+    xdev_ssh::RemoteProjectView::export_all(cfg)?;
+    xdev_ssh::RemoteConnState::export_all(cfg)?;
+    xdev_ssh::RemoteHostView::export_all(cfg)?;
+    xdev_ssh::RemoteDir::export_all(cfg)?;
+    xdev_ssh::RemoteDirListing::export_all(cfg)?;
+    xdev_ssh::RemoteTarget::export_all(cfg)?;
     Ok(())
 }
 
