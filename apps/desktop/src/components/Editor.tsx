@@ -70,7 +70,25 @@ export const theme = EditorView.theme({
 });
 
 // Replaces CodeMirror's fallback highlighter, whose fixed colors are unreadable on the dark tokens.
+// Code tags first (source files, diffs, fenced blocks), then the markdown ones. Every colour is a
+// palette token, so light, dark and the editor's own `data-theme` all apply.
 export const highlight = HighlightStyle.define([
+  { tag: [tags.keyword, tags.controlKeyword, tags.moduleKeyword, tags.operatorKeyword, tags.definitionKeyword, tags.modifier], color: "var(--violet)" },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment], color: "var(--x-color-muted)", fontStyle: "italic" },
+  { tag: [tags.string, tags.special(tags.string), tags.character, tags.docString], color: "var(--x-color-ok)" },
+  { tag: [tags.regexp, tags.escape], color: "var(--x-color-signal)" },
+  { tag: [tags.number, tags.integer, tags.float, tags.bool, tags.null, tags.atom, tags.unit, tags.self], color: "var(--orange)" },
+  { tag: [tags.constant(tags.variableName), tags.standard(tags.variableName)], color: "var(--orange)" },
+  {
+    tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.function(tags.definition(tags.variableName)), tags.macroName, tags.labelName],
+    color: "var(--x-color-signal)",
+  },
+  { tag: [tags.typeName, tags.className, tags.namespace, tags.definition(tags.typeName)], color: "var(--x-color-warn)" },
+  { tag: [tags.tagName, tags.angleBracket], color: "var(--x-color-danger)" },
+  { tag: [tags.attributeName], color: "var(--x-color-warn)" },
+  { tag: [tags.propertyName, tags.definition(tags.propertyName)], color: "var(--x-color-ink)" },
+  { tag: [tags.operator, tags.punctuation, tags.separator, tags.bracket], color: "var(--x-color-muted)" },
+  { tag: tags.invalid, color: "var(--x-color-danger)", textDecoration: "underline wavy" },
   { tag: tags.heading, fontWeight: "600", color: "var(--x-color-ink)" },
   { tag: tags.heading1, fontSize: "1.15em" },
   { tag: tags.heading2, fontSize: "1.08em" },
