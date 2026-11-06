@@ -124,6 +124,8 @@ export function WorkspaceFooter(props: {
   ssh?: ReactNode;
   /** The licence notice, for paying people; it renders nothing otherwise. */
   license?: ReactNode;
+  /** The floating workspace item, after the agent counts. */
+  floating?: ReactNode;
   /** The Computers segment (paired computers), after the SSH one. */
   peers?: ReactNode;
   hidden?: boolean;
@@ -207,6 +209,7 @@ export function WorkspaceFooter(props: {
           </span>
         </>
       )}
+      {props.floating}
       {props.license}
       {props.ssh}
       {props.peers}
@@ -240,6 +243,8 @@ export function LiveWorkspaceFooter(props: {
   onOpenSshTerminal?: (alias: string) => void;
   /** Opens Settings on Account; the licence notice acts on it. */
   onOpenLicense?: () => void;
+  /** The floating workspace item. */
+  floating?: ReactNode;
   hidden?: boolean;
 }): JSX.Element {
   const { api, hidden, onOpenLicense, onManageAccounts, onUseAccount, onUsageSettings, onManageSsh, onOpenSshTerminal, ...rest } = props;

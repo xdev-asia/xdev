@@ -295,3 +295,11 @@ it("Shift+F10 on the meters button opens the menu below it; other keys do nothin
   expect(onMetersMenu).toHaveBeenCalledWith({ x: 10, y: 20 });
   expect(preventDefault).toHaveBeenCalledTimes(2);
 });
+
+it("shows the floating item after the agent counts and before the licence notice", () => {
+  const html = render(null, { floating: createElement("span", { "data-x": "f" }), license: createElement("span", { "data-x": "lic" }) });
+  expect(html).toContain('data-x="f"');
+  expect(html.indexOf('data-x="f"')).toBeGreaterThan(html.indexOf(en("workspace.footer.waiting", { count: 0 })));
+  expect(html.indexOf('data-x="f"')).toBeLessThan(html.indexOf('data-x="lic"'));
+  expect(render(null)).not.toContain('data-x="f"');
+});
