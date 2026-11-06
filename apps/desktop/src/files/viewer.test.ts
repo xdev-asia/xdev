@@ -26,6 +26,13 @@ describe("viewerOf", () => {
     }
   });
 
+  it("opens pdf in the pdf view whatever the read said", () => {
+    expect(viewerOf("docs/A.PDF")).toBe("pdf");
+    expect(viewerOf("a.pdf", "binary")).toBe("pdf");
+    expect(viewerOf("a.pdf.txt")).toBe("text");
+    expect(mimeOf("a.pdf")).toBe("application/pdf");
+  });
+
   it("keeps the binary note for other binary files and the editor for text", () => {
     expect(viewerOf("a.zip", "binary")).toBe("binary");
     expect(viewerOf("a.ts", "text")).toBe("text");

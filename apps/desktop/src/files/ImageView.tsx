@@ -11,7 +11,7 @@ import { formatBytes } from "./viewer";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
-function zoomLabels(t: T, fit = "files.zoom.fit") {
+export function zoomLabels(t: T, fit = "files.zoom.fit") {
   return { zoomOut: t("files.zoom.out"), zoomIn: t("files.zoom.in"), fit: t(fit), actual: t("files.zoom.actual"), group: t("files.zoom.group") };
 }
 

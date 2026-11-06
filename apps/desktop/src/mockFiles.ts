@@ -26,6 +26,24 @@ export type MockFiles = FilesApi & {
 export const MOCK_READ_MAX = 2 * 1024 * 1024;
 /** `IMAGE_MAX` in Rust, scaled to the mock: larger images are not read. */
 export const MOCK_IMAGE_MAX = 20 * 1024 * 1024;
+/** `PDF_MAX` in Rust: larger PDFs are not read. */
+export const MOCK_PDF_MAX = 50 * 1024 * 1024;
+const PDF = /\.pdf$/i;
+// A one-page PDF with the text "Hello xDev". The xref offsets are not exact; a reader rebuilds the table.
+const MOCK_PDF = new TextEncoder().encode(
+  [
+    "%PDF-1.4",
+    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj",
+    "4 0 obj << /Length 44 >> stream",
+    "BT /F1 24 Tf 72 700 Td (Hello xDev) Tj ET",
+    "endstream endobj",
+    "5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
+    "trailer << /Root 1 0 R /Size 6 >>",
+    "%%EOF",
+  ].join("\n"),
+);
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|ico|avif|svg)$/i;
 const MEDIA = /\.(mp3|wav|ogg|oga|m4a|flac|mp4|webm|ogv|mov)$/i;
 // A 1x1 transparent PNG.
@@ -220,20 +238,22 @@ export function createMockFiles(base: (worktree: string) => string[] | null): Mo
     async fileBytes(worktree, rel) {
       const at = open(worktree, rel);
       if (at instanceof Promise) return at;
-      if (!IMAGE.test(at.p) && !MEDIA.test(at.p)) return reject("bad_name", rel);
+      if (!IMAGE.test(at.p) && !MEDIA.test(at.p) && !PDF.test(at.p)) return reject("bad_name", rel);
       const forced = failures.get(at.p);
       if (forced !== undefined) {
         failures.delete(at.p);
         return reject(forced, rel);
       }
       if (!at.t.files.includes(at.p)) return reject("not_found", rel);
-      if (textOf(worktree, at.p).length > MOCK_IMAGE_MAX) return reject("too_large", rel);
+      const cap = PDF.test(at.p) ? MOCK_PDF_MAX : MOCK_IMAGE_MAX;
+      if (textOf(worktree, at.p).length > cap) return reject("too_large", rel);
+      if (PDF.test(at.p)) return MOCK_PDF.slice();
       return IMAGE.test(at.p) ? PIXEL.slice() : Uint8Array.of(1, 2, 3, 4);
     },
     async fileOpenDefault(worktree, rel) {
       const at = open(worktree, rel);
       if (at instanceof Promise) return at;
-      if (!IMAGE.test(at.p) && !MEDIA.test(at.p)) return reject("bad_name", rel);
+      if (!IMAGE.test(at.p) && !MEDIA.test(at.p) && !PDF.test(at.p)) return reject("bad_name", rel);
       opens.push(`${worktree}:${at.p}`);
     },
     async filesList(worktree) {

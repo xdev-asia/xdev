@@ -31,7 +31,7 @@ pub use env::{
     SecretStore, clean_env, is_reserved, merge_env, preview_env, valid_key,
 };
 pub use files::{
-    Eol, FileKind, FileText, IMAGE_MAX, MEDIA_MAX, MediaKind, OsTrash, READ_MAX, Trash,
+    Eol, FileKind, FileText, IMAGE_MAX, MEDIA_MAX, MediaKind, OsTrash, PDF_MAX, READ_MAX, Trash,
     WriteOutcome, content_hash, create_entry, entry_path, file_text, link_rel, media_kind,
     read_bytes, read_file, rename_entry, text_with_eol, too_large_text, trash_entry,
     trash_entry_with, write_file,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMockApi, type FsChanged, type SearchEvent, type SearchQuery } from "./api";
-import { MOCK_IMAGE_MAX } from "./mockFiles";
+import { MOCK_IMAGE_MAX, MOCK_PDF_MAX } from "./mockFiles";
 import { createMockWorkspace } from "./mockWorkspace";
 
 const WT = "/demo/wt/xdev-oak";
@@ -176,6 +176,18 @@ describe("mock search", () => {
     await expect(api.fileBytes(WT, "README.md")).rejects.toMatchObject({ code: "bad_name" });
     await expect(api.fileBytes(WT, "gone.png")).rejects.toMatchObject({ code: "not_found" });
     await expect(api.fileBytes(WT, "../x.png")).rejects.toMatchObject({ code: "bad_path" });
+  });
+
+  it("serves a pdf, caps it and opens it in the default app", async () => {
+    const api = createMockWorkspace();
+    api.__editFile(WT, "doc.pdf", "x");
+    const bytes = await api.fileBytes(WT, "doc.pdf");
+    expect(String.fromCharCode(...bytes.slice(0, 5))).toBe("%PDF-");
+    await api.fileOpenDefault(WT, "doc.pdf");
+    expect(api.__fileOpens).toEqual([`${WT}:doc.pdf`]);
+    await expect(api.fileOpenDefault(WT, "README.md")).rejects.toMatchObject({ code: "bad_name" });
+    api.__editFile(WT, "big.pdf", "x".repeat(MOCK_PDF_MAX + 1));
+    await expect(api.fileBytes(WT, "big.pdf")).rejects.toMatchObject({ code: "too_large" });
   });
 
   it("rejects an image over the cap as too large", async () => {

@@ -264,3 +264,21 @@
 .nb-text.nb-error { background: var(--x-color-danger-soft); border-color: var(--x-color-danger); }
 .nb-image { max-width: 100%; height: auto; }
 @media (max-width: 480px) { .nb-cell { flex-direction: column; gap: var(--x-space-1); } .nb-count { text-align: left; } }
+
+/* PDF viewer: pages with a canvas and a transparent, selectable text layer. */
+.pdf-view { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.pdf-pages { flex: 1; overflow: auto; padding: var(--x-space-2); background: var(--x-color-surface-2); }
+.pdf-page { position: relative; margin: 0 auto var(--x-space-2); background: var(--x-color-surface); border: 1px solid var(--x-color-line); }
+.pdf-page canvas { display: block; width: 100%; height: 100%; }
+.pdf-page-error { color: var(--x-color-muted); padding: var(--x-space-3); }
+.pdf-text-layer { position: absolute; inset: 0; overflow: clip; line-height: 1; text-align: initial; transform-origin: 0 0; }
+.pdf-text-layer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0 0; }
+.pdf-text-layer > span, .pdf-text-layer .markedContent span { font-size: calc(var(--total-scale-factor) * var(--min-font-size) * var(--font-height)); transform: rotate(var(--rotate, 0deg)) scaleX(var(--scale-x, 1)) scale(calc(1 / var(--min-font-size))); }
+.pdf-text-layer .markedContent { display: contents; }
+.pdf-text-layer span::highlight(md-find), .pdf-text-layer span::highlight(md-find-current), .pdf-text-layer .md-find-mark { color: transparent; }
+.pdf-pages-nav { display: inline-flex; align-items: center; gap: var(--x-space-1); }
+.pdf-page-input { width: 4em; }
+@media (max-width: 600px) {
+  .pdf-view .media-name, .pdf-view .media-meta { flex-basis: 100%; }
+  .pdf-view .md-find { flex-basis: 100%; }
+}

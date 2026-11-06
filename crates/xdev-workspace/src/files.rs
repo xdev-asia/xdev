@@ -20,6 +20,9 @@ pub const IMAGE_MAX: u64 = 20 * 1024 * 1024;
 /// Larger audio and video files are not read for the player.
 pub const MEDIA_MAX: u64 = 64 * 1024 * 1024;
 
+/// Larger PDFs are not read for the viewer.
+pub const PDF_MAX: u64 = 50 * 1024 * 1024;
+
 /// What a file shows as, by extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -28,6 +31,7 @@ pub enum MediaKind {
     Image,
     Audio,
     Video,
+    Pdf,
 }
 
 impl MediaKind {
@@ -35,6 +39,7 @@ impl MediaKind {
         match self {
             MediaKind::Image => IMAGE_MAX,
             MediaKind::Audio | MediaKind::Video => MEDIA_MAX,
+            MediaKind::Pdf => PDF_MAX,
         }
     }
 }
@@ -49,6 +54,7 @@ pub fn media_kind(rel: &str) -> Option<MediaKind> {
         }
         "mp3" | "wav" | "ogg" | "oga" | "m4a" | "flac" => Some(MediaKind::Audio),
         "mp4" | "webm" | "ogv" | "mov" => Some(MediaKind::Video),
+        "pdf" => Some(MediaKind::Pdf),
         _ => None,
     }
 }
@@ -1182,9 +1188,21 @@ mod tests {
         for e in ["mp4", "webm", "ogv", "MOV"] {
             assert_eq!(media_kind(&format!("x.{e}")), Some(MediaKind::Video), "{e}");
         }
+        assert_eq!(media_kind("a/B.PDF"), Some(MediaKind::Pdf));
+        assert_eq!(media_kind("pdf"), None);
         assert_eq!(media_kind("a.rs"), None);
         assert_eq!(media_kind("png"), None);
         assert_eq!(media_kind("dir.png/readme"), None);
+    }
+
+    #[test]
+    fn pdf_cap_is_50_mib() {
+        assert_eq!(MediaKind::Pdf.cap(), 50 * 1024 * 1024);
+    }
+
+    #[test]
+    fn media_kind_serialises_lowercase() {
+        assert_eq!(serde_json::to_string(&MediaKind::Pdf).unwrap(), "\"pdf\"");
     }
 
     #[test]
@@ -1192,6 +1210,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("a.png"), [0u8, 1, 2, 255]).unwrap();
         assert_eq!(read_bytes(root(&tmp), "a.png").unwrap(), vec![0, 1, 2, 255]);
+        fs::write(tmp.path().join("doc.pdf"), b"%PDF-1.4").unwrap();
+        assert_eq!(read_bytes(root(&tmp), "doc.pdf").unwrap(), b"%PDF-1.4");
     }
 
     #[test]
@@ -1200,6 +1220,10 @@ mod tests {
         let f = fs::File::create(tmp.path().join("big.png")).unwrap();
         f.set_len(IMAGE_MAX + 1).unwrap();
         let err = read_bytes(root(&tmp), "big.png").unwrap_err();
+        assert_eq!(err.code(), "too_large");
+        let f = fs::File::create(tmp.path().join("big.pdf")).unwrap();
+        f.set_len(PDF_MAX + 1).unwrap();
+        let err = read_bytes(root(&tmp), "big.pdf").unwrap_err();
         assert_eq!(err.code(), "too_large");
     }
 
