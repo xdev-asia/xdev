@@ -68,6 +68,7 @@ import { mockHash, type MockFiles } from "./mockFiles";
 import { createMockForeignTerms } from "./mockForeignTerms";
 import { createMockNotch, type MockNotch } from "./mockNotch";
 import { createMockPeers, type MockPeers } from "./mockPeers";
+import { createMockLicense, type MockLicense } from "./mockLicense";
 
 export { EXPORT_MARKER } from "./mockExport";
 
@@ -406,7 +407,8 @@ export type MockApi = Api & Pick<MockPaneChrome, "__contextUsage"> & Pick<MockSs
   // failed. Resolves with the new tab's id, or null.
   __orchFailWorker(from: WorkerOpen, reason?: FailReason): Promise<string | null>;
 } & Pick<MockNotch, "__notchTabs"> & Pick<MockPipeline, "__pipelineExits" | "__swarmOpened">
-  & Pick<MockPeers, "__peersPairRequest" | "__peersDrop" | "__peersActivity" | "__peersConfirm">;
+  & Pick<MockPeers, "__peersPairRequest" | "__peersDrop" | "__peersActivity" | "__peersConfirm">
+  & Pick<MockLicense, "__licenseCheckoutComplete" | "__licenseSet">;
 
 type MockOptions = {
   repo?: boolean;
@@ -716,6 +718,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockForeignTerms(),
     ...createMockNotch((id) => api.__clickNotification(id)),
     ...createMockPeers(),
+    ...createMockLicense(),
     async clipboardImageSave() {
       if (mockClipboardImage === null || typeof mockClipboardImage === "string") return mockClipboardImage;
       throw mockClipboardImage;
