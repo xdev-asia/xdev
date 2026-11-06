@@ -26,5 +26,5 @@ export const viewMode = {
 };
 
 export function useOpenedAsText(worktree: string, rel: string): boolean {
-  return useSyncExternalStore(viewMode.subscribe, () => viewMode.isText(worktree, rel));
+  return useSyncExternalStore(viewMode.subscribe, () => viewMode.isText(worktree, rel), () => viewMode.isText(worktree, rel));
 }
