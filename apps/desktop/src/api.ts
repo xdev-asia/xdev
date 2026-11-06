@@ -374,6 +374,8 @@ export type { Breadcrumb, CrashDetail, CrashReport, DiagnosticsExport, RenderCra
 export type { RestoreMode } from "@xdev/bindings";
 export type { Theme, EditorTheme, SidebarLook, StatusBarItems, TitlebarMode } from "@xdev/bindings";
 export type { CustomScheme, OnNameTaken, SchemeColors, SchemeMode, SchemePreview } from "@xdev/bindings";
+export type { AppTheme, AppThemeInput } from "@xdev/bindings";
+import type { AppTheme, AppThemeInput } from "@xdev/bindings";
 export type { ConfigKind, TermConfigDetected, TermConfigPreview } from "@xdev/bindings";
 export type { SessionScope, SessionSort } from "@xdev/bindings";
 import type { PromptTemplate } from "@xdev/bindings";
@@ -743,6 +745,7 @@ export type ErrorCode =
   | "theme_invalid"
   | "theme_too_large"
   | "theme_name_taken"
+  | "name_taken"
   | "not_installed"
   | "outside"
   | "kit_bad_input"
@@ -998,6 +1001,16 @@ export interface Api {
   terminalThemeImport(path: string, onTaken: OnNameTaken): Promise<CustomScheme>;
   // Moves an imported scheme to the trash.
   terminalThemeRemove(id: string): Promise<void>;
+  // Saved app themes (`xdev-app-theme` files under the data dir), by name.
+  appThemes(): Promise<AppTheme[]>;
+  // Saves a theme. No `id`: a new one, `name_taken` when the name exists. With an `id`: overwrites it (a free new name renames it).
+  appThemeSave(input: AppThemeInput): Promise<AppTheme>;
+  // Moves a saved theme to the trash.
+  appThemeRemove(id: string): Promise<void>;
+  // Imports a theme file; rejects `theme_invalid` (detail: the key), `theme_too_large`, or `name_taken` when `onTaken` is `fail`.
+  appThemeImport(path: string, onTaken: OnNameTaken): Promise<AppTheme>;
+  // Asks where to save in a native dialog, then writes the theme. The path written; null when cancelled.
+  appThemeExport(id: string): Promise<string | null>;
   // Which Ghostty / Kitty configs exist on this machine (the path of each, or null).
   termConfigDetect(): Promise<TermConfigDetected>;
   // The terminal settings a config sets; `path` null reads the detected file. Rejects `not_found`.
@@ -2037,6 +2050,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "theme_invalid",
   "theme_too_large",
   "theme_name_taken",
+  "name_taken",
   "not_installed",
   "outside",
   "kit_bad_input",
@@ -2226,6 +2240,11 @@ const tauriApi: Api = {
   terminalThemePreview: (path) => call("terminal_theme_preview", { path }),
   terminalThemeImport: (path, onTaken) => call("terminal_theme_import", { path, onTaken }),
   terminalThemeRemove: (id) => call("terminal_theme_remove", { id }),
+  appThemes: () => call("app_themes_list"),
+  appThemeSave: (theme) => call("app_theme_save", { theme }),
+  appThemeRemove: (id) => call("app_theme_remove", { id }),
+  appThemeImport: (path, onTaken) => call("app_theme_import", { path, onTaken }),
+  appThemeExport: (id) => call("app_theme_export", { id }),
   termConfigDetect: () => call("term_config_detect"),
   termConfigRead: (kind, path) => call("term_config_read", { kind, path }),
   termConfigSaveScheme: (kind, path) => call("term_config_save_scheme", { kind, path }),

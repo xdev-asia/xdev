@@ -13,6 +13,7 @@ use crate::agent_session_log::{ContextUsage, SessionTurn, SkippedLogs};
 use crate::agent_sessions::{SessionQuery, SessionRow, SessionSearchStatus};
 use crate::ai_keys::AiKeyStatus;
 use crate::app_stats::AppStatsView;
+use crate::app_themes::{AppTheme, AppThemeInput};
 use crate::automations::{
     AutomationDispatch, AutomationsChanged, AutomationsView, DispatchResult, RunFinish,
     ScheduleProblem,
@@ -149,6 +150,8 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     TermConfigDetected::export_all(cfg)?;
     TermConfigPreview::export_all(cfg)?;
     OnNameTaken::export_all(cfg)?;
+    AppTheme::export_all(cfg)?;
+    AppThemeInput::export_all(cfg)?;
     SchemeMode::export_all(cfg)?;
     SchemeColors::export_all(cfg)?;
     EditorTheme::export_all(cfg)?;

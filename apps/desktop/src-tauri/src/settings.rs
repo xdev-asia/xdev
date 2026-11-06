@@ -1045,6 +1045,10 @@ pub struct UiSettings {
     /// or a value that is no string, reads as `APP_ICON_DEFAULT`.
     #[serde(deserialize_with = "lenient_app_icon")]
     pub app_icon: String,
+    /// Settings → Appearance → Theme colours: the id of the saved app theme; empty is Default.
+    /// Only a valid file stem is kept (`[a-z0-9-]{1,33}`).
+    #[serde(deserialize_with = "lenient")]
+    pub app_theme: String,
 }
 
 /// The longest `UiSettings::ui_font`, in characters.
@@ -1069,6 +1073,7 @@ impl Default for UiSettings {
             titlebar: TitlebarMode::Native,
             show_titlebar_name: true,
             app_icon: APP_ICON_DEFAULT.to_string(),
+            app_theme: String::new(),
         }
     }
 }
@@ -1279,6 +1284,9 @@ impl UiSettings {
         self.hidden_apps = clean_hidden_apps(&self.hidden_apps);
         self.app_order = clean_app_order(&self.app_order);
         self.app_icon = known_app_icon(&self.app_icon).to_string();
+        if !crate::terminal_themes::valid_stem(&self.app_theme) {
+            self.app_theme.clear();
+        }
         self
     }
 }
@@ -3234,6 +3242,25 @@ then sum up"
             ..UiSettings::default()
         };
         assert_eq!(put.clamped().app_icon, "default");
+    }
+
+    #[test]
+    fn app_theme_is_lenient_and_keeps_only_a_stem() {
+        assert_eq!(UiSettings::default().app_theme, "");
+        let old: UiSettings = serde_json::from_str(r#"{"zoom":1.5}"#).unwrap();
+        assert_eq!(old.app_theme, "");
+        let wrong: UiSettings = serde_json::from_str(r#"{"zoom":1.5,"appTheme":4}"#).unwrap();
+        assert_eq!((wrong.zoom, wrong.app_theme.as_str()), (1.5, ""));
+        let ok = UiSettings {
+            app_theme: "dusk-2".into(),
+            ..UiSettings::default()
+        };
+        assert_eq!(ok.clamped().app_theme, "dusk-2");
+        let bad = UiSettings {
+            app_theme: "../x".into(),
+            ..UiSettings::default()
+        };
+        assert_eq!(bad.clamped().app_theme, "");
     }
 
     #[test]

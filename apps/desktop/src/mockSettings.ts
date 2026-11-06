@@ -94,6 +94,7 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   titlebar: "native",
   showTitlebarName: true,
   appIcon: "default",
+  appTheme: "",
 };
 /** `UI_FONT_MAX` in Rust. */
 export const UI_FONT_MAX = 120;

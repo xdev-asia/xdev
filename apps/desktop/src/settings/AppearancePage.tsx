@@ -8,6 +8,7 @@ import { clampTintOpacity, SIDEBAR_TINTS, TINT_OPACITY } from "@/ui/sidebarTint"
 import { applyAppearance } from "@/ui/theme";
 import type { AppIconId } from "@/ui/appIcon";
 import { AppIconPicker } from "./AppIconPicker";
+import { ThemeColours } from "./appearance/ThemeColours";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import { focusPart, moveApp, WorkspaceParts, type PartControl } from "./workspaceParts";
 import type { SettingsSectionProps } from "./sections";
@@ -282,6 +283,7 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
           </div>
         </SettingRow>
       </SettingGroup>
+      <ThemeColours api={api} filter={filter} active={ui?.appTheme ?? ""} onSelect={(id) => patch({ appTheme: id })} />
 
       <SettingGroup ids={APP_IDS} filter={filter}>
         <h4 className="settings-group">{t("settings.parts.title")}</h4>
