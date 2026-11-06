@@ -328,8 +328,8 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 import type { DeployPreset, TargetsView, VpsTarget } from "@xdev/bindings";
 export type { DeployPreset, TargetsView, VpsTarget };
-import type { SimDevice, SimLaunch, SimList, SimRef } from "@xdev/bindings";
-export type { SimDevice, SimLaunch, SimList, SimRef };
+import type { SimDevice, SimLaunch, SimList, SimPlatform, SimRef, SimState } from "@xdev/bindings";
+export type { SimDevice, SimLaunch, SimList, SimPlatform, SimRef, SimState };
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
 import type { ForeignScan, ForeignTerm, NotchState, NotchTab, NotchTabStatus, NotchView } from "@xdev/bindings";
 import type { CloudSettings, DeviceRow, LicenseState } from "@xdev/bindings";

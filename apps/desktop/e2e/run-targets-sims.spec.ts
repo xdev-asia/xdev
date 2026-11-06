@@ -18,7 +18,7 @@ async function openMenu(page: Page) {
     await expect(page.getByRole("tab", { name: "PowerShell" })).toBeVisible();
   }
   await page.getByRole("button", { name: "New tab" }).click();
-  const group = page.getByRole("group", { name: "Simulators" });
+  const group = page.getByRole("group", { name: "Simulators", exact: true });
   await expect(group).toBeVisible();
   return group;
 }

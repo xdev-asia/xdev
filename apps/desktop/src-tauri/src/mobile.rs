@@ -519,34 +519,47 @@ mod tests {
             sdk.find("emulator", "emulator"),
             Some(PathBuf::from("bin").join("emulator"))
         );
-        let sdk = Sdk {
-            find_program: &none,
-            ..sdk
-        };
-        assert_eq!(sdk.find("emulator", "emulator"), Some(in_home));
-        let only_root = [in_root.clone(), in_default.clone()];
-        let is_file = files(&only_root);
-        let sdk = Sdk {
-            is_file: &is_file,
-            ..sdk
-        };
-        assert_eq!(sdk.find("emulator", "emulator"), Some(in_root));
-        if !cfg!(windows) {
-            let only_default = [in_default.clone()];
-            let is_file = files(&only_default);
-            let sdk = Sdk {
-                is_file: &is_file,
-                ..sdk
+        let check =
+            |find: &dyn Fn(&str) -> Option<PathBuf>, present: &[PathBuf], tool: &str, dir: &str| {
+                let is_file = files(present);
+                let sdk = Sdk {
+                    find_program: find,
+                    var: &env,
+                    is_file: &is_file,
+                    home: Some(home.clone()),
+                };
+                sdk.find(tool, dir)
             };
-            assert_eq!(sdk.find("emulator", "emulator"), Some(in_default));
+        assert_eq!(
+            check(
+                &none,
+                &[in_home.clone(), in_root.clone(), in_default.clone()],
+                "emulator",
+                "emulator"
+            ),
+            Some(in_home)
+        );
+        assert_eq!(
+            check(
+                &none,
+                &[in_root.clone(), in_default.clone()],
+                "emulator",
+                "emulator"
+            ),
+            Some(in_root)
+        );
+        if !cfg!(windows) {
+            assert_eq!(
+                check(
+                    &none,
+                    std::slice::from_ref(&in_default),
+                    "emulator",
+                    "emulator"
+                ),
+                Some(in_default)
+            );
         }
-        let nothing: [PathBuf; 0] = [];
-        let is_file = files(&nothing);
-        let sdk = Sdk {
-            is_file: &is_file,
-            ..sdk
-        };
-        assert_eq!(sdk.find("adb", "platform-tools"), None);
+        assert_eq!(check(&none, &[], "adb", "platform-tools"), None);
     }
 
     /// A fake tool set; records what ran.
@@ -687,7 +700,7 @@ mod tests {
             l.tab_command.as_deref(),
             Some("& 'C:\\Program Files\\e.exe' -avd Pixel_8_API_35")
         );
-        assert!(l.log_command.contains("; & 'a.exe'"));
+        assert!(l.log_command.contains("; & a.exe"));
         assert_eq!(
             sim_launch(&avd(None), None, None, Shell::Posix, &title)
                 .unwrap_err()
