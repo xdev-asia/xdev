@@ -49,7 +49,7 @@ export function xtermOptions(
   custom: readonly TerminalScheme[] = [],
   light = false,
 ): LiveOptions {
-  const theme = terminalTheme(themeIdFor(s, light), token, custom);
+  const theme = terminalTheme(themeIdFor(s, light), token, custom, light);
   if (s.backgroundOpacity < 1) theme.background = withAlpha(theme.background, s.backgroundOpacity);
   return {
     fontFamily: s.fontFamily.trim() || mono || "monospace",

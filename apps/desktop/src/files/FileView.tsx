@@ -116,6 +116,9 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
       <>
         {needsChoice(entry) && <ExternalChange api={api} entry={entry} io={io} />}
         <div className="file-toolbar" role="toolbar" aria-label={t("files.toolbar")}>
+          <span className="file-path" title={rel}>
+            {rel}
+          </span>
           <IconButton icon="arrow-up" label={t("files.change.prev")} disabled={changes === 0} onClick={() => controls?.goChange(-1)} />
           <IconButton icon="arrow-down" label={t("files.change.next")} disabled={changes === 0} onClick={() => controls?.goChange(1)} />
           <IconButton

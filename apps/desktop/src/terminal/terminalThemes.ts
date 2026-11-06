@@ -37,12 +37,34 @@ export const TERMINAL_SCHEMES: readonly TerminalScheme[] = schemes.map(({ id, na
   colors,
 }));
 
+const ANSI = [
+  "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+  "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue", "brightMagenta", "brightCyan", "brightWhite",
+] as const;
+
+/** The bundled schemes whose 16 ANSI colours the "app" look borrows, by mode. */
+export const APP_ANSI_SOURCE = { light: "github-light", dark: "github-dark" } as const;
+
 /**
- * A bundled scheme, else an imported one (`custom`). "app" or an unknown id: only background and
- * foreground, from the xDev tokens (today's look).
+ * A bundled scheme, else an imported one (`custom`). "app" or an unknown id: background, foreground
+ * and cursor from the xDev tokens, and the 16 ANSI colours of a bundled scheme for the mode, so
+ * program output (yellow, bright white...) stays readable on the light tokens too.
  */
-export function terminalTheme(id: string, token: (name: string) => string | undefined, custom: readonly TerminalScheme[] = []): ITheme {
+export function terminalTheme(
+  id: string,
+  token: (name: string) => string | undefined,
+  custom: readonly TerminalScheme[] = [],
+  light = false,
+): ITheme {
   const scheme = TERMINAL_SCHEMES.find((s) => s.id === id) ?? custom.find((s) => s.id === id);
   if (scheme) return { ...scheme.colors };
-  return { background: token("--x-color-surface"), foreground: token("--x-color-ink") };
+  const source = TERMINAL_SCHEMES.find((s) => s.id === APP_ANSI_SOURCE[light ? "light" : "dark"]);
+  const theme: ITheme = { background: token("--x-color-surface"), foreground: token("--x-color-ink") };
+  if (source) {
+    for (const key of ANSI) theme[key] = source.colors[key];
+    theme.selectionBackground = source.colors.selectionBackground;
+  }
+  const cursor = token("--x-color-signal");
+  if (cursor) theme.cursor = cursor;
+  return theme;
 }

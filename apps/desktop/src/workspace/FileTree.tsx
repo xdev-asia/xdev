@@ -455,7 +455,7 @@ export function FileTree(props: {
         </div>
       )}
       {props.watchHealth === "limit" && <Banner title={t("files.watch.limit.title")}>{t("files.watch.limit.body")}</Banner>}
-    <div ref={treeEl} className="ws-tree ws-mono" role="tree" aria-label={t("workspace.files.tree")} onKeyDown={onKeyDown} onContextMenu={(e) => onMenu(e as unknown as MouseEvent, null)} {...dropOver("")}>
+    <div ref={treeEl} className="ws-tree" role="tree" aria-label={t("workspace.files.tree")} onKeyDown={onKeyDown} onContextMenu={(e) => onMenu(e as unknown as MouseEvent, null)} {...dropOver("")}>
       {found && found.hits.length === 0 && listed !== null && <div className="ws-tree-note">{t("files.tree.filterEmpty")}</div>}
       {found?.hits.map((hit) => (
         <button
