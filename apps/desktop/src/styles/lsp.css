@@ -67,6 +67,11 @@
   text-decoration-color: var(--x-color-signal);
 }
 
+/* CodeMirror draws its panels above menus and popovers that sit over the editor; keep them under. */
+.cm-editor .cm-panels {
+  z-index: 0;
+}
+
 /* The panel above the text: "Start language servers for this repo?" */
 .lsp-trust {
   display: flex;
