@@ -16,7 +16,7 @@ import type { TabStatus } from "./status";
 import { StatusGlyph } from "./StatusGlyph";
 import { childrenOf, parentCandidates, parentOf } from "./lineage";
 import { folderMenuItems, groupMenuItems, projectMenuItems, worktreeMenuItems } from "./worktreeMenu";
-import { activeProjects, dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
+import { activeProjects, dropMove, flattenRepos, moveTarget, nestRows, pinnedEntries, projectListRepeatsCards, sectionHeadless, visibleEntries, type Move, type NestRow, type WtEntry } from "./sidebarModel";
 import { RepoBadge } from "./RepoBadge";
 import { useKeymap } from "@/keys/keymap";
 import { SidebarFilters } from "./SidebarFilters";
@@ -405,9 +405,9 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
 
   const section = (s: Section<NestRow>) => {
     // No grouping: the rows stand alone, without a heading.
-    if (s.mode === "none") {
+    if (s.mode === "none" || sectionHeadless(s, sections.length, pinnedRows.length)) {
       return (
-        <li key={s.key} className="ws-group ws-group-bare" data-group="none">
+        <li key={s.key} className="ws-group ws-group-bare" data-group={s.mode === "none" ? "none" : s.key}>
           <ul className="ws-wts">{s.items.map((r) => row(r, false))}</ul>
         </li>
       );
@@ -688,7 +688,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       </li>,
     ];
   };
-  const hasProjects = (tree ?? []).some((i) => i.kind !== "repo" || !i.repo.missing);
+  // One project with nothing archived is already the card above: its own row would say the same again.
+  const hasProjects = (tree ?? []).some((i) => i.kind !== "repo" || !i.repo.missing) && !projectListRepeatsCards(tree ?? [], shownPaths);
 
   // The menu of the open row or repo; null when what it was opened on has gone from the list.
   const openMenuNode = () => {

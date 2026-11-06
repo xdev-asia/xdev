@@ -195,3 +195,15 @@ export function dropMove(items: SidebarItem[], dragged: string, target: string):
 
 /** The Remote group lives in `@/remote/model`; the sidebar reads it from here with the rest of its model. */
 export { remoteRows, stateDot, type RemoteRow } from "@/remote/model";
+
+/** True when the project list under the cards would only repeat them: one project, nothing archived, its worktrees drawn as cards. */
+export function projectListRepeatsCards(tree: readonly SidebarItem[], drawn: ReadonlySet<string>): boolean {
+  if (tree.length !== 1) return false;
+  const only = tree[0]!;
+  return only.kind === "repo" && !only.repo.missing && only.kept.length === 0 && only.repo.worktrees.some((wt) => drawn.has(wt.path));
+}
+
+/** True when a section needs no heading: it is the only one, nothing is pinned, and it is the catch-all "Other" of the activity grouping. */
+export function sectionHeadless(section: { mode: string; id: string }, sectionCount: number, pinnedCount: number): boolean {
+  return sectionCount === 1 && pinnedCount === 0 && section.mode === "activity" && section.id === "other";
+}
