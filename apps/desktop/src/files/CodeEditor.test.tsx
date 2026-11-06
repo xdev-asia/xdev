@@ -4,7 +4,9 @@ import { EditorSelection } from "@codemirror/state";
 import { EditorView as RealView } from "@codemirror/view";
 import { afterEach, expect, it, vi } from "vitest";
 import { translate } from "@/i18n";
-import type { EditorSettings } from "@/api";
+import type { EditorSettings, LineAttribution } from "@/api";
+import { lineAuthorsField } from "@/review/attribution/lineGutter";
+import type { EditorLineAuthors } from "@/review/attribution/useEditorLineAuthors";
 import { registerEditorPlugin } from "./editorPlugins";
 import { CodeEditor } from "./CodeEditor";
 
@@ -50,6 +52,11 @@ vi.mock("codemirror", async () => {
   Object.setPrototypeOf(FakeView, view.EditorView);
   return { EditorView: FakeView, basicSetup: [] };
 });
+// The gutter itself needs a DOM; a stand-in shows whether the compartment holds it.
+vi.mock("@/review/attribution/lineGutter", async (original) => {
+  const view = await import("@codemirror/view");
+  return { ...await original<typeof import("@/review/attribution/lineGutter")>(), lineAuthorsGutter: () => view.EditorView.editorAttributes.of({ class: "line-authors-gutter" }) };
+});
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string) => translate("en", key) }) }));
 
 const settings = { wordWrap: false, tabSize: 2, fontSize: 13, fontFamily: "" } as EditorSettings;
@@ -59,7 +66,7 @@ function mount(initial: { value: string; secondary?: boolean; goto?: { line: num
   hooks.slots = [];
   hooks.views = [];
   const edits: string[] = [];
-  const props = (over: Partial<{ value: string; goto: { line: number; seq: number } }> = {}) => ({
+  const props = (over: Partial<{ value: string; goto: { line: number; seq: number }; lineAuthors: EditorLineAuthors | null }> = {}) => ({
     worktree: "/wt",
     rel: "a.txt",
     value: initial.value,
@@ -149,4 +156,40 @@ it("compares with the base: reports the change count, and the controls walk the 
 it("the editor font family is the setting, else the terminal's, ending with the mono token", () => {
   const style = (CodeEditor({ worktree: "/wt", rel: "a.txt", value: "", settings: { ...settings, fontFamily: "Fira Code" }, onChange() {}, onSave() {} }) as { props: { style: Record<string, string> } }).props.style;
   expect(style["--editor-font-family"]).toBe("Fira Code, var(--x-font-mono)");
+});
+
+const runs: LineAttribution = {
+  lines: 3,
+  authors: [{ kind: "agent", tabId: "t1", agent: "claude", at: 1000 }],
+  runs: [{ from: 2, to: 3, author: 0 }],
+};
+
+function authored(view: RealView): number[] {
+  const out: number[] = [];
+  for (let it = view.state.field(lineAuthorsField).iter(); it.value; it.next()) out.push(view.state.doc.lineAt(it.from).number);
+  return out;
+}
+const gutterOn = (view: RealView) => view.state.facet(RealView.editorAttributes).some((a) => (a as { class?: string }).class === "line-authors-gutter");
+
+it("line authors put markers on their lines and switch the gutter on; null clears both", () => {
+  const value = "a\nb\nc";
+  const ed = mount({ value, extra: { lineAuthors: { attr: runs, text: value } } });
+  expect(authored(ed.view())).toEqual([2, 3]);
+  expect(gutterOn(ed.view())).toBe(true);
+  ed.draw({ lineAuthors: null });
+  expect(authored(ed.view())).toEqual([]);
+  expect(gutterOn(ed.view())).toBe(false);
+});
+
+it("a line typed above a marked line moves its marker down", () => {
+  const value = "a\nb\nc";
+  const ed = mount({ value, extra: { lineAuthors: { attr: runs, text: value } } });
+  ed.view().dispatch({ changes: { from: 0, insert: "new\n" } });
+  expect(authored(ed.view())).toEqual([3, 4]);
+});
+
+it("without line authors the field is there and empty, and no gutter shows", () => {
+  const ed = mount({ value: "a\nb" });
+  expect(authored(ed.view())).toEqual([]);
+  expect(gutterOn(ed.view())).toBe(false);
 });
