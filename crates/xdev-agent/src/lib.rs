@@ -21,6 +21,7 @@ mod squad_run;
 mod store;
 mod trust;
 mod version;
+pub mod wsl;
 
 use std::path::PathBuf;
 
