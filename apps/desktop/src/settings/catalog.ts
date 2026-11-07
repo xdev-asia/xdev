@@ -246,6 +246,13 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   // SSH: the page keeps its own host filter, so one entry.
   e("peers.computers", "peers.title", ["peers", "paired", "pair", "computer", "computers", "link", "remote", "phone", "máy tính", "may tinh", "ghép đôi", "ghep doi"], "peers.intro"),
   e("ssh.hosts", "ssh.title", ["ssh", "host", "hosts", "server", "remote", "terminal", "config", "máy chủ", "may chu", "từ xa", "tu xa"], "ssh.intro"),
+  // Hosts: per-host settings of the SSH hosts.
+  e("hosts.scope", "settings.hosts.scope", ["host", "scope", "ssh", "remote", "machine", "máy chủ", "may chu", "phạm vi", "pham vi", "từ xa", "tu xa"]),
+  e("hosts.label", "settings.hosts.label", ["label", "name", "display", "nhãn", "nhan", "tên", "ten"], "settings.hosts.labelHint"),
+  e("hosts.shell", "settings.hosts.shell", ["shell", "login", "zsh", "bash", "fish", "vỏ lệnh", "vo lenh"], "settings.hosts.shellHint"),
+  e("hosts.env", "settings.hosts.env", ["env", "environment", "variable", "biến môi trường", "bien moi truong"], "settings.hosts.envHint"),
+  e("hosts.history", "settings.hosts.history", ["history", "sessions", "agent", "claude", "codex", "lịch sử", "lich su", "phiên", "phien"], "settings.hosts.historyHint"),
+  e("hosts.historyDays", "settings.hosts.days", ["days", "retention", "keep", "ngày", "ngay", "giữ", "giu"], "settings.hosts.daysHint"),
   // Diagnostics
   e("diagnostics.export", "diagnostics.export.title", ["diagnostics", "export", "bundle", "chẩn đoán", "chan doan", "xuất", "xuat"]),
   e("diagnostics.logs", "diagnostics.logs.title", ["diagnostics", "log", "logs", "nhật ký", "nhat ky"]),

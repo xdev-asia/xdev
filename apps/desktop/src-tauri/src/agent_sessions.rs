@@ -9,7 +9,7 @@ use std::sync::{Condvar, Mutex, PoisonError, RwLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{Manager, State};
 use xdev_kit::{
     Agent, AgentSession, FileMark, Home, SessionIndex, TextRole, TranscriptEvent, scan_transcripts,
 };
@@ -85,6 +85,12 @@ pub struct SessionQuery {
     pub sort: SessionSort,
     /// At most 500.
     pub limit: u32,
+    /// With scope `all`: list the sessions of this saved SSH host (its mirrored
+    /// logs) instead of the local ones. A worktree or repo scope of an
+    /// `ssh://<host><path>` folder already names its host.
+    #[serde(default)]
+    #[cfg_attr(test, ts(optional))]
+    pub host: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -261,6 +267,14 @@ pub async fn agent_sessions(
     // path is only a candidate: consent is read again under the text lock.
     let search = search_path(&ctx.data);
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some(host) = route(&query) {
+            // Only a live connection syncs; without one the cached rows answer.
+            let sync = || {
+                let hub = app.state::<crate::remote_ssh::RemoteHub>();
+                crate::hosts::sync_now(&app, &ctx.data, &hub, &host).map(|_| ())
+            };
+            return host_sessions(&ctx.data, &host, &query, refresh.then_some(&sync));
+        }
         let consent = || crate::settings_store::read(&app).agents.session_search;
         sessions_with_consent(
             &ctx.data,
@@ -572,9 +586,88 @@ pub(crate) fn worktree_sessions(
         home_id: None,
         sort: SessionSort::LastDesc,
         limit: 50,
+        host: None,
     };
     let refresh = (!refreshing()).then(|| history_cutoff(now_ms(), HISTORY_DAYS));
     sessions(data, homes, &query, refresh, None)
+}
+
+/// The host a query reads. A worktree or repo scope of an `ssh://` folder
+/// goes to that folder's host; scope `all` with `host` goes to that host;
+/// anything else is local.
+fn route(query: &SessionQuery) -> Option<String> {
+    match &query.scope {
+        SessionScope::Worktree { path } | SessionScope::Repo { path } => {
+            xdev_ssh::RemoteRef::parse(path).map(|r| r.host_id)
+        }
+        SessionScope::All => query.host.clone(),
+    }
+}
+
+/// The mirrored session index of each host asked for, with the time of its
+/// file when it was read: a sync that saved the file loads again.
+type HostIndexes = BTreeMap<PathBuf, (Option<std::time::SystemTime>, SessionIndex)>;
+static HOST_INDEX: Mutex<HostIndexes> = Mutex::new(BTreeMap::new());
+
+/// The sessions of host `host` for `query` (see `route`),
+/// from its mirrored logs: the metadata only, no text index. `sync` runs
+/// first when given; its failure (no connection, say) leaves the cached rows.
+/// A row is resumable when it ran inside a saved remote project of the host.
+fn host_sessions(
+    data: &Path,
+    host: &str,
+    query: &SessionQuery,
+    sync: Option<&dyn Fn() -> Result<(), CmdError>>,
+) -> Result<Vec<SessionRow>, CmdError> {
+    if let Some(sync) = sync {
+        let _ = sync();
+    }
+    let projects: Vec<String> = crate::remote_ssh::store::load_projects(data)?
+        .into_iter()
+        .filter(|p| p.host_id == host)
+        .map(|p| p.path)
+        .collect();
+    let mut folders = projects.clone();
+    if let SessionScope::Worktree { path } | SessionScope::Repo { path } = &query.scope
+        && let Some(r) = xdev_ssh::RemoteRef::parse(path)
+        && !folders.contains(&r.path)
+    {
+        folders.push(r.path);
+    }
+    let mut folders = Folders {
+        entries: folders
+            .iter()
+            .map(|p| {
+                let url = format!("ssh://{host}{p}");
+                (path_key(Path::new(p)), url.clone(), url)
+            })
+            .collect(),
+    };
+    folders
+        .entries
+        .sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.0.cmp(&b.0)));
+    let keys: Vec<String> = projects.iter().map(|p| path_key(Path::new(p))).collect();
+    let dir = crate::hosts::host_dir(data, host);
+    let stamp = std::fs::metadata(dir.join("kit").join("sessions.json"))
+        .and_then(|m| m.modified())
+        .ok();
+    let mut guard = HOST_INDEX.lock().unwrap_or_else(PoisonError::into_inner);
+    if guard.get(&dir).is_none_or(|(at, _)| *at != stamp) {
+        guard.insert(dir.clone(), (stamp, SessionIndex::load(&dir)));
+    }
+    let Some((_, index)) = guard.get(&dir) else {
+        unreachable!("set just above");
+    };
+    Ok(select(
+        &index.list(),
+        &folders,
+        query,
+        &|cwd| {
+            let key = path_key(Path::new(cwd));
+            keys.iter().any(|k| inside(&key, k))
+        },
+        &HashMap::new(),
+    ))
 }
 
 /// The registry folder (worktree or repo checkout) a session ran in, and its
@@ -747,3 +840,7 @@ mod tests;
 #[cfg(test)]
 #[path = "agent_sessions_bench.rs"]
 mod bench;
+
+#[cfg(test)]
+#[path = "agent_sessions_host_tests.rs"]
+mod host_tests;

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/mockApi";
 import { Sessions } from "@/workspace/sessions";
-import { AgentSessionsStore, DEFAULT_VIEW, PAGE, POLL_MS, READING_MS, REFRESH_MS, VIEW_KEY } from "./store";
+import { AgentSessionsStore, DEFAULT_QUERY, DEFAULT_VIEW, PAGE, POLL_MS, READING_MS, REFRESH_MS, VIEW_KEY } from "./store";
 
 const A = "/demo/wt/xdev-oak";
 
@@ -268,6 +268,54 @@ describe("the saved view", () => {
     expect(store.view).toEqual(DEFAULT_VIEW);
     store.setView({ hideEmpty: false });
     expect(store.view.hideEmpty).toBe(false);
+  });
+
+  it("the default query has no host key", () => {
+    expect("host" in DEFAULT_QUERY).toBe(false);
+    const store = new AgentSessionsStore(createMockApi({}), null);
+    expect("host" in store.state.query).toBe(false);
+    store.dispose();
+  });
+
+  it("setHost reads that host's rows with scope all, and null goes back to this device", async () => {
+    const api = createMockApi({});
+    const ask = vi.spyOn(api, "agentSessions");
+    const store = new AgentSessionsStore(api, null);
+    await store.setHost("ssh-a");
+    expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ host: "ssh-a", scope: { kind: "all" } }), false);
+    expect(store.state.rows.length).toBeGreaterThan(0);
+    expect(store.state.rows.every((r) => r.session.homeId === "ssh-a-claude")).toBe(true);
+    await store.setHost(null);
+    expect("host" in store.state.query).toBe(false);
+    expect(store.state.rows.some((r) => r.session.homeId !== "ssh-a-claude")).toBe(true);
+    store.dispose();
+  });
+
+  it("a refresh of a host syncs it, then reads the index without a second log scan", async () => {
+    const api = createMockApi({});
+    const ask = vi.spyOn(api, "agentSessions");
+    const sync = vi.spyOn(api, "hostHistorySync").mockResolvedValue({ files: 2, bytes: 9, capped: false, lastSyncMs: 123 });
+    const store = new AgentSessionsStore(api, null);
+    await store.setHost("ssh-a");
+    ask.mockClear();
+    await store.refresh();
+    expect(sync).toHaveBeenCalledWith("ssh-a");
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ host: "ssh-a" }), false);
+    expect(store.state.hostStatus?.lastSyncMs).toBe(123);
+    store.dispose();
+  });
+
+  it("a failed sync keeps the rows and records why", async () => {
+    const api = createMockApi({});
+    vi.spyOn(api, "hostHistorySync").mockRejectedValue({ code: "remote_offline" });
+    const store = new AgentSessionsStore(api, null);
+    await store.setHost("ssh-a");
+    await store.refresh();
+    expect(store.state.hostStatus?.error?.code).toBe("remote_offline");
+    expect(store.state.rows.length).toBeGreaterThan(0);
+    expect(store.state.error).toBeNull();
+    store.dispose();
   });
 });
 

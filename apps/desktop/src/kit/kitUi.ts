@@ -17,6 +17,8 @@ export function homeLabel(homes: Home[], id: string | null, t: Translate): strin
   if (!home) return id;
   if (home.source === "own") return home.agent;
   if (home.source === "env") return t("kit.home.env", { agent: home.agent });
+  // A host mirror is never in a home list; it reads as its agent if one gets here.
+  if ("host" in home.source) return home.agent;
   return t("kit.home.account", { agent: home.agent, account: home.source.account });
 }
 

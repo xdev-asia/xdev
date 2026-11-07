@@ -28,6 +28,9 @@ use crate::crash::{CrashReport, RenderCrash};
 use crate::diag_bundle::DiagnosticsExport;
 use crate::file_watch::FsChanged;
 use crate::hooks::PtyHook;
+use crate::hosts::{
+    EffectiveHistory, EffectiveHost, HostHistoryStatus, HostScopeEntry, HostSettingsView,
+};
 use crate::keybindings::{KeybindingsChanged, KeybindingsText};
 use crate::kit::{KitText, PromptEntry};
 use crate::mcp_tools::{McpActivityView, McpHealth, McpToolView};
@@ -47,10 +50,11 @@ use crate::review_ai::{ReviewAiHunk, ReviewAiPlan, ReviewFinding};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
     AgentsSettings, AutomationsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings,
-    IssuesPreset, KeySettings, MacOptionAsAlt, NavigationSettings, NetworkSettings, OpenInSettings,
-    OrchestrationSettings, RestoreMode, SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs,
-    StatusBarItems, StatusSettings, TerminalLinkClick, TerminalSettings, Theme, TitlebarMode,
-    UiSettings, UpdateChannel, UsageSettings, XdevIdSettings,
+    HostEnvVar, HostHistory, HostSettings, HostsSettings, IssuesPreset, KeySettings,
+    MacOptionAsAlt, NavigationSettings, NetworkSettings, OpenInSettings, OrchestrationSettings,
+    RestoreMode, SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems,
+    StatusSettings, TerminalLinkClick, TerminalSettings, Theme, TitlebarMode, UiSettings,
+    UpdateChannel, UsageSettings, XdevIdSettings,
 };
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
@@ -213,6 +217,15 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     xdev_orch::Priority::export_all(cfg)?;
     AutomationsSettings::export_all(cfg)?;
     NetworkSettings::export_all(cfg)?;
+    HostsSettings::export_all(cfg)?;
+    HostSettings::export_all(cfg)?;
+    HostHistory::export_all(cfg)?;
+    HostEnvVar::export_all(cfg)?;
+    EffectiveHost::export_all(cfg)?;
+    EffectiveHistory::export_all(cfg)?;
+    HostScopeEntry::export_all(cfg)?;
+    HostSettingsView::export_all(cfg)?;
+    HostHistoryStatus::export_all(cfg)?;
     Automation::export_all(cfg)?;
     AutomationRun::export_all(cfg)?;
     AutomationInput::export_all(cfg)?;

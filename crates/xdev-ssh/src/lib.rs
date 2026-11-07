@@ -9,6 +9,7 @@ mod connection;
 mod reconnect;
 mod remote_cmd;
 mod remote_fs;
+pub mod remote_logs;
 mod remote_view;
 mod rpath;
 mod sftp;
@@ -26,7 +27,7 @@ pub use connection::{
     Connection, SETTLE, SshConnState, SshPromptKind, SshTestOutcome, classify, prompt_kind,
 };
 pub use reconnect::{Backoff, MAX_TRIES, RemoteState};
-pub use remote_cmd::{remote_agent_cmd, remote_shell_cmd, tmux_session_name};
+pub use remote_cmd::{remote_agent_cmd, remote_shell_cmd, tmux_session_name, valid_env_name};
 pub use remote_fs::{CMD_TIMEOUT, DIRS_MAX, LIST_TIMEOUT, Probe, REMOVE_DEPTH, RemoteFs};
 pub use remote_view::{
     RemoteConnState, RemoteDir, RemoteDirListing, RemoteHostView, RemoteProject, RemoteProjectView,

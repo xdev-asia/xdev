@@ -8,7 +8,7 @@
 //! password or passphrase prompt fails as `remote_auth`.
 
 pub(crate) mod files;
-mod store;
+pub(crate) mod store;
 #[cfg(test)]
 mod tests;
 
@@ -346,6 +346,12 @@ impl RemoteHub {
 
     fn existing(&self, host_id: &str) -> Option<Arc<HostSession>> {
         lock(&self.inner.hosts).get(host_id).cloned()
+    }
+
+    /// Whether the host has a live connection now; never connects.
+    pub(crate) fn is_connected(&self, host_id: &str) -> bool {
+        self.existing(host_id)
+            .is_some_and(|s| matches!(&*lock(&s.state), RemoteState::Connected { .. }))
     }
 
     /// The host's state; `Idle` for one never connected.
@@ -834,6 +840,7 @@ pub(crate) fn launch_spec(
     cwd: &Path,
     remote_host: Option<&str>,
     declared: Vec<String>,
+    hosts: &crate::settings::HostsSettings,
 ) -> Result<Option<crate::remote_launch::RemoteSpec>, CmdError> {
     let (host, path, keep) = match (remote_ref(cwd), remote_host) {
         (Some(r), host_id) => {
@@ -853,7 +860,10 @@ pub(crate) fn launch_spec(
         (None, None) => return Ok(None),
     };
     let (_, probe) = hub.ensure(&host)?;
+    let own = crate::hosts::effective(hosts.0.get(&host.id), &host.alias);
     Ok(Some(crate::remote_launch::RemoteSpec {
+        host_env: own.env.into_iter().map(|v| (v.name, v.value)).collect(),
+        shell: own.shell,
         worktree: format!("ssh://{}{path}", host.id),
         mux: hub.mux(),
         keep_alive: keep && probe.tmux,
@@ -865,7 +875,7 @@ pub(crate) fn launch_spec(
 
 /// The remote target of the repo that `cwd` (the repo or one of its
 /// worktrees) belongs to.
-fn target_of(data: &Path, cwd: &Path) -> Result<Option<RemoteTarget>, CmdError> {
+pub(crate) fn target_of(data: &Path, cwd: &Path) -> Result<Option<RemoteTarget>, CmdError> {
     let key = xdev_workspace::path_key(cwd);
     let reg = xdev_workspace::Registry::load(data)?;
     let repo = reg

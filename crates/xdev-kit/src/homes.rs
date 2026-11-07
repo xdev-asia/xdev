@@ -18,6 +18,8 @@ pub enum HomeSource {
     Own,
     Env,
     Account(String),
+    /// The local mirror of an SSH host's agent logs; the string is the host id.
+    Host(String),
 }
 
 /// One agent home: the folder a CLI reads its settings, skills and memory from.
@@ -54,6 +56,20 @@ impl From<std::io::Error> for KitError {
 /// `ceil(bytes / 4)`: a rough size, always shown with "≈".
 pub fn approx_tokens(bytes: u64) -> u64 {
     bytes.div_ceil(4)
+}
+
+/// The two homes of a host's log mirror at `mirror_root` (`<data>/hosts/<id>`):
+/// `<id>-claude` and `<id>-codex`. The folders may not exist yet.
+pub fn host_homes(mirror_root: &Path, host_id: &str) -> Vec<Home> {
+    [(Agent::Claude, "claude"), (Agent::Codex, "codex")]
+        .into_iter()
+        .map(|(agent, name)| Home {
+            id: format!("{host_id}-{name}"),
+            agent,
+            path: mirror_root.join("logs").join(name),
+            source: HomeSource::Host(host_id.to_owned()),
+        })
+        .collect()
 }
 
 /// The homes on this machine, in the order Own, Env, Account. A folder seen
@@ -126,6 +142,17 @@ mod tests {
 
     fn no_env(_: &str) -> Option<String> {
         None
+    }
+
+    #[test]
+    fn a_host_has_a_claude_and_a_codex_home_in_its_mirror() {
+        let root = Path::new("/d/hosts/ssh-a");
+        let found = host_homes(root, "ssh-a");
+        let ids: Vec<&str> = found.iter().map(|h| h.id.as_str()).collect();
+        assert_eq!(ids, ["ssh-a-claude", "ssh-a-codex"]);
+        assert_eq!(found[0].agent, Agent::Claude);
+        assert_eq!(found[1].path, root.join("logs").join("codex"));
+        assert_eq!(found[0].source, HomeSource::Host("ssh-a".into()));
     }
 
     #[test]

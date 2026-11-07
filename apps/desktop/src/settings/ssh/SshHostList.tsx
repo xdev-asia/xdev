@@ -23,6 +23,8 @@ export function SshHostList(props: {
   onTest?(host: SshHost): void;
   onConnect?(host: SshHost): void;
   onDisconnect?(host: SshHost): void;
+  /** Opens Settings → Hosts on this host. */
+  onSettings?(host: SshHost): void;
 }): JSX.Element {
   const { t } = useI18n();
   if (props.hosts.length === 0) {
@@ -80,6 +82,11 @@ export function SshHostList(props: {
                       {t("ssh.connect")}
                     </Button>
                   )}
+              {props.onSettings && (
+                <Button type="button" variant="secondary" onClick={() => props.onSettings?.(h)}>
+                  {t("ssh.hostSettings")}
+                </Button>
+              )}
               <Button type="button" variant="secondary" onClick={() => props.onEdit(h)}>
                 {t("ssh.edit")}
               </Button>

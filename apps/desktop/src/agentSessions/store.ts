@@ -1,4 +1,4 @@
-import { toApiError, type Api, type ApiError, type SessionQuery, type SessionRow } from "@/api";
+import { toApiError, type Api, type ApiError, type HostHistoryStatus, type HostScopeEntry, type SessionQuery, type SessionRow } from "@/api";
 import type { Sessions } from "@/workspace/sessions";
 import { GROUP_BYS, HISTORY_DAYS, type GroupBy, type HistoryDays } from "./sessionsView";
 
@@ -28,7 +28,14 @@ export interface AgentSessionsState {
   contentSearch: boolean;
   /** A refresh has run for `READING_MS`: the rows are what it has read so far. */
   reading: boolean;
+  /** The SSH hosts a session list can follow (Local is not one); the host picker shows when there are some. */
+  hosts?: HostScopeEntry[];
+  /** The session mirror of the host in the query: when it last synced, and why a sync failed. */
+  hostStatus?: HostHistoryStatus | null;
 }
+
+/** What the store needs of the API; the host calls are optional so a store can run without hosts. */
+type StoreApi = Pick<Api, "agentSessions" | "agentsSettings" | "onPtyExit"> & Partial<Pick<Api, "hostScopesList" | "hostSettingsGet" | "hostHistorySync">>;
 
 export const DEFAULT_QUERY: SessionQuery = { text: null, scope: { kind: "all" }, agent: null, homeId: null, sort: "lastDesc", limit: PAGE };
 
@@ -98,7 +105,7 @@ export class AgentSessionsStore {
   private poll: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    private readonly api: Pick<Api, "agentSessions" | "agentsSettings" | "onPtyExit">,
+    private readonly api: StoreApi,
     sessions: Pick<Sessions, "tab"> | null,
   ) {
     // An agent that ended has just written its log: one refresh shows it.
@@ -136,6 +143,17 @@ export class AgentSessionsStore {
     return this.read();
   }
 
+  /**
+   * Follows one SSH host (its mirrored sessions, every folder) or, with null, this device again.
+   * A host query has no scope of its own, so the scope becomes "all".
+   */
+  setHost(host: string | null): Promise<void> {
+    const { host: _old, ...rest } = this.current.query;
+    this.set({ query: host === null ? rest : { ...rest, scope: { kind: "all" }, host }, hostStatus: null });
+    if (host !== null) void this.loadHostStatus(host);
+    return this.read();
+  }
+
   /** The search text, applied `SEARCH_MS` after the last call. Blank means no text. */
   search(text: string): void {
     if (this.typing) clearTimeout(this.typing);
@@ -165,6 +183,7 @@ export class AgentSessionsStore {
   /** For a panel that is on screen: refreshes now and every minute; the returned function stops it. */
   watch(): () => void {
     this.watchers++;
+    void this.loadHosts();
     void this.refresh();
     this.timer ??= setInterval(() => void this.refresh(), REFRESH_MS);
     let stopped = false;
@@ -188,6 +207,43 @@ export class AgentSessionsStore {
     void this.unlisten?.then((stop) => stop()).catch(() => {});
   }
 
+  private async loadHosts(): Promise<void> {
+    const list = this.api.hostScopesList;
+    if (!list) return;
+    try {
+      const hosts = (await list()).filter((h) => h.id !== "local");
+      // A followed host that was removed falls back to this device.
+      if (this.current.query.host && !hosts.some((h) => h.id === this.current.query.host)) await this.setHost(null);
+      this.set({ hosts });
+    } catch {
+      // The picker only stays as it was.
+    }
+  }
+
+  private async loadHostStatus(host: string): Promise<void> {
+    try {
+      const view = await this.api.hostSettingsGet?.(host);
+      if (view && this.current.query.host === host && !this.current.hostStatus) this.set({ hostStatus: view.history });
+    } catch {
+      // The header only shows no time.
+    }
+  }
+
+  /** Copies the host's logs and reports how it went; a failure keeps the rows and says why. */
+  private async syncHost(host: string): Promise<void> {
+    const sync = this.api.hostHistorySync;
+    if (!sync) return;
+    try {
+      const status = await sync(host);
+      if (this.current.query.host === host) this.set({ hostStatus: status });
+    } catch (e) {
+      if (this.current.query.host === host) {
+        const { code, detail } = toApiError(e);
+        this.set({ hostStatus: { ...(this.current.hostStatus ?? { files: 0, bytes: 0, capped: false }), error: { code, ...(detail ? { detail } : {}) } } });
+      }
+    }
+  }
+
   private async runRefresh(): Promise<void> {
     const query = this.current.query;
     this.set({ loading: true });
@@ -198,7 +254,9 @@ export class AgentSessionsStore {
       this.poll = setInterval(() => void this.read(), POLL_MS);
     }, READING_MS);
     try {
-      const rows = await this.api.agentSessions(query, true);
+      // A host's logs are copied by its own sync; the list then reads the index.
+      if (query.host) await this.syncHost(query.host);
+      const rows = await this.api.agentSessions(query, !query.host);
       this.stopPolling();
       // A query changed meanwhile asks for its own rows; else these are the newest.
       if (this.current.query === query) await this.show(rows, ++this.serial);

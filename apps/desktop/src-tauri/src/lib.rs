@@ -46,6 +46,7 @@ mod gitlab;
 mod history;
 mod hook_install;
 mod hooks;
+mod hosts;
 mod issues;
 mod keybindings;
 mod keyboard;
@@ -718,6 +719,10 @@ pub fn run() {
             ssh::ssh_host_remove,
             ssh::ssh_hosts_remove_many,
             ssh::ssh_config_sync,
+            hosts::host_scopes_list,
+            hosts::host_settings_get,
+            hosts::host_settings_put,
+            hosts::host_history_sync,
             ssh_connect::ssh_host_test,
             ssh_connect::ssh_connect,
             ssh_connect::ssh_disconnect,

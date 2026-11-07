@@ -360,6 +360,7 @@ fn bench_heavy_history() {
         home_id: None,
         sort: SessionSort::LastDesc,
         limit: 100,
+        host: None,
     };
     let cutoff = history_cutoff(now, HISTORY_DAYS);
     // Every log read, the window aside: the cost of the reading alone.

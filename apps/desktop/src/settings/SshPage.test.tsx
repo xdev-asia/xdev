@@ -127,3 +127,10 @@ it("removing one or many reports how many went", async () => {
   expect(await api.sshHostsRemoveMany([b.id, "nope"])).toBe(1);
   expect((await api.sshHostsList()).map((h) => h.alias)).toEqual(["c"]);
 });
+
+it("a row offers Host settings only when the page can open it", () => {
+  const row = (onSettings?: () => void) =>
+    renderToStaticMarkup(<SshHostList hosts={[web]} total={1} selected={new Set()} onToggle={() => {}} onEdit={() => {}} onRemove={() => {}} onSettings={onSettings} />);
+  expect(row(() => {})).toContain(en("ssh.hostSettings"));
+  expect(row()).not.toContain(en("ssh.hostSettings"));
+});
