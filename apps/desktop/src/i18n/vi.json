@@ -6313,5 +6313,14 @@
   "tasks.view.label": "Cách xem",
   "tasks.view.list": "Danh sách",
   "tasks.view.board": "Bảng",
-  "tasks.card.need": "Cần bạn"
+  "tasks.card.need": "Cần bạn",
+  "automations.timeline.label": "Các bước chạy",
+  "automations.timeline.scheduled": "Đã lên lịch",
+  "automations.timeline.started": "Đã bắt đầu",
+  "automations.timeline.finished": "Đã kết thúc",
+  "automations.timeline.pending": "Đang chờ",
+  "automations.timeline.running": "Đang chạy",
+  "automations.timeline.done": "Xong",
+  "automations.timeline.failed": "Lỗi",
+  "automations.timeline.skipped": "Bỏ qua"
 }

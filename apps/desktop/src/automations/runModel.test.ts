@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationRun, RunStatus } from "@/api";
 import { translate } from "@/i18n";
-import { breadcrumbWorkspace, errorText, isFinalStatus, occurrenceText, runContent, statusLabel, statusTone, summaryText, workspaceText } from "./runModel";
+import { breadcrumbWorkspace, errorText, isFinalStatus, occurrenceText, runContent, statusLabel, statusTone, summaryText, workspaceText, runSteps } from "./runModel";
 
 const t = (k: string, v?: Record<string, string | number>) => translate("en", k, v);
 
@@ -96,4 +96,15 @@ describe("occurrences and summary", () => {
     expect(summaryText([run()], t)).toBe("1 run · 1 completed");
     expect(summaryText([], t)).toBe("0 runs · 0 completed");
   });
+});
+
+describe("runSteps", () => {
+  it("maps a status onto scheduled, started and finished", () => {
+    const of = (status: RunStatus) => runSteps(run({ status }), t, "en").map((s) => s.status);
+    expect(of("completed")).toEqual(["done", "done", "done"]);
+    expect(of("pending")).toEqual(["done", "pending", "pending"]);
+    expect(of("dispatching")).toEqual(["done", "running", "pending"]);
+    expect(of("dispatch_failed")).toEqual(["done", "done", "failed"]);
+    expect(of("skipped_missed")).toEqual(["done", "skipped", "skipped"]);
+  }, 5000);
 });

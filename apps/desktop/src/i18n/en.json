@@ -6313,5 +6313,14 @@
   "tasks.view.label": "View",
   "tasks.view.list": "List",
   "tasks.view.board": "Board",
-  "tasks.card.need": "Needs you"
+  "tasks.card.need": "Needs you",
+  "automations.timeline.label": "Run steps",
+  "automations.timeline.scheduled": "Scheduled",
+  "automations.timeline.started": "Started",
+  "automations.timeline.finished": "Finished",
+  "automations.timeline.pending": "Pending",
+  "automations.timeline.running": "Running",
+  "automations.timeline.done": "Done",
+  "automations.timeline.failed": "Failed",
+  "automations.timeline.skipped": "Skipped"
 }

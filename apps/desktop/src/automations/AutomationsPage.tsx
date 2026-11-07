@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
-import { Button, EmptyState, Icon, SearchInput, Segmented, Toolbar, type MenuEntry } from "@xdev-asia/ui";
+import { Button, EmptyState, Icon, IconButton, SearchInput, Segmented, Toolbar, type MenuEntry } from "@xdev-asia/ui";
 import { type Api, type Automation, type AutomationRun, type AutomationsView, type ProfilesView, type RepoView, type RunRow, toApiError } from "@/api";
 import { useI18n } from "@/i18n";
 import { pushToast } from "@/workspace/toastStore";
@@ -176,13 +176,11 @@ export function AutomationsPage(props: {
               </MenuButton>
             </>
           )}
-          <button type="button" className="ws-icon-btn" data-act="refresh" aria-label={t("automations.refresh")} title={t("automations.refresh")} onClick={reload}>
-            <Icon name="restore" size={14} />
-          </button>
+          <IconButton icon="restore" data-act="refresh" label={t("automations.refresh")} onClick={reload} />
           <Button variant="primary" data-act="new" icon="plus" onClick={() => setEditing({ automation: null, template: null })}>
             {t("automations.new")}
           </Button>
-          <Button variant="secondary" data-act="templates" icon="plus" aria-pressed={picking} onClick={() => setPicking(!picking)}>
+          <Button variant="secondary" data-act="templates" aria-pressed={picking} onClick={() => setPicking(!picking)}>
             {t("automations.fromTemplate")}
           </Button>
         </>
@@ -268,33 +266,36 @@ export function AutomationsPage(props: {
     </>
   );
 
-  if (openRun) {
-    return (
-      <section className="au-page" aria-label={t("automations.page.label")}>
-        <AutomationRunDetails
-          run={openRun}
-          automation={automations.find((a) => a.id === openRun.automationId) ?? null}
-          exists={worktreeExists}
-          now={now}
-          onBack={() => setOpenRunId(null)}
-          onRerun={() => {
-            const a = automations.find((x) => x.id === openRun.automationId);
-            if (!a) return;
-            setOpenRunId(null);
-            void act(a, "run");
-          }}
-          onOpenWorkspace={(path) => props.onOpenWorkspace?.(path)}
-        />
-        {dialogs}
-      </section>
-    );
-  }
+  // A run opens in the side panel; the page behind it stays.
+  const runPanel = openRun && (
+    <aside className="au-detail" aria-label={openRun.title}>
+      <AutomationRunDetails
+        run={openRun}
+        automation={automations.find((a) => a.id === openRun.automationId) ?? null}
+        exists={worktreeExists}
+        now={now}
+        onBack={() => setOpenRunId(null)}
+        onRerun={() => {
+          const a = automations.find((x) => x.id === openRun.automationId);
+          if (!a) return;
+          setOpenRunId(null);
+          void act(a, "run");
+        }}
+        onOpenWorkspace={(path) => props.onOpenWorkspace?.(path)}
+      />
+    </aside>
+  );
 
   return (
     <section className="au-page" aria-label={t("automations.page.label")}>
       {toolbar}
       {mode === "runs" ? (
-        <RunsDashboard api={api} reloadKey={tick} onOpen={(row) => void openFromDashboard(row)} />
+        <div className="au-split">
+          <div className="au-main">
+            <RunsDashboard api={api} reloadKey={tick} onOpen={(row) => void openFromDashboard(row)} />
+          </div>
+          {runPanel}
+        </div>
       ) : (
         <>
           {view.tooLong && (
@@ -304,7 +305,9 @@ export function AutomationsPage(props: {
           )}
           <div className="au-split">
             <div className="au-main">{body}</div>
-            {current ? (
+            {runPanel ? (
+              runPanel
+            ) : current ? (
               <AutomationDetail
                 automation={current}
                 schedule={schedules[current.id] ?? ""}
@@ -313,6 +316,7 @@ export function AutomationsPage(props: {
                 runs={runs}
                 exists={worktreeExists}
                 onOpenRun={(run) => setOpenRunId(run.id)}
+                onRunNow={() => void act(current, "run")}
               />
             ) : (
               automations.length > 0 && <p className="au-empty au-detail-empty">{t("automations.detail.empty")}</p>
