@@ -138,6 +138,7 @@ import { useShellLayoutRestore } from "@/shell/useShellLayoutRestore";
 import { useShellNotifications } from "@/shell/useShellNotifications";
 import { useShellAgentFix } from "@/shell/useShellAgentFix";
 import { useShellCreate } from "@/shell/useShellCreate";
+import { useShellDialogs } from "@/shell/useShellDialogs";
 import { useShellRemoteActions } from "@/shell/useShellRemoteActions";
 import { useShellRemove } from "@/shell/useShellRemove";
 import { useShellRepoActions } from "@/shell/useShellRepoActions";
@@ -204,9 +205,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { view, show, docsMounted, setDocsMounted, kitOpen, appRequest, docsKey, setDocsKey, settingsAt, setSettingsAt, openSettings, openUsage, openTask, openTaskBoard, openDecompose, openAccounts, kitOpened, openSearch, docsSaved } = useShellViews();
   // Agent and shell names for the merge headings and the resource manager rows.
   const [nameView, setNameView] = useState<ProfilesView | null>(null);
-  const [composerAsk, setComposerAsk] = useState<ComposerRequest | null>(null);
-  // The tabs whose output the merge dialog shows.
-  const [mergeSources, setMergeSources] = useState<MergeSource[] | null>(null);
+  const dialogs = useShellDialogs(api);
+  const {
+    composerAsk, setComposerAsk, mergeSources, setMergeSources, about, setAbout, machine, boardOpen, setBoardOpen, confirmEndAll, setConfirmEndAll,
+    renaming, setRenaming, checkingOut, setCheckingOut, parentFor, setParentFor, jumpOpen, setJumpOpen, quickOpen, setQuickOpen, openAbout,
+  } = dialogs;
   // The tab in front of each worktree, which is where a prompt from the Agent kit is typed.
   const [shownTab, setShownTab] = useState<Record<string, string | null>>({});
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -220,15 +223,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [activityAsk, setActivityAsk] = useState<{ tab: ActivityTab; seq: number }>({ tab: "threads", seq: 0 });
   // A new `seq` asks the sessions panel for the search box, or to mark one session.
   const [sessionsAsk, setSessionsAsk] = useState<{ seq: number; focus: boolean; reveal: { key: string; seq: number } | null }>({ seq: 0, focus: false, reveal: null });
-  // The About dialog (its version, once known) and the "quit and end terminals" confirmation.
-  const [about, setAbout] = useState<string | null>(null);
-  const [machine, setMachine] = useState("");
-  const [boardOpen, setBoardOpen] = useState(false);
-  const [confirmEndAll, setConfirmEndAll] = useState(false);
   const [gate] = useState(() => new SetupGate());
-  const [renaming, setRenaming] = useState<WorktreeView | null>(null);
-  const [checkingOut, setCheckingOut] = useState<WorktreeView | null>(null);
-  const [parentFor, setParentFor] = useState<{ worktree: WorktreeView; candidates: WorktreeView[] } | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
   // A request to bring a tab to the front of its worktree; a new `seq` is a new request.
   const [front, setFront] = useState<{ worktree: string; id: string; seq: number } | null>(null);
@@ -253,9 +248,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [prComments] = useState(() => new PrCommentStore(api));
   // The listening ports of every worktree; it polls only while the Ports tab is in front.
   const [ports] = useState(() => new PortsStore(api));
-  // The jump palette, and the settings section it asked for; a new `seq` is a new request.
-  const [jumpOpen, setJumpOpen] = useState(false);
-  const [quickOpen, setQuickOpen] = useState(false);
   // Asks the front terminal of a worktree to take keyboard focus, as the palette closes.
   const [termFocus, setTermFocus] = useState<{ worktree: string; seq: number } | null>(null);
   const focusTerminal = (worktree: string) => setTermFocus((f) => ({ worktree, seq: (f?.seq ?? 0) + 1 }));
@@ -796,10 +788,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const dialogOpen = creating !== null || removing !== null || adding || groupName !== null || editing !== null || renaming !== null || checkingOut !== null || bulk !== null || review !== null;
   useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
 
-  function openAbout(): void {
-    void api.machineName().then(setMachine, () => setMachine(""));
-    void api.appVersion().then(setAbout, () => setAbout(""));
-  }
 
   /** Help, tray and native menu "Check for updates": shows the page, and starts the check (a check already running is joined). */
   function openUpdates(): void {
