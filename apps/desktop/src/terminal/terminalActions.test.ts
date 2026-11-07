@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PtyClient } from "./ptyClient";
+import { resetTerminalSettingsForTests, setTerminalSettings, TERMINAL_DEFAULTS } from "./terminalSettings";
 import { CONTEXT_LINES, copyContext, copyText, createTerminalHandle, sanitizeForTerminal, terminalContext, type XTermLike } from "./terminalActions";
 
 // A stand-in xterm: a buffer of lines and spies for every call the handle makes.
@@ -57,6 +58,19 @@ it("copy writes the selection to the clipboard", async () => {
   expect(h.hasSelection()).toBe(true);
   expect(await h.copy()).toBe(true);
   expect(writeText).toHaveBeenCalledWith("ls -la");
+});
+
+it("copy trims a TUI gutter only when the setting is on", async () => {
+  const { term, select } = fakeTerm();
+  const box = ["│ a │", "│ b │"].join("\n");
+  select(box);
+  const { h } = handleFor(term);
+  expect(await h.copy()).toBe(true);
+  expect(writeText).toHaveBeenLastCalledWith("a\nb");
+  setTerminalSettings({ ...TERMINAL_DEFAULTS, copyTrimsGutter: false });
+  expect(await h.copy()).toBe(true);
+  expect(writeText).toHaveBeenLastCalledWith(box);
+  resetTerminalSettingsForTests();
 });
 
 it("copy returns false when the webview refuses the clipboard", async () => {

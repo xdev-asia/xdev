@@ -32,6 +32,7 @@ import { pasteClipboard, type PasteResult } from "./clipboardPaste";
 import { registerDropTarget } from "./fileDrop";
 import { trackInputModes } from "./inputModes";
 import { createTuiWheelHandler } from "./tuiScroll";
+import { trimGutter } from "./copyText";
 import { shellKindFor, type ShellKind } from "./pathPaste";
 import { effectiveOptionAsAlt, getDetectedLayout, subscribeDetectedLayout } from "./optionAsAlt";
 import { createOptionSideTracker, resolveTerminalKey } from "./terminalKeys";
@@ -253,6 +254,8 @@ export function Terminal(props: {
     const renderer = attachRenderer(term, getTerminalSettings().gpu);
     // What the program asked for (kitty flags, modifyOtherKeys) and which Option keys are held.
     const modes = trackInputModes(term);
+    // What a copy puts on the clipboard: without a TUI's border or line-number gutter when Settings says so.
+    const copied = (text: string) => (getTerminalSettings().copyTrimsGutter ? trimGutter(text) : text);
     // Full-screen programs that track the mouse get the wheel steps times the TUI scroll speed.
     term.attachCustomWheelEventHandler(
       createTuiWheelHandler({
@@ -335,7 +338,7 @@ export function Terminal(props: {
           break;
         case "terminal.copy": {
           const text = term.getSelection();
-          if (text) void navigator.clipboard?.writeText(text).catch(() => {});
+          if (text) void navigator.clipboard?.writeText(copied(text)).catch(() => {});
           break;
         }
         case "terminal.paste":
@@ -358,7 +361,7 @@ export function Terminal(props: {
     });
     term.onSelectionChange(() => {
       const text = term.getSelection();
-      if (text && getTerminalSettings().copyOnSelect) void navigator.clipboard?.writeText(text).catch(() => {});
+      if (text && getTerminalSettings().copyOnSelect) void navigator.clipboard?.writeText(copied(text)).catch(() => {});
     });
     term.parser.registerOscHandler(7, (data) => {
       const cwd = cwdFromOsc7(data);
