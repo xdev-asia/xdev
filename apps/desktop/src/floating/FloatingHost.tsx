@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import type { Api } from "@/api";
 import { useKeymap } from "@/keys/keymap";
 import { FloatingPanel } from "./FloatingPanel";
+import { loadFloating, startFloatingSave } from "./floatingPersist";
 import { toggleFloating, useFloating } from "./floatingStore";
 
 /**
@@ -16,6 +17,19 @@ export function FloatingHost(props: { api: Api }): JSX.Element | null {
   const [home, setHome] = useState<string | null>(null);
   const [homeError, setHomeError] = useState<string | null>(null);
   useKeymap({ "floating.toggle": toggleFloating });
+  // The saved tabs come back at start, whether or not the panel is ever opened. The saver starts
+  // after the load, so a first save never replaces a file that is not read yet.
+  useEffect(() => {
+    let stopped = false;
+    let stop: (() => void) | null = null;
+    void loadFloating(api).then(() => {
+      if (!stopped) stop = startFloatingSave(api).stop;
+    });
+    return () => {
+      stopped = true;
+      stop?.();
+    };
+  }, [api]);
   useEffect(() => {
     if (!open || started) return;
     setStarted(true);

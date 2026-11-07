@@ -6,7 +6,7 @@ import { toggleFloating, useFloating } from "./floatingStore";
 /** The footer item that shows or hides the floating workspace. */
 export function FloatingItem(): JSX.Element {
   const { t } = useI18n();
-  const { open } = useFloating();
+  const { open, tabs } = useFloating();
   const keys = chordLabel("floating.toggle");
   return (
     <button
@@ -17,7 +17,7 @@ export function FloatingItem(): JSX.Element {
       title={keys === null ? t("floating.title") : t("floating.statusTitle", { keys })}
       onClick={() => toggleFloating()}
     >
-      {t("floating.status")}
+      {tabs.length === 0 ? t("floating.status") : t("floating.statusCount", { count: tabs.length })}
     </button>
   );
 }
