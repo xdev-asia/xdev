@@ -23,6 +23,7 @@ import { PaneView } from "./PaneView";
 import { RecentTabSwitcher } from "./RecentTabSwitcher";
 import { TabMarks, TabStrip } from "./TabStrip";
 import { TabTitleDialog } from "./TabTitleDialog";
+import { NewTabPage } from "./NewTabPage";
 import { PREVIEW_DEBOUNCE_MS, WorktreeTabs } from "./WorktreeTabs";
 
 // Hooks are stubbed only while the tabs component itself is called; each harness keeps its own.
@@ -201,7 +202,7 @@ it("closing a tab kills its pty", async () => {
   expect(empty).toContain(en("workspace.tabs.empty"));
   for (const p of ["shell", "claude", "codex"]) expect(empty).toContain(en(`terminal.profile.${p}`));
 
-  view.button(en("terminal.profile.shell")).props.onClick();
+  view.find((n) => n.type === NewTabPage)!.props.onShell();
   const [tab] = live.tabs(A);
   await run(view.terminals()[0]);
   // A plain shell has no status, so no glyph.
@@ -808,6 +809,24 @@ it("shift on the click that picks an agent opens its launch options; a plain cli
   expect(live.tabs(A)).toHaveLength(before);
   expect(view.find((n) => n.type === LaunchOptionsDialog)?.props.profile.profile.id).toBe("claude");
   expect(view.find((n) => n.type === Menu)).toBeUndefined();
+});
+
+it("a worktree with no tab is the launch page: Start opens the agent with its model and task, Shift opens its options", async () => {
+  const api = createMockApi({});
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  const page = () => view.find((n) => n.type === NewTabPage)!;
+  expect(page().props.agents.map((a: { id: string }) => a.id)).toContain("claude");
+  expect(page().props.worktree).toEqual({ path: A, label: "xdev-oak" });
+  page().props.onOptions("claude");
+  expect(live.tabs(A)).toHaveLength(0);
+  expect(view.find((n) => n.type === LaunchOptionsDialog)?.props.profile.profile.id).toBe("claude");
+  view.find((n) => n.type === LaunchOptionsDialog)!.props.onCancel();
+  page().props.onStart("claude", "opus", "Fix the build");
+  const [tab] = live.tabs(A);
+  expect(tab).toMatchObject({ profileId: "claude", agent: true, overrides: { model: "opus", effort: null, extraArgs: [] } });
+  expect(view.find((n) => n.type === NewTabPage)).toBeUndefined();
 });
 
 it("wsl_item_opens_that_shell", async () => {

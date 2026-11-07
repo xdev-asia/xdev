@@ -6343,5 +6343,12 @@
   "workspace.panel.resize": "Đổi độ rộng bảng bên phải",
   "conversation.approval.allow": "Cho phép",
   "conversation.approval.deny": "Từ chối",
-  "workspace.changes.commitOptions": "Tùy chọn commit"
+  "workspace.changes.commitOptions": "Tùy chọn commit",
+  "workspace.newTab.region": "Khởi chạy agent",
+  "workspace.newTab.agent": "Agent",
+  "workspace.newTab.worktree": "Worktree",
+  "workspace.newTab.prompt": "Việc cần làm",
+  "workspace.newTab.promptPlaceholder": "Mô tả việc agent cần làm, hoặc để trống",
+  "workspace.newTab.start": "Bắt đầu",
+  "workspace.newTab.optionsHint": "Shift-click Bắt đầu để mở tùy chọn khởi chạy."
 }

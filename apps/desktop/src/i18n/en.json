@@ -6343,5 +6343,12 @@
   "workspace.panel.resize": "Resize the side panel",
   "conversation.approval.allow": "Allow",
   "conversation.approval.deny": "Deny",
-  "workspace.changes.commitOptions": "Commit options"
+  "workspace.changes.commitOptions": "Commit options",
+  "workspace.newTab.region": "Start an agent",
+  "workspace.newTab.agent": "Agent",
+  "workspace.newTab.worktree": "Worktree",
+  "workspace.newTab.prompt": "Task",
+  "workspace.newTab.promptPlaceholder": "Describe what the agent should do, or leave it empty",
+  "workspace.newTab.start": "Start",
+  "workspace.newTab.optionsHint": "Shift-click Start for the launch options."
 }

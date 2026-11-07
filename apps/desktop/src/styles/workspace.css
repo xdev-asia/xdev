@@ -822,6 +822,18 @@
   margin: 6px 0 0;
 }
 
+/* A worktree with no tab: the launch card, then a plain terminal. */
+.ws-new-tab-card {
+  width: min(100%, 36rem);
+  text-align: start;
+}
+
+.ws-new-tab-card .ws-new-tab-hint {
+  margin: var(--x-space-2) 0 0;
+  font-size: 12px;
+  text-align: center;
+}
+
 /* Center: one tab strip per worktree, its terminals below it */
 
 .ws-tabs {
@@ -1280,14 +1292,6 @@
 
 .ws-tab-again:hover {
   background: var(--bg-3);
-}
-
-.ws-launch {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 10px;
 }
 
 /* Add project: one choice per line, spaced, each as wide as the dialog. */

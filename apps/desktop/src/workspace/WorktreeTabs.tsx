@@ -52,6 +52,8 @@ import { draftFromSelection } from "@/tasks/board/captureTask";
 import { openTaskEditor } from "@/tasks/board/TaskEditorHost";
 import { registerTerminal, terminalOf } from "@/terminal/terminalRegistry";
 import { LaunchOptionsDialog, type LaunchChoice } from "@/agentLaunch/LaunchOptionsDialog";
+import { NewTabPage } from "./NewTabPage";
+import { baseName } from "@/agentSessions/sessionsView";
 import { SpawnFailure } from "@/terminal/SpawnFailure";
 import { useApprovedStart } from "@/terminal/useApprovedStart";
 import { ContextMenu, type MenuItem } from "@/ui/ContextMenu";
@@ -1451,16 +1453,21 @@ export function WorktreeTabs(props: {
       </div>
 
       {tabs.length === 0 && !open && !commitOpen && !prShown && files.length === 0 && (
-        <div className="ws-center-empty">
-          <p>{t("workspace.tabs.empty")}</p>
-          <div className="ws-launch">
-            {[...(defaultShell !== null ? [defaultShell] : []), ...agents].map((p) => (
-              <button key={p} type="button" className="btn-secondary" onClick={() => launchGated(p)}>
-                {profileName(view, p, t)}
-              </button>
-            ))}
-          </div>
-        </div>
+        <NewTabPage
+          agents={agents.map((id) => ({ id, name: profileName(view, id, t), models: view?.profiles.find((p) => p.profile.id === id)?.models ?? [] }))}
+          defaultAgent={defaultAgent}
+          worktree={{ path: worktree, label: props.worktrees?.find((w) => w.path === worktree)?.label ?? baseName(worktree) }}
+          shell={defaultShell !== null ? { id: defaultShell, name: profileName(view, defaultShell, t) } : null}
+          onShell={() => defaultShell !== null && launchGated(defaultShell)}
+          onOptions={(profile) => (view ? setOptions({ profile, pane: layout?.focused ?? "" }) : launchGated(profile))}
+          onStart={(profile, model, prompt) => {
+            if (!model && !prompt) return launchGated(profile);
+            const choice: LaunchChoice = { overrides: model ? { model, effort: null, extraArgs: [] } : null, prompt, copies: 1, startup: [] };
+            const pane = layout?.focused ?? "";
+            if (props.gate?.defer(worktree, () => launchWith(profile, pane, choice))) return;
+            launchWith(profile, pane, choice);
+          }}
+        />
       )}
       {dialog}
       {batch.ui}
