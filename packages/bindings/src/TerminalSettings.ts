@@ -7,6 +7,7 @@ import type { OnQuit } from "./OnQuit";
 import type { TerminalBell } from "./TerminalBell";
 import type { TerminalGpu } from "./TerminalGpu";
 import type { TerminalLinkClick } from "./TerminalLinkClick";
+import type { WindowsPowershell } from "./WindowsPowershell";
 
 /**
  * How every terminal pane looks and behaves. Values outside the ranges
@@ -127,4 +128,25 @@ backgroundOpacity: number,
  * bash, zsh, fish and PowerShell started by xDev report their prompts, exit codes and folder
  * (OSC 133 and 7) through a script xDev loads; the owner's rc files are never changed.
  */
-shellIntegration: boolean, };
+shellIntegration: boolean, 
+/**
+ * 1..=10, whole numbers. Mouse wheel reports sent per wheel step while a program takes the
+ * mouse. 1 is xterm's own behaviour.
+ */
+tuiScrollSensitivity: number, 
+/**
+ * Copy drops box-drawing borders and trailing spaces from a selection.
+ */
+copyTrimsGutter: boolean, 
+/**
+ * New terminals are refused once this many run, 1..=1024.
+ */
+maxRunningTerminals: number, 
+/**
+ * Which PowerShell a PowerShell tab starts on Windows; ignored elsewhere.
+ */
+windowsPowershell: WindowsPowershell, 
+/**
+ * macOS only: the Yen key of a JIS keyboard types a backslash.
+ */
+macJisYenToBackslash: boolean, };

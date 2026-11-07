@@ -1842,6 +1842,36 @@ pub struct TerminalSettings {
     /// (OSC 133 and 7) through a script xDev loads; the owner's rc files are never changed.
     #[serde(deserialize_with = "lenient_shell_integration")]
     pub shell_integration: bool,
+    /// 1..=10, whole numbers. Mouse wheel reports sent per wheel step while a program takes the
+    /// mouse. 1 is xterm's own behaviour.
+    #[serde(deserialize_with = "lenient_tui_scroll")]
+    pub tui_scroll_sensitivity: f32,
+    /// Copy drops box-drawing borders and trailing spaces from a selection.
+    #[serde(deserialize_with = "lenient_copy_trims_gutter")]
+    pub copy_trims_gutter: bool,
+    /// New terminals are refused once this many run, 1..=1024.
+    #[serde(deserialize_with = "lenient_max_running")]
+    pub max_running_terminals: u32,
+    /// Which PowerShell a PowerShell tab starts on Windows; ignored elsewhere.
+    #[serde(deserialize_with = "lenient")]
+    pub windows_powershell: WindowsPowershell,
+    /// macOS only: the Yen key of a JIS keyboard types a backslash.
+    #[serde(deserialize_with = "lenient_bool_false")]
+    pub mac_jis_yen_to_backslash: bool,
+}
+
+/// Which PowerShell a PowerShell tab starts on Windows. Ignored elsewhere.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum WindowsPowershell {
+    /// `pwsh.exe` when found, else `powershell.exe`.
+    #[default]
+    Auto,
+    /// Always `powershell.exe` (Windows PowerShell 5.1).
+    Windows,
+    /// `pwsh.exe`; falls back to `powershell.exe` when it is not found.
+    Pwsh,
 }
 
 /// The theme id used in light mode when none is set.
@@ -1892,6 +1922,11 @@ impl Default for TerminalSettings {
             padding_px: 8,
             background_opacity: 1.0,
             shell_integration: true,
+            tui_scroll_sensitivity: 1.0,
+            copy_trims_gutter: true,
+            max_running_terminals: Self::MAX_RUNNING_DEFAULT,
+            windows_powershell: WindowsPowershell::Auto,
+            mac_jis_yen_to_backslash: false,
         }
     }
 }
@@ -1907,6 +1942,9 @@ impl TerminalSettings {
     pub const DIVIDER_PX: RangeInclusive<u8> = 1..=4;
     pub const PADDING_PX: RangeInclusive<u8> = 0..=24;
     pub const BG_OPACITY: RangeInclusive<f32> = 0.5..=1.0;
+    pub const TUI_SCROLL: RangeInclusive<f32> = 1.0..=10.0;
+    pub const MAX_RUNNING: RangeInclusive<u32> = 1..=1024;
+    pub const MAX_RUNNING_DEFAULT: u32 = 256;
 
     /// As stored: every number inside its range.
     pub fn clamped(mut self) -> Self {
@@ -1957,6 +1995,14 @@ impl TerminalSettings {
             Self::BG_OPACITY,
             default.background_opacity,
         );
+        self.tui_scroll_sensitivity = clamp_or(
+            self.tui_scroll_sensitivity.round(),
+            Self::TUI_SCROLL,
+            default.tui_scroll_sensitivity,
+        );
+        self.max_running_terminals = self
+            .max_running_terminals
+            .clamp(*Self::MAX_RUNNING.start(), *Self::MAX_RUNNING.end());
         self
     }
 }
@@ -2634,6 +2680,18 @@ fn lenient_scroll_on_input<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bo
 
 fn lenient_shell_integration<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::Error> {
     lenient_or(de, true)
+}
+
+fn lenient_tui_scroll<'de, D: serde::Deserializer<'de>>(de: D) -> Result<f32, D::Error> {
+    lenient_or(de, TerminalSettings::default().tui_scroll_sensitivity)
+}
+
+fn lenient_copy_trims_gutter<'de, D: serde::Deserializer<'de>>(de: D) -> Result<bool, D::Error> {
+    lenient_or(de, true)
+}
+
+fn lenient_max_running<'de, D: serde::Deserializer<'de>>(de: D) -> Result<u32, D::Error> {
+    lenient_or(de, TerminalSettings::MAX_RUNNING_DEFAULT)
 }
 
 fn lenient_words<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
@@ -3473,6 +3531,11 @@ mod tests {
             padding_px: 12,
             background_opacity: 0.8,
             shell_integration: false,
+            tui_scroll_sensitivity: 4.0,
+            copy_trims_gutter: false,
+            max_running_terminals: 64,
+            windows_powershell: WindowsPowershell::Pwsh,
+            mac_jis_yen_to_backslash: true,
         };
         let settings = Settings {
             terminal: terminal.clone(),
@@ -5087,6 +5150,56 @@ then sum up"
                 .unwrap();
         assert_eq!(t.link_click, TerminalLinkClick::Open);
         assert_eq!(t.url_middle_click, TerminalLinkClick::Actions);
+    }
+
+    #[test]
+    fn terminal_new_fields_default_when_missing() {
+        let t: TerminalSettings = serde_json::from_str(r#"{ "fontSize": 15 }"#).unwrap();
+        assert_eq!(t.tui_scroll_sensitivity, 1.0);
+        assert!(t.copy_trims_gutter);
+        assert_eq!(t.max_running_terminals, 256);
+        assert_eq!(t.windows_powershell, WindowsPowershell::Auto);
+        assert!(!t.mac_jis_yen_to_backslash);
+    }
+
+    #[test]
+    fn terminal_new_fields_read_bad_values_as_default() {
+        let t: TerminalSettings = serde_json::from_str(
+            r#"{ "fontSize": 17, "tuiScrollSensitivity": "x", "maxRunningTerminals": -3,
+                 "windowsPowershell": "cmd", "copyTrimsGutter": 7, "macJisYenToBackslash": "y" }"#,
+        )
+        .unwrap();
+        assert_eq!(t.font_size, 17);
+        assert_eq!(t.tui_scroll_sensitivity, 1.0);
+        assert_eq!(t.max_running_terminals, 256);
+        assert_eq!(t.windows_powershell, WindowsPowershell::Auto);
+        assert!(t.copy_trims_gutter);
+        assert!(!t.mac_jis_yen_to_backslash);
+    }
+
+    #[test]
+    fn terminal_clamps_tui_and_max_running() {
+        let clamp = |tui: f32, max: u32| {
+            let t = TerminalSettings {
+                tui_scroll_sensitivity: tui,
+                max_running_terminals: max,
+                ..TerminalSettings::default()
+            }
+            .clamped();
+            (t.tui_scroll_sensitivity, t.max_running_terminals)
+        };
+        assert_eq!(clamp(0.2, 0), (1.0, 1));
+        assert_eq!(clamp(3.6, 5000), (4.0, 1024));
+        assert_eq!(clamp(99.0, 300), (10.0, 300));
+        assert_eq!(clamp(f32::NAN, 1).0, 1.0);
+    }
+
+    #[test]
+    fn windows_powershell_serializes_lowercase() {
+        assert_eq!(
+            serde_json::to_string(&WindowsPowershell::Pwsh).unwrap(),
+            r#""pwsh""#
+        );
     }
 
     #[test]

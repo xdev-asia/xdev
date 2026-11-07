@@ -54,7 +54,7 @@ use crate::settings::{
     MacOptionAsAlt, NavigationSettings, NetworkSettings, OpenInSettings, OrchestrationSettings,
     RestoreMode, SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems,
     StatusSettings, TerminalLinkClick, TerminalSettings, Theme, TitlebarMode, UiSettings,
-    UpdateChannel, UsageSettings, XdevIdSettings,
+    UpdateChannel, UsageSettings, WindowsPowershell, XdevIdSettings,
 };
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;
@@ -154,6 +154,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     TerminalSettings::export_all(cfg)?;
     TerminalLinkClick::export_all(cfg)?;
     MacOptionAsAlt::export_all(cfg)?;
+    WindowsPowershell::export_all(cfg)?;
     SettingsChanged::export_all(cfg)?;
     ShellSettings::export_all(cfg)?;
     UpdateChannel::export_all(cfg)?;

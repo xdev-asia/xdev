@@ -610,6 +610,7 @@ export type { VcsState } from "./VcsState";
 export type { VpsTarget } from "./VpsTarget";
 export type { Wait } from "./Wait";
 export type { WatchFailure } from "./WatchFailure";
+export type { WindowsPowershell } from "./WindowsPowershell";
 export type { WorkItem } from "./WorkItem";
 export type { WorkItemKind } from "./WorkItemKind";
 export type { WorkStatus } from "./WorkStatus";

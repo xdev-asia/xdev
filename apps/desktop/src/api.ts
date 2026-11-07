@@ -655,6 +655,7 @@ export type {
   TerminalGpu,
   TerminalBell,
   MacOptionAsAlt,
+  WindowsPowershell,
   TerminalLinkClick,
   SettingsSection,
   SettingsChanged,
