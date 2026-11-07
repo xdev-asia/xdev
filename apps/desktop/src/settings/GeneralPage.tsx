@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
+import { Select } from "@xdev-asia/ui";
 import { toApiError, type ApiError, type DiffSettings, type NavigationSettings, type ShellSettings } from "@/api";
 import { useI18n, type LocalePreference } from "@/i18n";
 import { PLATFORM } from "@/platform";
@@ -137,20 +138,21 @@ export function GeneralPage(props: SettingsSectionProps): JSX.Element {
 
       <SettingGroup ids={WORKSPACE_IDS} filter={filter}>
       <h4 className="settings-group">{t("settings.general.workspace")}</h4>
-      <SettingRow id="general.language" filter={filter}>
-      <div className="ws-fields">
-        <label className="ws-field">
-          <span>{t("language.label")}</span>
-          <select value={preference ?? locale} data-field="language" onChange={(e) => setLocale(e.target.value as LocalePreference)}>
-            {LOCALES.map((l) => (
-              <option key={l} value={l} lang={l === "system" ? undefined : l}>
-                {t(`language.${l}`)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      </SettingRow>
+      <SettingRow
+        id="general.language"
+        filter={filter}
+        label={t("language.label")}
+        controlId="general-language"
+        control={
+          <Select
+            id="general-language"
+            data-field="language"
+            value={preference ?? locale}
+            options={LOCALES.map((l) => ({ value: l, label: t(`language.${l}`) }))}
+            onChange={(e) => setLocale(e.target.value as LocalePreference)}
+          />
+        }
+      />
       <SettingRow id="general.zoom" filter={filter}>
       <div className="ws-fields">
         <label className="ws-field">

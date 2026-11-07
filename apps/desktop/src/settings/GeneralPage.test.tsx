@@ -40,7 +40,8 @@ function nodes(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
   if (!value || typeof value !== "object" || !("props" in value)) return [];
   const node = value as Node;
-  return [node, ...nodes(node.props.children)];
+  // A SettingRow draws its control from the `control` prop.
+  return [node, ...nodes(node.props.children), ...nodes(node.props.control)];
 }
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
@@ -66,7 +67,11 @@ async function page(openSection?: (id: string) => void, filter?: SettingsFilter)
   hooks.effects.splice(0).forEach((e) => e());
   await tick();
   const all = () => nodes(draw());
-  const sw = (name: string) => nodes(all().find((n) => n.props["data-switch"] === name)).find((n) => n.props.role === "switch")!;
+  const swRaw = (name: string) => nodes(all().find((n) => n.props["data-switch"] === name)).find((n) => n.props.role === "switch" || (n.props.checked !== undefined && n.props.onChange))!;
+  const sw = (name: string) => {
+    const n = swRaw(name);
+    return n.props.role === "switch" ? n : { ...n, props: { ...n.props, "aria-checked": n.props.checked, onClick: n.props.onChange } };
+  };
   const by = (attr: string, value: string) => all().find((n) => n.props[attr] === value)!;
   return { api, all, sw, by };
 }
@@ -173,7 +178,7 @@ it("the language row shows the current language and changes it through setLocale
   const p = await page();
   const select = p.by("data-field", "language");
   expect(select.props.value).toBe("vi");
-  expect(nodes(select).filter((n) => n.type === "option").map((n) => n.props.value)).toEqual(["system", "en", "vi"]);
+  expect(select.props.options.map((o: { value: string }) => o.value)).toEqual(["system", "en", "vi"]);
   select.props.onChange({ target: { value: "en" } });
   expect(i18n.setLocale).toHaveBeenCalledWith("en");
   expect(SETTING_ENTRIES.find((x) => x.id === "general.language")).toMatchObject({ section: "general", titleKey: "language.label" });

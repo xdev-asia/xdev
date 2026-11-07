@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type ApiError, type CursorStyle, type FontWeight, type OnQuit, type TerminalSettings } from "@/api";
+import { Switch } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import { setTerminalSettings, TERMINAL_DEFAULTS, TERMINAL_LIMITS } from "@/terminal/terminalSettings";
 import { RunningTerminals } from "./RunningTerminals";
@@ -212,24 +213,20 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
         </div>
       </div>
       </SettingRow>
-      <ul className="settings-list">
-        {settingShown(filter, "terminal.cursorBlink") && (
-        <li className="settings-item" data-switch="cursorBlink" data-setting-id="terminal.cursorBlink">
-          <div className="settings-item-text">
-            <strong>{t("settings.terminal.cursorBlink")}</strong>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            className="agent-switch"
-            aria-checked={current.cursorBlink}
+      <SettingRow
+        id="terminal.cursorBlink"
+        filter={filter}
+        label={t("settings.terminal.cursorBlink")}
+        control={
+          <Switch
+            data-switch="cursorBlink"
+            checked={current.cursorBlink}
             aria-label={t("settings.terminal.cursorBlink")}
             disabled={busy}
-            onClick={() => void patch({ cursorBlink: !current.cursorBlink })}
+            onChange={() => void patch({ cursorBlink: !current.cursorBlink })}
           />
-        </li>
-        )}
-      </ul>
+        }
+      />
       </SettingGroup>
 
       <TerminalLookSection api={api} current={current} busy={busy} patch={patch} filter={filter} />

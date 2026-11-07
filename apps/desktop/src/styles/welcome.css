@@ -150,3 +150,7 @@
 .vault-dialog .dialog-actions {
   margin-top: var(--x-space-6);
 }
+
+.vault-empty-steps {
+  max-width: 520px;
+}

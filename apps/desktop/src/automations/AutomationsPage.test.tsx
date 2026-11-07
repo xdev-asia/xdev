@@ -259,7 +259,8 @@ it("opens a run's details, goes back, and reruns", async () => {
   await m.settle();
   const details = find(m.all(), AutomationRunDetails)!;
   expect(details.props.run.id).toBe(run.id);
-  expect(find(m.all(), AutomationList)).toBeUndefined();
+  // The run opens in the side panel; the list stays.
+  expect(find(m.all(), AutomationList)).toBeDefined();
   details.props.onOpenWorkspace(repos[0].worktrees[0].path);
   expect(onOpenWorkspace).toHaveBeenCalledWith(repos[0].worktrees[0].path);
   details.props.onBack();

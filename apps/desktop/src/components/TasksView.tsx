@@ -1,4 +1,4 @@
-import { Button, Select } from "@xdev-asia/ui";
+import { BoardCard, BoardColumn, Button, EmptyState, Field, FilterChip, SearchInput, Segmented, Select, Skeleton, Textarea } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type FileDiff, type Task, type TaskState, type TasksContext } from "@/api";
@@ -17,6 +17,10 @@ const WITH_DETAIL: readonly ApiError["code"][] = ["runner", "git"];
 
 type Action = "run" | "resume" | "approve" | "discard";
 type Filter = "all" | "review" | "running" | "failed" | "merged";
+// Board columns: a task waits in "ready" until it runs, and a discarded one has no column.
+type Column = "ready" | "running" | "review" | "failed" | "merged";
+const BOARD: readonly Column[] = ["ready", "running", "review", "failed", "merged"];
+const BOARD_OF: Partial<Record<TaskState, Column>> = { ready: "ready", paused: "ready", running: "running", review: "review", failed: "failed", merged: "merged" };
 const FILTERS: readonly Filter[] = ["all", "review", "running", "failed", "merged"];
 type Shown = { path: string } & ({ diff: FileDiff } | { problem: ApiError });
 
@@ -54,6 +58,8 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
   const [shown, setShown] = useState<Shown | null>(null);
   const [revision, setRevision] = useState(0);
   const [filter, setFilter] = useState<Filter>("all");
+  const [query, setQuery] = useState("");
+  const [layout, setLayout] = useState<"list" | "board">("list");
 
   useEffect(() => {
     let disposed = false;
@@ -99,7 +105,10 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
   // The UI's own wait counts too: the store only says `running` once the gate has passed.
   const state = (x: Task): TaskState =>
     pending[x.id] === "run" || pending[x.id] === "resume" ? "running" : x.state;
-  const filtered = (tasks ?? []).filter((x) => filter === "all" || state(x) === filter);
+  const needle = query.trim().toLowerCase();
+  const filtered = (tasks ?? [])
+    .filter((x) => filter === "all" || state(x) === filter)
+    .filter((x) => needle === "" || x.goal.toLowerCase().includes(needle) || x.branch.toLowerCase().includes(needle));
 
   function select(id: string) {
     setSelected(id);
@@ -183,19 +192,13 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
           await create();
         }}
       >
-        <label>
-          {t("tasks.goal")}
-          <textarea value={goal} rows={4} placeholder={t("tasks.goalHint")} onChange={(e) => setGoal(e.target.value)} autoFocus />
-        </label>
-        <label>
-          {t("tasks.repo")}
-          <span className="task-row">
-            <input value={repoValue} onChange={(e) => setRepo(e.target.value)} spellCheck={false} />
-            <Button type="button" style={COMPACT} onClick={() => void browse()}>
-              {t("tasks.browse")}
-            </Button>
-          </span>
-        </label>
+        <Textarea label={t("tasks.goal")} value={goal} rows={4} placeholder={t("tasks.goalHint")} onChange={(e) => setGoal(e.target.value)} autoFocus />
+        <span className="task-row task-repo-row">
+          <Field label={t("tasks.repo")} value={repoValue} onChange={(e) => setRepo(e.target.value)} spellCheck={false} />
+          <Button type="button" style={COMPACT} onClick={() => void browse()}>
+            {t("tasks.browse")}
+          </Button>
+        </span>
         <div className="task-row">
           <Button variant="primary" type="submit" style={COMPACT} disabled={goal.trim() === "" || repoValue.trim() === ""}>
             {t("tasks.create")}
@@ -272,16 +275,14 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
               </label>
             )}
             {canRun(x.state) && (
-              <label>
-                {t("tasks.testCommand")}
-                <input value={test} onChange={(e) => setTest(e.target.value)} disabled={busy} spellCheck={false} />
-              </label>
+              <Field label={t("tasks.testCommand")} value={test} onChange={(e) => setTest(e.target.value)} disabled={busy} spellCheck={false} />
             )}
           </div>
         )}
         <div className="task-row">
           <Button
             type="button"
+            variant="primary"
             style={COMPACT}
             disabled={busy || !canRun(x.state)}
             onClick={() => act(x.id, "run", () => api.runTask(x.id, account || null, test.trim() || null))}
@@ -304,14 +305,16 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
           >
             {t("tasks.approve")}
           </Button>
-          <button
+          <Button
             type="button"
-            className="btn-secondary task-discard"
+            variant="danger"
+            style={COMPACT}
+            className="task-discard"
             disabled={busy || !canDiscard(x.state)}
             onClick={() => setConfirming({ action: "discard", task: x })}
           >
             {t("tasks.discard")}
-          </button>
+          </Button>
         </div>
 
         <h3>{t("tasks.runs")}</h3>
@@ -397,16 +400,16 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
           <span className="doc-subtitle">{t("tasks.subtitle")}</span>
         </div>
         <div className="doc-actions">
-          <button
+          <Button
             type="button"
-            className="btn-secondary"
+            style={COMPACT}
             onClick={() => {
               setProblem(undefined);
               setRevision((n) => n + 1);
             }}
           >
             {t("tasks.refresh")}
-          </button>
+          </Button>
           <Button type="button" style={COMPACT} onClick={() => setCreating(true)}>
             {t("tasks.new")}
           </Button>
@@ -415,22 +418,57 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
       {problem && note(problem)}
       {creating && form()}
       {tasks === undefined ? (
-        !problem && <p className="placeholder">{t("tasks.loading")}</p>
+        !problem && <div className="placeholder" role="status" aria-label={t("tasks.loading")}><Skeleton shape="block" /></div>
       ) : tasks.length === 0 ? (
-        !creating && <p className="placeholder">{t("tasks.empty")}</p>
+        !creating && <EmptyState size="center" icon="tasks" title={t("tasks.empty")} />
       ) : (
         <div className="tasks-body">
           <div className="task-aside">
+            <div className="task-toolbar" role="search">
+              <SearchInput size="sm" value={query} placeholder={t("tasks.search")} aria-label={t("tasks.search")} onChange={(e) => setQuery(e.target.value)} onClear={() => setQuery("")} spellCheck={false} />
+              <Segmented
+                label={t("tasks.view.label")}
+                value={layout}
+                options={[{ value: "list", label: t("tasks.view.list") }, { value: "board", label: t("tasks.view.board") }]}
+                onChange={(v) => setLayout(v === "board" ? "board" : "list")}
+              />
+            </div>
             <div className="task-filters" role="group" aria-label={t("tasks.filterLabel")}>
               {FILTERS.map((f) => (
-                <button key={f} type="button" className="task-chip" aria-pressed={filter === f} onClick={() => setFilter(f)}>
-                  <span>{f === "all" ? t("tasks.filter.all") : t(`tasks.state.${f}`)}</span>
-                  <span className="task-chip-count">{f === "all" ? tasks.length : tasks.filter((x) => state(x) === f).length}</span>
-                </button>
+                <FilterChip key={f} pressed={filter === f} count={f === "all" ? tasks.length : tasks.filter((x) => state(x) === f).length} onClick={() => setFilter(f)}>
+                  {f === "all" ? t("tasks.filter.all") : t(`tasks.state.${f}`)}
+                </FilterChip>
               ))}
             </div>
             {filtered.length === 0 ? (
-              <p className="pane-empty">{t("tasks.filterEmpty")}</p>
+              <EmptyState title={t("tasks.filterEmpty")} />
+            ) : layout === "board" ? (
+              <div className="task-board">
+                {BOARD.map((column) => {
+                  const cards = filtered.filter((x) => BOARD_OF[state(x)] === column);
+                  return (
+                    <BoardColumn key={column} title={t(`tasks.state.${column}`)} count={cards.length} data-column={column}>
+                      {cards.map((x) => {
+                        const age = relativeTime(now, x.created);
+                        const s = state(x);
+                        return (
+                          <BoardCard
+                            key={x.id}
+                            className="task-card"
+                            title={firstLine(x.goal)}
+                            meta={`${x.branch} · ${t(age.key, age.vars)}`}
+                            status={s === "running" ? "running" : s === "review" ? "waiting" : s === "failed" ? "error" : undefined}
+                            tone={s === "review" ? "need" : undefined}
+                            selected={x.id === task?.id}
+                            labels={{ need: t("tasks.card.need"), status: { idle: t("tasks.state.ready"), running: t("tasks.state.running"), waiting: t("tasks.state.review"), error: t("tasks.state.failed") } }}
+                            onOpen={() => select(x.id)}
+                          />
+                        );
+                      })}
+                    </BoardColumn>
+                  );
+                })}
+              </div>
             ) : (
               <ul className="task-list" aria-label={t("tasks.title")}>
                 {filtered.map((x) => {
@@ -455,7 +493,7 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
               </ul>
             )}
           </div>
-          {task ? detail(task) : <p className="placeholder">{t("tasks.select")}</p>}
+          {task ? detail(task) : <EmptyState title={t("tasks.select")} />}
         </div>
       )}
       <ConfirmDialog

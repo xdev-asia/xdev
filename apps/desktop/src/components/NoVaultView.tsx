@@ -1,4 +1,4 @@
-import { Button, Icon } from "@xdev-asia/ui";
+import { Button, EmptyState, Icon } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import { BrandMark } from "./BrandMark";
 import type { JSX } from "react";
@@ -46,6 +46,13 @@ export function VaultEmpty(props: { failure?: VaultFailure; busy: boolean; onCre
           </Button>
         </div>
       </div>
+      <EmptyState
+        className="vault-empty-steps"
+        title={t("vault.steps.title")}
+        steps={[{ label: t("vault.steps.open") }, { label: t("vault.steps.work") }, { label: t("vault.steps.approve") }]}
+        current={1}
+        labels={{ done: t("vault.steps.done"), step: (current, total) => t("vault.steps.step", { current, total }), steps: t("vault.steps.title") }}
+      />
     </div>
   );
 }
@@ -78,9 +85,9 @@ export function NoVaultView(props: { failure?: VaultFailure; busy: boolean; kit?
         </div>
         <div />
         <div className="topbar-actions">
-          <button type="button" className="btn-secondary" disabled={props.busy} onClick={props.onOpen}>
+          <Button type="button" disabled={props.busy} onClick={props.onOpen}>
             {t("vault.open")}
-          </button>
+          </Button>
           <LanguageSwitch />
         </div>
       </header>

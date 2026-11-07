@@ -85,3 +85,17 @@ export function summaryText(runs: readonly AutomationRun[], t: T): string {
   const completed = runs.filter((r) => r.status === "completed").length;
   return t("automations.runs.summary", { count: runs.length, completed });
 }
+
+export type TimelineStep = { id: string; label: string; status: "pending" | "running" | "done" | "failed" | "skipped"; at?: string };
+
+/** The run as three steps: scheduled, started, and how it ended. */
+export function runSteps(run: AutomationRun, t: T, locale: Locale): TimelineStep[] {
+  const s = run.status;
+  const started: TimelineStep["status"] = s === "pending" ? "pending" : s === "dispatching" ? "running" : s.startsWith("skipped") ? "skipped" : "done";
+  const ended: TimelineStep["status"] = s === "completed" ? "done" : s === "dispatch_failed" ? "failed" : s.startsWith("skipped") ? "skipped" : "pending";
+  return [
+    { id: "scheduled", label: t("automations.timeline.scheduled"), status: "done", at: formatDate(run.scheduledFor, locale) },
+    { id: "started", label: t("automations.timeline.started"), status: started },
+    { id: "finished", label: t("automations.timeline.finished"), status: ended },
+  ];
+}

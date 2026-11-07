@@ -47,6 +47,8 @@ async function harness(api = createMockApi({}), defaultRepo?: string | null) {
     await reload();
   };
   const seat = (role: string) => all().find(n => n.props.className === "squad-seat" && n.props["data-role"] === role)!;
+  // A seat is a BoardCard in a lane; render it inside its own column so its markup is whole.
+  const seatMarkup = (role: string) => renderToStaticMarkup(seat(role));
   return { api, draw, html, all, button, reload, open, seat };
 }
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; });
@@ -74,8 +76,9 @@ it("lists squads with a state chip and shows the seat tree of a running squad", 
   expect(html).toContain(en("squads.stop"));
   expect(html).not.toContain(`aria-label="${en("tasks.goal")}"`);
 
-  const order = ["lead", "implement", "review", "tests"].map(r => html.indexOf(`data-role="${r}"`));
-  expect(order).toEqual([...order].sort((a, b) => a - b));
+  for (const role of ["lead", "implement", "review", "tests"]) expect(html).toContain(`data-role="${role}"`);
+  // Lanes by seat state: vacant and idle plan, working works, needs you waits, done is done.
+  for (const lane of ["plan", "working", "review", "done"]) expect(html).toContain(en(`squads.lane.${lane}`));
   const seatHtml = (role: string) => renderToStaticMarkup(view.seat(role));
   // Implement uses 150k of 200k tokens, the lead 64k; tests is vacant.
   expect(seatHtml("implement")).toContain('data-level="warn"');
@@ -97,6 +100,8 @@ it("answers the question put to the person", async () => {
   expect(html).toContain("Which folder should the page go in");
   expect(html).toContain("12 min ago");
   expect(renderToStaticMarkup(view.seat("implement"))).toContain(en("squads.seat.needs_you"));
+  // A seat that waits for the person is tinted by the card and sits in the review lane.
+  expect(view.seat("implement").props.tone).toBe("need");
 
   const answer = vi.spyOn(view.api, "answerSquad");
   view.all().find(n => n.props.className === "squad-answer")!.props.onChange({ target: { value: "docs/" } });
@@ -113,7 +118,7 @@ it("answers the question put to the person", async () => {
 it("steers a seat from its side sheet", async () => {
   const view = await harness();
   await view.open("Feature squad");
-  view.seat("implement").props.onClick();
+  view.seat("implement").props.onOpen();
   const sheet = () => view.all().find(n => n.props.className === "squad-sheet")!;
   const text = renderToStaticMarkup(sheet());
   expect(text).toContain("codex-1 · Codex");

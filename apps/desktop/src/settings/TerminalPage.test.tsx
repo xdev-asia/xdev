@@ -42,7 +42,8 @@ function nodes(value: unknown): Node[] {
   if (node.type === TerminalLookSection || node.type === TerminalAppearanceSection || node.type === TerminalBehaviourSection || node.type === SettingRow || node.type === SettingGroup) {
     return nodes((node.type as (p: unknown) => unknown)(node.props));
   }
-  return [node, ...nodes(node.props.children)];
+  // A SettingRow draws its control from the `control` prop.
+  return [node, ...nodes(node.props.children), ...nodes(node.props.control)];
 }
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 const en = (key: string) => translate("en", key);
@@ -74,7 +75,11 @@ async function page(stored: Partial<typeof TERMINAL_DEFAULTS> = {}, filter?: Par
     try { return nodes(TerminalPage({ api, onChanged: vi.fn(), filter })); } finally { hooks.active = false; }
   };
   const field = (name: string) => all().find((n) => n.props["data-field"] === name)!;
-  const sw = (name: string) => nodes(all().find((n) => n.props["data-switch"] === name)).find((n) => n.props.role === "switch")!;
+  const swRaw = (name: string) => nodes(all().find((n) => n.props["data-switch"] === name)).find((n) => n.props.role === "switch" || (n.props.checked !== undefined && n.props.onChange))!;
+  const sw = (name: string) => {
+    const n = swRaw(name);
+    return n.props.role === "switch" ? n : { ...n, props: { ...n.props, "aria-checked": n.props.checked, onClick: n.props.onChange } };
+  };
   const button = (label: string) => all().find((n) => n.type === "button" && n.props.children === label)!;
   return { api, all, field, sw, button };
 }

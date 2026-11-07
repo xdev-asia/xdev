@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { BoardCard, Field, Segmented, Textarea } from "@xdev-asia/ui";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi } from "@/api";
@@ -88,7 +89,7 @@ it("enables the actions that fit each state", async () => {
 it("shows the gate's reason and the policy file without a way to loosen it", async () => {
   const view = await harness();
   view.items()[1].props.onClick();
-  view.all().find(n => n.type === "input" && n.props.spellCheck === false)!.props.onChange({ target: { value: "pnpm test" } });
+  view.all().find(n => n.type === Field && n.props.label === en("tasks.testCommand"))!.props.onChange({ target: { value: "pnpm test" } });
   await view.button(en("tasks.runAction")).props.onClick(); await tick();
   const html = view.html();
   expect(html).toContain(en("error.needs_approval"));
@@ -141,7 +142,7 @@ it("creates a task in the default repo", async () => {
   const view = await harness();
   const create = vi.spyOn(view.api, "newTask");
   view.button(en("tasks.new")).props.onClick();
-  view.all().find(n => n.type === "textarea")!.props.onChange({ target: { value: "Write a changelog" } });
+  view.all().find(n => n.type === Textarea)!.props.onChange({ target: { value: "Write a changelog" } });
   await view.all().find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} }); await tick();
   expect(create).toHaveBeenCalledWith((await view.api.tasksContext()).defaultRepo, "Write a changelog");
   await view.reload();
@@ -152,7 +153,7 @@ it("creates a task in the repo the host passes, ahead of the app default", async
   const view = await harness(createMockApi({}), "/p/shared");
   const create = vi.spyOn(view.api, "newTask");
   view.button(en("tasks.new")).props.onClick();
-  view.all().find(n => n.type === "textarea")!.props.onChange({ target: { value: "Fix it" } });
+  view.all().find(n => n.type === Textarea)!.props.onChange({ target: { value: "Fix it" } });
   await view.all().find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} }); await tick();
   expect(create).toHaveBeenCalledWith("/p/shared", "Fix it");
 });
@@ -161,7 +162,23 @@ it("a null host repo falls back to the app default", async () => {
   const view = await harness(createMockApi({}), null);
   const create = vi.spyOn(view.api, "newTask");
   view.button(en("tasks.new")).props.onClick();
-  view.all().find(n => n.type === "textarea")!.props.onChange({ target: { value: "Fix it" } });
+  view.all().find(n => n.type === Textarea)!.props.onChange({ target: { value: "Fix it" } });
   await view.all().find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} }); await tick();
   expect(create).toHaveBeenCalledWith((await view.api.tasksContext()).defaultRepo, "Fix it");
+});
+
+it("shows the tasks as a board where a task in review waits for the person", async () => {
+  const view = await harness();
+  view.all().find(n => n.type === Segmented)!.props.onChange("board");
+  const cards = view.all().filter(n => n.type === BoardCard);
+  expect(cards).toHaveLength(3);
+  expect(cards.find(n => n.props.title.startsWith("Retry failed"))!.props.tone).toBe("need");
+  expect(cards.filter(n => n.props.tone === "need")).toHaveLength(1);
+  expect(view.items()).toHaveLength(0);
+});
+
+it("has one primary button in the detail panel", async () => {
+  const view = await harness();
+  const primary = view.all().filter(n => n.props.variant === "primary" && n.props.onClick);
+  expect(primary.map(n => n.props.children)).toEqual([en("tasks.runAction")]);
 });

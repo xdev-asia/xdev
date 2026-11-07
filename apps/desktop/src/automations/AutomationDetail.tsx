@@ -1,7 +1,8 @@
 import type { JSX } from "react";
+import { Button, RunTimeline } from "@xdev-asia/ui";
 import type { Automation, AutomationRun } from "@/api";
 import { useI18n } from "@/i18n";
-import { formatDate } from "./runModel";
+import { formatDate, runSteps } from "./runModel";
 import { graceLabel } from "./schedule";
 import { AutomationRunHistory } from "./AutomationRunHistory";
 
@@ -14,6 +15,8 @@ export function AutomationDetail(props: {
   runs: readonly AutomationRun[];
   exists(path: string): boolean;
   onOpenRun(run: AutomationRun): void;
+  /** Starts a run now. Without it the button is not shown. */
+  onRunNow?(): void;
 }): JSX.Element {
   const i18n = useI18n();
   const { t, locale } = i18n;
@@ -43,6 +46,20 @@ export function AutomationDetail(props: {
           </div>
         ))}
       </dl>
+      {props.onRunNow && (
+        <Button variant="secondary" data-act="run-now" onClick={props.onRunNow}>
+          {t("automations.actions.runNow")}
+        </Button>
+      )}
+      {last && (
+        <RunTimeline
+          steps={runSteps(last, t, locale)}
+          labels={{
+            list: t("automations.timeline.label"),
+            status: { pending: t("automations.timeline.pending"), running: t("automations.timeline.running"), done: t("automations.timeline.done"), failed: t("automations.timeline.failed"), skipped: t("automations.timeline.skipped") },
+          }}
+        />
+      )}
       <h3 className="au-detail-sub">{t("automations.runs.title")}</h3>
       <AutomationRunHistory runs={props.runs} exists={props.exists} onOpen={props.onOpenRun} />
     </aside>

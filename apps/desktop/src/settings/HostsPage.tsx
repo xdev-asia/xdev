@@ -6,6 +6,7 @@ import { useI18n } from "@/i18n";
 import { badEnvRows, changedKeys, daysOk, fromForm, MAX_ENV, patch, toForm, type HostForm } from "./hosts/hostModel";
 import { SettingGroup, SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
+import { useSaveBar } from "./useSaveBar";
 
 export const LOCAL_SCOPE = "local";
 const HOST_ERRORS: ReadonlySet<string> = new Set(["bad_name", "bad_path", "bad_env", "bad_arg", "not_found"]);
@@ -43,6 +44,8 @@ export interface HostsPanelProps {
   onPick(hostId: string): void;
   onForm(form: HostForm): void;
   onSave(): void;
+  /** The view's SaveBar saves and discards, so the panel draws no Save button of its own. */
+  barTakesSave?: boolean;
   onOpenSsh(): void;
   onOpenSection(id: string): void;
 }
@@ -244,11 +247,13 @@ export function HostsPanel(props: HostsPanelProps): JSX.Element {
             </FormSection>
           </SettingGroup>
           {error && error.field === null && <p className="error-text" role="alert">{text(error.code)}</p>}
-          <div className="host-actions">
-            <Button variant="primary" type="submit" disabled={!dirty || props.busy || envBad.length > 0 || daysBad}>
-              {t("settings.hosts.save")}
-            </Button>
-          </div>
+          {!props.barTakesSave && (
+            <div className="host-actions">
+              <Button variant="primary" type="submit" disabled={!dirty || props.busy || envBad.length > 0 || daysBad}>
+                {t("settings.hosts.save")}
+              </Button>
+            </div>
+          )}
         </form>
       )}
     </div>
@@ -314,6 +319,15 @@ export function HostsPage(props: SettingsSectionProps): JSX.Element {
     }
   }
 
+  const dirty = !!(form && view && changedKeys(view.stored, fromForm(form)).length > 0);
+  const barTakesSave = useSaveBar(props, {
+    dirty,
+    busy,
+    saveDisabled: !!form && (badEnvRows(form.env).length > 0 || !daysOk(form.days)),
+    onSave: () => void save(),
+    onDiscard: () => view && setForm(toForm(view.stored)),
+  });
+
   if (entries === null) return <div className="settings-page" aria-busy="true" />;
   return (
     <HostsPanel
@@ -327,6 +341,7 @@ export function HostsPage(props: SettingsSectionProps): JSX.Element {
       onPick={setHostId}
       onForm={setForm}
       onSave={() => void save()}
+      barTakesSave={barTakesSave}
       onOpenSsh={() => props.openSection?.("ssh")}
       onOpenSection={(id) => props.openSection?.(id)}
     />

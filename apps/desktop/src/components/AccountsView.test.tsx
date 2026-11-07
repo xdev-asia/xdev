@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Field } from "@xdev-asia/ui";
+import { Field, RadioGroup } from "@xdev-asia/ui";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi } from "@/api";
@@ -27,10 +27,20 @@ function nodes(value: unknown): Node[] {
   const node = value as Node;
   return [node, ...nodes(node.props.children)];
 }
+type View = ReturnType<typeof harness>;
+const group = (view: View) => nodes(view.draw()).find(n => n.type === RadioGroup)!;
+const providers = (view: View) => (group(view).props.options as { value: string }[]).map(o => o.value);
+// The provider picker is one RadioGroup; this reads one option like a radio input.
+const radio = (view: View, provider: string) => {
+  const g = group(view);
+  const option = (g.props.options as { value: string; disabled?: boolean }[]).find(o => o.value === provider)!;
+  return { props: { disabled: g.props.disabled || option.disabled, onChange: () => g.props.onChange(provider) } };
+};
 const tick = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 function harness(api = createMockApi({})) {
   const draw = () => { hooks.cursor = 0; return AccountsView({ api }); };
-  const html = () => renderToStaticMarkup(draw());
+  // Children rendered below keep their own hook slots after the view's: drop them so a changed tree starts clean.
+  const html = () => { const tree = draw(); hooks.values.length = hooks.cursor; return renderToStaticMarkup(tree); };
   const button = (text: string) => nodes(draw()).find(n => n.props.children === text && n.props.onClick)!;
   return { api, draw, html, button };
 }
@@ -182,10 +192,9 @@ it("adds a Codex account with the chosen provider", async () => {
   const view = harness();
   const login = vi.spyOn(view.api, "loginAccount");
   view.button("Add account").props.onClick();
-  const radios = nodes(view.draw()).filter(n => n.type === "input" && n.props.type === "radio");
-  expect(radios.map(n => n.props.value)).toEqual(["claude", "codex", "gemini", "qwen-code", "opencode", "amp", "cursor"]);
+  expect(providers(view)).toEqual(["claude", "codex", "gemini", "qwen-code", "opencode", "amp", "cursor"]);
   nodes(view.draw()).find(n => n.type === Field)!.props.onChange({ target: { value: "cx" } });
-  radios.find(n => n.props.value === "codex")!.props.onChange();
+  radio(view, "codex").props.onChange();
   await nodes(view.draw()).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} });
   expect((await view.api.accounts()).accounts.find(a => a.name === "cx")!.provider).toBe("codex");
   expect(login).toHaveBeenCalledWith("cx");
@@ -347,7 +356,7 @@ it("Sign in again on a re-auth row runs the same login flow", async () => {
   if (typeof cleanup === "function") cleanup();
 });
 
-const radio = (view: ReturnType<typeof harness>, provider: string) => nodes(view.draw()).find(n => n.type === "input" && n.props.type === "radio" && n.props.value === provider)!;
+
 const submit = (view: ReturnType<typeof harness>) => nodes(view.draw()).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} });
 
 it("lists each provider with its letter mark and adds a Gemini account that signs in", async () => {
@@ -395,7 +404,7 @@ it("adds a single-account provider without sign-in, then shows it single and ref
   // Import lists only providers that keep accounts apart.
   view.button("Cancel").props.onClick();
   view.button("Import folder").props.onClick();
-  expect(nodes(view.draw()).filter(n => n.type === "input" && n.props.type === "radio").map(n => n.props.value)).toEqual(["claude", "codex", "gemini"]);
+  expect(providers(view)).toEqual(["claude", "codex", "gemini"]);
   if (typeof cleanup === "function") cleanup();
 });
 
@@ -404,7 +413,7 @@ it("shows the quota-unknown chip and why for an account with no quota source", a
   await api.addAccount("open", "opencode");
   const view = harness(api); view.draw(); const cleanup = hooks.effects[0](); await tick();
   const card = renderToStaticMarkup(nodes(view.draw()).find(n => n.type === "section" && n.props["aria-label"] === "open")!);
-  expect(card).toContain(`<span class="badge account-state" data-state="unknown">${translate("en", "accounts.state.unknown")}</span>`);
+  expect(card).toContain(`</span>${translate("en", "accounts.state.unknown")}</span>`);
   expect(card).toContain(translate("en", "accounts.reason.no_quota_source"));
   if (typeof cleanup === "function") cleanup();
 });

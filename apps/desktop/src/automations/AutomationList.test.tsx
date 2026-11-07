@@ -39,3 +39,22 @@ it("opening the actions menu does not select the row", () => {
   all.find((n) => n.type === "td" && n.props.className === "au-actions")!.props.onClick?.({ stopPropagation });
   expect(stopPropagation).toHaveBeenCalled();
 });
+
+it("pauses and resumes from a switch in the row", async () => {
+  const { Switch } = await import("@xdev-asia/ui");
+  const onAction = vi.fn();
+  const m = mount(AutomationList, () => ({
+    rows: [{ automation, lastRun: null, project: "xdev" }],
+    sort: null,
+    onSort: vi.fn(),
+    selected: null,
+    onSelect: vi.fn(),
+    onAction,
+    schedules: {},
+    now: 0,
+  }));
+  const toggle = m.all().find((n) => n.type === Switch)!;
+  expect(toggle.props.checked).toBe(true);
+  toggle.props.onChange();
+  expect(onAction).toHaveBeenCalledWith("a1", "toggle");
+}, 5000);

@@ -1,4 +1,4 @@
-import { Button, Field, SearchInput, Segmented, Skeleton } from "@xdev-asia/ui";
+import { Button, EmptyState, Field, FilterChip, Meter, RadioGroup, SearchInput, Segmented, Skeleton, UsageMeterRow, type UsageState } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import { ISOLATED_PROVIDERS, PROVIDERS, isIsolated, toApiError, type Account, type Accounts, type Api, type ApiError, type Provider, type Quota } from "@/api";
 import { useI18n } from "@/i18n";
@@ -29,7 +29,6 @@ function bucketOf(minutes: number | null): Bucket {
   if (minutes === null) return "unknown";
   return minutes < 60 ? "soon" : minutes < 180 ? "mid" : "late";
 }
-const clamp = (percent: number) => Math.min(100, Math.max(0, percent));
 
 export function AccountsView({ api }: { api: Api }) {
   const { t } = useI18n();
@@ -216,11 +215,11 @@ export function AccountsView({ api }: { api: Api }) {
   function percentText(percent: number | null) {
     return percent === null ? t("accounts.unknownPercent") : t("accounts.percent", { percent: Math.round(percent) });
   }
-  function bar(label: string, percent: number | null, state: State) {
-    return <div className="account-bar" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent === null ? undefined : clamp(percent)}>
-      <div className="account-fill" data-state={state} style={{ width: `${percent === null ? 0 : clamp(percent)}%` }} />
-      {reserve > 0 && <span className="account-limit" aria-hidden="true" style={{ left: `${100 - reserve}%` }} />}
-    </div>;
+  // The reserve share is kept for the person, so a meter turns to the warn tone where it starts.
+  const warnAt = reserve > 0 ? 100 - reserve : 80;
+  const usageState = (state: State): UsageState => state === "ok" ? "ok" : state === "unknown" ? "signedOut" : "limited";
+  function windowText(window: { utilization: number | null; resetsAt: string | null }) {
+    return window.utilization === null ? `${t("accounts.unknownPercent")} · ${resetText(window.resetsAt)}` : resetText(window.resetsAt);
   }
   function loginButton(account: Account) {
     const action = loginAction(account, quotaOf(account));
@@ -268,26 +267,23 @@ export function AccountsView({ api }: { api: Api }) {
     const state = stateOf(account);
     const badge = statusBadge(account, quota);
     return <section className="account-card" key={account.name} aria-label={account.name} data-state={state}>
+      <UsageMeterRow
+        account={account.name}
+        state={usageState(state)}
+        warnAt={warnAt}
+        labels={{ state: { ok: t("accounts.state.ok"), limited: t(`accounts.state.${state}`), error: t("accounts.state.unknown"), signedOut: t("accounts.state.unknown") } }}
+        windows={(quota?.windows ?? []).map(w => ({ label: windowLabel(w.key), used: w.utilization ?? 0, resetText: windowText(w) }))}
+      />
       <div className="account-row account-card-head">
-        <span className="account-dot" data-state={state} aria-hidden="true" />
-        <h2>{account.name}</h2>
         <span className="badge account-provider" data-provider={account.provider}>{t(`accounts.provider.${account.provider}`)}</span>
         {singleChip(account)}
         {activeChip(account)}
         <span className="badge" data-state={badge.state}>{t(badge.key)}</span>
-        <span className="badge account-state" data-state={state}>{t(`accounts.state.${state}`)}</span>
       </div>
       <p className="doc-path">{who(account)}</p>
       {details(account)}
       {(state === "unknown" || quota?.reason === "expired") && <p className="account-reason">{t(`accounts.reason.${quota?.reason ?? "unavailable"}`)}</p>}
       {quota?.asOf && <p className="doc-path account-as-of">{asOfText(quota.asOf)}</p>}
-      {quota?.windows.map(window => {
-        const label = windowLabel(window.key);
-        return <div className="account-window" key={window.key}>
-          <div className="account-row"><span className="account-window-label">{label}</span><span className="account-percent">{percentText(window.utilization)}</span><span className="doc-path">{resetText(window.resetsAt)}</span></div>
-          {bar(label, window.utilization, state)}
-        </div>;
-      })}
       {!isIsolated(account.provider) && <p className="doc-path account-single-hint">{t("accounts.single.hint", { provider: t(`accounts.provider.${account.provider}`) })}</p>}
       <div className="account-row account-actions">
         {isIsolated(account.provider) && switchButton(account, true)}
@@ -300,10 +296,9 @@ export function AccountsView({ api }: { api: Api }) {
   function cell(account: Account, key: string) {
     const window = quotaOf(account)?.windows.find(w => w.key === key);
     if (!window) return <div role="cell" className="account-cell-bar"><span className="doc-path">{t("accounts.unknownPercent")}</span></div>;
-    const label = `${account.name} · ${windowLabel(key)}`;
     return <div role="cell" className="account-cell-bar">
-      <div className="account-row"><span className="account-percent">{percentText(window.utilization)}</span><span className="doc-path">{resetText(window.resetsAt)}</span></div>
-      {bar(label, window.utilization, stateOf(account))}
+      <Meter value={window.utilization ?? 0} label={`${account.name} · ${windowLabel(key)}`} warnAt={warnAt} />
+      <span className="doc-path">{windowText(window)}</span>
     </div>;
   }
   function row(account: Account) {
@@ -348,10 +343,7 @@ export function AccountsView({ api }: { api: Api }) {
       <div className="account-toolbar" role="search">
         <SearchInput className="account-search" size="sm" value={query} placeholder={t("accounts.search")} aria-label={t("accounts.search")} onChange={e => setQuery(e.target.value)} onClear={() => setQuery("")} spellCheck={false} />
         <div className="account-chips" role="group" aria-label={t("accounts.filterLabel")}>
-          {FILTERS.map(f => <button type="button" key={f} className="account-chip" data-filter={f} aria-pressed={filter === f} onClick={() => setFilter(f)}>
-            <span>{f === "all" ? t("accounts.filter.all") : t(`accounts.state.${f}`)}</span>
-            <span className="account-chip-count">{counted(f)}</span>
-          </button>)}
+          {FILTERS.map(f => <FilterChip key={f} data-filter={f} pressed={filter === f} count={counted(f)} onClick={() => setFilter(f)}>{f === "all" ? t("accounts.filter.all") : t(`accounts.state.${f}`)}</FilterChip>)}
         </div>
         <Segmented label={t("accounts.view.label")} value={table ? "table" : "cards"} options={[{ value: "table", label: t("accounts.view.table") }, { value: "cards", label: t("accounts.view.cards") }]} onChange={v => setLayout(v === "table" ? "table" : "cards")} />
       </div>
@@ -393,19 +385,24 @@ export function AccountsView({ api }: { api: Api }) {
           <Button type="button" style={COMPACT} disabled={busy} onClick={() => run(browse)}>{t("accounts.browse")}</Button></div>
       </>}
       <Field label={t("accounts.name")} value={name} onChange={e => setName(e.target.value)} disabled={busy} autoFocus={folder === null} />
-      <fieldset className="account-providers" role="radiogroup" aria-label={t("accounts.providerLabel")}>
-        <legend>{t("accounts.providerLabel")}</legend>
-        {(folder === null ? PROVIDERS : ISOLATED_PROVIDERS).map(p => {
+      <RadioGroup
+        name="account-provider"
+        label={t("accounts.providerLabel")}
+        className="account-providers"
+        value={provider}
+        disabled={busy}
+        onChange={v => setProvider(v as Provider)}
+        options={(folder === null ? PROVIDERS : ISOLATED_PROVIDERS).map(p => {
           // A single-account CLI has one sign-in, so it is added once.
           const taken = !isIsolated(p) && all.some(a => a.provider === p);
-          return <label key={p} className="account-provider-option" data-provider={p} data-disabled={taken || undefined}>
-            <input type="radio" name="account-provider" value={p} checked={provider === p} disabled={busy || taken} onChange={() => setProvider(p)} />
-            <AgentIcon profile={p} size={20} />
-            <span className="account-provider-name">{t(`accounts.provider.${p}`)}</span>
-            {!isIsolated(p) && <small className="account-provider-note">{t(taken ? "accounts.single.taken" : "accounts.single.badge")}</small>}
-          </label>;
+          return {
+            value: p,
+            disabled: taken,
+            label: <span className="account-provider-option" data-provider={p}><AgentIcon profile={p} size={20} /><span className="account-provider-name">{t(`accounts.provider.${p}`)}</span></span>,
+            hint: isIsolated(p) ? undefined : t(taken ? "accounts.single.taken" : "accounts.single.badge"),
+          };
         })}
-      </fieldset>
+      />
       {!isIsolated(provider) && <p className="account-add-hint" data-single-hint="true">{t("accounts.single.addHint", { provider: t(`accounts.provider.${provider}`) })}</p>}
       <Button variant="primary" type="submit" style={COMPACT} disabled={busy}>{t(folder !== null ? "accounts.importSubmit" : isIsolated(provider) ? "accounts.addLogin" : "accounts.add")}</Button>
       <Button type="button" style={COMPACT} disabled={busy} onClick={closeForm}>{t("accounts.cancel")}</Button>
@@ -427,7 +424,7 @@ export function AccountsView({ api }: { api: Api }) {
       <Button type="button" style={COMPACT} onClick={async () => { try { await navigator.clipboard.writeText(command); setCopy("copied"); } catch { setCopy("copyFailed"); } }}>{t("connect.copy")}</Button>
       {copy && <span role="status">{t(`connect.${copy}`)}</span>}
     </div>}
-    {accounts === undefined ? !problem && <div className="placeholder" role="status" aria-label={t("accounts.loading")}><Skeleton shape="block" /></div> : accounts.accounts.length === 0 ? <div className="placeholder"><p>{t("accounts.empty")}</p><Button variant="primary" type="button" style={COMPACT} onClick={() => openForm(false)}>{t("accounts.add")}</Button></div> : <>{resets()}{toolbar()}{list()}</>}
+    {accounts === undefined ? !problem && <div className="placeholder" role="status" aria-label={t("accounts.loading")}><Skeleton shape="block" /></div> : accounts.accounts.length === 0 ? <EmptyState size="center" icon="accounts" title={t("accounts.empty")} actions={<Button variant="primary" type="button" style={COMPACT} onClick={() => openForm(false)}>{t("accounts.add")}</Button>} /> : <>{resets()}{toolbar()}{list()}</>}
     <RoutingRules api={api} />
   </div>;
 }

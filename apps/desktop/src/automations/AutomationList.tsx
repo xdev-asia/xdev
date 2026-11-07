@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { StatusDot, type MenuEntry } from "@xdev-asia/ui";
+import { StatusDot, Switch, type MenuEntry } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import { lastRunCell, sortLabel, type Row, type Sort, type SortKey } from "./listModel";
 import { MenuButton } from "./MenuButton";
@@ -66,8 +66,14 @@ export function AutomationList(props: {
               <td>
                 <StatusDot state={cell.tone} label={cell.text} />
               </td>
-              <td>
-                <StatusDot state={a.enabled ? "done" : "idle"} label={t(a.enabled ? "automations.list.status.enabled" : "automations.list.status.paused")} />
+              <td onClick={(e) => e.stopPropagation()}>
+                <Switch
+                  checked={a.enabled}
+                  aria-label={t(a.enabled ? "automations.list.status.enabled" : "automations.list.status.paused") + ": " + a.name}
+                  data-act="toggle"
+                  onChange={() => props.onAction(a.id, "toggle")}
+                />
+                <span className="au-sub">{t(a.enabled ? "automations.list.status.enabled" : "automations.list.status.paused")}</span>
               </td>
               {/* The menu acts on the row without selecting it. */}
               <td className="au-actions" onClick={(e) => e.stopPropagation()}>

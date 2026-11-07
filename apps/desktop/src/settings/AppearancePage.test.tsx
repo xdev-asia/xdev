@@ -35,7 +35,8 @@ function nodes(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
   if (!value || typeof value !== "object" || !("props" in value)) return [];
   const node = value as Node;
-  return [node, ...nodes(node.props.children)];
+  // A SettingRow draws its control from the `control` prop.
+  return [node, ...nodes(node.props.children), ...nodes(node.props.control)];
 }
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
@@ -77,7 +78,11 @@ async function page(filter?: SettingsFilter, openSection?: (id: string) => void)
   const all = () => nodes(draw());
   const of = (type: unknown) => all().find((n) => n.type === type)!;
   const select = (field: string) => all().find((n) => n.type === Select && n.props["data-field"] === field)!;
-  const sw = (name: string) => nodes(all().find((n) => n.props["data-switch"] === name)).find((n) => n.props.role === "switch")!;
+  const swRaw = (name: string) => nodes(all().find((n) => n.props["data-switch"] === name)).find((n) => n.props.role === "switch" || (n.props.checked !== undefined && n.props.onChange))!;
+  const sw = (name: string) => {
+    const n = swRaw(name);
+    return n.props.role === "switch" ? n : { ...n, props: { ...n.props, "aria-checked": n.props.checked, onClick: n.props.onChange } };
+  };
   return { api, all, of, select, sw };
 }
 
