@@ -16,7 +16,6 @@ export type NavResult =
   | { kind: "expand"; path: string }
   | { kind: "collapse"; path: string }
   | { kind: "open"; path: string }
-  | { kind: "preview"; path: string }
   | { kind: "rename"; path: string }
   | { kind: "toggle"; path: string };
 
@@ -47,9 +46,8 @@ export function navigate(rows: NavRow[], current: string | null, key: NavKey, pa
   const row = rows[at];
   if (!row) return select(0);
   if (key === "F2") return { kind: "rename", path: row.path };
-  // Space looks at a file without leaving the tree; on a folder it opens or closes it like Enter.
-  if (key === " ") return row.dir ? { kind: "toggle", path: row.path } : { kind: "preview", path: row.path };
-  if (key === "Enter") return row.dir ? { kind: "toggle", path: row.path } : { kind: "open", path: row.path };
+  // Space does what Enter does: open a file, open or close a folder.
+  if (key === "Enter" || key === " ") return row.dir ? { kind: "toggle", path: row.path } : { kind: "open", path: row.path };
   if (key === "ArrowRight") {
     if (!row.dir) return null;
     if (!row.open) return { kind: "expand", path: row.path };
