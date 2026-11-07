@@ -93,7 +93,15 @@ impl Flow {
     }
 
     fn cmd(self) -> CmdError {
-        fail(self.code())
+        // The yearly limit goes to the log detail; the message names no number.
+        let detail = match &self {
+            Flow::Api(ApiError::TransferLimit(Some(n))) => Some(format!("limit={n}")),
+            _ => None,
+        };
+        CmdError {
+            code: self.code(),
+            detail,
+        }
     }
 }
 

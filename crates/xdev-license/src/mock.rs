@@ -214,6 +214,12 @@ impl MockEntitlementServer {
         st.activations.retain(|(_, d)| d != device_id);
     }
 
+    /// The account side: counts one more transfer this year.
+    #[cfg(test)]
+    fn bump_transfers(&self) {
+        self.lock().transfers += 1;
+    }
+
     pub fn transfers(&self) -> u32 {
         self.lock().transfers
     }
@@ -495,9 +501,20 @@ fn deactivate(st: &mut State, device_id: &str) -> Response {
 
 fn remove(st: &mut State, id: &str) -> Response {
     let now = st.now;
+    let holds_seat = st.activations.iter().any(|(_, dev)| dev == id);
+    // C3: removing a device that holds a Pro seat is a transfer, like deactivating it.
+    if holds_seat && st.transfers >= TRANSFER_LIMIT {
+        return reply(
+            429,
+            json!({ "error": "transfer_limit", "limit": TRANSFER_LIMIT }),
+        );
+    }
     let Some(d) = st.devices.iter_mut().find(|d| d.id == id) else {
         return err(404, "not_found");
     };
+    if holds_seat {
+        st.transfers += 1;
+    }
     d.revoked_at.get_or_insert(now);
     st.activations.retain(|(_, dev)| dev != id);
     no_content()
@@ -647,6 +664,24 @@ mod tests {
     }
 
     #[test]
+    fn removing_a_device_with_a_seat_counts_as_a_transfer() {
+        let srv = MockEntitlementServer::new(MockMode::ProNoSeat, NOW);
+        let b = bearer();
+        api::remove_device(&srv, MOCK_BASE, &b, "device-other").unwrap();
+        assert_eq!(srv.transfers(), 1);
+        assert_eq!(srv.active_seats(), 0);
+        // Over the limit: 429 with the limit, and nothing changes.
+        let srv = MockEntitlementServer::new(MockMode::ProNoSeat, NOW);
+        for _ in 0..TRANSFER_LIMIT {
+            srv.bump_transfers();
+        }
+        let err = api::remove_device(&srv, MOCK_BASE, &b, "device-other").unwrap_err();
+        assert_eq!(err, ApiError::TransferLimit(Some(TRANSFER_LIMIT)));
+        assert_eq!(srv.active_seats(), 1);
+        assert_eq!(srv.transfers(), TRANSFER_LIMIT);
+    }
+
+    #[test]
     fn a_nonce_is_spent_once() {
         let srv = MockEntitlementServer::new(MockMode::Pro, NOW);
         let k = key(4);
@@ -656,7 +691,7 @@ mod tests {
         api::entitlement(&srv, MOCK_BASE, &b, MOCK_UID, &nonce, &id, &k, &build()).unwrap();
         assert_eq!(
             api::entitlement(&srv, MOCK_BASE, &b, MOCK_UID, &nonce, &id, &k, &build()).unwrap_err(),
-            ApiError::Unavailable
+            ApiError::BadNonce
         );
     }
 

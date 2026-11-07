@@ -6402,5 +6402,6 @@
   "keys.page.openCursor": "Open in Cursor",
   "keys.page.revealFile": "Reveal in file manager",
   "keys.page.reload": "Reload from disk",
-  "keys.page.editorFailed": "Failed to open external editor."
+  "keys.page.editorFailed": "Failed to open external editor.",
+  "error.license_device_conflict": "The license service could not register this device because it conflicts with one already on your account. Remove the older entry in your account, then try again."
 }

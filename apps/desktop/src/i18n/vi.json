@@ -6402,5 +6402,6 @@
   "keys.page.openCursor": "Mở trong Cursor",
   "keys.page.revealFile": "Hiện trong trình quản lý tệp",
   "keys.page.reload": "Tải lại từ đĩa",
-  "keys.page.editorFailed": "Không mở được trình soạn thảo bên ngoài."
+  "keys.page.editorFailed": "Không mở được trình soạn thảo bên ngoài.",
+  "error.license_device_conflict": "Dịch vụ giấy phép không đăng ký được thiết bị này vì trùng với một thiết bị đã có trong tài khoản. Hãy gỡ mục cũ trong tài khoản rồi thử lại."
 }

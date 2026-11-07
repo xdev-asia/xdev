@@ -967,6 +967,7 @@ export type ErrorCode =
   | "license_transfer_limit"
   | "license_server_key"
   | "license_wrong_device"
+  | "license_device_conflict"
   | "remote_offline"
   | "remote_auth"
   | "remote_no_sftp"
@@ -2608,6 +2609,7 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "license_transfer_limit",
   "license_server_key",
   "license_wrong_device",
+  "license_device_conflict",
   "remote_offline",
   "remote_auth",
   "remote_no_sftp",
