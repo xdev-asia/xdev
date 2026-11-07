@@ -1,3 +1,4 @@
+import { Icon, type IconName } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX, KeyboardEvent } from "react";
 import { useI18n } from "@/i18n";
@@ -22,22 +23,18 @@ export interface JumpPaletteProps {
   now?: number;
 }
 
-const ICONS: Record<PaletteKind, string> = {
-  tab: "M4 5h16v14H4zM8 10l3 2-3 2M13 14h3",
-  chat: "M4 5h16v11H9l-5 4zM8 10h8",
-  task: "M5 5h14v14H5zM9 12l2 2 4-4",
-  file: "M6 3h8l4 4v14H6zM14 3v4h4",
-  worktree: "M6 4v10M6 14a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM6 4a2 2 0 1 0 0 .01M18 8a2 2 0 1 0 0 .01M18 10c0 4-6 3-12 4",
-  setting: "M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6",
-  action: "M13 3 5 13h6l-1 8 8-10h-6z",
+const ICONS: Record<PaletteKind, IconName> = {
+  tab: "terminal",
+  chat: "chat",
+  task: "check-circle",
+  file: "file",
+  worktree: "branch",
+  setting: "sliders",
+  action: "zap",
 };
 
 function KindIcon(props: { kind: PaletteKind }): JSX.Element {
-  return (
-    <svg className="pal-icon" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d={ICONS[props.kind]} />
-    </svg>
-  );
+  return <Icon name={ICONS[props.kind]} size={14} className="pal-icon" />;
 }
 
 const selectable = (r: Row) => r.type !== "header";
@@ -254,9 +251,7 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
             onMouseDown={keepFocus}
             onClick={toggleMenu}
           >
-            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 5h16l-6 8v6l-4-2v-4z" />
-            </svg>
+            <Icon name="filter" size={14} />
           </button>
         )}
         {menu && (
