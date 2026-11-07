@@ -6285,5 +6285,16 @@
   "mrReview.block.merge-queue": "Dự án này merge qua hàng đợi.",
   "mrReview.block.unknown": "GitLab chưa kiểm tra xong việc merge. Thử lại sau ít phút.",
   "mrReview.block.behind": "Nhánh này tụt sau nhánh đích. Hãy rebase trước.",
-  "mrReview.block.blocked": "Quy tắc dự án đang chặn việc merge."
+  "mrReview.block.blocked": "Quy tắc dự án đang chặn việc merge.",
+  "settings.v2.group.general": "Chung",
+  "settings.v2.group.agent": "Agent",
+  "settings.v2.group.project": "Dự án và Git",
+  "settings.v2.group.terminal": "Terminal và editor",
+  "settings.v2.group.connect": "Kết nối",
+  "settings.v2.group.advanced": "Nâng cao",
+  "settings.v2.save.unsaved": "Bạn có thay đổi chưa lưu",
+  "settings.v2.save.save": "Lưu thay đổi",
+  "settings.v2.save.discard": "Bỏ thay đổi",
+  "settings.v2.save.saving": "Đang lưu",
+  "settings.v2.save.leave": "Rời trang này? Thay đổi của bạn chưa được lưu."
 }

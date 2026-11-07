@@ -45,20 +45,41 @@ it("reveal scrolls to the control and flashes it once", () => {
   expect(el.scrollIntoView).toHaveBeenCalledTimes(1);
 });
 
-it("reveal waits for a page that is still loading, then gives up", () => {
+it("reveal waits for a page that is still loading: no timer poll, a watch tells it when the page changed", () => {
   const el = fakeEl();
   let ready = false;
-  revealSetting(() => (ready ? el : null));
+  let notify = () => {};
+  const unwatch = vi.fn();
+  const find = vi.fn(() => (ready ? el : null));
+  revealSetting(find, (n) => {
+    notify = n;
+    return unwatch;
+  });
+  expect(find).toHaveBeenCalledTimes(1);
   vi.advanceTimersByTime(500);
+  expect(find).toHaveBeenCalledTimes(1);
   expect(el.scrollIntoView).not.toHaveBeenCalled();
   ready = true;
-  vi.advanceTimersByTime(100);
+  notify();
   expect(el.scrollIntoView).toHaveBeenCalledTimes(1);
+  expect(unwatch).toHaveBeenCalledTimes(1);
+  notify();
+  expect(el.scrollIntoView).toHaveBeenCalledTimes(1);
+});
 
-  const find = vi.fn(() => null);
-  revealSetting(find);
-  vi.advanceTimersByTime(10_000);
-  expect(find.mock.calls.length).toBeLessThanOrEqual(32);
+it("reveal stops watching after 3 s", () => {
+  const unwatch = vi.fn();
+  revealSetting(() => null, () => unwatch);
+  vi.advanceTimersByTime(2900);
+  expect(unwatch).not.toHaveBeenCalled();
+  vi.advanceTimersByTime(200);
+  expect(unwatch).toHaveBeenCalledTimes(1);
+});
+
+it("a row given a label draws as the design system row", () => {
+  const el = SettingRow({ id: "a.b", label: "Name", description: "Hint", control: "C" })!;
+  expect(el.props).toMatchObject({ id: "a.b", label: "Name", description: "Hint", control: "C" });
+  expect(SettingRow({ id: "a.b", filter: filter("a.c"), label: "Name" })).toBeNull();
 });
 
 it("reveal can be stopped", () => {

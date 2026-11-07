@@ -99,3 +99,25 @@ it("round trips the HTTP/1.1 switch through the put command", async () => {
   await m.settle();
   expect(sw().props["aria-checked"]).toBe(true);
 });
+
+it("in Settings the view's SaveBar saves and discards, and the page has no Save button of its own", async () => {
+  const api = createMockApi({});
+  const put = vi.spyOn(api, "networkSettingsPut");
+  const registerSave = vi.fn();
+  const m = mount(AdvancedPage, () => ({ api, onChanged: vi.fn(), registerSave }));
+  await m.settle();
+  await m.settle();
+  expect(m.all().some((n) => n.type === Button && n.props["data-act"] === "save-advanced")).toBe(false);
+  expect(registerSave).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: false }));
+  type(m, "proxyUrl", "http://127.0.0.1:8080");
+  await m.settle();
+  const spec = registerSave.mock.calls.at(-1)![0];
+  expect(spec.dirty).toBe(true);
+  spec.onDiscard();
+  expect(field(m.all(), "proxyUrl").props.value).toBe("");
+  type(m, "proxyUrl", "http://127.0.0.1:8080");
+  await m.settle();
+  registerSave.mock.calls.at(-1)![0].onSave();
+  await m.settle();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ proxyUrl: "http://127.0.0.1:8080" }));
+});
