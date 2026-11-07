@@ -6402,5 +6402,6 @@
   "keys.page.openCursor": "Mở trong Cursor",
   "keys.page.revealFile": "Hiện trong trình quản lý tệp",
   "keys.page.reload": "Tải lại từ đĩa",
-  "keys.page.editorFailed": "Không mở được trình soạn thảo bên ngoài."
+  "keys.page.editorFailed": "Không mở được trình soạn thảo bên ngoài.",
+  "palette.kinds": "Loại"
 }

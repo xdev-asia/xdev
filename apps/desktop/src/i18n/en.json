@@ -6402,5 +6402,6 @@
   "keys.page.openCursor": "Open in Cursor",
   "keys.page.revealFile": "Reveal in file manager",
   "keys.page.reload": "Reload from disk",
-  "keys.page.editorFailed": "Failed to open external editor."
+  "keys.page.editorFailed": "Failed to open external editor.",
+  "palette.kinds": "Kind"
 }
