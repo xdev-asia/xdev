@@ -1416,6 +1416,17 @@ pub fn pty_spawn(
             prompt.as_deref(),
         )?
     };
+    // A saved SSH host tab starts the host's shell with the host's env.
+    if remote.is_none()
+        && let Some(alias) = profile_id.strip_prefix("shell:ssh:")
+    {
+        crate::remote_launch::ssh_tab_host(
+            &mut launch,
+            alias,
+            &xdev_ssh::load(data).unwrap_or_default(),
+            &settings_store::read(&app).hosts,
+        )?;
+    }
     if let Some(o) = &overrides {
         launch.apply_overrides(o);
     }
@@ -1804,6 +1815,21 @@ fn unreachable_service() -> CmdError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pty_spawn_gives_a_saved_host_tab_its_host_values() {
+        let src = include_str!("pty.rs");
+        let at = src.find("pub fn pty_spawn(").expect("pty_spawn");
+        let body = &src[at..];
+        let end = body
+            .find(
+                "
+}
+",
+            )
+            .expect("end of pty_spawn");
+        assert!(body[..end].contains("ssh_tab_host("));
+    }
+
     use std::sync::mpsc;
 
     use super::*;
