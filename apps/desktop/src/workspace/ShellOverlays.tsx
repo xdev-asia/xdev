@@ -99,13 +99,13 @@ export function ShellOverlays(p: {
   setSidebarOpen: Dispatch<SetStateAction<boolean>>;
   setFront: Dispatch<SetStateAction<{ worktree: string; id: string; seq: number } | null>>;
 }): JSX.Element {
-  const { addPaths, addRepo, addRepoFolder, addScanned, adding, addingRemote, editing, forgetRepo, forgetting, groupName, projectCreated, repoCloned, saveDetails, saveGroup, scanRoot, setAdding, setAddingRemote, setDetails, setEditing, setForgetting, setGroupName, setScanRoot } = p.repo;
+  const { addPaths, addRepo, addRepoFolder, addScanned, adding, addingClone, addingRemote, editing, forgetRepo, forgetting, groupName, projectCreated, repoCloned, saveDetails, saveGroup, scanRoot, setAdding, setAddingClone, setAddingRemote, setDetails, setEditing, setForgetting, setGroupName, setScanRoot } = p.repo;
   const { archiveRemoving, bulk, confirmBulk, remove, removeRun, removing, review, reviewDo, reviewKept, setBulk, setRemoving, setReview, skipDeleteConfirm } = p.rm;
   const { create, createTab, creating, setCreating, startCreate, startFromIssue, startFromMr, startFromPr } = p.cr;
   const { confirmTrust, setTrusting, setupAfterCreate, trusting } = p.setup;
   const { pendingReconnect, reconnectRemote } = p.remoteActs;
   const { answerSwitch, setSwitching, switching } = p.acct;
-  const { openDecompose, openSearch, openSettings, openTask, openTaskBoard, show, view } = p.views;
+  const { openDecompose, openDoc, openSearch, openSettings, openTask, openTaskBoard, show, view } = p.views;
   const { changesReady, runOnChanges } = p.panels;
   const { quitting } = p.layout;
   const { about, boardOpen, checkingOut, composerAsk, confirmEndAll, jumpOpen, machine, mergeSources, parentFor, quickOpen, renaming, setAbout, setBoardOpen, setCheckingOut, setConfirmEndAll, setJumpOpen, setMergeSources, setParentFor, setQuickOpen, setRenaming } = p.dialogs;
@@ -208,6 +208,7 @@ export function ShellOverlays(p: {
           },
           remoteReconnect: pendingReconnect ? () => void reconnectRemote(pendingReconnect.id) : undefined,
           searchDocs: openSearch,
+          openDoc,
           toggleSidebar: () => setSidebarOpen((o) => !o),
           showDocs: () => show("docs"),
           stageAllChanges: changesReady ? () => runOnChanges((h) => h.stageAll()) : undefined,
@@ -312,9 +313,11 @@ export function ShellOverlays(p: {
           onCloned={(repo) => void repoCloned(repo)}
           onCreated={(created) => void projectCreated(created)}
           startRemote={addingRemote}
+          startClone={addingClone}
           onCancel={() => {
             setAdding(false);
             setAddingRemote(false);
+            setAddingClone(false);
             setScanRoot(undefined);
           }}
           scanRoot={scanRoot}

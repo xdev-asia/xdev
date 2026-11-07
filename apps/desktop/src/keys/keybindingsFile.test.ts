@@ -200,7 +200,14 @@ describe("conflicts", () => {
   });
 
   it("ignores one chord in different scopes", () => {
-    expect(conflicts([b("docs.search", "Ctrl+K"), b("terminal.clear", "Ctrl+K"), b("search.open", "Ctrl+K")]).size).toBe(0);
+    expect(conflicts([b("docs.save", "Ctrl+S"), b("terminal.clear", "Ctrl+S"), b("search.open", "Ctrl+S")]).size).toBe(0);
+  });
+
+  it("ignores an override of a removed id, with a finding and no crash", () => {
+    const { overrides, diagnostics } = parseKeybindings(file({ version: 1, keybindings: { "docs.search": ["Ctrl+K"], "tab.new": ["Ctrl+Alt+N"] } }), "win");
+    expect(overrides.has("docs.search" as ActionId)).toBe(false);
+    expect(overrides.get("tab.new")).toEqual(["Ctrl+Alt+N"]);
+    expect(diagnostics.some((d) => d.kind === "unknownAction")).toBe(true);
   });
 
   it("is empty for the defaults", async () => {

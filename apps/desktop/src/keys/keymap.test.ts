@@ -63,9 +63,10 @@ it("every default binding is reached by its chord off macOS", () => {
   }
 });
 
-it("a chord shared across scopes lists the global action first", () => {
-  expect(actionsOf(ev({ ctrlKey: true, code: "KeyK" }), false)).toEqual(["search.open", "terminal.clear", "docs.search"]);
-  expect(actionOf(ev({ ctrlKey: true, code: "KeyK" }), false)).toBe("search.open");
+it("Mod+K has one meaning in every scope; clearing the terminal is Mod+Shift+K", () => {
+  expect(actionsOf(ev({ ctrlKey: true, code: "KeyK" }), false)).toEqual(["search.open"]);
+  expect(actionsOf(ev({ metaKey: true, code: "KeyK" }), true)).toEqual(["search.open"]);
+  expect(actionsOf(ev({ ctrlKey: true, shiftKey: true, code: "KeyK" }), false)).toEqual(["terminal.clear"]);
 });
 
 it("eventChord writes what normalizeChord writes", () => {
@@ -277,35 +278,25 @@ it("a terminal-scope action runs only from a terminal, and there it shadows the 
   const search = vi.fn();
   const clear = vi.fn();
   const { press } = setup({ "search.open": search, "terminal.clear": clear }, undefined, false, true);
-  press({ ctrlKey: true, code: "KeyK" });
-  expect([search.mock.calls.length, clear.mock.calls.length]).toEqual([1, 0]);
-  press({ ctrlKey: true, code: "KeyK" }, true);
-  expect([search.mock.calls.length, clear.mock.calls.length]).toEqual([1, 1]);
+  press({ ctrlKey: true, shiftKey: true, code: "KeyK" });
+  expect([search.mock.calls.length, clear.mock.calls.length]).toEqual([0, 0]);
+  press({ ctrlKey: true, shiftKey: true, code: "KeyK" }, true);
+  expect([search.mock.calls.length, clear.mock.calls.length]).toEqual([0, 1]);
 });
 
-it("a shadowed global action does not run from another view's listener", () => {
+it("Mod+K runs the palette from the docs view and from a terminal alike", () => {
   const search = vi.fn();
-  // This view has no terminal.clear handler, but the terminal-scope action wins the chord.
-  const { press } = setup({ "search.open": search });
-  const { event } = press({ ctrlKey: true, code: "KeyK" }, true);
-  expect(search).not.toHaveBeenCalled();
-  expect(event.defaultPrevented).toBe(false);
-});
-
-it("a docs-scope action shadows the global one only while the docs view is shown", () => {
-  const search = vi.fn();
-  const docs = vi.fn();
-  setup({ "search.open": search, "docs.search": docs }, undefined, false, true).press({ ctrlKey: true, code: "KeyK" });
-  expect([search.mock.calls.length, docs.mock.calls.length]).toEqual([1, 0]);
-  setup({ "search.open": search, "docs.search": docs }).press({ ctrlKey: true, code: "KeyK" });
-  expect([search.mock.calls.length, docs.mock.calls.length]).toEqual([1, 1]);
+  setup({ "search.open": search }, undefined, false, true).press({ ctrlKey: true, code: "KeyK" });
+  setup({ "search.open": search }).press({ ctrlKey: true, code: "KeyK" });
+  expect(search).toHaveBeenCalledTimes(2);
 });
 
 it("appOwnsKey under app first: every global or terminal action on the chord", () => {
   setKeySettings({ terminalPolicy: "app-first", terminalHints: true });
   expect(appOwnsKey(ev(PRESS["Ctrl+T"]), false)).toBe("tab.new");
   expect(appOwnsKey(ev(PRESS["Ctrl+]"]), false)).toBe("pane.next");
-  expect(appOwnsKey(ev({ ctrlKey: true, code: "KeyK" }), false)).toBe("terminal.clear");
+  expect(appOwnsKey(ev({ ctrlKey: true, code: "KeyK" }), false)).toBe("search.open");
+  expect(appOwnsKey(ev({ ctrlKey: true, shiftKey: true, code: "KeyK" }), false)).toBe("terminal.clear");
   expect(appOwnsKey(ev({ ctrlKey: true, code: "KeyF" }), false)).toBe("terminal.find");
   expect(appOwnsKey(ev({ ctrlKey: true, code: "KeyS" }), false)).toBeNull();
   expect(appOwnsKey(ev({ code: "KeyA" }), false)).toBeNull();
@@ -318,8 +309,9 @@ it("appOwnsKey under terminal first leaves the keys a TUI uses to the program", 
   expect(appOwnsKey(ev({ ctrlKey: true, shiftKey: true, code: "KeyC" }), false)).toBe("terminal.copy");
   expect(appOwnsKey(ev(PRESS["Ctrl+]"]), false)).toBeNull();
   expect(appOwnsKey(ev(PRESS["Ctrl+Shift+D"]), false)).toBeNull();
-  // Ctrl+K: terminal.clear yields, so the global search is what is left on the chord.
+  // Ctrl+K leaves the terminal in both policies; Ctrl+Shift+K (clear) yields to a TUI.
   expect(appOwnsKey(ev({ ctrlKey: true, code: "KeyK" }), false)).toBe("search.open");
+  expect(appOwnsKey(ev({ ctrlKey: true, shiftKey: true, code: "KeyK" }), false)).toBeNull();
   expect(appOwnsKey(ev({ ctrlKey: true, code: "KeyF" }), false)).toBeNull();
 });
 

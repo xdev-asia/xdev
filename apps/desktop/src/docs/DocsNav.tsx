@@ -2,12 +2,9 @@ import { Button, NavList, SearchInput, type NavListItem } from "@xdev-asia/ui";
 import type { JSX, KeyboardEvent, ReactNode } from "react";
 import type { SearchHit } from "@/api";
 import { useI18n } from "@/i18n";
-import { useKeymap } from "@/keys/keymap";
 import type { DocsSection } from "@/shell/places";
 import { DOCS_SEARCH_ID } from "./ids";
 import { resultId, RESULTS_ID } from "./SearchPanel";
-
-export const SHORTCUT = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K";
 
 export type DocsNavSearch = {
   query: string;
@@ -40,14 +37,6 @@ const LABEL: Record<DocsSection, string> = { docs: "apps.docs", changes: "apps.c
 export function DocsNav(props: DocsNavProps): JSX.Element {
   const { t } = useI18n();
   const { search } = props;
-  // `Mod+K` while Docs is the view puts the cursor in the field. The field takes no ref, so it is found by id.
-  useKeymap({
-    "docs.search": () => {
-      const field = document.getElementById(DOCS_SEARCH_ID) as HTMLInputElement | null;
-      field?.focus();
-      field?.select();
-    },
-  });
   const items: NavListItem[] = props.sections.map((id) => ({
     id,
     label: t(LABEL[id]),
@@ -66,11 +55,10 @@ export function DocsNav(props: DocsNavProps): JSX.Element {
         id={DOCS_SEARCH_ID}
         size="sm"
         value={search.query}
-        placeholder={t("search.placeholder", { shortcut: SHORTCUT })}
+        placeholder={t("search.placeholder")}
         aria-label={t("search.label")}
         aria-controls={RESULTS_ID}
         aria-activedescendant={searching && search.hits[search.active] ? resultId(search.active) : undefined}
-        shortcut={SHORTCUT}
         onChange={(e) => search.onQuery(e.target.value)}
         onClear={() => search.onQuery("")}
         onKeyDown={search.onKey}

@@ -104,11 +104,10 @@ it("draws the sources first and the list last", () => {
   expect(order).toEqual(["vaults", "search", "sections", "list"]);
 });
 
-it("docs.search focuses and selects the field", () => {
-  const field = { focus: vi.fn(), select: vi.fn() };
-  vi.stubGlobal("document", { getElementById: (id: string) => (id === DOCS_SEARCH_ID ? field : null) });
-  nav();
-  keys.handlers["docs.search"]();
-  expect(field.focus).toHaveBeenCalled();
-  expect(field.select).toHaveBeenCalled();
+it("the field stays, shows no shortcut (Mod+K opens the palette) and binds no docs key", () => {
+  const { tree } = nav();
+  const field = find(tree, (e) => e.type === SearchInput)[0];
+  expect(field.props.id).toBe(DOCS_SEARCH_ID);
+  expect(field.props.shortcut).toBeUndefined();
+  expect(keys.handlers).toEqual({});
 });

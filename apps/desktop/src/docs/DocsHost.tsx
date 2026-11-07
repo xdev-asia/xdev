@@ -31,13 +31,13 @@ import { isDirty } from "@/doc/docState";
 import { agentsEditable, parseFrontmatter, setAgents, setVerified } from "@/doc/frontmatter";
 import { useDoc } from "@/doc/useDoc";
 import { useI18n } from "@/i18n";
-import { useKeymap } from "@/keys/keymap";
+import { chordLabel, useKeymap } from "@/keys/keymap";
 import { docFileName, newDocContent } from "@/shell/newDoc";
 import { docsSections, type DocsSection } from "@/shell/places";
 import { useAppOrder, useHiddenApps } from "@/ui/hiddenApps";
 import { setUpVault } from "@/shell/setUpVault";
 import type { DocsRequest } from "@/shell/useShellViews";
-import { DocsNav, SHORTCUT } from "./DocsNav";
+import { DocsNav } from "./DocsNav";
 import type { DocsHandle, DocsSaveState, DocsStatus } from "./types";
 import { VaultEmpty, type VaultFailure } from "./VaultEmpty";
 
@@ -337,7 +337,6 @@ export function VaultView(props: VaultViewProps): JSX.Element {
   }, [api, query, revision]);
 
   // The keymap only runs this while the docs view is shown, though the shell keeps it mounted.
-  // `docs.search` belongs to the side list, which owns the field.
   useKeymap({
     "docs.new": () => startNewDoc(),
   });
@@ -416,7 +415,10 @@ export function VaultView(props: VaultViewProps): JSX.Element {
   // A request from the shell shows the section it names.
   const requestSeq = props.request?.seq;
   useEffect(() => {
-    if (props.request) openSection(props.request.section);
+    if (props.request) {
+      openSection(props.request.section);
+      if (props.request.open !== undefined) openDoc(props.request.open);
+    }
     // Only a new request runs this; `openSection` just sets state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestSeq]);
@@ -564,7 +566,7 @@ export function VaultView(props: VaultViewProps): JSX.Element {
         {/* Hidden rather than unmounted, so the editor keeps its undo history while a diff is shown. */}
         <div className="docview" hidden={section !== "docs"}>
           {state.path === null ? (
-            <p className="placeholder">{t("editor.placeholder", { shortcut: SHORTCUT })}</p>
+            <p className="placeholder">{t("editor.placeholder", { shortcut: chordLabel("search.open") ?? "" })}</p>
           ) : (
             <>
               <div className="doc-head">

@@ -64,8 +64,8 @@ it("PageDown and PageUp jump a page and stop at the ends", () => {
   expect(navigate(long, "f3", "PageDown", 4)).toEqual({ kind: "select", path: "f7" });
 });
 
-it("Space previews a file and toggles a folder; F2 renames", () => {
-  expect(navigate(rows, "README.md", " ")).toEqual({ kind: "preview", path: "README.md" });
+it("Space opens a file and toggles a folder; F2 renames", () => {
+  expect(navigate(rows, "README.md", " ")).toEqual({ kind: "open", path: "README.md" });
   expect(navigate(rows, "docs", " ")).toEqual({ kind: "toggle", path: "docs" });
   expect(navigate(rows, "README.md", "F2")).toEqual({ kind: "rename", path: "README.md" });
 });

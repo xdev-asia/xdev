@@ -57,7 +57,7 @@ export type ActionId =
   | "file.closeAll"
   | "settings.open" | "settings.shortcuts"
   | "sessions.open"
-  | "docs.search" | "docs.new" | "docs.save"
+  | "docs.new" | "docs.save"
   // Saves the file of the focused file tab; the handler declines when another tab is in front.
   | "file.save"
   // Opens the Markdown preview of the focused file tab; the handler declines for any other file.
@@ -298,7 +298,7 @@ export function chordLabel(action: ActionId, mac: boolean = IS_MAC): string | nu
 
 // The kept keys open the palette and a new agent; the dialog check does not apply to the palette,
 // which closes itself with the same key.
-const WORKS_IN_DIALOG: ReadonlySet<ActionId> = new Set(["palette.jump"]);
+const WORKS_IN_DIALOG: ReadonlySet<ActionId> = new Set(["palette.jump", "search.open"]);
 
 function modalOpen(): boolean {
   return typeof document !== "undefined" && document.querySelector('[role="dialog"][aria-modal="true"]') !== null;

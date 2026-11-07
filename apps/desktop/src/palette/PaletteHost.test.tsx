@@ -293,6 +293,37 @@ it("reads the current worktree's files on open and offers them for a query of tw
   list.mockRestore();
 });
 
+it("the Docs filter searches the docs index and opens the picked doc", async () => {
+  vi.useFakeTimers();
+  try {
+    const search = vi.spyOn(api, "search").mockResolvedValue([{ path: "guide/setup.md", title: "Setup", snippet: "" }]);
+    const openDoc = vi.fn();
+    const h = host();
+    h.props.actions.openDoc = openDoc;
+    type Q = { queryItems(q: string, f: string): { id: string; kind: string; run(): void }[]; onSearch(q: string, f: string): void };
+    h.draw();
+    // Other filters never ask the docs index.
+    (h.draw().props as Q).onSearch("setup", "all");
+    h.draw();
+    hooks.effects.splice(0).forEach((e) => e());
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(search).not.toHaveBeenCalled();
+    (h.draw().props as Q).onSearch(" setup ", "doc");
+    h.draw();
+    hooks.effects.splice(0).forEach((e) => e());
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(search).toHaveBeenCalledWith("setup", expect.any(Number));
+    const found = (h.draw().props as Q).queryItems("setup", "doc");
+    expect(found.map((i) => [i.id, i.kind])).toEqual([["doc:guide/setup.md", "doc"]]);
+    expect((h.draw().props as Q).queryItems("setup", "all").filter((i) => i.kind === "doc")).toEqual([]);
+    found[0].run();
+    expect(openDoc).toHaveBeenCalledWith("guide/setup.md");
+    search.mockRestore();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("without an openFile action it reads no files", () => {
   const list = vi.spyOn(api, "filesList");
   const h = host();

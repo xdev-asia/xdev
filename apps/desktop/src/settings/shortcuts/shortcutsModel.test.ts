@@ -67,7 +67,7 @@ it("a taken chord reports who holds it, and Replace takes it from them", () => {
 
 it("the same chord in another scope is no clash", () => {
   const rows = buildRows(state());
-  expect(clashes(rows, "docs.search", row(rows, "docs.search").chords[0])).toEqual([]);
+  expect(clashes(rows, "file.save", row(rows, "docs.save").chords[0])).toEqual([]);
 });
 
 const key = (init: Partial<KeyboardEvent> & { key: string }) =>

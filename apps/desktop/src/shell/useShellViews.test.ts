@@ -69,6 +69,14 @@ it("openDocsSection shows docs on that section", () => {
   expect(v.docsRequest).toEqual({ section: "agents", seq: 1 });
 });
 
+it("openDoc shows docs with a request that names the doc, and a new one each time", () => {
+  draw().openDoc("a.md");
+  expect(draw().view).toBe("docs");
+  expect(draw().docsRequest).toEqual({ section: "docs", open: "a.md", seq: 1 });
+  draw().openDoc("a.md");
+  expect(draw().docsRequest?.seq).toBe(2);
+});
+
 it("openSearch shows docs and focuses the docs search", () => {
   vi.useFakeTimers();
   const box = { focus: vi.fn(), select: vi.fn() };

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { useProfiles, profileName } from "@/agents/profileStore";
-import type { QuickCommand, RepoView, SessionRow, Task, WorktreeView } from "@/api";
+import type { QuickCommand, RepoView, SearchHit, SessionRow, Task, WorktreeView } from "@/api";
 import type { AgentSessionsStore } from "@/agentSessions/store";
 import { useI18n } from "@/i18n";
 import { getQuickCommands, selectCommands, subscribeQuickCommands } from "@/quickCommands/store";
@@ -18,6 +18,7 @@ import { foreignTermsItems } from "@/foreignTerms/foreignTermsEvents";
 import { prPanelItems } from "@/workspace/prPanelEvents";
 import { actionItems, boardTaskItems, crashItems, quickCommandItems, settingItems, tabItems, worktreeItems, type ActionName, type Attention, type PaletteItem } from "./items";
 import { JumpPalette } from "./JumpPalette";
+import type { Filter } from "./rank";
 import { layoutItems } from "@/workspace/layoutEvents";
 import { chatItems, taskItems } from "./moreItems";
 import { RecentStore } from "./recent";
@@ -30,10 +31,13 @@ import { conversationItems } from "@/conversation/conversationStore";
 import { chatCapable, chatTabItems, openAgentTab, openAsOf } from "@/conversation/chatOpen";
 import { readFileList } from "@/search/QuickOpenDialog";
 import { rankFiles } from "@/search/quickOpen";
-import { FILE_MIN_QUERY, fileItems } from "./items";
+import { FILE_MIN_QUERY, docItems, fileItems } from "./items";
 
 /** The most files a query adds to the palette; Go to file lists more. */
 const FILE_ROWS = 40;
+/** The most docs the Docs filter lists, and how long a typing pause is before it asks the index. */
+const DOC_ROWS = 20;
+const DOC_DEBOUNCE_MS = 150;
 
 /** What the palette can make the shell do; the shell supplies each one. */
 export interface PaletteActions {
@@ -51,6 +55,8 @@ export interface PaletteActions {
   /** Reconnects the first remote host that is not connected; absent when every remote host is connected or there is none. */
   remoteReconnect?(): void;
   searchDocs(): void;
+  /** Shows Docs and opens one doc, by its path in the docs folder. */
+  openDoc?(path: string): void;
   toggleSidebar(): void;
   showDocs(): void;
   /** Stage every change of the selected worktree; absent when it has no changes panel. */
@@ -175,8 +181,33 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
   const openFileRef = useRef(props.actions.openFile);
   openFileRef.current = props.actions.openFile;
   const fileRepo = repos?.find((r) => r.worktrees.some((w) => w.path === currentPath))?.path;
+  // --- docs: the Docs filter searches the docs index, the way the Docs side list does ---
+  const [docQuery, setDocQuery] = useState("");
+  const [docHits, setDocHits] = useState<SearchHit[]>([]);
+  const canOpenDoc = !!props.actions.openDoc;
+  useEffect(() => {
+    if (!open || !canOpenDoc || docQuery === "") {
+      setDocHits([]);
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(() => {
+      api.search(docQuery, DOC_ROWS).then(
+        (found) => live && setDocHits(found),
+        () => live && setDocHits([]),
+      );
+    }, DOC_DEBOUNCE_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [open, canOpenDoc, docQuery]);
+  const openDocRef = useRef(props.actions.openDoc);
+  openDocRef.current = props.actions.openDoc;
+  const onSearch = (query: string, filter: Filter) => setDocQuery(filter === "doc" ? query.trim() : "");
   // Files are ranked per query (top FILE_ROWS), not matched item by item.
-  const queryItems = (query: string) => {
+  const queryItems = (query: string, filter: Filter) => {
+    if (filter === "doc") return docItems(docHits, (path) => openDocRef.current?.(path));
     if (!files || files.worktree !== currentPath || query.trim().length < FILE_MIN_QUERY) return [];
     const wt = files.worktree;
     return fileItems(
@@ -350,6 +381,7 @@ export function PaletteHost(props: PaletteHostProps): JSX.Element {
       scopes={list.filter((r) => !r.missing).map((r) => ({ path: r.path, name: r.shortName }))}
       canCreate={usable}
       queryItems={queryItems}
+      onSearch={onSearch}
       onCreate={(name) => actions.newWorktree(name)}
       onClose={props.onClose}
     />

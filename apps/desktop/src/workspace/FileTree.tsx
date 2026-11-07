@@ -358,7 +358,6 @@ export function FileTree(props: {
       focusCursor.current = true;
       setCursor(go.path);
     } else if (go.kind === "open") openFile({ worktree, rel: go.path });
-    else if (go.kind === "preview") openFile({ worktree, rel: go.path, preview: true });
     else if (go.kind === "rename") setAsk({ kind: "rename", dir: parentOf(go.path), rel: go.path });
     else if (go.kind === "toggle" || (go.kind === "expand") === !open.includes(go.path)) toggle(go.path);
   }

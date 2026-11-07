@@ -33,8 +33,15 @@ export function useShellRepoActions(o: {
   const [adding, setAdding] = useState(false);
   // Add project opened by the palette's remote action starts on its remote step.
   const [addingRemote, setAddingRemote] = useState(false);
+  // Add project opened by the stage's Clone action starts on its clone step.
+  const [addingClone, setAddingClone] = useState(false);
   // The folder the Add project dialog opens scanning, when a picked folder held no repo itself.
   const [scanRoot, setScanRoot] = useState<string>();
+
+  function cloneRepo(): void {
+    addRepo();
+    setAddingClone(true);
+  }
 
   async function forgetRepo(repo: RepoView): Promise<void> {
     const code = await removeRepo({ forget: (id) => api.repoForget(id), closeWorktree: (path) => sessions?.closeWorktree(path) }, repo);
@@ -45,6 +52,7 @@ export function useShellRepoActions(o: {
 
   function addRepo(): void {
     setAddingRemote(false);
+    setAddingClone(false);
     setNotice(undefined);
     setScanRoot(undefined);
     setAdding(true);
@@ -188,8 +196,8 @@ export function useShellRepoActions(o: {
   }
 
   return {
-    groupName, setGroupName, editing, setEditing, forgetting, setForgetting, adding, setAdding, addingRemote, setAddingRemote, scanRoot, setScanRoot,
-    forgetRepo, addRepo, addRepoFolder, addPaths, addScanned, sidebarCall, changePrefs, saveGroup, addFolder, openFolder, repoCloned, projectCreated, pin, adopt,
+    groupName, setGroupName, editing, setEditing, forgetting, setForgetting, adding, setAdding, addingRemote, setAddingRemote, addingClone, setAddingClone, scanRoot, setScanRoot,
+    forgetRepo, addRepo, cloneRepo, addRepoFolder, addPaths, addScanned, sidebarCall, changePrefs, saveGroup, addFolder, openFolder, repoCloned, projectCreated, pin, adopt,
     setDetails, saveDetails,
   };
 }

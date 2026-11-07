@@ -87,7 +87,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   def("agent.new", "agents", ["Ctrl+Alt+T"]),
   def("tab.toggleChat", "agents", []),
   // Terminal: only with a terminal focused.
-  def("terminal.clear", "terminal", ["Mod+K"], { ...TERMINAL, ...TUI }),
+  def("terminal.clear", "terminal", ["Mod+Shift+K"], { ...TERMINAL, ...TUI }),
   def("terminal.copy", "terminal", { all: ["Ctrl+Shift+C"], mac: ["Cmd+C"] }, TERMINAL),
   def("terminal.paste", "terminal", { all: ["Ctrl+Shift+V", "Shift+Insert"], mac: ["Cmd+V"] }, TERMINAL),
   def("terminal.selectAll", "terminal", ["Mod+Shift+A"], { ...TERMINAL, ...TUI }),
@@ -111,7 +111,6 @@ export const SHORTCUTS: ShortcutDef[] = [
   // Shift+I is free on macOS (the menu keeps Alt+Cmd+I for devtools); elsewhere it is the browser devtools chord.
   def("panel.ports", "panels", { mac: ["Mod+Shift+I"] }),
   // Docs: only in the docs view.
-  def("docs.search", "docs", ["Mod+K"], DOCS),
   def("docs.new", "docs", ["Mod+N"], DOCS),
   def("docs.save", "docs", ["Mod+S"], DOCS),
   // Editor: a file tab in front; the tabs view declines the key otherwise.

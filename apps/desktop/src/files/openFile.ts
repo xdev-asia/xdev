@@ -5,8 +5,6 @@ export interface OpenFileRequest {
   rel: string;
   line?: number;
   column?: number;
-  // Reserved: P1 has no preview tabs, every open is a normal tab.
-  preview?: boolean;
   /** Open the file tab in a new pane to the right of the focused pane. */
   side?: boolean;
 }
