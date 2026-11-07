@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Badge, Button, Checkbox, FilterChip, SearchInput, TreeView } from "@xdev-asia/ui";
+import { Badge, Button, Checkbox, FilterChip, SearchInput, SplitHandle, TreeView } from "@xdev-asia/ui";
 import { reviewRows } from "./reviewRows";
 import type { JSX } from "react";
 import { toApiError, type Api, type ReviewData, type ReviewFile, type ReviewNote } from "@/api";
@@ -28,7 +28,7 @@ import { agentCount, isMulti, multiPaths, touchersByPath } from "./attribution/a
 import { useAttribution } from "./attribution/useAttribution";
 import type { DiffSettings } from "@/api";
 import { DIFF_DEFAULTS } from "@/settings/generalDefaults";
-import { clampListWidth, fromDiffSettings, migrateViewOptions, readLocalView, toDiffSettings, writeLocalView, type ViewOptions } from "./viewOptions";
+import { LIST_MAX, LIST_MIN, clampListWidth, fromDiffSettings, migrateViewOptions, readLocalView, toDiffSettings, writeLocalView, type ViewOptions } from "./viewOptions";
 
 // Past this many files the sections start closed, so opening the tab does not read them all.
 export const OPEN_LIMIT = 30;
@@ -75,7 +75,6 @@ export function ReviewView(props: {
   // A jump into a file that is not drawn yet; it runs when that file registers.
   const pending = useRef<{ file: string; chunk?: number; line?: number } | null>(null);
   const cursor = useRef<ChangeAt | null>(null);
-  const drag = useRef<{ x: number; width: number } | null>(null);
   const store = useReviewNotes(api, worktree);
   const ai = useAiReview(api, worktree);
   const [auto, setAuto] = useState(() => readAuto(storage()));
@@ -352,10 +351,7 @@ export function ReviewView(props: {
 
   const width = clampListWidth(opts.listWidth);
   const flag = (name: "ignoreWhitespace" | "collapse" | "lineNumbers" | "wrap" | "attribution", label: string) => (
-    <label className="rv-check">
-      <input type="checkbox" checked={opts[name]} onChange={() => setOption({ [name]: !opts[name] })} />
-      <span>{t(label)}</span>
-    </label>
+    <Checkbox className="rv-check" label={t(label)} checked={opts[name]} onChange={() => setOption({ [name]: !opts[name] })} />
   );
 
   return (
@@ -409,17 +405,15 @@ export function ReviewView(props: {
         <button type="button" className="rv-base-button" data-act="ai-review" data-tour="review-ai" disabled={ai.busy || !data || files.length === 0} onClick={() => data && void ai.run(data.base.id)}>
           {t("review.ai.run")}
         </button>
-        <label className="rv-check">
-          <input
-            type="checkbox"
-            checked={auto}
+        <Checkbox
+          className="rv-check"
+          label={t("review.ai.auto")}
+          checked={auto}
             onChange={() => {
               writeAuto(storage(), !auto);
               setAuto(!auto);
             }}
-          />
-          <span>{t("review.ai.auto")}</span>
-        </label>
+        />
         <SendNotesMenu sessions={sessions} worktree={worktree} branch={data?.branch ?? null} notes={store.notes} markSent={store.markSent} />
         {store.removed && (
           <span className="rv-undo" role="status">
@@ -480,31 +474,7 @@ export function ReviewView(props: {
               </>
             )}
           </nav>
-          <div
-            className="rv-resize"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label={t("review.resize")}
-            aria-valuemin={160}
-            aria-valuemax={480}
-            aria-valuenow={width}
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-              e.preventDefault();
-              setOption({ listWidth: clampListWidth(width + (e.key === "ArrowRight" ? STEP : -STEP)) });
-            }}
-            onPointerDown={(e) => {
-              drag.current = { x: e.clientX, width };
-              e.currentTarget.setPointerCapture?.(e.pointerId);
-            }}
-            onPointerMove={(e) => {
-              if (drag.current) setOption({ listWidth: clampListWidth(drag.current.width + e.clientX - drag.current.x) });
-            }}
-            onPointerUp={() => {
-              drag.current = null;
-            }}
-          />
+          <SplitHandle direction="horizontal" value={width} min={LIST_MIN} max={LIST_MAX} step={STEP} label={t("review.resize")} onResize={(listWidth) => setOption({ listWidth: clampListWidth(listWidth) })} />
           <div className="rv-files">
             {files.map((f) => (
               <FileDiff

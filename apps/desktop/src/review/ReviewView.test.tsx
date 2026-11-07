@@ -5,7 +5,7 @@ import { createMockApi, type Api } from "@/api";
 import { translate } from "@/i18n";
 import { BasePicker } from "./BasePicker";
 import { FileDiff } from "./FileDiff";
-import { Checkbox, SearchInput, TreeView } from "@xdev-asia/ui";
+import { Checkbox, SearchInput, SplitHandle, TreeView } from "@xdev-asia/ui";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ReviewView } from "./ReviewView";
 import { touchChanges } from "@/workspace/changesBus";
@@ -259,9 +259,8 @@ it("a Line authors checkbox turns the gutter off for this view and keeps the cho
   const v = review(api);
   await tick();
   expect(v.diff("src/session.ts").props.opts).toMatchObject({ attribution: true });
-  const label = v.all().find((n) => n.type === "label" && nodes(n.props.children).some((c) => c.type === "span" && c.props.children === en("review.opt.attribution")))!;
-  const box = nodes(label.props.children).find((c) => c.type === "input")!;
-  expect(box.props).toMatchObject({ type: "checkbox", checked: true });
+  const box = v.all().find((n) => n.type === Checkbox && n.props.label === en("review.opt.attribution"))!;
+  expect(box.props).toMatchObject({ checked: true });
   box.props.onChange();
   expect(v.diff("src/session.ts").props.opts).toMatchObject({ attribution: false });
   expect(JSON.parse(saved.get(LOCAL_KEY)!)).toMatchObject({ attribution: false });
@@ -289,12 +288,14 @@ it("the file list resizes by keyboard within its limits", async () => {
   const api = createMockApi({});
   const v = review(api);
   await tick();
-  const bar = () => v.all().find((n) => n.props.role === "separator")!;
-  expect(bar().props["aria-valuenow"]).toBe(240);
-  bar().props.onKeyDown({ key: "ArrowRight", preventDefault() {} });
-  expect(bar().props["aria-valuenow"]).toBe(256);
-  for (let i = 0; i < 40; i++) bar().props.onKeyDown({ key: "ArrowLeft", preventDefault() {} });
-  expect(bar().props["aria-valuenow"]).toBe(160);
+  const bar = () => v.all().find((n) => n.type === SplitHandle)!;
+  expect(bar().props.value).toBe(240);
+  bar().props.onResize(256);
+  expect(bar().props.value).toBe(256);
+  bar().props.onResize(10);
+  expect(bar().props.value).toBe(160);
+  bar().props.onResize(9999);
+  expect(bar().props.value).toBe(480);
 });
 
 it("shows a problem when the review cannot be read", async () => {
