@@ -876,7 +876,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const appOrder = useAppOrder();
   const places = railPlaces(hiddenApps, appOrder, automationsSettings.showButton);
 
-  // A place from the narrow bottom bar; Tasks and Accounts open inside Docs.
+  // A place from the narrow bottom bar.
   function pickNarrow(place: NarrowPlace): void {
     setNavOpen(false);
     if (place === "sessions") show("workspace");
@@ -911,7 +911,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       sidebarOpen={sidebarOpen}
       navOpen={navOpen}
       onNavOpenChange={setNavOpen}
-      bottomNav={<NarrowNav view={view} automations={automationsSettings.showButton} onPick={pickNarrow} />}
+      bottomNav={<NarrowNav view={view} automations={automationsSettings.showButton} places={places} onPick={pickNarrow} />}
       brand={
         <>
           <BrandMark className="ws-logo" size={18} />

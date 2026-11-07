@@ -2,29 +2,33 @@ import { BottomNav, type BottomNavItem } from "@xdev-asia/ui";
 import type { JSX } from "react";
 import { useI18n } from "@/i18n";
 import type { RailView } from "./ShellFrame";
+import type { Place } from "./places";
 
-/** The places the narrow bar reaches: the rail's, plus Tasks and Accounts, which open inside Docs. */
+/** The places the narrow bar reaches: the same as the rail, with Sessions standing for Workspace. */
 export type NarrowPlace = "sessions" | "tasks" | "docs" | "squads" | "kit" | "automations" | "accounts" | "settings";
 
-/** The bar's tab for the page on screen; Tasks and Accounts live in Docs, so Docs stands for them. */
+/** The bar's tab for the page on screen. */
 export function narrowValue(view: RailView): NarrowPlace {
   return view === "workspace" ? "sessions" : view;
 }
 
 /**
- * The bottom bar below 768px: Sessions, Tasks and Docs, and "More" with a sheet for Automations (when shown),
- * Accounts and Settings. From 768px up the design system hides it and the rail and header carry the same places.
+ * The bottom bar below 768px: Sessions, Docs and Tasks, and "More" with a sheet for Squads, Kit, Accounts, Automations (when shown)
+ * and Settings. A place hidden in Settings leaves the sheet. From 768px up the design system hides it and the rail and header carry the same places.
  */
-export function NarrowNav(props: { view: RailView; automations: boolean; onPick(place: NarrowPlace): void }): JSX.Element {
+export function NarrowNav(props: { view: RailView; automations: boolean; places?: readonly Place[]; onPick(place: NarrowPlace): void }): JSX.Element {
   const { t } = useI18n();
   const items: BottomNavItem[] = [
     { id: "sessions", label: t("shell.narrow.sessions"), icon: "terminal" },
-    { id: "tasks", label: t("shell.narrow.tasks"), icon: "tasks" },
     { id: "docs", label: t("workspace.nav.docs"), icon: "docs" },
+    { id: "tasks", label: t("shell.narrow.tasks"), icon: "tasks" },
   ];
+  const shown = (id: Place) => !props.places || props.places.includes(id);
   const more: BottomNavItem[] = [
+    ...(shown("squads") ? [{ id: "squads", label: t("apps.squads"), icon: "squads" } as const] : []),
+    ...(shown("kit") ? [{ id: "kit", label: t("apps.kit"), icon: "kit" } as const] : []),
+    ...(shown("accounts") ? [{ id: "accounts", label: t("shell.narrow.accounts"), icon: "accounts" } as const] : []),
     ...(props.automations ? [{ id: "automations", label: t("workspace.nav.automations"), icon: "automation" } as const] : []),
-    { id: "accounts", label: t("shell.narrow.accounts"), icon: "accounts" },
     { id: "settings", label: t("shell.narrow.settings"), icon: "settings" },
   ];
   return (
