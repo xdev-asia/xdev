@@ -6,7 +6,10 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use xdev_agent::Launch;
-use xdev_ssh::{SshHost, remote_agent_cmd, remote_shell_cmd, tty_argv};
+use xdev_ssh::{SshHost, login_shell_cmd, remote_agent_cmd, remote_shell_cmd, ssh_argv, tty_argv};
+
+use crate::commands::CmdError;
+use crate::settings::HostsSettings;
 
 /// What a launch needs to run on a host.
 #[derive(Debug, Clone)]
@@ -22,7 +25,8 @@ pub(crate) struct RemoteSpec {
     pub declared: Vec<String>,
     /// `ssh://<host id><path>`, what the service lists the PTY with.
     pub worktree: String,
-    /// The host's own env (Settings → Host settings); the profile's declared names win.
+    /// The host's own env (Settings → Host settings), set for agents and shells alike; the
+    /// profile's declared names win.
     pub host_env: Vec<(String, String)>,
     /// The host's login shell for shell tabs; `None` is its `"$SHELL"`.
     pub shell: Option<String>,
@@ -97,19 +101,20 @@ fn remote_program(program: &Path) -> String {
 }
 
 /// `launch` as `ssh -tt` to the host: an agent or program in the project
-/// folder with its declared env, a shell as a login shell; both inside a
+/// folder with its declared env, a shell as a login shell with the host env and the declared
+/// env (declared wins); both inside a
 /// tmux session named for `tab_id` when `keep_alive`. The local startup
 /// lines are not run on the host.
 pub(crate) fn wrap(mut launch: Launch, spec: &RemoteSpec, tab_id: &str) -> Launch {
     let keep = spec.keep_alive.then_some(tab_id);
+    let env = merge_env(&spec.host_env, env_subset(&launch.env, &spec.declared));
     let cmd = if launch.agent || launch.cli.is_some() {
         let mut argv = vec![remote_program(&launch.program)];
         argv.extend(launch.args.iter().cloned());
         argv.extend(launch.prompt_argv.iter().cloned());
-        let env = merge_env(&spec.host_env, env_subset(&launch.env, &spec.declared));
         remote_agent_cmd(&spec.path, &argv, &env, keep)
     } else {
-        remote_shell_cmd(&spec.path, keep, spec.shell.as_deref(), &[])
+        remote_shell_cmd(&spec.path, keep, spec.shell.as_deref(), &env)
     };
     launch.program = xdev_agent::system_ssh();
     launch.args = tty_argv(&spec.host, spec.mux.as_deref(), &cmd);
@@ -120,6 +125,30 @@ pub(crate) fn wrap(mut launch: Launch, spec: &RemoteSpec, tab_id: &str) -> Launc
     launch.hooks = false;
     launch.hook_events = Vec::new();
     launch
+}
+
+/// A `shell:ssh:<alias>` tab: the saved host with that alias gives its shell and env (declared
+/// names are none, so `local_only` names drop). No such host, or no override left: unchanged.
+/// With overrides the tab runs `ssh -tt <host> 'exec env K=v <shell> -l'` in the home folder.
+pub(crate) fn ssh_tab_host(
+    launch: &mut Launch,
+    alias: &str,
+    saved: &[SshHost],
+    hosts: &HostsSettings,
+) -> Result<(), CmdError> {
+    let Some(host) = saved.iter().find(|h| h.alias == alias) else {
+        return Ok(());
+    };
+    let values = crate::hosts::launch_values(hosts.0.get(&host.id))?;
+    let env = merge_env(&values.env, Vec::new());
+    let Some(cmd) = login_shell_cmd(&env, values.shell.as_deref()) else {
+        return Ok(());
+    };
+    let mut args = vec!["-tt".to_owned()];
+    args.extend(ssh_argv(host));
+    args.push(cmd);
+    launch.args = args;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -266,6 +295,43 @@ mod tests {
     }
 
     #[test]
+    fn a_shell_gets_the_host_env_with_and_without_tmux() {
+        let mut sp = spec(false, &[]);
+        sp.host_env = vec![
+            ("B".into(), "2".into()),
+            ("PATH".into(), "/x".into()),
+            ("XDEV_Y".into(), "1".into()),
+        ];
+        let out = wrap(launch(false), &sp, "t2");
+        let mut want = ssh_head();
+        want.push("cd '/home/dev/app' && exec env B='2' \"$SHELL\" -l".into());
+        assert_eq!(out.args, want);
+
+        sp.shell = Some("/bin/zsh".into());
+        sp.keep_alive = true;
+        let out = wrap(launch(false), &sp, "t2");
+        let mut want = ssh_head();
+        want.push(
+            "tmux new-session -A -s 'xdev-t2' -c '/home/dev/app' 'exec env B='\\''2'\\'' '\\''/bin/zsh'\\'' -l'"
+                .into(),
+        );
+        assert_eq!(out.args, want);
+    }
+
+    #[test]
+    fn a_shells_declared_env_wins_over_host_env() {
+        let mut sp = spec(false, &["B"]);
+        sp.host_env = vec![("B".into(), "2".into())];
+        let mut l = launch(false);
+        l.env = vec![("B".into(), "9".into())];
+        let out = wrap(l, &sp, "t2");
+        assert_eq!(
+            out.args.last().unwrap(),
+            "cd '/home/dev/app' && exec env B='9' \"$SHELL\" -l"
+        );
+    }
+
+    #[test]
     fn a_host_shell_runs_for_shell_tabs_only() {
         let mut sp = spec(false, &[]);
         sp.shell = Some("/bin/zsh".into());
@@ -275,6 +341,102 @@ mod tests {
         assert_eq!(out.args, want);
         let agent = wrap(launch(true), &sp, "t2");
         assert!(!agent.args.last().unwrap().contains("zsh"));
+    }
+
+    fn saved() -> Vec<SshHost> {
+        vec![SshHost {
+            id: "ssh-a".into(),
+            alias: "devbox".into(),
+            host_name: "devbox".into(),
+            ..SshHost::default()
+        }]
+    }
+
+    fn tab() -> Launch {
+        let mut l = launch(false);
+        l.program = PathBuf::from("ssh");
+        l.args = ssh_argv(&saved()[0]);
+        l
+    }
+
+    fn hosts_with(env: &[(&str, &str)], shell: Option<&str>) -> HostsSettings {
+        let mut h = HostsSettings::default();
+        h.0.insert(
+            "ssh-a".into(),
+            crate::settings::HostSettings {
+                shell: shell.map(str::to_owned),
+                env: env
+                    .iter()
+                    .map(|(n, v)| crate::settings::HostEnvVar {
+                        name: (*n).into(),
+                        value: (*v).into(),
+                    })
+                    .collect(),
+                ..Default::default()
+            },
+        );
+        h
+    }
+
+    #[test]
+    fn an_ssh_tab_without_overrides_is_unchanged() {
+        let plain = ssh_argv(&saved()[0]);
+        let mut l = tab();
+        ssh_tab_host(&mut l, "devbox", &saved(), &HostsSettings::default()).unwrap();
+        assert_eq!(l.args, plain);
+        // An alias that is not saved.
+        let mut l = tab();
+        ssh_tab_host(&mut l, "other", &saved(), &hosts_with(&[("A", "1")], None)).unwrap();
+        assert_eq!(l.args, plain);
+        // PATH is dropped, so nothing is left.
+        let mut l = tab();
+        ssh_tab_host(
+            &mut l,
+            "devbox",
+            &saved(),
+            &hosts_with(&[("PATH", "/x")], None),
+        )
+        .unwrap();
+        assert_eq!(l.args, plain);
+        assert_eq!(l.program, PathBuf::from("ssh"));
+    }
+
+    #[test]
+    fn an_ssh_tab_runs_the_host_shell_with_env() {
+        let mut l = tab();
+        ssh_tab_host(&mut l, "devbox", &saved(), &hosts_with(&[("A", "1")], None)).unwrap();
+        let mut want = vec!["-tt".to_owned()];
+        want.extend(ssh_argv(&saved()[0]));
+        want.push("exec env A='1' \"$SHELL\" -l".into());
+        assert_eq!(l.args, want);
+        let n = l.args.len();
+        assert_eq!(l.args[n - 3], "--");
+        assert_eq!(l.args[n - 2], "devbox");
+
+        let mut l = tab();
+        ssh_tab_host(
+            &mut l,
+            "devbox",
+            &saved(),
+            &hosts_with(&[], Some("/bin/zsh")),
+        )
+        .unwrap();
+        assert_eq!(l.args.last().unwrap(), "exec '/bin/zsh' -l");
+    }
+
+    #[test]
+    fn an_ssh_tab_refuses_a_bad_stored_entry() {
+        let mut l = tab();
+        let before = l.args.clone();
+        let e = ssh_tab_host(
+            &mut l,
+            "devbox",
+            &saved(),
+            &hosts_with(&[("1A", "x")], None),
+        )
+        .unwrap_err();
+        assert_eq!(e.code, "bad_env");
+        assert_eq!(l.args, before);
     }
 
     #[test]
