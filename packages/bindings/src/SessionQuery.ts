@@ -12,4 +12,10 @@ text: string | null, scope: SessionScope, agent: Agent | null, homeId: string | 
 /**
  * At most 500.
  */
-limit: number, };
+limit: number, 
+/**
+ * With scope `all`: list the sessions of this saved SSH host (its mirrored
+ * logs) instead of the local ones. A worktree or repo scope of an
+ * `ssh://<host><path>` folder already names its host.
+ */
+host?: string, };

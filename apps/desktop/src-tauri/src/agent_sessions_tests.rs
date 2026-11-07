@@ -120,6 +120,7 @@ fn query(scope: SessionScope) -> SessionQuery {
         home_id: None,
         sort: SessionSort::LastDesc,
         limit: 100,
+        host: None,
     }
 }
 

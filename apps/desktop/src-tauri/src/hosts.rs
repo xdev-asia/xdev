@@ -420,16 +420,25 @@ pub fn host_history_sync(
     hub: State<'_, crate::remote_ssh::RemoteHub>,
     host_id: String,
 ) -> Result<HostHistoryStatus, CmdError> {
-    let data = data_dir(&state)?;
+    sync_now(&app, data_dir(&state)?, &hub, &host_id)
+}
+
+/// `host_history_sync` for a caller that holds the data dir.
+pub(crate) fn sync_now(
+    app: &AppHandle,
+    data: &Path,
+    hub: &crate::remote_ssh::RemoteHub,
+    host_id: &str,
+) -> Result<HostHistoryStatus, CmdError> {
     let hosts = saved_hosts(data)?;
-    let host = find_host(&hosts, &host_id)?;
-    let settings = settings_store::read(&app);
-    let eff = effective(settings.hosts.0.get(&host_id), &host.alias);
+    let host = find_host(&hosts, host_id)?;
+    let settings = settings_store::read(app);
+    let eff = effective(settings.hosts.0.get(host_id), &host.alias);
     if !eff.history.enabled {
-        return Ok(read_status(data, &host_id));
+        return Ok(read_status(data, host_id));
     }
-    if !hub.is_connected(&host_id) {
-        let mut status = read_status(data, &host_id);
+    if !hub.is_connected(host_id) {
+        let mut status = read_status(data, host_id);
         status.error = Some(crate::remote_ssh::offline("not connected"));
         return Ok(status);
     }
@@ -443,7 +452,7 @@ pub fn host_history_sync(
             &mut fs.sftp,
             &login,
             data,
-            &host_id,
+            host_id,
             &history,
             now,
         ))
