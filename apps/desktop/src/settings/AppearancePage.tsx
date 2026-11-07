@@ -217,27 +217,23 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
             </div>
           </SettingRow>
         )}
-        <SettingRow id="appearance.reduceEffects" filter={filter}>
-          <ul className="settings-list">
-            <li className="settings-item" data-switch="reduceEffects">
-              <div className="settings-item-text">
-                <strong>{t("settings.appearance.reduceEffects")}</strong>
-                <small className="settings-hint">{t("settings.appearance.reduceEffectsHint")}</small>
-              </div>
-              {ui && (
-                <button
-                  type="button"
-                  role="switch"
-                  className="agent-switch"
-                  aria-checked={ui.reduceEffects}
-                  aria-label={t("settings.appearance.reduceEffects")}
-                  disabled={busy}
-                  onClick={() => void patch({ reduceEffects: !ui.reduceEffects })}
-                />
-              )}
-            </li>
-          </ul>
-        </SettingRow>
+        <SettingRow
+          id="appearance.reduceEffects"
+          filter={filter}
+          label={t("settings.appearance.reduceEffects")}
+          description={t("settings.appearance.reduceEffectsHint")}
+          control={
+            ui && (
+              <Switch
+                data-switch="reduceEffects"
+                checked={ui.reduceEffects}
+                aria-label={t("settings.appearance.reduceEffects")}
+                disabled={busy}
+                onChange={() => void patch({ reduceEffects: !ui.reduceEffects })}
+              />
+            )
+          }
+        />
         <SettingRow id="appearance.titlebar" filter={filter}>
           <div className="ws-fields">
             <div className="ws-field" data-field="titlebar">
