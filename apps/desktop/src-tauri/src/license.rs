@@ -1252,6 +1252,21 @@ mod tests {
     }
 
     #[test]
+    fn the_buy_address_format_is_pinned() {
+        // C4: `{base}/?buy=<product>&device=<fingerprint>`, nothing else in the query.
+        let r = rig(MockMode::Free);
+        let fp = r.hub.key_or_new().unwrap().fingerprint();
+        for product in ["pro", "device", "renewal"] {
+            assert_eq!(
+                r.hub.buy_url(product).unwrap(),
+                format!("https://id.mock.test/?buy={product}&device={fp}")
+            );
+        }
+        // The app has no Get Sync entry point, so `sync` is not offered from here.
+        assert_eq!(r.hub.buy_url("sync").unwrap_err().code, E_BAD_PRODUCT);
+    }
+
+    #[test]
     fn a_new_server_drops_the_cache() {
         let r = rig(MockMode::Pro);
         r.hub.activate().unwrap();
