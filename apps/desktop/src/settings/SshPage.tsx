@@ -127,7 +127,7 @@ export function SshPage(props: SettingsSectionProps): JSX.Element {
           <Button type="button" variant="secondary" onClick={sync}>
             {t("ssh.sync")}
           </Button>
-          <Button type="button" onClick={() => setEditing({ item: null })}>
+          <Button variant="primary" type="button" onClick={() => setEditing({ item: null })}>
             {t("ssh.add")}
           </Button>
         </div>

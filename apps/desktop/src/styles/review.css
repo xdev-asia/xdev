@@ -182,19 +182,6 @@
   box-shadow: inset 0 0 0 1px var(--ok);
 }
 
-.rv-resize {
-  flex-shrink: 0;
-  width: 4px;
-  background: var(--line);
-  cursor: col-resize;
-  touch-action: none;
-}
-
-.rv-resize:hover,
-.rv-resize:focus-visible {
-  background: var(--accent);
-}
-
 .rv-files {
   flex: 1;
   min-width: 0;

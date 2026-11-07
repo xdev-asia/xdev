@@ -110,7 +110,7 @@ export function UsageShare(props: {
             <button type="button" className="btn-secondary" data-act="share-post" onClick={() => void post()}>
               {t("usage.share.post")}
             </button>
-            <Button type="button" autoFocus data-act="share-copy" aria-busy={busy} disabled={busy || svg === ""} onClick={() => void copy()}>
+            <Button variant="primary" type="button" autoFocus data-act="share-copy" aria-busy={busy} disabled={busy || svg === ""} onClick={() => void copy()}>
               {copied ? t("usage.share.copied") : t("usage.share.copy")}
             </Button>
           </div>

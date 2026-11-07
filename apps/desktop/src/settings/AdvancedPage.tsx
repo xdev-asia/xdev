@@ -7,6 +7,7 @@ import { fromDraft, mirrorProblem, proxyProblem, toDraft, type NetworkDraft } fr
 import { ConfigIo } from "./ConfigIo";
 import { SettingGroup, SettingRow } from "./SettingRow";
 import type { SettingsSectionProps } from "./sections";
+import { useSaveBar } from "./useSaveBar";
 
 const IDS = ["advanced.proxy", "advanced.noProxy", "advanced.nodeMirror", "advanced.http1", "advanced.machineName"];
 const CONFIG_IDS = ["advanced.export"];
@@ -55,6 +56,15 @@ export function AdvancedPage(props: SettingsSectionProps): JSX.Element {
       setBusy(false);
     }
   }
+
+  // In Settings the view's SaveBar saves and discards; alone (a test, a preview) the page draws its own Save.
+  const barTakesSave = useSaveBar(props, {
+    dirty: changed,
+    busy,
+    saveDisabled: !!proxyIssue || !!mirrorIssue,
+    onSave: () => void save(),
+    onDiscard: () => saved && setDraft(toDraft(saved)),
+  });
 
   const edit = (change: Partial<NetworkDraft>): void => setDraft({ ...draft, ...change });
   const message = (issue: "scheme" | "invalid" | undefined, kind: "proxy" | "mirror"): string | undefined =>
@@ -149,9 +159,11 @@ export function AdvancedPage(props: SettingsSectionProps): JSX.Element {
                 onChange={(e) => edit({ machineName: e.target.value })}
               />
             </SettingRow>
-            <Button type="button" data-act="save-advanced" disabled={busy || !changed || !!proxyIssue || !!mirrorIssue} onClick={() => void save()}>
-              {t("settings.advanced.save")}
-            </Button>
+            {!barTakesSave && (
+              <Button variant="primary" type="button" data-act="save-advanced" disabled={busy || !changed || !!proxyIssue || !!mirrorIssue} onClick={() => void save()}>
+                {t("settings.advanced.save")}
+              </Button>
+            )}
           </>
         )}
       </SettingGroup>

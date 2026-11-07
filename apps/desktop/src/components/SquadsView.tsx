@@ -1,4 +1,4 @@
-import { Button } from "@xdev-asia/ui";
+import { Button, Field, Select } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import {
@@ -268,13 +268,14 @@ export function SquadsView({
     return accounts.find((a) => a.name === account)?.provider ?? null;
   }
 
-  function accountOption(a: Account) {
-    const state = quotas.find((q) => q.name === a.name)?.state ?? "unknown";
-    return (
-      <option key={a.name} value={a.name}>
-        {t("squads.accountOption", { name: a.name, provider: t(`accounts.provider.${a.provider}`), quota: t(`accounts.state.${state}`) })}
-      </option>
-    );
+  function seatOptions() {
+    return [
+      { value: "", label: t("squads.vacant") },
+      ...accounts.map((a) => {
+        const state = quotas.find((q) => q.name === a.name)?.state ?? "unknown";
+        return { value: a.name, label: t("squads.accountOption", { name: a.name, provider: t(`accounts.provider.${a.provider}`), quota: t(`accounts.state.${state}`) }) };
+      }),
+    ];
   }
 
   function note(p: ApiError) {
@@ -301,41 +302,29 @@ export function SquadsView({
           await create();
         }}
       >
-        <label>
-          {t("squads.name")}
-          <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-        </label>
-        <label>
-          {t("tasks.repo")}
-          <span className="task-row">
-            <input value={repoValue} onChange={(e) => setRepo(e.target.value)} spellCheck={false} />
-            <button type="button" className="btn-secondary" onClick={() => void browse()}>
+        <Field label={t("squads.name")} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        <span className="task-row">
+            <Field label={t("tasks.repo")} value={repoValue} onChange={(e) => setRepo(e.target.value)} spellCheck={false} />
+            <Button type="button" style={COMPACT} onClick={() => void browse()}>
               {t("tasks.browse")}
-            </button>
+            </Button>
           </span>
-        </label>
         <div className="squad-seat-fields">
           {ROLES.map((role) => (
             <label key={role}>
               {t(`squads.role.${role}`)}
-              <select value={seats[role]} onChange={(e) => setSeats((s) => ({ ...s, [role]: e.target.value }))}>
-                <option value="">{t("squads.vacant")}</option>
-                {accounts.map(accountOption)}
-              </select>
+              <Select value={seats[role]} onChange={(e) => setSeats((s) => ({ ...s, [role]: e.target.value }))} options={seatOptions()} />
             </label>
           ))}
         </div>
-        <label>
-          {t("tasks.testCommand")}
-          <input value={test} onChange={(e) => setTest(e.target.value)} spellCheck={false} />
-        </label>
+        <Field label={t("tasks.testCommand")} value={test} onChange={(e) => setTest(e.target.value)} spellCheck={false} />
         <div className="task-row">
-          <Button type="submit" style={COMPACT} disabled={name.trim() === "" || repoValue.trim() === "" || seats.implement === ""}>
+          <Button variant="primary" type="submit" style={COMPACT} disabled={name.trim() === "" || repoValue.trim() === "" || seats.implement === ""}>
             {t("squads.create")}
           </Button>
-          <button type="button" className="btn-secondary" onClick={() => setCreating(false)}>
+          <Button type="button" style={COMPACT} onClick={() => setCreating(false)}>
             {t("tasks.cancel")}
-          </button>
+          </Button>
         </div>
       </form>
     );
@@ -390,9 +379,9 @@ export function SquadsView({
           <span className="badge squad-state" data-state={s.state}>
             {t(`squads.seat.${s.state}`)}
           </span>
-          <button type="button" className="btn-secondary squad-sheet-close" onClick={() => setSheet(null)}>
+          <Button type="button" style={COMPACT} className="squad-sheet-close" onClick={() => setSheet(null)}>
             {t("squads.close")}
-          </button>
+          </Button>
         </div>
         <dl className="task-facts">
           <dt>{t("tasks.account")}</dt>
@@ -420,7 +409,7 @@ export function SquadsView({
             {t("squads.steer")}
             <textarea value={steer} rows={3} placeholder={t("squads.steerHint")} onChange={(e) => setSteer(e.target.value)} />
           </label>
-          <Button type="submit" style={COMPACT} disabled={steer.trim() === "" || account === null || v.run === null}>
+          <Button variant="primary" type="submit" style={COMPACT} disabled={steer.trim() === "" || account === null || v.run === null}>
             {t("squads.send")}
           </Button>
         </form>
@@ -433,10 +422,7 @@ export function SquadsView({
         >
           <label>
             {t("squads.changeAccount")}
-            <select value={choice} onChange={(e) => setSeatAccount(e.target.value)} disabled={running}>
-              <option value="">{t("squads.vacant")}</option>
-              {accounts.map(accountOption)}
-            </select>
+            <Select value={choice} onChange={(e) => setSeatAccount(e.target.value)} disabled={running} options={seatOptions()} />
           </label>
           <Button type="submit" style={COMPACT} disabled={running || busy || choice === (account ?? "")}>
             {t("squads.save")}
@@ -551,18 +537,18 @@ export function SquadsView({
               </Button>
             )}
             {(s === "running" || s === "waiting") && (
-              <button type="button" className="btn-secondary squad-stop" onClick={() => setConfirming(true)}>
+              <Button type="button" style={COMPACT} className="squad-stop" onClick={() => setConfirming(true)}>
                 {t("squads.stop")}
-              </button>
+              </Button>
             )}
             {v.run && onOpenTask && (
-              <button type="button" className="btn-secondary" onClick={() => onOpenTask(v.run!.task)}>
+              <Button type="button" style={COMPACT} onClick={() => onOpenTask(v.run!.task)}>
                 {t("squads.openTask")}
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               type="button"
-              className="btn-secondary"
+              style={COMPACT}
               onClick={() =>
                 void api.chartsSaveSquad(v.squad.id).then(
                   (chart) => {
@@ -574,7 +560,7 @@ export function SquadsView({
               }
             >
               {t("charts.saveAsChart")}
-            </button>
+            </Button>
           </div>
           {s === "running" && (
             <p className="task-working" role="status">
@@ -613,9 +599,9 @@ export function SquadsView({
             <div className="task-row">
               <h3 className="squad-card-title">{t(allEvents ? "squads.activity" : "squads.recent")}</h3>
               {allEvents === null && v.eventCount > v.events.length && (
-                <button type="button" className="btn-secondary" onClick={() => void showAll(v.squad.id)}>
+                <Button type="button" style={COMPACT} onClick={() => void showAll(v.squad.id)}>
                   {t("squads.activity")}
-                </button>
+                </Button>
               )}
             </div>
             {events.length === 0 ? (
@@ -626,14 +612,14 @@ export function SquadsView({
           </section>
           </div>
           <div className="task-row">
-            <button
+            <Button
               type="button"
-              className="btn-secondary squad-remove"
+              style={COMPACT} className="squad-remove"
               disabled={busy || s === "running"}
               onClick={() => void act(v.squad.id, "remove", () => api.removeSquad(v.squad.id)).then((ok) => ok && setSelected(null))}
             >
               {t("squads.remove")}
-            </button>
+            </Button>
           </div>
         </div>
         {sheet && seatSheet(v, sheet)}
@@ -649,16 +635,16 @@ export function SquadsView({
           <span className="doc-subtitle">{t("squads.subtitle")}</span>
         </div>
         <div className="doc-actions">
-          <button
+          <Button
             type="button"
-            className="btn-secondary"
+            style={COMPACT}
             onClick={() => {
               setProblem(undefined);
               setRevision((n) => n + 1);
             }}
           >
             {t("tasks.refresh")}
-          </button>
+          </Button>
           <Button type="button" style={COMPACT} onClick={() => setCreating(true)}>
             {t("squads.new")}
           </Button>

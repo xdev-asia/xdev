@@ -1,281 +1,215 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import type { ReactElement } from "react";
+import { SaveBar, SettingsShell } from "@xdev-asia/ui";
 import { createMockApi } from "@/api";
+import { hooks, mount, type Node } from "@/kit/testHooks";
+import { translate } from "@/i18n";
+import { SurfaceBoundary } from "@/components/SurfaceBoundary";
 import { AgentsPage } from "./agents/AgentsPage";
 import { GeneralPage } from "./GeneralPage";
-import { translate } from "@/i18n";
 import { NotificationsPage } from "./notifications/NotificationsPage";
-import { TerminalPage } from "./TerminalPage";
-import { SurfaceBoundary } from "@/components/SurfaceBoundary";
-import { SECTIONS } from "./sections";
+import { GROUPS, SECTIONS } from "./sections";
 import { SettingsView } from "./SettingsView";
+import { TerminalPage } from "./TerminalPage";
 import { VaultsSettings } from "./VaultsSettings";
 
-const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0 }));
-vi.mock("react", async (original) => {
-  const react = await original<typeof import("react")>();
-  const state = (initial: unknown) => {
-    const index = hooks.cursor++;
-    if (!(index in hooks.values)) hooks.values[index] = typeof initial === "function" ? initial() : initial;
-    return [hooks.values[index], (value: unknown) => { hooks.values[index] = typeof value === "function" ? value(hooks.values[index]) : value; }];
-  };
-  return { ...react, useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)) };
-});
-vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("react", async (original) => (await import("@/kit/testHooks")).patchReact(await original<typeof import("react")>()));
+vi.mock("@/i18n", async (original) => ({
+  ...(await original<typeof import("@/i18n")>()),
+  useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
+}));
 
-type Node = ReactElement<Record<string, any>>;
-function nodes(value: unknown): Node[] {
-  if (Array.isArray(value)) return value.flatMap(nodes);
-  if (!value || typeof value !== "object" || !("props" in value)) return [];
-  const node = value as Node;
-  return [node, ...nodes(node.props.children)];
-}
 const en = (key: string) => translate("en", key);
 
-beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.active = false; });
+beforeEach(() => {
+  hooks.values = [];
+  hooks.cursor = 0;
+});
 
-function view(initial?: string) {
+function view(initial?: string, target?: string, openTerminal?: () => string | null) {
   const api = createMockApi({});
   const onChanged = vi.fn();
-  const draw = () => {
-    hooks.cursor = 0;
-    hooks.active = true;
-    try { return nodes(SettingsView({ api, onChanged, initial })); } finally { hooks.active = false; }
-  };
-  const items = () => draw().filter((n) => n.props.className === "settings-nav-item");
-  const body = () => draw().find((n) => n.props.className === "settings-body")!;
-  const boundary = () => nodes(body().props.children).find((n) => n.type === SurfaceBoundary)!;
-  const shown = () => nodes(body().props.children).find((n) => n.type !== SurfaceBoundary)!;
-  return { api, onChanged, draw, items, body, shown, boundary };
+  const m = mount(SettingsView, () => ({ api, onChanged, initial, target, openTerminal }));
+  const shell = () => m.all().find((n) => n.type === SettingsShell)!;
+  const groups = () => shell().props.groups as { id: string; label: string; items: { id: string; label: string; keywords: string[] }[] }[];
+  const page = () => m.all().find((n) => SECTIONS.some((s) => s.Component === n.type)) as Node;
+  const section = () => m.all().find((n) => n.type === "section" && n.props.className === "settings-section")!;
+  const choose = (id: string) => shell().props.onChange(id);
+  const query = (q: string) => shell().props.onQuery(q);
+  // The SaveBar rides in the shell's `saveBar` slot.
+  const bar = () => (shell().props.saveBar ?? undefined) as Node | undefined;
+  return { api, onChanged, m, shell, groups, page, section, choose, query, bar };
 }
 
 it("opens General first and switches to Vaults", () => {
   const v = view();
   expect(SECTIONS.map((s) => s.id)).toEqual(["general", "repos", "git", "terminal", "editor", "code", "openIn", "browser", "agents", "orchestration", "automations", "usage", "appearance", "notifications", "keys", "qcmd", "capture", "voice", "account", "vaults", "ssh", "hosts", "peers", "mcp", "cloud", "trackers", "cli", "advanced", "diagnostics", "experimental"]);
-  expect(v.items().map((n) => n.props.children)).toEqual([
-    en("settings.general.title"),
-    en("settings.repos.title"),
-    en("settings.git.title"),
-    en("settings.terminal.title"),
-    en("files.settings.title"),
-    en("settings.code.title"),
-    en("openIn.title"),
-    en("settings.browser.title"),
-    en("settings.agents.title"),
-    en("settings.orchestration.title"),
-    en("settings.automations.title"),
-    en("settings.usage.title"),
-    en("settings.appearance.title"),
-    en("settings.notifications.title"),
-    en("keys.title"),
-    en("qcmd.title"),
-    en("settings.capture.title"),
-    en("settings.voice.title"),
-    en("account.title"),
-    en("settings.vaults.title"),
-    en("ssh.title"),
-    en("settings.hosts.title"),
-    en("peers.title"),
-    en("settings.mcp.title"),
-    en("cloud.title"),
-    en("settings.trackers.title"),
-    en("settings.cli.title"),
-    en("settings.advanced.title"),
-    en("settings.diagnostics.title"),
-    en("settings.experimental.title"),
-  ]);
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(29).fill(undefined)]);
-  expect(v.shown().type).toBe(GeneralPage);
-  expect(v.shown().props.api).toBe(v.api);
-  expect(v.shown().props.onChanged).toBe(v.onChanged);
-
-  v.items()[19].props.onClick();
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual([...Array(19).fill(undefined), "page", ...Array(10).fill(undefined)]);
-  expect(v.shown().type).toBe(VaultsSettings);
-  expect(v.body().props["aria-label"]).toBe(en("settings.vaults.title"));
+  expect(v.shell().props.value).toBe("general");
+  expect(v.page().type).toBe(GeneralPage);
+  expect(v.page().props.api).toBe(v.api);
+  expect(v.page().props.onChanged).toBe(v.onChanged);
+  v.choose("vaults");
+  expect(v.shell().props.value).toBe("vaults");
+  expect(v.page().type).toBe(VaultsSettings);
+  expect(v.section().props["aria-label"]).toBe(en("settings.vaults.title"));
 });
 
-it("an initial section opens that page", () => {
-  expect(view("agents").shown().type).toBe(AgentsPage);
-});
-
-it("an unknown initial section falls back to the first", () => {
-  expect(view("vaults").shown().type).toBe(VaultsSettings);
+it("an initial section opens that page; an unknown one falls back to the first", () => {
+  expect(view("agents").page().type).toBe(AgentsPage);
   hooks.values = [];
-  expect(view("nope").shown().type).toBe(GeneralPage);
-});
-
-it("lists notifications under Interface and opens its page", () => {
-  const v = view();
-  v.items()[13].props.onClick();
-  expect(v.items()[13].props["aria-current"]).toBe("page");
-  expect(v.shown().type).toBe(NotificationsPage);
-  expect(v.body().props["aria-label"]).toBe(en("settings.notifications.title"));
+  expect(view("vaults").page().type).toBe(VaultsSettings);
   hooks.values = [];
-  expect(view("notifications").shown().type).toBe(NotificationsPage);
+  expect(view("nope").page().type).toBe(GeneralPage);
 });
 
-it("lists terminal under Workspace and opens its page", () => {
+it("every old section id still opens its page (deep links)", () => {
+  for (const s of SECTIONS) {
+    hooks.values = [];
+    expect(view(s.id).page().type, s.id).toBe(s.Component);
+  }
+});
+
+it("lists notifications and terminal and opens their pages", () => {
   const v = view();
-  v.items()[3].props.onClick();
-  expect(v.items()[3].props["aria-current"]).toBe("page");
-  expect(v.shown().type).toBe(TerminalPage);
-  expect(v.body().props["aria-label"]).toBe(en("settings.terminal.title"));
-  hooks.values = [];
-  expect(view("terminal").shown().type).toBe(TerminalPage);
+  v.choose("notifications");
+  expect(v.page().type).toBe(NotificationsPage);
+  v.choose("terminal");
+  expect(v.page().type).toBe(TerminalPage);
 });
 
-// --- settings search ---
-
-import { SettingsSearch } from "./SettingsSearch";
-
-function search(initial?: string, target?: string) {
-  const api = createMockApi({});
-  const draw = () => {
-    hooks.cursor = 0;
-    hooks.active = true;
-    try { return nodes(SettingsView({ api, onChanged() {}, initial, target })); } finally { hooks.active = false; }
-  };
-  const box = () => draw().find((n) => n.type === SettingsSearch)!;
-  const items = () => draw().filter((n) => n.props.className === "settings-nav-item");
-  const body = () => draw().find((n) => n.props.className === "settings-body")!;
-  const page = () => nodes(body().props.children).find((n) => n.type !== SurfaceBoundary)!;
-  return { draw, box, items, body, page };
-}
-
-it("has a search box above the section list", () => {
-  const v = search();
-  const all = v.draw();
-  const nav = all.find((n) => n.props.className === "settings-nav")!;
-  expect(nodes(nav.props.children)[0].type).toBe("h2");
-  expect(nodes(nav.props.children).findIndex((n) => n.type === SettingsSearch)).toBeLessThan(nodes(nav.props.children).findIndex((n) => n.props.className === "settings-nav-item"));
-  expect(v.items()).toHaveLength(SECTIONS.length);
-  expect(v.page().props.filter).toBeUndefined();
-});
-
-it("a query keeps only the sections with hits, with their hit count", () => {
-  const v = search();
-  v.box().props.onChange("font");
-  const items = v.items();
-  expect(items.map((n) => n.props.children[0])).toEqual([en("settings.terminal.title"), en("files.settings.title"), en("settings.appearance.title")]);
-  expect(items.every((n) => typeof n.props.children[1] === "object")).toBe(true);
-});
-
-it("the page gets the filter, and the active section moves to the best hit when it has none", () => {
-  const v = search("agents");
-  expect(v.page().type).toBe(AgentsPage);
-  v.box().props.onChange("branch prefix");
-  expect(v.page().props.filter.query).toBe("branch prefix");
-  expect(v.page().props.filter.ids.has("git.prefix")).toBe(true);
-  expect(v.page().type).not.toBe(AgentsPage);
-  expect(v.items().map((n) => n.props["aria-current"])).toContain("page");
-});
-
-it("keeps the active section when it has a hit", () => {
-  const v = search("editor");
-  v.box().props.onChange("font");
-  expect(v.page().props.filter.ids.has("editor.fontSize")).toBe(true);
-  expect(v.page().type).toBe(SECTIONS.find((s) => s.id === "editor")!.Component);
-});
-
-it("says so when nothing matches", () => {
-  const v = search();
-  v.box().props.onChange("zzzzqqq");
-  expect(v.items()).toHaveLength(0);
-  const empty = v.draw().find((n) => n.props.role === "status" && n.props["data-search"] === "none")!;
-  expect(empty.props.children).toBe(translate("en", "settings.search.none", { query: "zzzzqqq" }));
-});
-
-it("clearing the query shows every section again", () => {
-  const v = search();
-  v.box().props.onChange("font");
-  v.box().props.onChange("");
-  expect(v.items()).toHaveLength(SECTIONS.length);
-  expect(v.page().props.filter).toBeUndefined();
-});
-
-it("a palette target opens its section with the filter holding every id and the target", () => {
-  const v = search("git", "git.prefix");
-  expect(v.page().props.filter.target).toBe("git.prefix");
-  expect(v.page().props.filter.ids.has("git.refresh")).toBe(true);
-});
-
-it("hands a section the way to open another one", () => {
-  const v = view();
-  v.shown().props.openSection("openIn");
-  expect(v.items()[6].props["aria-current"]).toBe("page");
-  expect(v.body().props["aria-label"]).toBe(en("openIn.title"));
-  hooks.values = [];
-  const w = view();
-  w.shown().props.openSection("nope");
-  expect(w.shown().type).toBe(GeneralPage);
-});
-
-it("a link between sections can carry an arg, and the next link without one drops it", () => {
-  const v = view();
-  v.shown().props.openSection("hosts", "h1");
-  expect(v.shown().props.arg).toBe("h1");
-  v.shown().props.openSection("ssh");
-  expect(v.shown().props.arg).toBeUndefined();
-});
-
-it("opening another section clears the query so the section shows", () => {
-  const v = search();
-  v.box().props.onChange("font");
-  v.page().props.openSection("openIn");
-  expect(v.box().props.value).toBe("");
-  expect(v.items()).toHaveLength(SECTIONS.length);
-  expect(v.body().props["aria-label"]).toBe(en("openIn.title"));
-});
-
-it("contains a page that throws in a boundary reset by the section, so the nav stays", () => {
-  const v = view();
-  expect(v.boundary().props).toMatchObject({ id: "page.settings", resetKey: "general", titleKey: "boundary.page.title" });
-  // The nav is a sibling of the body, outside the boundary.
-  expect(v.items()).toHaveLength(SECTIONS.length);
-  v.items()[19].props.onClick();
-  expect(v.boundary().props.resetKey).toBe("vaults");
+it("passes openTerminal to the section", () => {
+  const openTerminal = vi.fn(() => "t1");
+  expect(view("agents", undefined, openTerminal).page().props.openTerminal).toBe(openTerminal);
 });
 
 // --- groups ---
 
-import { GROUPS } from "./sections";
-
-it("every section is in exactly one known group, and each group has a section", () => {
+it("has six groups; every section is in exactly one and each group has a section", () => {
+  expect(GROUPS).toHaveLength(6);
   const ids = GROUPS.map((g) => g.id);
   for (const s of SECTIONS) expect(ids.filter((i) => i === s.group), s.id).toHaveLength(1);
   for (const g of GROUPS) expect(SECTIONS.some((s) => s.group === g.id), g.id).toBe(true);
 });
 
-it("renders the groups in order, each heading above its sections", () => {
-  const v = view();
-  const all = v.draw();
-  const groups = all.filter((n) => n.props.className === "settings-nav-group");
-  expect(groups.map((g) => g.props["aria-label"])).toEqual(GROUPS.map((g) => en(g.labelKey)));
-  const headings = all.filter((n) => n.props.className === "settings-nav-heading");
-  expect(headings.map((h) => h.props.children)).toEqual(GROUPS.map((g) => en(g.labelKey)));
-  groups.forEach((g, i) => {
-    const labels = nodes(g.props.children).filter((n) => n.props.className === "settings-nav-item").map((n) => n.props.children);
-    expect(labels).toEqual(SECTIONS.filter((s) => s.group === GROUPS[i].id).map((s) => en(s.labelKey)));
+it("draws the groups in order, each with its sections as items", () => {
+  const g = view().groups();
+  expect(g.map((x) => x.label)).toEqual(GROUPS.map((x) => en(x.labelKey)));
+  g.forEach((group, i) => {
+    expect(group.items.map((it) => it.id)).toEqual(SECTIONS.filter((s) => s.group === GROUPS[i].id).map((s) => s.id));
+    expect(group.items.map((it) => it.label)).toEqual(SECTIONS.filter((s) => s.group === GROUPS[i].id).map((s) => en(s.labelKey)));
   });
+  expect(g.flatMap((x) => x.items)).toHaveLength(SECTIONS.length);
 });
 
-it("a search hides the group with no hit", () => {
-  const w = search();
-  w.box().props.onChange("font");
-  const groups = w.draw().filter((n) => n.props.className === "settings-nav-group");
-  expect(groups.length).toBeLessThan(GROUPS.length);
-  expect(groups.length).toBeGreaterThan(0);
+it("gives each item the words of its controls so the shell search finds them", () => {
+  const terminal = view().groups().flatMap((x) => x.items).find((it) => it.id === "terminal")!;
+  expect(terminal.keywords.some((k) => k.toLowerCase().includes("font"))).toBe(true);
 });
 
-it("openTerminal reaches the section", () => {
-  const api = createMockApi({});
-  const openTerminal = vi.fn(() => "t1");
-  hooks.cursor = 0;
-  hooks.active = true;
-  let drawn: Node[];
-  try { drawn = nodes(SettingsView({ api, onChanged: vi.fn(), initial: "agents", openTerminal })); } finally { hooks.active = false; }
-  const body = drawn.find((n) => n.props.className === "settings-body")!;
-  const section = nodes(body.props.children).find((n) => n.type === AgentsPage)!;
-  expect(section.props.openTerminal).toBe(openTerminal);
+// --- search ---
+
+it("the page gets the filter and the active section moves to the best hit when it has none", () => {
+  const v = view("agents");
+  v.query("branch prefix");
+  expect(v.page().props.filter.query).toBe("branch prefix");
+  expect(v.page().props.filter.ids.has("git.prefix")).toBe(true);
+  expect(v.page().type).not.toBe(AgentsPage);
+  expect(v.shell().props.value).toBe(SECTIONS.find((s) => s.Component === v.page().type)!.id);
+});
+
+it("keeps the active section when it has a hit", () => {
+  const v = view("editor");
+  v.query("font");
+  expect(v.page().props.filter.ids.has("editor.fontSize")).toBe(true);
+  expect(v.page().type).toBe(SECTIONS.find((s) => s.id === "editor")!.Component);
+});
+
+it("says so when nothing matches", () => {
+  const v = view();
+  v.query("zzzzqqq");
+  const empty = v.m.all().find((n) => n.props.role === "status" && n.props["data-search"] === "none")!;
+  expect(empty.props.children).toBe(translate("en", "settings.search.none", { query: "zzzzqqq" }));
+});
+
+it("clearing the query shows the page without a filter again", () => {
+  const v = view();
+  v.query("font");
+  v.query("");
+  expect(v.page().props.filter).toBeUndefined();
+});
+
+it("a palette target opens its section with the filter holding every id and the target", () => {
+  const v = view("git", "git.prefix");
+  expect(v.page().props.filter.target).toBe("git.prefix");
+  expect(v.page().props.filter.ids.has("git.refresh")).toBe(true);
+});
+
+// --- links between sections ---
+
+it("hands a section the way to open another one", () => {
+  const v = view();
+  v.page().props.openSection("openIn");
+  expect(v.shell().props.value).toBe("openIn");
+  expect(v.section().props["aria-label"]).toBe(en("openIn.title"));
+  hooks.values = [];
+  const w = view();
+  w.page().props.openSection("nope");
+  expect(w.page().type).toBe(GeneralPage);
+});
+
+it("a link between sections can carry an arg, and the next link without one drops it", () => {
+  const v = view();
+  v.page().props.openSection("hosts", "h1");
+  expect(v.page().props.arg).toBe("h1");
+  v.page().props.openSection("ssh");
+  expect(v.page().props.arg).toBeUndefined();
+});
+
+it("opening another section clears the query so the section shows", () => {
+  const v = view();
+  v.query("font");
+  v.page().props.openSection("openIn");
+  expect(v.shell().props.query).toBe("");
+  expect(v.section().props["aria-label"]).toBe(en("openIn.title"));
+});
+
+it("contains a page that throws in a boundary reset by the section, so the nav stays", () => {
+  const v = view();
+  const boundary = () => v.m.all().find((n) => n.type === SurfaceBoundary)!;
+  expect(boundary().props).toMatchObject({ id: "page.settings", resetKey: "general", titleKey: "boundary.page.title" });
+  v.choose("vaults");
+  expect(boundary().props.resetKey).toBe("vaults");
+});
+
+// --- save bar ---
+
+it("shows the SaveBar only after the page reports unsaved changes, and drops it on another section", () => {
+  const v = view("advanced");
+  expect(v.bar()).toBeUndefined();
+  const onSave = vi.fn();
+  const onDiscard = vi.fn();
+  v.page().props.registerSave({ dirty: true, onSave, onDiscard });
+  const bar = v.bar()!;
+  expect(bar.type).toBe(SaveBar);
+  expect(bar.props.dirty).toBe(true);
+  expect(bar.props.labels.save).toBe(en("settings.v2.save.save"));
+  bar.props.onSave();
+  expect(onSave).toHaveBeenCalledTimes(1);
+  v.page().props.registerSave({ dirty: false, onSave, onDiscard });
+  expect(v.bar()!.props.dirty).toBe(false);
+  v.choose("general");
+  expect(v.bar()).toBeUndefined();
+});
+
+it("asks before leaving a section with unsaved changes", () => {
+  const v = view("advanced");
+  v.page().props.registerSave({ dirty: true, onSave() {}, onDiscard() {} });
+  const confirm = vi.fn(() => false);
+  vi.stubGlobal("window", { ...globalThis.window, confirm, addEventListener() {}, removeEventListener() {} });
+  v.choose("general");
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(v.shell().props.value).toBe("advanced");
+  confirm.mockReturnValue(true);
+  v.choose("general");
+  expect(v.shell().props.value).toBe("general");
+  vi.unstubAllGlobals();
 });

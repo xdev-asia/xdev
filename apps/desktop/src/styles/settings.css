@@ -1197,3 +1197,9 @@
 .host-env-row > button {
   flex: 0 0 auto;
 }
+
+/* Settings v2: the design system's SettingsShell fills the view; the open section scrolls inside it. */
+.settings > .x-settings-shell {
+  flex: 1;
+  min-width: 0;
+}

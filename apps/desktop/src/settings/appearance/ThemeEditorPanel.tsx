@@ -181,7 +181,7 @@ export function ThemeEditorPanel(props: {
         </p>
       )}
       <div className="theme-panel-actions">
-        <Button type="submit" data-action="save" disabled={busy}>
+        <Button variant="primary" type="submit" data-action="save" disabled={busy}>
           {t("settings.appearance.colours.save")}
         </Button>
         <Button type="button" variant="secondary" data-action="cancel" disabled={busy} onClick={props.onCancel}>

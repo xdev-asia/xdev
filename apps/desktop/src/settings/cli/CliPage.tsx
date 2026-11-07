@@ -118,7 +118,7 @@ export function CliPage(props: SettingsSectionProps): JSX.Element {
           <div className="settings-actions settings-actions-start">
             {state === "stale" ? (
               <>
-                <Button type="button" data-act="repair" disabled={busy || noBinary} onClick={() => void run(() => api.cliRepair())}>
+                <Button variant="primary" type="button" data-act="repair" disabled={busy || noBinary} onClick={() => void run(() => api.cliRepair())}>
                   {t("settings.cli.repair")}
                 </Button>
                 <Button type="button" variant="secondary" data-act="remove" disabled={busy} onClick={() => void run(() => api.cliRemove())}>

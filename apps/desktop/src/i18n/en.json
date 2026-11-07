@@ -6285,5 +6285,16 @@
   "mrReview.block.merge-queue": "This project merges through a queue.",
   "mrReview.block.unknown": "GitLab has not finished checking whether this can merge. Try again soon.",
   "mrReview.block.behind": "This branch is behind the target branch. Rebase it first.",
-  "mrReview.block.blocked": "Project rules block this merge."
+  "mrReview.block.blocked": "Project rules block this merge.",
+  "settings.v2.group.general": "General",
+  "settings.v2.group.agent": "Agents",
+  "settings.v2.group.project": "Projects and Git",
+  "settings.v2.group.terminal": "Terminal and editor",
+  "settings.v2.group.connect": "Connections",
+  "settings.v2.group.advanced": "Advanced",
+  "settings.v2.save.unsaved": "You have unsaved changes",
+  "settings.v2.save.save": "Save changes",
+  "settings.v2.save.discard": "Discard",
+  "settings.v2.save.saving": "Saving",
+  "settings.v2.save.leave": "Leave this page? Your changes are not saved."
 }

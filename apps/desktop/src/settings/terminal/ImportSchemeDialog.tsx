@@ -90,7 +90,7 @@ export function ImportSchemeDialog(props: {
           </>
         )}
         {preview && !taken && (
-          <Button type="button" data-action="import" disabled={busy} onClick={() => props.onImport("fail")}>
+          <Button variant="primary" type="button" data-action="import" disabled={busy} onClick={() => props.onImport("fail")}>
             {t("settings.terminal.import.confirm")}
           </Button>
         )}

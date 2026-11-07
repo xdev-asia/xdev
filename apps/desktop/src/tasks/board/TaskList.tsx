@@ -85,7 +85,7 @@ export function TaskList(props: TaskListProps): JSX.Element {
       <EmptyState
         title={t("board.empty.title")}
         hint={t("board.empty.body")}
-        actions={<Button onClick={props.onNew}>{t("board.new")}</Button>}
+        actions={<Button variant="primary" onClick={props.onNew}>{t("board.new")}</Button>}
       />
     ) : (
       <EmptyState

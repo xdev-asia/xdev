@@ -135,7 +135,7 @@ export function McpAddToRepo(props: { api: Pick<Api, "workspaceList" | "fileRead
           )}
           <div className="settings-actions settings-actions-start">
             {merge.status === "write" && (
-              <Button type="button" data-act="mcp-write" disabled={busy} onClick={() => void write()}>
+              <Button variant="primary" type="button" data-act="mcp-write" disabled={busy} onClick={() => void write()}>
                 {t("settings.mcp.add.confirm", { file: MCP_FILE })}
               </Button>
             )}

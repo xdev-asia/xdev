@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Field } from "@xdev-asia/ui";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi } from "@/api";
@@ -49,7 +50,7 @@ it("renders bars, reset text and state badges", async () => {
 it("rejects an invalid inline name before calling the API", async () => {
   const view = harness(); const add = vi.spyOn(view.api, "addAccount");
   view.button("Add account").props.onClick();
-  nodes(view.draw()).find(n => n.type === "input")!.props.onChange({ target: { value: "A b" } });
+  nodes(view.draw()).find(n => n.type === Field)!.props.onChange({ target: { value: "A b" } });
   await nodes(view.draw()).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} });
   expect(view.html()).toContain(translate("en", "error.bad_name"));
   expect(add).not.toHaveBeenCalled();
@@ -144,7 +145,7 @@ it("adds an account before starting login and hides commands when a console open
   const view = harness();
   const login = vi.spyOn(view.api, "loginAccount").mockResolvedValue({ opened: true, command: "claude auth login" });
   view.button("Add account").props.onClick();
-  nodes(view.draw()).find(n => n.type === "input")!.props.onChange({ target: { value: "new-account" } });
+  nodes(view.draw()).find(n => n.type === Field)!.props.onChange({ target: { value: "new-account" } });
   await nodes(view.draw()).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} });
   expect((await view.api.accounts()).accounts.some(a => a.name === "new-account")).toBe(true);
   expect(login).toHaveBeenCalledWith("new-account");
@@ -183,7 +184,7 @@ it("adds a Codex account with the chosen provider", async () => {
   view.button("Add account").props.onClick();
   const radios = nodes(view.draw()).filter(n => n.type === "input" && n.props.type === "radio");
   expect(radios.map(n => n.props.value)).toEqual(["claude", "codex", "gemini", "qwen-code", "opencode", "amp", "cursor"]);
-  nodes(view.draw()).find(n => n.type === "input")!.props.onChange({ target: { value: "cx" } });
+  nodes(view.draw()).find(n => n.type === Field)!.props.onChange({ target: { value: "cx" } });
   radios.find(n => n.props.value === "codex")!.props.onChange();
   await nodes(view.draw()).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} });
   expect((await view.api.accounts()).accounts.find(a => a.name === "cx")!.provider).toBe("codex");
@@ -207,7 +208,7 @@ it("imports an existing folder, names it after the folder and skips the login", 
 it("asks for a folder before importing", async () => {
   const view = harness(); const add = vi.spyOn(view.api, "addAccount");
   view.button("Import folder").props.onClick();
-  nodes(view.draw()).filter(n => n.type === "input")[1].props.onChange({ target: { value: "h" } });
+  nodes(view.draw()).filter(n => n.type === Field)[1].props.onChange({ target: { value: "h" } });
   await nodes(view.draw()).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} });
   expect(view.html()).toContain(translate("en", "error.not_found"));
   expect(add).not.toHaveBeenCalled();
@@ -358,7 +359,7 @@ it("lists each provider with its letter mark and adds a Gemini account that sign
     expect(html).toMatch(new RegExp(`data-provider="${id}"[^>]*>.*?class="ws-agent" data-profile="${id}"`));
     expect(html).toContain(name);
   }
-  nodes(view.draw()).find(n => n.type === "input")!.props.onChange({ target: { value: "gem" } });
+  nodes(view.draw()).find(n => n.type === Field)!.props.onChange({ target: { value: "gem" } });
   radio(view, "gemini").props.onChange();
   expect(nodes(view.draw()).find(n => n.type === "button" && n.props.type === "submit")).toBeUndefined();
   expect(view.html()).toContain(translate("en", "accounts.addLogin"));
@@ -373,7 +374,7 @@ it("adds a single-account provider without sign-in, then shows it single and ref
   const view = harness(); view.draw(); const cleanup = hooks.effects[0](); await tick();
   const login = vi.spyOn(view.api, "loginAccount");
   view.button("Add account").props.onClick();
-  nodes(view.draw()).find(n => n.type === "input")!.props.onChange({ target: { value: "qwen" } });
+  nodes(view.draw()).find(n => n.type === Field)!.props.onChange({ target: { value: "qwen" } });
   radio(view, "qwen-code").props.onChange();
   const hint = translate("en", "accounts.single.addHint", { provider: "Qwen Code" });
   expect(view.html()).toContain(hint);

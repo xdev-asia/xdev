@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { Field, Select } from "@xdev-asia/ui";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi } from "@/api";
@@ -127,7 +128,7 @@ it("steers a seat from its side sheet", async () => {
   await view.reload();
   expect(renderToStaticMarkup(sheet())).toContain(en("squads.queued", { count: 1 }).replace("'", "&#x27;"));
   // The account cannot change while the squad runs.
-  expect(nodes(sheet()).find(n => n.type === "select")!.props.disabled).toBe(true);
+  expect(nodes(sheet()).find(n => n.type === Select)!.props.disabled).toBe(true);
 });
 
 it("asks before deactivating and stops only once confirmed", async () => {
@@ -185,9 +186,9 @@ it("creates a squad with one account per seat", async () => {
   const html = renderToStaticMarkup(form());
   expect(html).toContain("codex-1 · Codex · ");
   expect(html.match(/<select/g)).toHaveLength(4);
-  const inputs = () => nodes(form()).filter(n => n.type === "input");
+  const inputs = () => nodes(form()).filter(n => n.type === Field);
   inputs()[0].props.onChange({ target: { value: "New team" } });
-  nodes(form()).filter(n => n.type === "select")[1].props.onChange({ target: { value: "claude-2" } });
+  nodes(form()).filter(n => n.type === Select)[1].props.onChange({ target: { value: "claude-2" } });
   const create = vi.spyOn(view.api, "newSquad");
   await form().props.onSubmit(submit); await tick();
   expect(create).toHaveBeenCalledWith("New team", expect.any(String), [
@@ -204,7 +205,7 @@ it.each([["/p/shared", "/p/shared"], [null, null]] as const)("a new squad goes t
   const view = await harness(createMockApi({}), host);
   view.button(en("squads.new")).props.onClick();
   const form = () => view.all().find(n => n.type === "form" && n.props["aria-label"] === en("squads.new"))!;
-  nodes(form()).filter(n => n.type === "input")[0].props.onChange({ target: { value: "Team" } });
+  nodes(form()).filter(n => n.type === Field)[0].props.onChange({ target: { value: "Team" } });
   const create = vi.spyOn(view.api, "newSquad");
   await form().props.onSubmit(submit); await tick();
   expect(create).toHaveBeenCalledWith("Team", expected ?? (await view.api.tasksContext()).defaultRepo, expect.any(Array), null);

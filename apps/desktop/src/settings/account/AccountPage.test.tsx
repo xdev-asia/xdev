@@ -56,7 +56,7 @@ const LINK = "xdev://auth/callback?code=abc&state=demo";
 it("signed out: one primary Sign in button and the about text", async () => {
   const v = await view();
   expect(v.labels()).toEqual([en("account.signIn")]);
-  expect(v.button(en("account.signIn"))!.props.variant).toBeUndefined();
+  expect(v.button(en("account.signIn"))!.props.variant).toBe("primary");
   expect(v.all().some((n) => n.props.children === en("account.about"))).toBe(true);
   expect(v.banners()).toEqual([]);
 });

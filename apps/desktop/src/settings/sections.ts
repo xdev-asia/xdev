@@ -47,6 +47,18 @@ export interface SettingsSectionProps {
   // Opens a terminal tab running `profile` in the current worktree, named `title`; the tab id, or
   // `null` when no worktree is open (Agents: Install).
   openTerminal?(profile: string, title: string): string | null;
+  // Hands the Settings view the page's save state. The view shows one SaveBar, and only while
+  // `dirty`; a page that gets this does not draw its own Save. Pass `null` when nothing is pending.
+  registerSave?(spec: SaveSpec | null): void;
+}
+
+/** What a page tells the Settings SaveBar. */
+export interface SaveSpec {
+  dirty: boolean;
+  busy?: boolean;
+  saveDisabled?: boolean;
+  onSave(): void;
+  onDiscard(): void;
 }
 
 export interface SettingsFilter {
@@ -57,15 +69,16 @@ export interface SettingsFilter {
   target?: string;
 }
 
-export type SettingsGroupId = "workspace" | "agents" | "interface" | "integrations" | "advanced";
+export type SettingsGroupId = "general" | "agent" | "project" | "terminal" | "connect" | "advanced";
 
-/** The headings of the Settings list, in order. */
+/** The headings of the Settings list, in order: six groups. */
 export const GROUPS: { id: SettingsGroupId; labelKey: string }[] = [
-  { id: "workspace", labelKey: "settings.group.workspace" },
-  { id: "agents", labelKey: "settings.group.agents" },
-  { id: "interface", labelKey: "settings.group.interface" },
-  { id: "integrations", labelKey: "settings.group.integrations" },
-  { id: "advanced", labelKey: "settings.group.advanced" },
+  { id: "general", labelKey: "settings.v2.group.general" },
+  { id: "agent", labelKey: "settings.v2.group.agent" },
+  { id: "project", labelKey: "settings.v2.group.project" },
+  { id: "terminal", labelKey: "settings.v2.group.terminal" },
+  { id: "connect", labelKey: "settings.v2.group.connect" },
+  { id: "advanced", labelKey: "settings.v2.group.advanced" },
 ];
 
 export interface SettingsSection {
@@ -76,34 +89,35 @@ export interface SettingsSection {
 }
 
 // The left list of the Settings view: the groups in GROUPS order, each section under its group in
-// this order; another section is one more entry.
+// this order; another section is one more entry. Section ids are the deep-link ids and did not
+// change when the 30 sections moved from 5 groups to 6, so old links keep working.
 export const SECTIONS: SettingsSection[] = [
-  { id: "general", group: "workspace", labelKey: "settings.general.title", Component: GeneralPage },
-  { id: "repos", group: "workspace", labelKey: "settings.repos.title", Component: ReposSettings },
-  { id: "git", group: "workspace", labelKey: "settings.git.title", Component: GitSettings },
-  { id: "terminal", group: "workspace", labelKey: "settings.terminal.title", Component: TerminalPage },
-  { id: "editor", group: "workspace", labelKey: "files.settings.title", Component: EditorPage },
-  { id: "code", group: "workspace", labelKey: "settings.code.title", Component: CodeIntelPage },
-  { id: "openIn", group: "workspace", labelKey: "openIn.title", Component: OpenInPage },
-  { id: "browser", group: "workspace", labelKey: "settings.browser.title", Component: BrowserPage },
-  { id: "agents", group: "agents", labelKey: "settings.agents.title", Component: AgentsPage },
-  { id: "orchestration", group: "agents", labelKey: "settings.orchestration.title", Component: OrchestrationPage },
-  { id: "automations", group: "agents", labelKey: "settings.automations.title", Component: AutomationsSettingsPage },
-  { id: "usage", group: "agents", labelKey: "settings.usage.title", Component: UsagePage },
-  { id: "appearance", group: "interface", labelKey: "settings.appearance.title", Component: AppearancePage },
-  { id: "notifications", group: "interface", labelKey: "settings.notifications.title", Component: NotificationsPage },
-  { id: "keys", group: "interface", labelKey: "keys.title", Component: ShortcutsPage },
-  { id: "qcmd", group: "interface", labelKey: "qcmd.title", Component: QuickCommandsPage },
-  { id: "capture", group: "interface", labelKey: "settings.capture.title", Component: CaptureSettings },
-  { id: "voice", group: "interface", labelKey: "settings.voice.title", Component: VoicePage },
-  { id: "account", group: "integrations", labelKey: "account.title", Component: AccountPage },
-  { id: "vaults", group: "integrations", labelKey: "settings.vaults.title", Component: VaultsSettings },
-  { id: "ssh", group: "integrations", labelKey: "ssh.title", Component: SshPage },
-  { id: "hosts", group: "integrations", labelKey: "settings.hosts.title", Component: HostsPage },
-  { id: "peers", group: "integrations", labelKey: "peers.title", Component: PeersPage },
-  { id: "mcp", group: "integrations", labelKey: "settings.mcp.title", Component: McpPage },
-  { id: "cloud", group: "integrations", labelKey: "cloud.title", Component: CloudPage },
-  { id: "trackers", group: "integrations", labelKey: "settings.trackers.title", Component: TrackersPage },
+  { id: "general", group: "general", labelKey: "settings.general.title", Component: GeneralPage },
+  { id: "repos", group: "project", labelKey: "settings.repos.title", Component: ReposSettings },
+  { id: "git", group: "project", labelKey: "settings.git.title", Component: GitSettings },
+  { id: "terminal", group: "terminal", labelKey: "settings.terminal.title", Component: TerminalPage },
+  { id: "editor", group: "terminal", labelKey: "files.settings.title", Component: EditorPage },
+  { id: "code", group: "terminal", labelKey: "settings.code.title", Component: CodeIntelPage },
+  { id: "openIn", group: "project", labelKey: "openIn.title", Component: OpenInPage },
+  { id: "browser", group: "terminal", labelKey: "settings.browser.title", Component: BrowserPage },
+  { id: "agents", group: "agent", labelKey: "settings.agents.title", Component: AgentsPage },
+  { id: "orchestration", group: "agent", labelKey: "settings.orchestration.title", Component: OrchestrationPage },
+  { id: "automations", group: "agent", labelKey: "settings.automations.title", Component: AutomationsSettingsPage },
+  { id: "usage", group: "agent", labelKey: "settings.usage.title", Component: UsagePage },
+  { id: "appearance", group: "general", labelKey: "settings.appearance.title", Component: AppearancePage },
+  { id: "notifications", group: "general", labelKey: "settings.notifications.title", Component: NotificationsPage },
+  { id: "keys", group: "general", labelKey: "keys.title", Component: ShortcutsPage },
+  { id: "qcmd", group: "terminal", labelKey: "qcmd.title", Component: QuickCommandsPage },
+  { id: "capture", group: "general", labelKey: "settings.capture.title", Component: CaptureSettings },
+  { id: "voice", group: "general", labelKey: "settings.voice.title", Component: VoicePage },
+  { id: "account", group: "connect", labelKey: "account.title", Component: AccountPage },
+  { id: "vaults", group: "project", labelKey: "settings.vaults.title", Component: VaultsSettings },
+  { id: "ssh", group: "connect", labelKey: "ssh.title", Component: SshPage },
+  { id: "hosts", group: "connect", labelKey: "settings.hosts.title", Component: HostsPage },
+  { id: "peers", group: "connect", labelKey: "peers.title", Component: PeersPage },
+  { id: "mcp", group: "connect", labelKey: "settings.mcp.title", Component: McpPage },
+  { id: "cloud", group: "connect", labelKey: "cloud.title", Component: CloudPage },
+  { id: "trackers", group: "project", labelKey: "settings.trackers.title", Component: TrackersPage },
   { id: "cli", group: "advanced", labelKey: "settings.cli.title", Component: CliPage },
   { id: "advanced", group: "advanced", labelKey: "settings.advanced.title", Component: AdvancedPage },
   { id: "diagnostics", group: "advanced", labelKey: "settings.diagnostics.title", Component: DiagnosticsPage },

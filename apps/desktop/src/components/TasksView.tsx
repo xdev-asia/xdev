@@ -1,4 +1,4 @@
-import { Button } from "@xdev-asia/ui";
+import { Button, Select } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type Api, type ApiError, type FileDiff, type Task, type TaskState, type TasksContext } from "@/api";
@@ -191,18 +191,18 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
           {t("tasks.repo")}
           <span className="task-row">
             <input value={repoValue} onChange={(e) => setRepo(e.target.value)} spellCheck={false} />
-            <button type="button" className="btn-secondary" onClick={() => void browse()}>
+            <Button type="button" style={COMPACT} onClick={() => void browse()}>
               {t("tasks.browse")}
-            </button>
+            </Button>
           </span>
         </label>
         <div className="task-row">
-          <Button type="submit" style={COMPACT} disabled={goal.trim() === "" || repoValue.trim() === ""}>
+          <Button variant="primary" type="submit" style={COMPACT} disabled={goal.trim() === "" || repoValue.trim() === ""}>
             {t("tasks.create")}
           </Button>
-          <button type="button" className="btn-secondary" onClick={() => setCreating(false)}>
+          <Button type="button" style={COMPACT} onClick={() => setCreating(false)}>
             {t("tasks.cancel")}
-          </button>
+          </Button>
         </div>
       </form>
     );
@@ -216,9 +216,9 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
           <h3 className="doc-path">{shown.path}</h3>
           {"diff" in shown && shown.diff.old === null && <span className="badge" data-kind="added">{t("tasks.fileAdded")}</span>}
           {"diff" in shown && shown.diff.new === null && <span className="badge" data-kind="deleted">{t("tasks.fileDeleted")}</span>}
-          <button type="button" className="btn-secondary" onClick={() => setShown(null)}>
+          <Button type="button" style={COMPACT} onClick={() => setShown(null)}>
             {t("tasks.closeDiff")}
-          </button>
+          </Button>
         </div>
         {"diff" in shown ? (
           <DiffView key={`${id}:${shown.path}`} base={shown.diff.old ?? ""} current={shown.diff.new ?? ""} />
@@ -268,14 +268,7 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
             {accounts.length > 0 && (canRun(x.state) || canResume(x)) && (
               <label>
                 {t("tasks.account")}
-                <select value={account} onChange={(e) => setAccount(e.target.value)} disabled={busy}>
-                  <option value="">{t("tasks.ownAccount")}</option>
-                  {accounts.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                <Select value={account} onChange={(e) => setAccount(e.target.value)} disabled={busy} options={[{ value: "", label: t("tasks.ownAccount") }, ...accounts.map((name) => ({ value: name, label: name }))]} />
               </label>
             )}
             {canRun(x.state) && (

@@ -134,7 +134,7 @@ export function QuickCommandsPage(props: SettingsSectionProps): JSX.Element {
             </option>
           ))}
         </select>
-        <Button type="button" onClick={() => setEditing({ item: null })}>
+        <Button variant="primary" type="button" onClick={() => setEditing({ item: null })}>
           {t("qcmd.new")}
         </Button>
       </div>

@@ -1,56 +1,39 @@
-import { useEffect, useRef } from "react";
-import type { JSX } from "react";
-import { useI18n } from "@/i18n";
+import { useEffect } from "react";
 import { revealSetting } from "./SettingRow";
 
-/** The search box above the section list. Ctrl+F or Cmd+F focuses it; Escape clears it. */
-export function SettingsSearch(props: { value: string; onChange(query: string): void }): JSX.Element {
-  const { t } = useI18n();
-  const input = useRef<HTMLInputElement>(null);
+/** Ctrl+F or Cmd+F focuses the search box of the Settings shell. */
+export function useFindShortcut(): void {
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "f") {
+        const input = document.querySelector<HTMLInputElement>(".x-settings-shell-side input");
+        if (!input) return;
         e.preventDefault();
-        input.current?.focus();
-        input.current?.select();
+        input.focus();
+        input.select();
       }
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
-  return (
-    <div className="settings-search">
-      <input
-        ref={input}
-        type="search"
-        className="settings-search-input"
-        value={props.value}
-        placeholder={t("settings.search.placeholder")}
-        aria-label={t("settings.search.placeholder")}
-        spellCheck={false}
-        onChange={(e) => props.onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && props.value !== "") {
-            e.preventDefault();
-            e.stopPropagation();
-            props.onChange("");
-          }
-        }}
-      />
-      {props.value !== "" && (
-        <button type="button" className="settings-search-clear" aria-label={t("settings.search.clear")} onClick={() => props.onChange("")}>
-          ×
-        </button>
-      )}
-    </div>
-  );
 }
 
-/** Scrolls the control a palette item asked for into view, once, when the page is up. Draws nothing. */
+/** The element of a setting: a wrapped row (`data-setting-id`) or a design-system row (`id`). */
+function settingElement(id: string): HTMLElement | null {
+  const safe = id.replace(/"/g, "");
+  return document.querySelector<HTMLElement>(`[data-setting-id="${safe}"]`) ?? document.getElementById(safe);
+}
+
+/** Watches the page for changes; calls `notify` on each until the returned function is called. */
+function watchDom(notify: () => void): () => void {
+  if (typeof MutationObserver === "undefined") return () => {};
+  const observer = new MutationObserver(notify);
+  observer.observe(document.body, { childList: true, subtree: true });
+  return () => observer.disconnect();
+}
+
+/** Scrolls the control a palette item asked for into view, once, as soon as the page has it. Draws nothing. */
 export function RevealSetting(props: { id: string }): null {
-  useEffect(
-    () => revealSetting(() => document.querySelector<HTMLElement>(`[data-setting-id="${props.id.replace(/"/g, "")}"]`)),
-    [props.id],
-  );
+  useEffect(() => revealSetting(() => settingElement(props.id), watchDom), [props.id]);
   return null;
 }
