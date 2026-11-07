@@ -465,9 +465,7 @@ export function TabStrip(props: {
                       <AgentIcon profile={tab.profileId} size={16} />
                       {tab.pinned && (
                         <span className="ws-tab-pin" role="img" aria-label={t("tabMenu.pinned")} title={t("tabMenu.pinned")}>
-                          <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-                            <path d="M10 1.5 14.5 6l-1.6.6-2.4 2.4.4 3.2-1.2 1.2L7 10.2 3.5 13.7 2.3 12.5 5.8 9 3.2 6.2 4.4 5l3.2.4L10 3z" fill="currentColor" />
-                          </svg>
+                          <Icon name="pin" size={10} />
                         </span>
                       )}
                       <span className="ws-tab-name">{shownName(tab)}</span>
@@ -489,9 +487,7 @@ export function TabStrip(props: {
                         <>
                           {item.file.pinned && (
                             <span className="ws-tab-pin" role="img" aria-label={t("tabMenu.pinned")} title={t("tabMenu.pinned")}>
-                              <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-                                <path d="M10 1.5 14.5 6l-1.6.6-2.4 2.4.4 3.2-1.2 1.2L7 10.2 3.5 13.7 2.3 12.5 5.8 9 3.2 6.2 4.4 5l3.2.4L10 3z" fill="currentColor" />
-                              </svg>
+                              <Icon name="pin" size={10} />
                             </span>
                           )}
                           <span className="ws-tab-name">{fileName(item.file.rel)}</span>
@@ -549,9 +545,7 @@ export function TabStrip(props: {
           aria-expanded={props.menuOpen}
           onClick={() => props.onMenu(!props.menuOpen)}
         >
-          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+          <Icon name="plus" size={14} />
         </button>
         {props.menuOpen && (
           <>
