@@ -4,7 +4,7 @@ import { createMockApi, type Api, type MergeBlock, type PrMergeInfo, type PrView
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { translate } from "@/i18n";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { PrMergeMenu } from "./PrMergeMenu";
+import { PrMergeMenu, type MergeSource } from "./PrMergeMenu";
 import { PrStore } from "./prs";
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
@@ -45,9 +45,9 @@ function api(info: PrMergeInfo, extra: Partial<Api> = {}): Api {
 }
 
 // One mount: effects run once, then every draw reads the same hook values.
-async function mount(a: Api, prs: PrStore, pr: PrView = PR) {
+async function mount(a: Api, prs: PrStore | undefined, pr: PrView = PR, source?: MergeSource) {
   hooks.values = []; hooks.cursor = 0; hooks.effects = [];
-  const draw = () => { hooks.cursor = 0; return PrMergeMenu({ api: a, worktree: OAK, pr, prs }) as ReactElement | null; };
+  const draw = () => { hooks.cursor = 0; return PrMergeMenu({ api: a, worktree: OAK, pr, prs, source }) as ReactElement | null; };
   draw();
   hooks.effects.forEach((e) => e());
   await tick();
@@ -147,4 +147,49 @@ it("shows the block named by a refusal and the host detail of a failure", async 
   f.dialog().props.onConfirm();
   await tick();
   expect(f.tree().some((n) => String(n.props.children).includes("boom"))).toBe(true);
+});
+
+const MR: PrView = { number: 12, url: "u", state: "open", title: "t", base: "main", head: "oak" };
+function source(info: PrMergeInfo, over: Partial<MergeSource> = {}): MergeSource & { merge: ReturnType<typeof vi.fn>; after: ReturnType<typeof vi.fn> } {
+  return { info: vi.fn(async () => info), merge: vi.fn(async () => {}), after: vi.fn(async () => {}), words: "mrReview", errorText: (e: unknown) => `E:${(e as { code: string }).code}`, ...over } as never;
+}
+
+it("with a source: merges through it, never touches the GitHub calls, then reloads", async () => {
+  const gh = vi.fn();
+  const a = api(INFO, { worktreePrMergeInfo: gh, worktreePrMerge: gh });
+  const src = source({ ...INFO, checksFailed: true });
+  const m = await mount(a, undefined, MR, src);
+  expect(m.dialog().props.title).toBe(en("mrReview.merge.confirm.squash", { number: 12 }));
+  expect(m.dialog().props.warning).toBe(en("mrReview.merge.warn.checks"));
+  m.dialog().props.onConfirm();
+  await tick();
+  expect(src.merge).toHaveBeenCalledTimes(1);
+  expect(src.merge).toHaveBeenCalledWith("squash", "abc123");
+  expect(src.after).toHaveBeenCalledTimes(1);
+  expect(gh).not.toHaveBeenCalled();
+  expect(m.tree().some((n) => text(n) === en("mrReview.merge.done"))).toBe(true);
+});
+
+it("with a source: a block reads from the source words, other errors from errorText", async () => {
+  const a = api(INFO);
+  const blocked = source(INFO, { merge: vi.fn(async () => Promise.reject({ code: "merge_blocked", detail: "conflicts" })) as never });
+  const m = await mount(a, undefined, MR, blocked);
+  m.dialog().props.onConfirm();
+  await tick();
+  expect(m.tree().some((n) => n.props.role === "alert" && text(n) === en("mrReview.block.conflicts"))).toBe(true);
+  const moved = source(INFO, { merge: vi.fn(async () => Promise.reject({ code: "pr_head_moved" })) as never });
+  const m2 = await mount(a, undefined, MR, moved);
+  m2.dialog().props.onConfirm();
+  await tick();
+  expect(m2.tree().some((n) => n.props.role === "alert" && text(n) === "E:pr_head_moved")).toBe(true);
+});
+
+it("with a source: a draft block disables the one primary button", async () => {
+  const a = api(INFO);
+  const m = await mount(a, undefined, MR, source({ ...INFO, block: "draft" }));
+  const all = m.tree();
+  const buttons = all.filter((n) => typeof n.type !== "string" && (n.type as any).name === "Button");
+  expect(buttons).toHaveLength(1);
+  expect(buttons[0].props.disabled).toBe(true);
+  expect(all.some((n) => n.props.children === en("mrReview.block.draft"))).toBe(true);
 });

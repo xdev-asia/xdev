@@ -6,6 +6,18 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useI18n } from "@/i18n";
 import type { PrStore } from "./prs";
 
+/** Where the merge state and the merge itself come from, when it is not GitHub. */
+export interface MergeSource {
+  info(): Promise<PrMergeInfo>;
+  merge(method: MergeMethod, headOid: string): Promise<void>;
+  /** Runs after a merge went through, to reload the review. */
+  after(): Promise<void> | void;
+  /** The i18n prefix of the strings that differ per host. */
+  words: "prReview" | "mrReview";
+  /** The message of a failed merge that is not a block. */
+  errorText(e: unknown): string;
+}
+
 /**
  * The merge control of a PR: the one primary button of the Checks tab, a menu of the methods the
  * repository allows, and a confirmation. A reason shows when GitHub will not merge yet.
@@ -14,7 +26,9 @@ export function PrMergeMenu(props: {
   api: Api;
   worktree: string;
   pr: PrView;
-  prs: PrStore;
+  /** Absent with a `source`. */
+  prs?: PrStore;
+  source?: MergeSource;
   /** Read the merge state again when this changes (the checks, for one). */
   reloadKey?: unknown;
   /** Seeds, for the tests. */
@@ -23,7 +37,8 @@ export function PrMergeMenu(props: {
   initialConfirm?: boolean;
   initialMethod?: MergeMethod;
 }): JSX.Element | null {
-  const { api, worktree, pr, prs } = props;
+  const { api, worktree, pr, prs, source } = props;
+  const words = source?.words ?? "prReview";
   const { t } = useI18n();
   const [info, setInfo] = useState<PrMergeInfo | null>(props.initialInfo ?? null);
   const [method, setMethod] = useState<MergeMethod | null>(props.initialMethod ?? null);
@@ -39,7 +54,7 @@ export function PrMergeMenu(props: {
 
   useEffect(() => {
     let live = true;
-    api.worktreePrMergeInfo(worktree, pr.number).then(
+    (source ? source.info() : api.worktreePrMergeInfo(worktree, pr.number)).then(
       (got) => {
         if (!live) return;
         setInfo(got);
@@ -54,15 +69,15 @@ export function PrMergeMenu(props: {
     return () => {
       live = false;
     };
-  }, [api, worktree, pr.number, pr.state, props.reloadKey, attempt]);
+  }, [api, worktree, pr.number, pr.state, props.reloadKey, attempt, source]);
 
   if (pr.state !== "open" && pr.state !== "draft") return null;
   if (!info && readError) {
     return (
       <div className="ws-merge">
         <p className="error-text" role="alert">
-          {t(`error.${readError.code}`)}
-          {readError.code === "gh_failed" && readError.detail ? ` ${readError.detail}` : ""}
+          {source ? source.errorText(readError) : t(`error.${readError.code}`)}
+          {!source && readError.code === "gh_failed" && readError.detail ? ` ${readError.detail}` : ""}
         </p>
         <Button type="button" variant="secondary" onClick={() => setAttempt(attempt + 1)}>
           {t("prReview.merge.retry")}
@@ -84,15 +99,19 @@ export function PrMergeMenu(props: {
     setBusy(true);
     setNote(null);
     try {
-      await api.worktreePrMerge(worktree, pr.number, current, headOid);
-      setNote({ error: false, text: t("prReview.merge.done") });
-      await prs.load(worktree, { checks: true });
+      if (source) await source.merge(current, headOid);
+      else await api.worktreePrMerge(worktree, pr.number, current, headOid);
+      setNote({ error: false, text: t(`${words}.merge.done`) });
+      if (source) await source.after();
+      else await prs?.load(worktree, { checks: true });
     } catch (e) {
       const err = toApiError(e);
       const text =
         err.code === "merge_blocked" && err.detail
-          ? t(`prReview.block.${err.detail}`)
-          : `${t(`error.${err.code}`)}${err.code === "gh_failed" && err.detail ? ` ${err.detail}` : ""}`;
+          ? t(`${words}.block.${err.detail}`)
+          : source
+            ? source.errorText(e)
+            : `${t(`error.${err.code}`)}${err.code === "gh_failed" && err.detail ? ` ${err.detail}` : ""}`;
       setNote({ error: true, text });
     } finally {
       inFlight.current = false;
@@ -125,7 +144,7 @@ export function PrMergeMenu(props: {
           </span>
         )}
       </div>
-      {block && <p className="ws-empty">{t(`prReview.block.${block}`)}</p>}
+      {block && <p className="ws-empty">{t(`${words}.block.${block}`)}</p>}
       {note && (
         <p className={note.error ? "error-text" : "ws-empty"} role={note.error ? "alert" : "status"}>
           {note.text}
@@ -133,9 +152,9 @@ export function PrMergeMenu(props: {
       )}
       <ConfirmDialog
         open={confirm}
-        title={t(`prReview.merge.confirm.${current}`, { number: pr.number })}
+        title={t(`${words}.merge.confirm.${current}`, { number: pr.number })}
         body={t(`prReview.merge.body.${current}`, { head: pr.head, base: pr.base })}
-        warning={info.checksFailed ? t("prReview.merge.warn.checks") : undefined}
+        warning={info.checksFailed ? t(`${words}.merge.warn.checks`) : undefined}
         confirmLabel={t(`prReview.merge.${current}`)}
         onConfirm={() => void merge()}
         onCancel={() => setConfirm(false)}
