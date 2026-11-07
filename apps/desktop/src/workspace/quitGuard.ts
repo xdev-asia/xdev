@@ -70,7 +70,7 @@ export async function guardClose(
 
 /**
  * The one close listener, set up once at mount: the saver is looked up when the close fires, so a
- * close before the layout restore finished (welcome screen, no repos) is still guarded.
+ * close before the layout restore finished (the empty stage, no repos) is still guarded.
  */
 export function installCloseGuard(
   win: CloseWindow | null,

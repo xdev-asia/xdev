@@ -2,7 +2,7 @@ import { BADGE_DEBOUNCE_MS } from "./notifier";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AttentionInbox, SplitHandle, Tabs, type TabsItem } from "@xdev-asia/ui";
+import { AttentionInbox, EmptyState, SplitHandle, Tabs, type TabsItem } from "@xdev-asia/ui";
 import { SETUP_PROFILE, createMockApi, type WorkerOpen, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsHost } from "@/docs/DocsHost";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
@@ -1926,20 +1926,31 @@ it("tab jump request focuses the tab", async () => {
   expect(view.of(WorktreeTabs).find(n => n.props.worktree === OAK)!.props.front).toMatchObject({ id: tab.id });
 });
 
-it("with no repo the empty main area has one primary Add project button that opens the dialog", async () => {
+it("with no repo the empty main area has one primary Add project and one Clone that open the dialog", async () => {
   const api = createMockApi({});
   vi.spyOn(api, "workspaceSidebar").mockResolvedValue([]);
   vi.spyOn(api, "workspaceList").mockResolvedValue([]);
   const view = await harness(api);
-  const empty = view.all().find(n => String(n.props.className ?? "") === "ws-center-empty")!;
+  const empty = view.of(EmptyState).find(n => String(n.props.className ?? "") === "ws-center-empty")!;
   expect(empty).toBeDefined();
-  const buttons = nodes(empty.props.children).filter(n => n.props["data-field"] === "add-project");
-  expect(buttons).toHaveLength(1);
-  expect(buttons[0].props.variant).toBe("primary");
-  expect(text(buttons[0])).toBe(en("workspace.center.add"));
+  expect(empty.props.title).toBe(en("workspace.center.title"));
+  const buttons = nodes(empty.props.actions);
+  const add = buttons.filter(n => n.props["data-field"] === "add-project");
+  const clone = buttons.filter(n => n.props["data-field"] === "clone-project");
+  expect(add).toHaveLength(1);
+  expect(add[0].props.variant).toBe("primary");
+  expect(text(add[0])).toBe(en("workspace.center.add"));
+  expect(clone).toHaveLength(1);
+  expect(clone[0].props.variant).toBeUndefined();
+  expect(clone[0].props.type).toBe("button");
+  expect(text(clone[0])).toBe(en("workspace.center.clone"));
   expect(view.of(AddProjectDialog)).toHaveLength(0);
-  buttons[0].props.onClick();
-  expect(view.of(AddProjectDialog)).toHaveLength(1);
+  add[0].props.onClick();
+  expect(view.of(AddProjectDialog)[0].props.startClone).toBeFalsy();
+  view.of(AddProjectDialog)[0].props.onCancel();
+  expect(view.of(AddProjectDialog)).toHaveLength(0);
+  clone[0].props.onClick();
+  expect(view.of(AddProjectDialog)[0].props.startClone).toBe(true);
 });
 
 it("one rail, one header and one footer in every place", async () => {

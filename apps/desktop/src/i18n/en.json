@@ -1334,6 +1334,8 @@
   "workspace.center.label": "Terminals",
   "workspace.center.none": "Add a repository to see its worktrees here.",
   "workspace.center.add": "Add project",
+  "workspace.center.title": "No project open",
+  "workspace.center.clone": "Clone",
   "workspace.panel.label": "Side panel",
   "workspace.panel.changes": "Changes",
   "workspace.panel.files": "Files",

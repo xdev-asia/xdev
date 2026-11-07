@@ -5,7 +5,7 @@ import { fileTabRel } from "@/files/fileTabs";
 import { onOpenFile, openFile as requestOpenFile } from "@/files/openFile";
 import { SearchPanel } from "@/search/SearchPanel";
 import { ReviewPanel } from "./ReviewPanel";
-import { Button } from "@xdev-asia/ui";
+import { Button, EmptyState } from "@xdev-asia/ui";
 import { ChecksPanel } from "./ChecksPanel";
 import { PortsPanel } from "@/ports/PortsPanel";
 import type { PortsStore } from "@/ports/portsStore";
@@ -80,7 +80,7 @@ export function WorkspaceStage(p: {
   openCommit: (worktree: string, id: string, file: string | null) => void;
   newTerminalIn: (wt: WorktreeView, dir?: string) => Promise<void>;
 }): JSX.Element {
-  const { addRepo } = p.repo;
+  const { addRepo, cloneRepo } = p.repo;
   const { cardFor, cards, dropCard, openTabsFor, runSetup } = p.setup;
   const { fixCheck, fixChecks, fixNote, fixWithAgent, resolveConflicts, sendComments } = p.fix;
   const { focusSearch, issuesGit, issuesPinned, panelTab, panelWidth, prPage, registerChanges, resizePanel, rightOpen, searchFocus, setChangeCount, setChangeList, setPanelTab } = p.panels;
@@ -163,12 +163,23 @@ export function WorkspaceStage(p: {
                 />
               )}
               {!current && repos && (
-                <div className="ws-center-empty">
-                  <p>{t("workspace.center.none")}</p>
-                  <Button type="button" variant="primary" data-field="add-project" onClick={addRepo}>
-                    {t("workspace.center.add")}
-                  </Button>
-                </div>
+                <EmptyState
+                  className="ws-center-empty"
+                  size="center"
+                  icon="folder-plus"
+                  title={t("workspace.center.title")}
+                  hint={t("workspace.center.none")}
+                  actions={
+                    <>
+                      <Button type="button" variant="primary" data-field="add-project" onClick={addRepo}>
+                        {t("workspace.center.add")}
+                      </Button>
+                      <Button type="button" data-field="clone-project" onClick={cloneRepo}>
+                        {t("workspace.center.clone")}
+                      </Button>
+                    </>
+                  }
+                />
               )}
               {fixNote && (
                 <p className="error-text ws-notice" role="alert">

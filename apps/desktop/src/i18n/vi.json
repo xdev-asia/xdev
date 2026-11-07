@@ -1334,6 +1334,8 @@
   "workspace.center.label": "Terminal",
   "workspace.center.none": "Thêm một repo để xem các worktree của nó ở đây.",
   "workspace.center.add": "Thêm dự án",
+  "workspace.center.title": "Chưa mở dự án nào",
+  "workspace.center.clone": "Clone",
   "workspace.panel.label": "Bảng bên phải",
   "workspace.panel.changes": "Thay đổi",
   "workspace.panel.files": "Tệp",

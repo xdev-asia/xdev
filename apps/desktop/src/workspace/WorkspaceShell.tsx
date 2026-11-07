@@ -809,8 +809,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   const repo = useShellRepoActions({ api, t, sessions, load, setNotice, setPrefs, select, show });
   const {
-    groupName, setGroupName, editing, setEditing, forgetting, setForgetting, adding, setAdding, addingRemote, setAddingRemote, scanRoot, setScanRoot,
-    forgetRepo, addRepo, addRepoFolder, addPaths, addScanned, sidebarCall, changePrefs, saveGroup, addFolder, openFolder, repoCloned, projectCreated, pin, adopt,
+    groupName, setGroupName, editing, setEditing, forgetting, setForgetting, adding, setAdding, addingRemote, setAddingRemote, addingClone, setAddingClone, scanRoot, setScanRoot,
+    forgetRepo, addRepo, cloneRepo, addRepoFolder, addPaths, addScanned, sidebarCall, changePrefs, saveGroup, addFolder, openFolder, repoCloned, projectCreated, pin, adopt,
     setDetails, saveDetails,
   } = repo;
 
