@@ -6331,5 +6331,8 @@
   "vault.steps.work": "Sửa cùng các agent; mọi thay đổi hiện trong mục Thay đổi",
   "vault.steps.approve": "Duyệt thay đổi để lưu vào lịch sử của thư mục",
   "vault.steps.done": "Xong",
-  "vault.steps.step": "Bước {current} trên {total}"
+  "vault.steps.step": "Bước {current} trên {total}",
+  "settings.terminal.interaction.tuiScroll": "Tốc độ cuộn trong ứng dụng toàn màn hình",
+  "settings.terminal.interaction.tuiScrollHint": "Số bước cuộn gửi cho chương trình toàn màn hình như vim hoặc less. 1 là mặc định.",
+  "settings.terminal.interaction.scrollReset": "Đặt lại"
 }

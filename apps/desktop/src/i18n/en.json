@@ -6331,5 +6331,8 @@
   "vault.steps.work": "Edit with your agents; every edit shows under Changes",
   "vault.steps.approve": "Approve changes to save them to the folder's history",
   "vault.steps.done": "Done",
-  "vault.steps.step": "Step {current} of {total}"
+  "vault.steps.step": "Step {current} of {total}",
+  "settings.terminal.interaction.tuiScroll": "TUI scroll speed",
+  "settings.terminal.interaction.tuiScrollHint": "Wheel steps sent to full-screen programs such as vim or less. 1 keeps the default.",
+  "settings.terminal.interaction.scrollReset": "Reset"
 }

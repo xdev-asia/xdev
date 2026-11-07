@@ -142,6 +142,8 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.minimumContrast", "settings.terminal.render.contrast", ["contrast", "readable", "accessibility", "tương phản", "tuong phan", "màu", "mau"], "settings.terminal.render.contrastHint"),
   e("terminal.scrollSensitivity", "settings.terminal.interaction.scroll", ["scroll", "speed", "wheel", "cuộn", "cuon", "tốc độ", "toc do"]),
   e("terminal.fastScrollSensitivity", "settings.terminal.interaction.fastScroll", ["scroll", "fast", "alt", "speed", "cuộn", "cuon", "nhanh"]),
+  e("terminal.tuiScrollSensitivity", "settings.terminal.interaction.tuiScroll", ["tui", "vim", "less", "wheel", "mouse", "cuộn", "cuon"], "settings.terminal.interaction.tuiScrollHint"),
+  e("terminal.scrollReset", "settings.terminal.interaction.scrollReset", ["reset", "scroll", "đặt lại", "dat lai"]),
   only(["linux"], e("terminal.middleClickPaste", "settings.terminal.interaction.middleClickPaste", ["middle", "click", "paste", "selection", "primary", "x11", "linux", "chuột giữa", "chuot giua", "dán", "dan", "vùng chọn", "vung chon"], "settings.terminal.interaction.middleClickPasteHint")),
   e("terminal.focusFollowsMouse", "settings.terminal.interaction.focusFollowsMouse", ["focus", "mouse", "hover", "pointer", "tiêu điểm", "tieu diem", "chuột", "chuot"], "settings.terminal.interaction.focusFollowsMouseHint"),
   e("terminal.shellIntegration", "settings.terminal.interaction.shellIntegration", ["shell", "integration", "prompt", "exit code", "osc 133", "osc 7", "bash", "zsh", "fish", "powershell", "dấu nhắc", "dau nhac", "mã thoát", "ma thoat"], "settings.terminal.interaction.shellIntegrationHint"),
