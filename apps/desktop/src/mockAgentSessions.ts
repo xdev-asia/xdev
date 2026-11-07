@@ -66,6 +66,28 @@ const ROWS: Array<(now: number) => SessionRow & { transcript: string[] }> = [
   row({ id: "a0b1c2d3-demo-0007", agent: "claude", cwd: "/demo/tmp/scratch", title: "Try a regex for log lines" }, null, null, 9 * DAY_MS, 10 * 60_000, false),
 ];
 
+/** Sessions a host mirror holds, for any host id: two in the saved project `/srv/app`, one outside it. */
+function hostRows(host: string, now: number): Array<SessionRow & { transcript: string[] }> {
+  const make = (id: string, cwd: string, title: string, ago: number, resumable: boolean) => {
+    const homeId = `${host}-claude`;
+    const last = now - ago;
+    const session: AgentSession = { key: `${homeId}:${id}`, id, homeId, agent: "claude", cwd, branch: null, title, model: "claude-sonnet-5-5", first: last - 30 * 60_000, last, messages: 8 };
+    const folder = resumable ? `ssh://${host}/srv/app` : null;
+    return { session, worktree: folder, repo: folder, resumable, transcript: [] };
+  };
+  return [
+    make("5f0c1e2a-host-0001", "/srv/app", "Fix the deploy script on the host", 2 * HOUR_MS, true),
+    make("6a1d2f3b-host-0002", "/srv/app/api", "Add a health endpoint", DAY_MS, true),
+    make("7b2e3a4c-host-0003", "/srv/tmp", "Try a cron line", 2 * DAY_MS, false),
+  ];
+}
+
+/** The host a query reads: an `ssh://` worktree or repo scope names it, scope `all` takes `query.host`. */
+function hostOf(query: SessionQuery): string | undefined {
+  if (query.scope.kind === "all") return query.host ?? undefined;
+  return /^ssh:\/\/([A-Za-z0-9_-]+)\//.exec(query.scope.path)?.[1];
+}
+
 const inside = (path: string | null | undefined, root: string) => !!path && (path === root || path.startsWith(`${root}/`));
 
 const regexEscape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -142,12 +164,15 @@ export function createMockAgentSessions(consent: SearchConsent, now: () => numbe
       const scope = query.scope;
       const searching = (await consent.agentsSettings()).sessionSearch;
       const found = new Map<string, string>();
-      const rows = live().filter((r) => {
-        if (scope.kind === "worktree" && !inside(r.session.cwd, scope.path)) return false;
+      const host = hostOf(query);
+      const remote = (path: string) => (host === undefined ? path : path.replace(`ssh://${host}`, ""));
+      const source = host === undefined ? live() : hostRows(host, now()).filter((r) => !deleted.has(r.session.key));
+      const rows = source.filter((r) => {
+        if (scope.kind === "worktree" && !inside(r.session.cwd, remote(scope.path))) return false;
         if (scope.kind === "repo" && r.repo !== scope.path) return false;
         if (query.agent && r.session.agent !== query.agent) return false;
         if (query.homeId && r.session.homeId !== query.homeId) return false;
-        const hit = searching ? hitOf(r.transcript, words) : undefined;
+        const hit = searching && host === undefined ? hitOf(r.transcript, words) : undefined;
         if (hit) found.set(r.session.key, hit);
         return hit !== undefined || matches(r, words);
       });

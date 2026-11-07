@@ -303,6 +303,7 @@ export type {
   SetupDecision,
   WorkspaceMode,
 } from "@xdev/bindings";
+import type { HostHistoryStatus, HostScopeEntry, HostSettings, HostSettingsView } from "@xdev/bindings";
 import type { TaskSource, TrackerConnect, TrackerKind, TrackerList, TrackerPulls, TrackersView } from "@xdev/bindings";
 import type {
   AgentSession,
@@ -352,6 +353,7 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 import type { DeployPreset, TargetsView, VpsTarget } from "@xdev/bindings";
 export type { DeployPreset, TargetsView, VpsTarget };
+export type { HostHistoryStatus, HostScopeEntry, HostSettings, HostSettingsView };
 import type { SimDevice, SimLaunch, SimList, SimPlatform, SimRef, SimState } from "@xdev/bindings";
 export type { SimDevice, SimLaunch, SimList, SimPlatform, SimRef, SimState };
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";
@@ -1845,6 +1847,15 @@ export interface Api {
   sshHostsList(): Promise<SshHost[]>;
   sshHostSave(host: SshHost): Promise<SshHost>;
   sshHostRemove(id: string): Promise<void>;
+  // Per-host settings. The scope list is Local first (`id` "local"), then each saved host. `hostSettingsPut`
+  // replaces the host's overrides (an empty value inherits) and returns the new view; turning history off
+  // deletes the host's mirror. Rejects `not_found` (unknown host), `bad_name` (label), `bad_path` (shell,
+  // claudeHome, codexHome), `bad_env`, `bad_arg` (days). `hostHistorySync` mirrors the agent logs now;
+  // without a live connection it answers the last status with `error.code` `remote_offline`.
+  hostScopesList(): Promise<HostScopeEntry[]>;
+  hostSettingsGet(hostId: string): Promise<HostSettingsView>;
+  hostSettingsPut(hostId: string, settings: HostSettings): Promise<HostSettingsView>;
+  hostHistorySync(hostId: string): Promise<HostHistoryStatus>;
   // Returns how many were removed.
   sshHostsRemoveMany(ids: string[]): Promise<number>;
   // Re-reads ~/.ssh/config: adds new aliases and updates the synced ones; manual hosts are never touched.
@@ -3062,6 +3073,10 @@ const tauriApi: Api = {
   sshHostsList: () => call("ssh_hosts_list"),
   sshHostSave: (host) => call("ssh_host_save", { host }),
   sshHostRemove: (id) => call("ssh_host_remove", { id }),
+  hostScopesList: () => call("host_scopes_list"),
+  hostSettingsGet: (hostId) => call("host_settings_get", { hostId }),
+  hostSettingsPut: (hostId, settings) => call("host_settings_put", { hostId, settings }),
+  hostHistorySync: (hostId) => call("host_history_sync", { hostId }),
   sshHostsRemoveMany: (ids) => call("ssh_hosts_remove_many", { ids }),
   sshConfigSync: () => call("ssh_config_sync"),
   sshHostTest: (id) => call("ssh_host_test", { id }),

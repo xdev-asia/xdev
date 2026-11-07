@@ -22,6 +22,7 @@ import { extractTitle, parseFrontmatter } from "./doc/frontmatter";
 import { createResolver, parseLinks } from "./doc/links";
 import { estimateTokens, type ExportDoc, planExport } from "./mockExport";
 import { createMockAgentSessions } from "./mockAgentSessions";
+import { createMockHosts } from "./mockHosts";
 import { createMockPaneChrome, type MockPaneChrome } from "./notes/mockNotes";
 import { createMockQuickCommands } from "./mockQuickCommands";
 import { createMockTerminalSets } from "./mockTerminalSets";
@@ -1055,6 +1056,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...accountRouting,
     // Last: an `ssh://` worktree's file calls go to the remote mock, every other one to the workspace's.
     ...createMockRemoteSsh(workspace, () => api.sshHostsList()),
+    ...createMockHosts(() => api.sshHostsList(), { connected: async () => new Set((await api.remoteHostsState()).filter((h) => h.conn.state === "connected").map((h) => h.hostId)) }),
     __spawnRemoteHosts: () => ({ ...remoteHosts }),
     __clipboardImage: (path) => setMockClipboardImage(path),
   };
