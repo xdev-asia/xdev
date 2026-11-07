@@ -6322,5 +6322,11 @@
   "automations.timeline.running": "Đang chạy",
   "automations.timeline.done": "Xong",
   "automations.timeline.failed": "Lỗi",
-  "automations.timeline.skipped": "Bỏ qua"
+  "automations.timeline.skipped": "Bỏ qua",
+  "vault.steps.title": "Cách hoạt động",
+  "vault.steps.open": "Mở hoặc tạo một thư mục chứa tệp Markdown",
+  "vault.steps.work": "Sửa cùng các agent; mọi thay đổi hiện trong mục Thay đổi",
+  "vault.steps.approve": "Duyệt thay đổi để lưu vào lịch sử của thư mục",
+  "vault.steps.done": "Xong",
+  "vault.steps.step": "Bước {current} trên {total}"
 }

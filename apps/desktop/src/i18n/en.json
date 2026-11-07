@@ -6322,5 +6322,11 @@
   "automations.timeline.running": "Running",
   "automations.timeline.done": "Done",
   "automations.timeline.failed": "Failed",
-  "automations.timeline.skipped": "Skipped"
+  "automations.timeline.skipped": "Skipped",
+  "vault.steps.title": "How it works",
+  "vault.steps.open": "Open or create a folder of Markdown files",
+  "vault.steps.work": "Edit with your agents; every edit shows under Changes",
+  "vault.steps.approve": "Approve changes to save them to the folder's history",
+  "vault.steps.done": "Done",
+  "vault.steps.step": "Step {current} of {total}"
 }
