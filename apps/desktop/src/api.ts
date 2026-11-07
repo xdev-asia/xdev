@@ -346,6 +346,7 @@ import type {
 } from "@xdev/bindings";
 import type { Target } from "./doc/frontmatter";
 import type { LayoutSnapshot } from "./workspace/layoutSnapshot";
+import type { FloatingSnapshot } from "./floating/floatingSnapshot";
 import { toBytes } from "./terminal/ptyClient";
 import type { AttributionChanged, AttributionEvent, FileAttribution, FileVersion, LineAttribution } from "@xdev/bindings";
 import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT, DEMO_SEED } from "./mockApi";
@@ -1882,6 +1883,11 @@ export interface Api {
   // Replaces the saved layout. Rejects with `bad_arg` when `version` is not `LAYOUT_VERSION` and
   // `too_large` past 1 MiB.
   layoutSave(snapshot: LayoutSnapshot): Promise<void>;
+  // The floating workspace saved for the next start (`<data_dir>/floating.json`); null when none is
+  // saved or the file does not parse (kept as `floating.json.bad`). Parse the value before use.
+  floatingLoad(): Promise<unknown | null>;
+  // Replaces it. Rejects with `bad_arg` when `version` is not `FLOATING_VERSION`, `too_large` past 3 MiB.
+  floatingSave(snapshot: FloatingSnapshot): Promise<void>;
   // The app CLI (`xdev status | worktree | terminal`). The UI owns the tab states: it reports every
   // tab (and the worktree in front) when they change, and `xdev terminal wait` reads them.
   cliTabsReport(tabs: TabReport[], selected: string | null): Promise<void>;
@@ -3082,6 +3088,8 @@ const tauriApi: Api = {
   usageSettingsPut: (settings) => call("usage_settings_put", { settings }),
   layoutLoad: () => call("layout_load"),
   layoutSave: (snapshot) => call("layout_save", { snapshot }),
+  floatingLoad: () => call("floating_load"),
+  floatingSave: (snapshot) => call("floating_save", { snapshot }),
   cliTabsReport: (tabs, selected) => call("cli_tabs_report", { tabs, selected }),
   cliApprove: (request, allow) => call("cli_approve", { request, allow }),
   onWorkspaceChanged: (cb) => listen("workspace://changed", () => cb()),
