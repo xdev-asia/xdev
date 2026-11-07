@@ -6353,5 +6353,12 @@
   "settings.terminal.advanced.powershellHint": "Áp dụng cho terminal mở sau khi đổi.",
   "settings.terminal.advanced.powershellMissing": "Chưa cài đặt",
   "settings.terminal.advanced.powershellDownload": "Tải PowerShell 7+",
-  "error.too_many_terminals": "Có quá nhiều terminal đang chạy. Hãy đóng bớt, hoặc tăng giới hạn trong Cài đặt > Terminal > Nâng cao."
+  "error.too_many_terminals": "Có quá nhiều terminal đang chạy. Hãy đóng bớt, hoặc tăng giới hạn trong Cài đặt > Terminal > Nâng cao.",
+  "keys.page.fileMenu": "Tệp phím tắt",
+  "keys.page.openDefault": "Mở bằng ứng dụng mặc định",
+  "keys.page.openVsCode": "Mở trong VS Code",
+  "keys.page.openCursor": "Mở trong Cursor",
+  "keys.page.revealFile": "Hiện trong trình quản lý tệp",
+  "keys.page.reload": "Tải lại từ đĩa",
+  "keys.page.editorFailed": "Không mở được trình soạn thảo bên ngoài."
 }

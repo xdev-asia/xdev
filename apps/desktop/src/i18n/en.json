@@ -6353,5 +6353,12 @@
   "settings.terminal.advanced.powershellHint": "Applies to terminals opened after the change.",
   "settings.terminal.advanced.powershellMissing": "Not installed",
   "settings.terminal.advanced.powershellDownload": "Download PowerShell 7+",
-  "error.too_many_terminals": "Too many terminals are running. Close one, or raise the limit in Settings > Terminal > Advanced."
+  "error.too_many_terminals": "Too many terminals are running. Close one, or raise the limit in Settings > Terminal > Advanced.",
+  "keys.page.fileMenu": "Keybindings file",
+  "keys.page.openDefault": "Open with default app",
+  "keys.page.openVsCode": "Open in VS Code",
+  "keys.page.openCursor": "Open in Cursor",
+  "keys.page.revealFile": "Reveal in file manager",
+  "keys.page.reload": "Reload from disk",
+  "keys.page.editorFailed": "Failed to open external editor."
 }

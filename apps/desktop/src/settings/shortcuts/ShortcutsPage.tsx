@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import type { JSX } from "react";
+import { MenuButton, type MenuEntry } from "@xdev-asia/ui";
 import { toApiError, type ApiError, type KeySettings } from "@/api";
 import { useI18n } from "@/i18n";
 import { setKeybindingsText, setKeySettings, useBindings } from "@/keys/bindingsStore";
@@ -26,6 +27,7 @@ export function ShortcutsPage(props: SettingsSectionProps): JSX.Element {
   const [editing, setEditing] = useState<ActionId | null>(null);
   const [clash, setClash] = useState<(RecorderClash & { chord: string }) | null>(null);
   const [error, setError] = useState<ApiError["code"]>();
+  const [editorFailed, setEditorFailed] = useState(false);
 
   const title = (id: ActionId) => t(`keys.action.${id}`);
   const rows = buildRows(state);
@@ -143,6 +145,23 @@ export function ShortcutsPage(props: SettingsSectionProps): JSX.Element {
     );
   }
 
+  const fail = (e: unknown) => {
+    setEditorFailed(false);
+    setError(toApiError(e).code);
+  };
+  const editorFail = () => {
+    setError(undefined);
+    setEditorFailed(true);
+  };
+  const fileMenu: MenuEntry[] = [
+    { label: t("keys.page.openDefault"), onSelect: () => void api.keybindingsOpenWith(null).catch(fail) },
+    { label: t("keys.page.openVsCode"), onSelect: () => void api.keybindingsOpenWith("code").catch(editorFail) },
+    { label: t("keys.page.openCursor"), onSelect: () => void api.keybindingsOpenWith("cursor").catch(editorFail) },
+    { type: "separator" },
+    { label: t("keys.page.revealFile"), onSelect: () => void api.keybindingsRevealFile().catch(fail) },
+    { label: t("keys.page.reload"), onSelect: () => void api.keybindingsRead().then((r) => setKeybindingsText(r.text, r.path), fail) },
+  ];
+
   return (
     <div className="settings-page keys-page">
       <header className="settings-head">
@@ -156,8 +175,14 @@ export function ShortcutsPage(props: SettingsSectionProps): JSX.Element {
         <button type="button" className="btn-secondary" onClick={() => void api.keybindingsReveal().catch((e) => setError(toApiError(e).code))}>
           {t("keys.page.editFile")}
         </button>
+        <MenuButton variant="secondary" align="end" label={t("keys.page.fileMenu")} menuLabel={t("keys.page.fileMenu")} items={fileMenu} />
       </div>
 
+      {editorFailed && (
+        <p className="error-text" role="alert">
+          {t("keys.page.editorFailed")}
+        </p>
+      )}
       {error && (
         <p className="error-text" role="alert">
           {t(`error.${error}`)}

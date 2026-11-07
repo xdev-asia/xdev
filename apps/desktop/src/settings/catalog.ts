@@ -229,7 +229,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("vaults.repo", "settings.vaults.repo", ["docs", "notes", "repo", "tài liệu", "tai lieu"]),
   e("vaults.shared", "settings.vaults.shared", ["docs", "notes", "add", "forget", "folder", "tài liệu", "tai lieu", "chia sẻ", "chia se"]),
   // Shortcuts and quick commands: the page keeps its own list search, so one entry each.
-  e("keys.page", "keys.title", ["shortcut", "keybinding", "hotkey", "chord", "phím tắt", "phim tat"]),
+  e("keys.page", "keys.title", ["shortcut", "keybinding", "hotkey", "chord", "phím tắt", "phim tat", "cursor", "vs code", "reveal", "reload", "keybindings.json"]),
   e("qcmd.page", "qcmd.title", ["quick", "command", "script", "alias", "lệnh nhanh", "lenh nhanh"]),
   // Screenshots
   e("capture.enabled", "settings.capture.enabled", ["screenshot", "capture", "screen", "global", "shortcut", "region", "ảnh chụp", "anh chup", "chụp màn hình", "chup man hinh"], "settings.capture.enabledHint"),
