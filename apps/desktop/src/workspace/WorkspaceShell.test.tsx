@@ -31,6 +31,7 @@ import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { AccountSwitchDialog } from "./AccountSwitchDialog";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { WorkspaceShell } from "./WorkspaceShell";
+import { railPlaces } from "@/shell/places";
 import { PlaceStage } from "./PlaceStage";
 import { requestTabJump } from "./tabJump";
 import { WorktreeChanges } from "./WorktreeChanges";
@@ -1955,4 +1956,25 @@ it("with no repo the empty main area has one primary Add project button that ope
   expect(view.of(AddProjectDialog)).toHaveLength(0);
   buttons[0].props.onClick();
   expect(view.of(AddProjectDialog)).toHaveLength(1);
+});
+
+it("one rail, one header and one footer in every place", async () => {
+  const label = { workspace: "workspace.nav.workspace", docs: "workspace.nav.docs", tasks: "apps.tasks", squads: "apps.squads", kit: "apps.kit", accounts: "apps.accounts", automations: "workspace.nav.automations" } as const;
+  const view = await harness();
+  const places = railPlaces([], [], true);
+  expect(places).toEqual(["workspace", "docs", "tasks", "squads", "kit", "accounts", "automations"]);
+  for (const place of places) {
+    view.nav(en(label[place as keyof typeof label])).props.onClick();
+    if (place === "docs") view.of(DocsHost)[0].props.onStatus(STATUS);
+    const all = view.all();
+    // The shell frame is the one rail, the one header and the one footer.
+    expect(all.filter(n => n.type === ShellFrame), place).toHaveLength(1);
+    expect(all.filter(n => n.type === HeaderSearch), place).toHaveLength(1);
+    const footers = all.filter(n => n.type === LiveWorkspaceFooter);
+    expect(footers, place).toHaveLength(1);
+    expect(footers[0].props.hidden, place).toBeFalsy();
+    const classes = all.map(n => String(n.props.className ?? "").split(" ")).flat();
+    for (const gone of ["topbar", "statusbar", "activitybar"]) expect(classes, place).not.toContain(gone);
+    expect(Boolean(footers[0].props.docs), place).toBe(place === "docs");
+  }
 });
