@@ -161,6 +161,21 @@ it("a query in the nav search shows the hits instead of the doc list", async () 
   expect(h.of(SearchPanel)).toHaveLength(1);
 });
 
+it("escape clears the query first and closes the drawer second", async () => {
+  const h = await host();
+  const key = (stop: () => void) => ({ key: "Escape", stopPropagation: stop, preventDefault() {} });
+  h.of(DocsNav)[0].props.search.onQuery("a");
+  await h.settle();
+  const stopped = vi.fn();
+  h.of(DocsNav)[0].props.search.onKey(key(stopped));
+  await h.settle();
+  expect(stopped).toHaveBeenCalledTimes(1);
+  expect(h.of(DocsNav)[0].props.search.query).toBe("");
+  const second = vi.fn();
+  h.of(DocsNav)[0].props.search.onKey(key(second));
+  expect(second).not.toHaveBeenCalled();
+});
+
 it("a request for the changes section shows the changes list", async () => {
   const h = await host();
   h.props.request = { seq: 1, section: "changes" };

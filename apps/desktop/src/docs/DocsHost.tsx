@@ -357,7 +357,9 @@ export function VaultView(props: VaultViewProps): JSX.Element {
     } else if (e.key === "Enter" && hits[active]) {
       e.preventDefault();
       openDoc(hits[active].path);
-    } else if (e.key === "Escape") {
+    } else if (e.key === "Escape" && query !== "") {
+      // The first Escape clears the query; the drawer only closes on the next.
+      e.stopPropagation();
       setQuery("");
     }
   }

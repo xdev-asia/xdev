@@ -198,6 +198,11 @@ import { startQuickCommands } from "@/quickCommands/store";
 
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
+// Below the shell's collapse width the side list is a drawer.
+function isNarrow(): boolean {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 767.98px)").matches;
+}
+
 export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
@@ -721,7 +726,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       show("workspace");
       openSessionsPanel(null);
     },
-    "search.open": () => openSearch(),
+    "search.open": () => openSearch(isNarrow(), () => setNavOpen(true)),
     "quickOpen.open": () => {
       if (!current) {
         pushToast({ text: t("quickOpen.noWorktree") });
@@ -935,7 +940,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           </Fragment>
         ))}
         <div className="ws-header-center">
-          <HeaderSearch onOpen={openSearch} onJump={() => setJumpOpen(true)} />
+          <HeaderSearch onOpen={() => openSearch(isNarrow(), () => setNavOpen(true))} onJump={() => setJumpOpen(true)} />
         </div>
         </div>
       }
