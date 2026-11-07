@@ -47,6 +47,9 @@ pub struct AgentSpec {
     /// Model names known to work with the agent's model flag; the launch
     /// options offer them next to free text. Empty when none is known.
     pub models: &'static [&'static str],
+    /// The npm package `npm install -g` installs, when the row's docs page
+    /// shows that command. `None` keeps the docs link only.
+    pub npm: Option<&'static str>,
 }
 
 const fn row(
@@ -68,6 +71,7 @@ const fn row(
         docs_url,
         trust: None,
         models: &[],
+        npm: None,
     }
 }
 
@@ -97,6 +101,8 @@ static SPECS: [AgentSpec; 20] = [
             "on-request",
         ],
         trust: Some(TrustKind::Codex),
+        // Checked against https://github.com/openai/codex: it shows `npm install -g @openai/codex`.
+        npm: Some("@openai/codex"),
         ..row(
             Cli::Codex,
             "Codex",
@@ -109,6 +115,8 @@ static SPECS: [AgentSpec; 20] = [
         skip: &["--approval-mode", "yolo"],
         accept_edits: &["--approval-mode", "auto_edit"],
         models: &["gemini-2.5-pro", "gemini-2.5-flash"],
+        // Checked against https://github.com/google-gemini/gemini-cli: it shows `npm install -g @google/gemini-cli`.
+        npm: Some("@google/gemini-cli"),
         ..row(
             Cli::Gemini,
             "Gemini CLI",
@@ -131,6 +139,8 @@ static SPECS: [AgentSpec; 20] = [
     AgentSpec {
         skip: &["--yolo"],
         trust: Some(TrustKind::Copilot),
+        // Checked against the Copilot install docs page: it shows `npm install -g @github/copilot`.
+        npm: Some("@github/copilot"),
         ..row(
             Cli::Copilot,
             "GitHub Copilot",
@@ -168,6 +178,8 @@ static SPECS: [AgentSpec; 20] = [
     },
     AgentSpec {
         skip: &["--approval-mode", "yolo"],
+        // Checked against https://github.com/QwenLM/qwen-code: it shows `npm install -g @qwen-code/qwen-code`.
+        npm: Some("@qwen-code/qwen-code"),
         ..row(
             Cli::QwenCode,
             "Qwen Code",
@@ -307,6 +319,17 @@ pub fn spec(cli: Cli) -> &'static AgentSpec {
         .iter()
         .find(|s| s.cli == cli)
         .expect("every Cli has a row")
+}
+
+/// `["install", "-g", pkg]`, or None when the row has no npm package.
+pub fn install_args(cli: Cli) -> Option<Vec<String>> {
+    let pkg = spec(cli).npm?;
+    Some(vec!["install".into(), "-g".into(), pkg.into()])
+}
+
+/// What the UI shows: `npm install -g <pkg>`.
+pub fn install_line(cli: Cli) -> Option<String> {
+    Some(format!("npm install -g {}", spec(cli).npm?))
 }
 
 /// The modes the agent offers: `Ask` (its own settings) always, the others
@@ -537,5 +560,48 @@ mod tests {
         }
         assert_eq!(Cli::ALL[12], Cli::Goose, "existing order is kept");
         assert_eq!(Cli::of_id("nope"), None);
+    }
+
+    #[test]
+    fn npm_packages_are_safe_names() {
+        for c in Cli::ALL {
+            if let Some(p) = spec(c).npm {
+                let (scope, name) = match p.strip_prefix('@') {
+                    Some(rest) => {
+                        let (a, b) = rest.split_once('/').expect("scoped name has a slash");
+                        (Some(a), b)
+                    }
+                    None => (None, p),
+                };
+                let ok = |t: &str, dot: bool| {
+                    !t.is_empty()
+                        && t.chars().all(|ch| {
+                            ch.is_ascii_lowercase()
+                                || ch.is_ascii_digit()
+                                || ch == '-'
+                                || (dot && (ch == '.' || ch == '_'))
+                        })
+                };
+                assert!(scope.is_none_or(|s| ok(s, false)), "{p}");
+                assert!(ok(name, true), "{p}");
+            }
+        }
+    }
+
+    #[test]
+    fn install_args_follow_the_row() {
+        for c in Cli::ALL {
+            assert_eq!(install_args(c).is_some(), spec(c).npm.is_some());
+            assert_eq!(install_line(c).is_some(), spec(c).npm.is_some());
+            if let Some(p) = spec(c).npm {
+                assert_eq!(install_args(c).unwrap(), vec!["install", "-g", p]);
+                assert_eq!(install_line(c).unwrap(), format!("npm install -g {p}"));
+            }
+        }
+    }
+
+    #[test]
+    fn at_least_one_row_installs() {
+        assert!(Cli::ALL.iter().any(|c| spec(*c).npm.is_some()));
     }
 }
