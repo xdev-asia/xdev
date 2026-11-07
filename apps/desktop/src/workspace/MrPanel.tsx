@@ -149,7 +149,7 @@ export function MrPanel(props: {
         <EmptyState
           title={t("mrPanel.none")}
           hint={t("mrPanel.none.hint")}
-          actions={<Button type="button" onClick={() => void startCreate()}>{t("ship.mr.create")}</Button>}
+          actions={<Button variant="primary" type="button" onClick={() => void startCreate()}>{t("ship.mr.create")}</Button>}
         />
         {error && <p className="error-text" role="alert">{glabReasonText(error, t)}</p>}
         {creating && (

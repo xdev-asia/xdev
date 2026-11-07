@@ -80,7 +80,7 @@ export function CompareDialog(props: { api: Api; worktree: string; rel: string; 
       <CompareBody state={state} current={current} image={{ api, worktree, rel }} />
       <div className="dialog-actions">
         <button type="button" className="btn-secondary" autoFocus onClick={onClose}>{t("dialog.close")}</button>
-        <Button type="button" onClick={onReload}>{t("files.external.reload")}</Button>
+        <Button variant="primary" type="button" onClick={onReload}>{t("files.external.reload")}</Button>
       </div>
     </dialog>
   );

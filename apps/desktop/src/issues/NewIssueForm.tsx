@@ -51,7 +51,7 @@ export function NewIssueForm(props: { api: Api; repoId: string; onCreated(issue:
         <button type="button" className="btn-secondary" disabled={busy} onClick={props.onCancel}>
           {t("dialog.cancel")}
         </button>
-        <Button type="submit" disabled={blank || busy}>
+        <Button variant="primary" type="submit" disabled={blank || busy}>
           {t("issues.new.create")}
         </Button>
       </div>

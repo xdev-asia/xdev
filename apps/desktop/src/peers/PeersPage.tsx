@@ -111,7 +111,7 @@ export function PeersPage(props: SettingsSectionProps): JSX.Element {
               <p className="settings-hint">{t("peers.firewall")}</p>
               <p className="settings-hint peers-fingerprint">{t("peers.fingerprint", { fp: state.fingerprint })}</p>
               <div>
-                <Button type="button" onClick={() => setPairing(true)}>
+                <Button variant="primary" type="button" onClick={() => setPairing(true)}>
                   {t("peers.pair")}
                 </Button>
               </div>

@@ -49,7 +49,7 @@ export function QuitDialog(props: { ask: QuitAsk; onChoose(choice: QuitChoice): 
           {t("ptyd.quit.end")}
         </button>
         {/* Keep running is the safe answer: focused, so Enter never ends an agent. */}
-        <Button type="button" autoFocus onClick={() => onChoose("keep")}>
+        <Button variant="primary" type="button" autoFocus onClick={() => onChoose("keep")}>
           {t("ptyd.quit.keep")}
         </Button>
       </div>

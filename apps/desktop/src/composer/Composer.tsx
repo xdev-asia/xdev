@@ -450,7 +450,7 @@ export function Composer(props: {
                 {t("composer.schedule.open")}
               </Button>
             )}
-            <Button type="button" icon="send" disabled={!canSend} onClick={send}>
+            <Button variant="primary" type="button" icon="send" disabled={!canSend} onClick={send}>
               {many ? t("composer.sendMany", { count: targets.length }) : t("composer.send")}
             </Button>
           </div>

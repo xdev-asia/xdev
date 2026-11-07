@@ -234,7 +234,7 @@ export function SkillsTab(props: { api: Api; worktree: string | null }): JSX.Ele
           ))}
         </select>
         <span className="kit-spacer" />
-        <Button type="button" disabled={targets.length === 0} title={targets.length === 0 ? t("kit.skills.noTarget") : undefined} onClick={startAdd}>
+        <Button variant="primary" type="button" disabled={targets.length === 0} title={targets.length === 0 ? t("kit.skills.noTarget") : undefined} onClick={startAdd}>
           {t("kit.skills.new")}
         </Button>
       </div>
@@ -258,7 +258,7 @@ export function SkillsTab(props: { api: Api; worktree: string | null }): JSX.Ele
             </select>
           </label>
           <div className="kit-bar-row">
-            <Button type="submit" disabled={busy}>{t("kit.skills.create")}</Button>
+            <Button variant="primary" type="submit" disabled={busy}>{t("kit.skills.create")}</Button>
             <button type="button" className="btn-secondary" onClick={() => setAdding(null)}>{t("dialog.cancel")}</button>
           </div>
         </form>
@@ -273,7 +273,7 @@ export function SkillsTab(props: { api: Api; worktree: string | null }): JSX.Ele
             </select>
           </label>
           <div className="kit-bar-row">
-            <Button type="submit" disabled={busy || copying.target === ""}>{t("kit.skills.copyGo")}</Button>
+            <Button variant="primary" type="submit" disabled={busy || copying.target === ""}>{t("kit.skills.copyGo")}</Button>
             <button type="button" className="btn-secondary" onClick={() => setCopying(null)}>{t("dialog.cancel")}</button>
           </div>
         </form>

@@ -9,7 +9,7 @@ export function LoadError(props: { code: string; onRetry: () => void; onReveal?:
     <div className="file-note" role="alert">
       <p className="ws-empty">{t("files.loadError.title")}</p>
       <p className="file-note-body">{t(`error.${props.code}`)}</p>
-      <Button type="button" onClick={props.onRetry}>{t("files.retry")}</Button>
+      <Button variant="primary" type="button" onClick={props.onRetry}>{t("files.retry")}</Button>
       {props.onReveal && (
         <button type="button" className="btn-secondary" onClick={props.onReveal}>
           {t("files.menu.reveal")}

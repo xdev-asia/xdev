@@ -311,7 +311,7 @@ export function MemoryTab(props: {
               <span className="kit-cut kit-path" title={displayPath(open.path)}>{displayPath(open.path)}</span>
               {dirty && <span className="kit-chip">{t("kit.memory.dirty")}</span>}
               <span className="kit-spacer" />
-              <Button type="button" disabled={!dirty} onClick={() => void save()}>{t("kit.memory.save")}</Button>
+              <Button variant="primary" type="button" disabled={!dirty} onClick={() => void save()}>{t("kit.memory.save")}</Button>
               <button
                 type="button"
                 className="btn-secondary"
@@ -376,7 +376,7 @@ export function MemoryTab(props: {
                 {pending === 0 && <p className="kit-empty">{t("kit.memory.copyNothing")}</p>}
                 <div className="kit-bar-row">
                   {pending > 0 && (
-                    <Button type="button" disabled={busy} onClick={() => void confirmCopy()}>
+                    <Button variant="primary" type="button" disabled={busy} onClick={() => void confirmCopy()}>
                       {t("kit.memory.copyGo", { count: pending })}
                     </Button>
                   )}

@@ -59,7 +59,7 @@ export function VisibilityDialog(props: {
         <Button variant="secondary" disabled={props.rows.every((r) => r.visible)} onClick={props.onRestoreAll}>
           {t("visibility.restoreAll")}
         </Button>
-        <Button autoFocus onClick={props.onClose}>
+        <Button variant="primary" autoFocus onClick={props.onClose}>
           {t("dialog.close")}
         </Button>
       </div>

@@ -122,7 +122,7 @@ export function PrMergeMenu(props: {
   return (
     <div className="ws-merge">
       <div className="ws-merge-split">
-        <Button type="button" disabled={busy || block !== null} onClick={() => setConfirm(true)}>
+        <Button variant="primary" type="button" disabled={busy || block !== null} onClick={() => setConfirm(true)}>
           {t(busy ? "prReview.merge.busy" : `prReview.merge.${current}`)}
         </Button>
         {info.methods.length > 1 && (

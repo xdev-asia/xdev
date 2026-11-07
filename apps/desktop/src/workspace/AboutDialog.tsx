@@ -71,7 +71,7 @@ export function AboutDialog(props: {
         <button type="button" className="btn-secondary" onClick={() => props.onLink("source")}>
           {t("shell.help.source")}
         </button>
-        <Button type="button" autoFocus onClick={props.onClose}>
+        <Button variant="primary" type="button" autoFocus onClick={props.onClose}>
           {t("shell.help.close")}
         </Button>
       </div>

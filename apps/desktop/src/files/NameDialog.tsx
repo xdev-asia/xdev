@@ -57,7 +57,7 @@ export function NameDialog(props: {
       <p className="dialog-warn" role="alert">{message}</p>
       <div className="dialog-actions">
         <button type="button" className="btn-secondary" onClick={props.onCancel}>{t("files.cancel")}</button>
-        <Button type="button" onClick={submit}>{props.confirmLabel}</Button>
+        <Button variant="primary" type="button" onClick={submit}>{props.confirmLabel}</Button>
       </div>
     </dialog>
   );

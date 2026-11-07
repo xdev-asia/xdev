@@ -50,7 +50,7 @@ export function UpdateCard(props: { update: Update | null; onRestart(): void; nu
         </Disclosure>
       )}
       <div className="ws-update-card-actions">
-        <Button type="button" data-act="update-restart" disabled={busy} onClick={props.onRestart}>
+        <Button variant="primary" type="button" data-act="update-restart" disabled={busy} onClick={props.onRestart}>
           {busy ? t("status.updating") : t("update.card.restart")}
         </Button>
         <Button type="button" variant="secondary" data-act="update-remind" onClick={() => putAway(remindLater(update.version, now(), loadRemindDays(store)))}>

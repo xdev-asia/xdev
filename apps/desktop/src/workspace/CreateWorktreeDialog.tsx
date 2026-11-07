@@ -502,7 +502,7 @@ export function CreateWorktreeDialog(props: {
           <button type="button" className="btn-secondary" onClick={props.onCancel}>
             {t("dialog.cancel")}
           </button>
-          <Button type="submit" disabled={!repo || picking || badItem || badSparse || needsBranch || (ref && !issue)}>
+          <Button variant="primary" type="submit" disabled={!repo || picking || badItem || badSparse || needsBranch || (ref && !issue)}>
             {t("workspace.create.confirm")}
           </Button>
         </div>

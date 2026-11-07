@@ -189,7 +189,7 @@ export function QuickCommandDialog(props: {
           <button type="button" className="btn-secondary" onClick={props.onCancel}>
             {t("dialog.cancel")}
           </button>
-          <Button type="submit" disabled={busy || !canSave(draft)}>
+          <Button variant="primary" type="submit" disabled={busy || !canSave(draft)}>
             {t("qcmd.dialog.save")}
           </Button>
         </div>

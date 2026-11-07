@@ -151,7 +151,7 @@ export function CreatePrDialog(props: {
           <button type="button" className="btn-secondary" disabled={busy} onClick={props.onClose}>
             {t("dialog.cancel")}
           </button>
-          <Button type="submit" disabled={blocked}>
+          <Button variant="primary" type="submit" disabled={blocked}>
             {busy ? t(words.creating) : t(words.create)}
           </Button>
         </div>

@@ -102,7 +102,7 @@ export function PromptsTab(props: {
           />
         </label>
         <div className="kit-bar-row">
-          <Button
+          <Button variant="primary"
             type="button"
             disabled={text.trim() === "" || !canSend}
             title={canSend ? undefined : t("kit.prompt.noActive")}

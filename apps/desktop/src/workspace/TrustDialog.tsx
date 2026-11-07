@@ -76,7 +76,7 @@ export function TrustDialog(props: {
         <button type="button" className="btn-secondary" autoFocus onClick={props.onCancel}>
           {t("dialog.cancel")}
         </button>
-        <Button type="button" disabled={props.busy} onClick={props.onTrust}>
+        <Button variant="primary" type="button" disabled={props.busy} onClick={props.onTrust}>
           {props.kind === "commands" ? t("qcmd.trust.confirm") : props.kind === "lists" ? t("repoFile.trust.confirm") : t("setup.trust.confirm")}
         </Button>
       </div>

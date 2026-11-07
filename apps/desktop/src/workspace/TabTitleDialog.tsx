@@ -55,7 +55,7 @@ export function TabTitleDialog(props: { title: string; onSave(title: string | nu
           <button type="button" className="btn-secondary" onClick={props.onCancel}>
             {t("tabMenu.title.cancel")}
           </button>
-          <Button type="submit">{t("tabMenu.title.save")}</Button>
+          <Button variant="primary" type="submit">{t("tabMenu.title.save")}</Button>
         </div>
       </form>
     </dialog>

@@ -107,7 +107,7 @@ export function EditPrDialog(props: {
           <Button type="button" variant="secondary" disabled={busy} onClick={props.onClose}>
             {t("dialog.cancel")}
           </Button>
-          <Button type="submit" disabled={blocked}>
+          <Button variant="primary" type="submit" disabled={blocked}>
             {busy ? t("prPanel.edit.saving") : t("prPanel.edit.save")}
           </Button>
         </div>

@@ -115,7 +115,7 @@ export function RenameBranchDialog(props: {
           <button type="button" className="btn-secondary" disabled={busy} onClick={props.onClose}>
             {t("dialog.cancel")}
           </button>
-          <Button type="submit" disabled={blocked}>
+          <Button variant="primary" type="submit" disabled={blocked}>
             {busy ? t("branchRename.renaming") : t("branchRename.rename")}
           </Button>
         </div>

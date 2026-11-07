@@ -151,7 +151,7 @@ export function AgentContext(props: {
               )}
             </section>
             <div className="agentctx-write">
-              <Button
+              <Button variant="primary"
                 type="button"
                 className="changes-approve-all agentctx-write-btn"
                 style={COMPACT}

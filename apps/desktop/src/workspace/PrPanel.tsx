@@ -166,7 +166,7 @@ export function PrPanel(props: {
         <EmptyState
           title={t("prPanel.none")}
           hint={t("prPanel.none.hint")}
-          actions={<Button type="button" onClick={() => void startCreate()}>{t("prPanel.create")}</Button>}
+          actions={<Button variant="primary" type="button" onClick={() => void startCreate()}>{t("prPanel.create")}</Button>}
         />
         {error && <p className="error-text" role="alert">{errorText(error, t)}</p>}
         {creating && (
