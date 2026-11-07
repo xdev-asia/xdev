@@ -6308,5 +6308,10 @@
   "squads.card.waiting": "Đang chờ bạn",
   "squads.card.error": "Lỗi",
   "squads.toLead": "Tin nhắn cho trưởng nhóm",
-  "squads.sendLead": "Gửi cho trưởng nhóm"
+  "squads.sendLead": "Gửi cho trưởng nhóm",
+  "tasks.search": "Tìm việc",
+  "tasks.view.label": "Cách xem",
+  "tasks.view.list": "Danh sách",
+  "tasks.view.board": "Bảng",
+  "tasks.card.need": "Cần bạn"
 }

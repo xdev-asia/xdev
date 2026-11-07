@@ -6308,5 +6308,10 @@
   "squads.card.waiting": "Waiting",
   "squads.card.error": "Error",
   "squads.toLead": "Message to the lead",
-  "squads.sendLead": "Send to the lead"
+  "squads.sendLead": "Send to the lead",
+  "tasks.search": "Search tasks",
+  "tasks.view.label": "View",
+  "tasks.view.list": "List",
+  "tasks.view.board": "Board",
+  "tasks.card.need": "Needs you"
 }
