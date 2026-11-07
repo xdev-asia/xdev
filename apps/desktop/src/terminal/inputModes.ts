@@ -6,6 +6,8 @@ export interface InputModes {
   kittyFlags(): number;
   /** The modifyOtherKeys level the program set. */
   modifyOtherKeys(): number;
+  /** The mouse report encoding the program chose with `CSI ? 1006 / 1015 h`; SGR wins over urxvt. */
+  mouseEncoding(): "default" | "sgr" | "urxvt";
   /** Forget everything: the program that set it is gone. */
   reset(): void;
   dispose(): void;
@@ -30,10 +32,14 @@ const num = (p: Params, i: number, fallback: number): number => {
 export function trackInputModes(term: Pick<XTerm, "parser"> & { buffer: Pick<XTerm["buffer"], "active"> & Partial<Pick<XTerm["buffer"], "onBufferChange">> }): InputModes {
   const screens: Record<string, Screen> = {};
   let mok = 0;
+  let sgr = false;
+  let urxvt = false;
   const screen = (): Screen => (screens[term.buffer.active.type] ??= { flags: 0, stack: [] });
   const clear = () => {
     for (const k of Object.keys(screens)) delete screens[k];
     mok = 0;
+    sgr = false;
+    urxvt = false;
   };
   const reset = () => {
     clear();
@@ -43,6 +49,14 @@ export function trackInputModes(term: Pick<XTerm, "parser"> & { buffer: Pick<XTe
   const bufferChange = term.buffer.onBufferChange?.((b) => {
     if (b.type === "alternate") delete screens.alternate;
   });
+
+  const setEncoding = (p: Params, on: boolean) => {
+    for (let i = 0; i < p.length; i++) {
+      const n = num(p, i, -1);
+      if (n === 1006) sgr = on;
+      else if (n === 1015) urxvt = on;
+    }
+  };
 
   const handlers = [
     term.parser.registerCsiHandler({ prefix: ">", final: "u" }, (p) => {
@@ -73,6 +87,14 @@ export function trackInputModes(term: Pick<XTerm, "parser"> & { buffer: Pick<XTe
       if (num(p, 0, -1) === 4) mok = num(p, 1, 0);
       return false;
     }),
+    term.parser.registerCsiHandler({ prefix: "?", final: "h" }, (p) => {
+      setEncoding(p, true);
+      return false;
+    }),
+    term.parser.registerCsiHandler({ prefix: "?", final: "l" }, (p) => {
+      setEncoding(p, false);
+      return false;
+    }),
     term.parser.registerCsiHandler({ intermediates: "!", final: "p" }, reset),
     term.parser.registerEscHandler({ final: "c" }, reset),
   ];
@@ -80,6 +102,7 @@ export function trackInputModes(term: Pick<XTerm, "parser"> & { buffer: Pick<XTe
   return {
     kittyFlags: () => screen().flags,
     modifyOtherKeys: () => mok,
+    mouseEncoding: () => (sgr ? "sgr" : urxvt ? "urxvt" : "default"),
     reset: clear,
     dispose: () => {
       handlers.forEach((h) => h.dispose());

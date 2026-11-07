@@ -48,6 +48,22 @@ const start = () => {
 };
 
 describe("trackInputModes", () => {
+  it("follows the mouse encoding", () => {
+    const { modes, run } = start();
+    expect(modes.mouseEncoding()).toBe("default");
+    run("?h", 1000, 1015);
+    expect(modes.mouseEncoding()).toBe("urxvt");
+    run("?h", 1006);
+    expect(modes.mouseEncoding()).toBe("sgr");
+    run("?l", 1006);
+    expect(modes.mouseEncoding()).toBe("urxvt");
+    run("?l", 1015);
+    expect(modes.mouseEncoding()).toBe("default");
+    run("?h", 1006);
+    run("!p");
+    expect(modes.mouseEncoding()).toBe("default");
+  });
+
   it("starts at zero", () => {
     const { modes } = start();
     expect(modes.kittyFlags()).toBe(0);

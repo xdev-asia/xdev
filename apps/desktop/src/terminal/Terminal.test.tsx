@@ -63,6 +63,7 @@ vi.mock("@xterm/xterm", () => ({
     attachCustomKeyEventHandler(cb: (e: KeyboardEvent) => boolean) {
       hooks.keyHandler = cb;
     }
+    attachCustomWheelEventHandler() {}
     clear() {
       hooks.calls.push("clear");
     }
