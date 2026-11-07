@@ -30,11 +30,16 @@ it("the shortcut hint goes when the search box has no room for it", () => {
   expect(workspace).toMatch(/@container\s*\(max-width:\s*\d+px\)\s*\{[^}]*\.ws-search-hint\s*\{[^}]*display:\s*none/);
 });
 
-it("a narrow window drops the brand and crumbs, floats the sidebar and stacks Settings", () => {
-  const narrow = media(workspace, "max-width: 600px");
-  expect(narrow).toMatch(/\.ws-brand[^{]*\{[^}]*display:\s*none/);
+it("below 768px the bottom bar replaces the rail, the side list is the shell's drawer, and Settings stacks", () => {
+  const narrow = media(workspace, "max-width: 767.98px");
+  expect(narrow).toMatch(/\.ws-rail[^{]*\{[^}]*display:\s*none/);
   expect(narrow).toMatch(/\.ws-crumb[^{]*\{[^}]*display:\s*none/);
-  expect(narrow).toMatch(/\.ws-sidebar\s*\{[^}]*position:\s*absolute/);
+  // The drawer shows the list even when it was folded away on desktop.
+  expect(narrow).toMatch(/\.ws-appshell\.ws-side-off \.x-shell-side\s*\{[^}]*display:\s*flex/);
+  expect(narrow).toMatch(/\.ws-sidebar\[hidden\]\s*\{[^}]*display:\s*flex/);
+  // The old overlay rules are gone: no 600px block floats the sidebar.
+  expect(workspace).not.toContain("@media (max-width: 600px)");
+  expect(workspace).not.toMatch(/\.ws-sidebar\s*\{[^}]*position:\s*absolute/);
   const stacked = media(settings, "max-width: 600px");
   expect(stacked).toMatch(/\.settings\s*\{[^}]*flex-direction:\s*column/);
   expect(stacked).toMatch(/\.settings-nav\s*\{[^}]*width:\s*auto/);
@@ -74,4 +79,12 @@ it("the settings section list scrolls on its own instead of running under the fo
 
 it("the header search hint stays inside the search button", () => {
   expect(workspace).toMatch(/\.ws-search-hint\s*\{[^}]*position:\s*static/);
+});
+
+it("below 1076px the open panel lies over the center; the 41px icon rail is gone", () => {
+  const mid = media(workspace, "max-width: 1075px");
+  expect(mid).toMatch(/\.ws-stage-body\s*\{[^}]*position:\s*relative/);
+  expect(mid).toMatch(/\.ws-panel\s*\{[^}]*position:\s*absolute[^}]*width:\s*min\(var\(--w-panel\),\s*100%\)/);
+  expect(mid).toMatch(/\.ws-panel-handle\s*\{[^}]*display:\s*none/);
+  expect(workspace).not.toContain("41px");
 });

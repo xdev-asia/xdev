@@ -38,6 +38,8 @@ export function ShellFrame(props: {
   crumbs: ReactNode;
   actions: ReactNode;
   footer: ReactNode;
+  /** Below 768px: the bottom bar with the places; the design system hides it from 768px up. */
+  bottomNav?: ReactNode;
   /** Dialogs, hosts and toasts that sit above the frame. */
   overlays?: ReactNode;
   children: ReactNode;
@@ -80,6 +82,7 @@ export function ShellFrame(props: {
           actions={props.actions}
           navOpen={props.navOpen}
           onNavOpenChange={props.onNavOpenChange}
+          bottomNav={props.bottomNav}
           labels={{ nav: labels.sidebar, openNav: labels.openNav, closeNav: labels.closeNav, skipToContent: labels.skipToContent }}
         >
           {props.children}

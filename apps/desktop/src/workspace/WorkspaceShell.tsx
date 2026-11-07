@@ -82,6 +82,7 @@ import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { Titlebar } from "./Titlebar";
 import { ShellFrame } from "@/shell/ShellFrame";
+import { NarrowNav, type NarrowPlace } from "@/shell/NarrowNav";
 import { RemoteBanner } from "@/remote/RemoteBanner";
 import { RemoteGroup } from "@/remote/RemoteGroup";
 import { projectOf, reconnectCandidate, remoteError, remoteRepo, remoteRows } from "@/remote/model";
@@ -837,6 +838,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     return () => void (live = false);
   }, [api]);
 
+  // A place from the narrow bottom bar; Tasks and Accounts open inside Docs.
+  function pickNarrow(place: NarrowPlace): void {
+    setNavOpen(false);
+    if (place === "sessions") show("workspace");
+    else if (place === "tasks") openTaskBoard();
+    else if (place === "accounts") openAccounts();
+    else if (place === "settings") openSettings();
+    else show(place);
+  }
+
   return (
     <ProfilesProvider api={api}>
     <UpsellHost api={api}>
@@ -858,6 +869,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       sidebarOpen={sidebarOpen}
       navOpen={navOpen}
       onNavOpenChange={setNavOpen}
+      bottomNav={<NarrowNav view={view} automations={automationsSettings.showButton} onPick={pickNarrow} />}
       brand={
         <>
           <BrandMark className="ws-logo" size={18} />

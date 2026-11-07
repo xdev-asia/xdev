@@ -6350,5 +6350,12 @@
   "workspace.newTab.prompt": "Task",
   "workspace.newTab.promptPlaceholder": "Describe what the agent should do, or leave it empty",
   "workspace.newTab.start": "Start",
-  "workspace.newTab.optionsHint": "Shift-click Start for the launch options."
+  "workspace.newTab.optionsHint": "Shift-click Start for the launch options.",
+  "shell.narrow.label": "Places",
+  "shell.narrow.sessions": "Sessions",
+  "shell.narrow.tasks": "Tasks",
+  "shell.narrow.accounts": "Accounts",
+  "shell.narrow.settings": "Settings",
+  "shell.narrow.more": "More",
+  "shell.narrow.badge": "{count} new"
 }

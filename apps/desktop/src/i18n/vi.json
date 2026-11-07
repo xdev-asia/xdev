@@ -6350,5 +6350,12 @@
   "workspace.newTab.prompt": "Việc cần làm",
   "workspace.newTab.promptPlaceholder": "Mô tả việc agent cần làm, hoặc để trống",
   "workspace.newTab.start": "Bắt đầu",
-  "workspace.newTab.optionsHint": "Shift-click Bắt đầu để mở tùy chọn khởi chạy."
+  "workspace.newTab.optionsHint": "Shift-click Bắt đầu để mở tùy chọn khởi chạy.",
+  "shell.narrow.label": "Khu vực",
+  "shell.narrow.sessions": "Phiên",
+  "shell.narrow.tasks": "Việc",
+  "shell.narrow.accounts": "Tài khoản",
+  "shell.narrow.settings": "Cài đặt",
+  "shell.narrow.more": "Thêm",
+  "shell.narrow.badge": "{count} mới"
 }

@@ -46,6 +46,7 @@ import { ShellOverlays } from "./ShellOverlays";
 import { ShellSidebar } from "./ShellSidebar";
 import { WorkspaceStage } from "./WorkspaceStage";
 import { ShellFrame } from "@/shell/ShellFrame";
+import { NarrowNav } from "@/shell/NarrowNav";
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
   const state = (initial: unknown) => {
@@ -1419,6 +1420,28 @@ it("settings and search keys open their views", async () => {
   keymap.handlers["search.open"]();
   view.draw();
   expect(view.of(DocsApp)).toHaveLength(1);
+});
+
+it("the narrow bottom bar reaches Tasks, Accounts, Settings and back to the sessions", async () => {
+  const view = await harness();
+  const bar = () => view.all().find(n => n.type === ShellFrame)!.props.bottomNav;
+  const area = (name: string) => view.all().find(n => n.props.className === name)!;
+  expect(bar().type).toBe(NarrowNav);
+  expect(bar().props.view).toBe("workspace");
+  bar().props.onPick("tasks");
+  view.draw();
+  expect(view.of(DocsApp)[0].props.appRequest).toMatchObject({ app: "tasks", tab: "board" });
+  expect(bar().props.view).toBe("docs");
+  bar().props.onPick("accounts");
+  view.draw();
+  expect(view.of(DocsApp)[0].props.appRequest).toMatchObject({ app: "accounts" });
+  bar().props.onPick("settings");
+  view.draw();
+  expect(area("ws-settings").props.hidden).toBe(false);
+  bar().props.onPick("sessions");
+  view.draw();
+  expect(area("ws-stage").props.hidden).toBe(false);
+  expect(bar().props.view).toBe("workspace");
 });
 
 it("Manage accounts in the usage popover shows the docs view on the Accounts app", async () => {

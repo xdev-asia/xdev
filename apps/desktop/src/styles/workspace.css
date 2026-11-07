@@ -1352,78 +1352,49 @@
   display: none;
 }
 
-/* Under 600px the header keeps the menu, search, bell, help, settings and language; the sidebar
-   floats over the page instead of taking 296px from it. */
-@media (max-width: 600px) {
-  .ws-brand,
-  .ws-logo,
+/* Below 768px the design system's shell takes over: the side list is its drawer (the menu button opens it,
+   folded or not), the places rail gives way to the bottom bar, and the header keeps search, bell, help,
+   settings and language. */
+@media (max-width: 767.98px) {
+  .ws-rail,
+  .ws-sidebar-toggle,
   .ws-crumb,
   .ws-crumb-sep {
     display: none;
   }
 
+  .ws-appshell.ws-side-off .x-shell-side {
+    display: flex;
+  }
+
+  .ws-sidebar[hidden] {
+    display: flex;
+  }
+
   .ws-header {
-    gap: 6px;
-    padding: 0 8px;
-  }
-
-  .ws-body {
-    position: relative;
-  }
-
-  .ws-sidebar {
-    position: absolute;
-    z-index: 20;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: min(var(--w-side), 88%);
-    box-shadow: 0 0 0 1px var(--line);
+    gap: var(--x-space-2);
+    padding: 0 var(--x-space-2);
   }
 }
 
-/* Below 1076px (sidebar 296 + panel 300 + center 480) the panel folds to its icon rail, so the
-   center keeps 480px; the open tab shows over the center while the pointer or focus is in it. */
+/* Below 1076px (sidebar 296 + panel 300 + center 480) the open panel lies over the center instead of
+   taking width from it; it opens and closes from the header as before. */
 @media (max-width: 1075px) {
-  .ws-panel {
+  .ws-stage-body {
     position: relative;
-    flex-basis: 41px;
   }
 
-  /* The rail has a fixed width: no handle. */
-  .ws-panel-handle {
-    display: none;
-  }
-
-  .ws-panel-tabs {
-    flex-direction: column;
-    height: auto;
-    padding: 4px 0;
-    border-bottom: 0;
-  }
-
-  .ws-panel-tabs .kit-tab {
-    height: 34px;
-    margin-bottom: 0;
-  }
-
-  .ws-panel-tabs .kit-tab[aria-selected="true"] {
-    border-bottom-color: transparent;
-    background: var(--bg-2);
-  }
-
-  .ws-panel-body {
+  .ws-panel {
     position: absolute;
     top: 0;
-    right: 100%;
+    right: 0;
     bottom: 0;
     z-index: 10;
-    width: calc(var(--w-panel) - 41px);
-    border-left: 1px solid var(--line);
-    background: var(--bg-1);
+    width: min(var(--w-panel), 100%);
   }
 
-  .ws-panel:not(:hover, :focus-within) .ws-panel-body {
+  /* Over the center the panel keeps its width: no handle. */
+  .ws-panel-handle {
     display: none;
   }
 }
