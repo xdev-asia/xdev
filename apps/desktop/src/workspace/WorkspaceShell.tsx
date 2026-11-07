@@ -165,6 +165,7 @@ import { IS_MAC, PLATFORM } from "@/platform";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { startFileDrop, type DropEvent } from "@/terminal/fileDrop";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
+import { RightPanel } from "@/panel/RightPanel";
 import {
   AUTO_SLEEP_TICK_MS, NO_CHANGES, readSelected, storeSelected, waitingIn, windowFocused, working, worktreeName,
   type BulkState, type Creating, type Editing, type PanelTab, type Removing, type Review, type SetupCardAt, type TrustAsk, type View,
@@ -2261,120 +2262,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 </p>
               )}
             </main>
-            <aside className="ws-panel" hidden={!rightOpen} aria-label={t("workspace.panel.label")}>
-              <div className="ws-panel-tabs" role="tablist" aria-label={t("workspace.panel.label")}>
-                <button
-                  type="button"
-                  role="tab"
-                  className="ws-panel-tab"
-                  aria-selected={panelTab === "files"}
-                  aria-label={t("workspace.panel.files")}
-                  title={t("workspace.panel.files")}
-                  onClick={() => setPanelTab("files")}
-                >
-                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  className="ws-panel-tab"
-                  aria-selected={panelTab === "search"}
-                  aria-label={t("search.files.tab")}
-                  title={t("search.files.tab")}
-                  onClick={() => {
-                    setPanelTab("search");
-                    setSearchFocus((n) => n + 1);
-                  }}
-                >
-                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="11" cy="11" r="6.5" />
-                    <path d="m16 16 4.5 4.5" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  className="ws-panel-tab"
-                  aria-selected={panelTab === "changes"}
-                  aria-label={count > 0 ? t("workspace.panel.changesCount", { count }) : t("workspace.panel.changes")}
-                  title={t("workspace.panel.changes")}
-                  onClick={() => setPanelTab("changes")}
-                >
-                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M6 3v12M18 9a3 3 0 1 0 0-.01M6 21a3 3 0 1 0 0-.01M18 12c0 4-6 3-9 6" />
-                  </svg>
-                  {count > 0 && (
-                    <span className="ws-panel-badge" aria-hidden="true">
-                      {count}
-                    </span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  className="ws-panel-tab"
-                  aria-selected={panelTab === "pr"}
-                  aria-label={t("prPanel.tab")}
-                  title={t("prPanel.tab")}
-                  onClick={() => setPanelTab("pr")}
-                >
-                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="6" cy="6" r="2.5" />
-                    <circle cx="6" cy="18" r="2.5" />
-                    <circle cx="18" cy="18" r="2.5" />
-                    <path d="M6 8.5v7M18 15.5V10a3 3 0 0 0-3-3h-2" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  className="ws-panel-tab"
-                  aria-selected={panelTab === "checks"}
-                  aria-label={failing > 0 ? t("checks.tabFailing", { count: failing }) : t("checks.tab")}
-                  title={t("checks.tab")}
-                  onClick={() => setPanelTab("checks")}
-                >
-                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="9" />
-                    <path d="m8.5 12.5 2.5 2.5 4.5-5" />
-                  </svg>
-                  {failing > 0 && (
-                    <span className="ws-panel-badge" data-tone="danger" aria-hidden="true">
-                      {failing}
-                    </span>
-                  )}
-                </button>
-                {issuesTabVisible(issuesGit.tab, issuesPinned, panelTab === "issues") && (
-                  <button
-                    type="button"
-                    role="tab"
-                    className="ws-panel-tab"
-                    aria-selected={panelTab === "issues"}
-                    aria-label={t("issues.tab")}
-                    title={t("issues.tab")}
-                    onClick={() => setPanelTab("issues")}
-                  >
-                    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="9" />
-                      <circle cx="12" cy="12" r="1.5" />
-                    </svg>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  role="tab"
-                  className="ws-panel-tab"
-                  aria-selected={panelTab === "ports"}
-                  aria-label={t("ports.tab")}
-                  title={t("ports.tab")}
-                  onClick={() => setPanelTab("ports")}
-                >
-                  <Icon name="plug" size={16} />
-                </button>
-              </div>
-              {/* Both panels stay mounted, so the change list and the open folders survive a tab switch. */}
+            <RightPanel open={rightOpen} tab={panelTab} changes={count} failing={failing} issuesTab={issuesGit.tab} issuesPinned={issuesPinned} onTab={(tab, focusSearch) => { setPanelTab(tab); if (focusSearch) setSearchFocus((n) => n + 1); }}>
               <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
                 <SurfaceBoundary id="panel.files" surface="Right sidebar: files" resetKey={current?.path} titleKey="boundary.panel.title">
                   {current ? (
@@ -2463,7 +2351,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "ports"}>
                 <PortsPanel api={api} store={ports} active={current?.path ?? null} visible={rightOpen && panelTab === "ports" && view === "workspace"} />
               </div>
-            </aside>
+            </RightPanel>
           </div>
         </div>
 

@@ -41,6 +41,7 @@ import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 // Hooks are stubbed only while the shell itself is called; children rendered to markup use React's own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
+import { PanelTabBar, RightPanel } from "@/panel/RightPanel";
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
   const state = (initial: unknown) => {
@@ -84,6 +85,8 @@ function nodes(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
   if (!value || typeof value !== "object" || !("props" in value)) return [];
   const node = value as Node;
+  // Extracted layout parts hold no state; draw them so their markup is walked like the rest.
+  if (node.type === RightPanel || node.type === PanelTabBar) return nodes((node.type as (p: unknown) => unknown)(node.props));
   return [node, ...nodes(node.props.children)];
 }
 const text = (node: Node): string => nodes(node.props.children).map(n => (typeof n.props.children === "string" ? n.props.children : "")).join("") + (typeof node.props.children === "string" ? node.props.children : "");
