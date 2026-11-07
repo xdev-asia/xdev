@@ -1,4 +1,4 @@
-import { Button } from "@xdev-asia/ui";
+import { Button, Field, SearchInput, Segmented, Skeleton } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import { ISOLATED_PROVIDERS, PROVIDERS, isIsolated, toApiError, type Account, type Accounts, type Api, type ApiError, type Provider, type Quota } from "@/api";
 import { useI18n } from "@/i18n";
@@ -235,7 +235,7 @@ export function AccountsView({ api }: { api: Api }) {
     const onClick = () => run(async () => { await api.accountActivate(account.provider, active ? null : account.name); setRevision(n => n + 1); });
     return compact
       ? <Button type="button" style={COMPACT} disabled={busy} aria-label={label} data-switch={active ? "clear" : "use"} onClick={onClick}>{text}</Button>
-      : <button type="button" className="btn-secondary" disabled={busy} aria-label={label} data-switch={active ? "clear" : "use"} onClick={onClick}>{text}</button>;
+      : <Button type="button" style={COMPACT} disabled={busy} aria-label={label} data-switch={active ? "clear" : "use"} onClick={onClick}>{text}</Button>;
   }
   // A CLI with no home variable keeps one sign-in: xDev shows it but cannot switch or add another.
   function singleChip(account: Account) {
@@ -323,7 +323,7 @@ export function AccountsView({ api }: { api: Api }) {
         <div role="cell" className="account-cell-actions">
           {isIsolated(account.provider) && switchButton(account, false)}
           {loginButton(account)}
-          <button type="button" className="btn-secondary account-remove" disabled={busy} onClick={() => setRemoving(account.name)}>{t("accounts.remove")}</button>
+          <Button type="button" style={COMPACT} className="account-remove" disabled={busy} onClick={() => setRemoving(account.name)}>{t("accounts.remove")}</Button>
         </div>
       </div>,
       removing === account.name && <div role="row" className="account-tr account-tr-confirm" key={`${account.name}:confirm`}><div role="cell">{confirmRemove(account)}</div></div>,
@@ -346,17 +346,14 @@ export function AccountsView({ api }: { api: Api }) {
   function toolbar() {
     return <>
       <div className="account-toolbar" role="search">
-        <input type="search" className="account-search" value={query} placeholder={t("accounts.search")} aria-label={t("accounts.search")} onChange={e => setQuery(e.target.value)} spellCheck={false} />
+        <SearchInput className="account-search" size="sm" value={query} placeholder={t("accounts.search")} aria-label={t("accounts.search")} onChange={e => setQuery(e.target.value)} onClear={() => setQuery("")} spellCheck={false} />
         <div className="account-chips" role="group" aria-label={t("accounts.filterLabel")}>
           {FILTERS.map(f => <button type="button" key={f} className="account-chip" data-filter={f} aria-pressed={filter === f} onClick={() => setFilter(f)}>
             <span>{f === "all" ? t("accounts.filter.all") : t(`accounts.state.${f}`)}</span>
             <span className="account-chip-count">{counted(f)}</span>
           </button>)}
         </div>
-        <div className="segmented account-layout" role="group" aria-label={t("accounts.view.label")}>
-          <button type="button" aria-pressed={table} onClick={() => setLayout("table")}>{t("accounts.view.table")}</button>
-          <button type="button" aria-pressed={!table} onClick={() => setLayout("cards")}>{t("accounts.view.cards")}</button>
-        </div>
+        <Segmented label={t("accounts.view.label")} value={table ? "table" : "cards"} options={[{ value: "table", label: t("accounts.view.table") }, { value: "cards", label: t("accounts.view.cards") }]} onChange={v => setLayout(v === "table" ? "table" : "cards")} />
       </div>
       <p className="account-showing doc-path" role="status">{t("accounts.showing", { shown: shown.length, total: all.length })}</p>
     </>;
@@ -364,7 +361,7 @@ export function AccountsView({ api }: { api: Api }) {
   function list() {
     if (shown.length === 0) return <div className="account-nomatch">
       <p>{t("accounts.noMatch")}</p>
-      <button type="button" className="btn-secondary" onClick={() => { setQuery(""); setFilter("all"); }}>{t("accounts.clearFilters")}</button>
+      <Button type="button" style={COMPACT} onClick={() => { setQuery(""); setFilter("all"); }}>{t("accounts.clearFilters")}</Button>
     </div>;
     if (!table) return <div className="account-list">{shown.map(card)}</div>;
     return <div className="account-table" role="table" aria-label={t("accounts.title")}>
@@ -383,8 +380,8 @@ export function AccountsView({ api }: { api: Api }) {
     <div className="agentctx-head">
       <div className="doc-titles"><h1 className="doc-title">{t("accounts.title")}{accounts && accounts.accounts.length > 0 && <span className="account-count">{accounts.accounts.length}</span>}</h1>{accounts && <span className="doc-subtitle">{t("accounts.reserve", { percent: accounts.reservePercent })}</span>}</div>
       <div className="doc-actions">
-        <button type="button" className="btn-secondary" disabled={busy} onClick={() => { setProblem(undefined); setRevision(n => n + 1); }}>{t("accounts.refresh")}</button>
-        <button type="button" className="btn-secondary" disabled={busy} onClick={() => openForm(true)}>{t("accounts.import")}</button>
+        <Button type="button" style={COMPACT} disabled={busy} onClick={() => { setProblem(undefined); setRevision(n => n + 1); }}>{t("accounts.refresh")}</Button>
+        <Button type="button" style={COMPACT} disabled={busy} onClick={() => openForm(true)}>{t("accounts.import")}</Button>
         {accounts?.accounts.length !== 0 && <Button variant={adding ? "secondary" : "primary"} type="button" style={COMPACT} disabled={busy} onClick={() => openForm(false)}>{t("accounts.add")}</Button>}
       </div>
     </div>
@@ -392,10 +389,10 @@ export function AccountsView({ api }: { api: Api }) {
     {adding && <form className="account-row account-add" onSubmit={async e => { e.preventDefault(); await add(); }}>
       {folder !== null && <>
         <p className="account-add-hint">{t("accounts.importHint")}</p>
-        <label className="account-add-folder">{t("accounts.folder")}<input value={folder} onChange={e => setFolder(e.target.value)} disabled={busy} autoFocus spellCheck={false} />
-          <button type="button" className="btn-secondary" disabled={busy} onClick={() => run(browse)}>{t("accounts.browse")}</button></label>
+        <div className="account-add-folder"><Field label={t("accounts.folder")} value={folder} onChange={e => setFolder(e.target.value)} disabled={busy} autoFocus spellCheck={false} />
+          <Button type="button" style={COMPACT} disabled={busy} onClick={() => run(browse)}>{t("accounts.browse")}</Button></div>
       </>}
-      <label>{t("accounts.name")}<input value={name} onChange={e => setName(e.target.value)} disabled={busy} autoFocus={folder === null} /></label>
+      <Field label={t("accounts.name")} value={name} onChange={e => setName(e.target.value)} disabled={busy} autoFocus={folder === null} />
       <fieldset className="account-providers" role="radiogroup" aria-label={t("accounts.providerLabel")}>
         <legend>{t("accounts.providerLabel")}</legend>
         {(folder === null ? PROVIDERS : ISOLATED_PROVIDERS).map(p => {
@@ -430,7 +427,7 @@ export function AccountsView({ api }: { api: Api }) {
       <Button type="button" style={COMPACT} onClick={async () => { try { await navigator.clipboard.writeText(command); setCopy("copied"); } catch { setCopy("copyFailed"); } }}>{t("connect.copy")}</Button>
       {copy && <span role="status">{t(`connect.${copy}`)}</span>}
     </div>}
-    {accounts === undefined ? !problem && <p className="placeholder">{t("accounts.loading")}</p> : accounts.accounts.length === 0 ? <div className="placeholder"><p>{t("accounts.empty")}</p><Button variant="primary" type="button" style={COMPACT} onClick={() => openForm(false)}>{t("accounts.add")}</Button></div> : <>{resets()}{toolbar()}{list()}</>}
+    {accounts === undefined ? !problem && <div className="placeholder" role="status" aria-label={t("accounts.loading")}><Skeleton shape="block" height="var(--x-space-12)" /></div> : accounts.accounts.length === 0 ? <div className="placeholder"><p>{t("accounts.empty")}</p><Button variant="primary" type="button" style={COMPACT} onClick={() => openForm(false)}>{t("accounts.add")}</Button></div> : <>{resets()}{toolbar()}{list()}</>}
     <RoutingRules api={api} />
   </div>;
 }
