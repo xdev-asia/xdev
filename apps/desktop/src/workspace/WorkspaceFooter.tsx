@@ -220,12 +220,7 @@ export function WorkspaceFooter(props: {
     items.version ? <span key="version" className="ws-mono">{`v${props.version}`}</span> : null,
     props.update ? <UpdateItem key="update" update={props.update} onRestart={props.onRestartUpdate} /> : null,
   ].filter((entry) => entry !== null && entry !== undefined && entry !== false);
-  // The design system bar has no `hidden`; the wrapper carries it.
-  return (
-    <div className="ws-footer-host" hidden={props.hidden}>
-      <StatusBar items={entries} />
-    </div>
-  );
+  return <StatusBar items={entries} hidden={props.hidden} />;
 }
 
 /** The footer fed by the live quota and update state; quota reading pauses while the footer is not on screen. */

@@ -240,9 +240,8 @@ it("right-click on the plain meter group does the same", () => {
   const onMetersMenu = vi.fn();
   const preventDefault = vi.fn();
   const root = tree([account("a", [["five_hour", 1]])], { onMetersMenu }) as unknown as El;
-  // The wrapper holds the status bar, which takes the entries as `items`.
-  const bar = root.props!.children as El;
-  const kids = (bar.props!.items as unknown[]).flat() as (El | false | null)[];
+  // The root is the status bar, which takes the entries as `items`.
+  const kids = (root.props!.items as unknown[]).flat() as (El | false | null)[];
   const group = kids.find((k) => k && (k.props as { role?: string } | undefined)?.role === "group") as El;
   (group.props!.onContextMenu as (e: unknown) => void)({ preventDefault, clientX: 1, clientY: 2 });
   expect(onMetersMenu).toHaveBeenCalledWith({ x: 1, y: 2 });

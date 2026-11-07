@@ -1,5 +1,5 @@
 import type { JSX, ReactNode } from "react";
-import { ActivityBar, AppShell, Icon } from "@xdev-asia/ui";
+import { ActivityBar, AppShell } from "@xdev-asia/ui";
 
 /** The places the rail switches between. Settings has its own button in the header. */
 export type RailView = "workspace" | "docs" | "automations" | "settings";
@@ -45,8 +45,8 @@ export function ShellFrame(props: {
   children: ReactNode;
 }): JSX.Element {
   const { labels } = props;
-  // `ActivityBar` highlights `active`; a place it does not list ("kit") leaves the rail without a highlight.
-  const active = props.view === "workspace" ? "terminal" : props.view === "docs" ? "docs" : "kit";
+  // `ActivityBar` highlights `active`; settings is not a rail place, so it leaves the rail without a highlight.
+  const active = props.view === "workspace" ? "terminal" : props.view === "docs" ? "docs" : props.view === "automations" ? "automations" : "";
   return (
     <div className="ws-shell">
       {props.titlebar}
@@ -54,25 +54,11 @@ export function ShellFrame(props: {
         <div className="ws-rail">
           <ActivityBar
             apps={["terminal", "docs"]}
+            extraItems={props.automations ? [{ id: "automations", icon: "automation", label: labels.automations }] : undefined}
             active={active}
             labels={{ terminal: labels.workspace, docs: labels.docs, nav: labels.rail }}
-            onSelect={(id) => props.onView(id === "docs" ? "docs" : "workspace")}
+            onSelect={(id) => props.onView(id === "docs" ? "docs" : id === "automations" ? "automations" : "workspace")}
           />
-          {props.automations && (
-            <nav className="activitybar ws-rail-extra" aria-label={labels.automations}>
-              <button
-                type="button"
-                className="activity"
-                data-nav="automations"
-                aria-label={labels.automations}
-                title={labels.automations}
-                aria-current={props.view === "automations" ? "page" : undefined}
-                onClick={() => props.onView("automations")}
-              >
-                <Icon name="clock" size={22} />
-              </button>
-            </nav>
-          )}
         </div>
         <AppShell
           className={props.sidebarOpen ? "ws-appshell" : "ws-appshell ws-side-off"}

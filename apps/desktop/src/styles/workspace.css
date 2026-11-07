@@ -101,10 +101,6 @@
   border-right: 0;
 }
 
-.ws-rail-extra {
-  flex: none;
-}
-
 .ws-appshell {
   flex: 1;
   min-width: 0;
@@ -146,10 +142,6 @@
   flex: 1;
   border-right: 0;
   background: transparent;
-}
-
-.ws-footer-host[hidden] {
-  display: none;
 }
 
 /* Header */
@@ -267,7 +259,6 @@
 .ws-header-btn:disabled {
   cursor: default;
 }
-
 
 /* The bell: a count on the button and the list of unread tabs under it. */
 
@@ -2722,7 +2713,6 @@ button.ws-tree-row[data-flash="true"] {
   font-size: 11px;
 }
 
-
 .ws-tab-rename {
   width: 140px;
   height: 24px;
@@ -2925,7 +2915,6 @@ button.ws-tree-row[data-flash="true"] {
   align-items: center;
   color: var(--text-3);
 }
-
 
 /* Toasts: bottom right, above the footer so they never cover terminal text. */
 .ws-toasts {
@@ -3950,7 +3939,6 @@ button.ws-tree-row[data-flash="true"] {
   list-style: none;
 }
 
-
 .ws-commit-file {
   border-bottom: 1px solid var(--line);
 }
@@ -4118,7 +4106,6 @@ button.ws-tree-row[data-flash="true"] {
   padding: 0;
   list-style: none;
 }
-
 
 .ws-ports-row {
   display: flex;

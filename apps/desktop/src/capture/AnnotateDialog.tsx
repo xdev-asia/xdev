@@ -166,7 +166,8 @@ export function AnnotateDialog({ image, onSend, onDiscard }: AnnotateDialogProps
               >
                 <Field
                   key={note.id}
-                  label={<span className="x-sr-only">{t("capture.text.placeholder")}</span>}
+                  label={t("capture.text.placeholder")}
+                  hideLabel
                   placeholder={t("capture.text.placeholder")}
                   autoFocus
                   autoComplete="off"

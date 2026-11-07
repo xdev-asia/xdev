@@ -23,7 +23,7 @@ export function NarrowNav(props: { view: RailView; automations: boolean; onPick(
     { id: "docs", label: t("workspace.nav.docs"), icon: "docs" },
   ];
   const more: BottomNavItem[] = [
-    ...(props.automations ? [{ id: "automations", label: t("workspace.nav.automations"), icon: "clock" } as const] : []),
+    ...(props.automations ? [{ id: "automations", label: t("workspace.nav.automations"), icon: "automation" } as const] : []),
     { id: "accounts", label: t("shell.narrow.accounts"), icon: "accounts" },
     { id: "settings", label: t("shell.narrow.settings"), icon: "settings" },
   ];
