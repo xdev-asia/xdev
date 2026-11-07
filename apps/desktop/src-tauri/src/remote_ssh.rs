@@ -859,10 +859,11 @@ pub(crate) fn launch_spec(
         }
         (None, None) => return Ok(None),
     };
+    // Checked before connecting: a bad hand-edited entry refuses the launch.
+    let own = crate::hosts::launch_values(hosts.0.get(&host.id))?;
     let (_, probe) = hub.ensure(&host)?;
-    let own = crate::hosts::effective(hosts.0.get(&host.id), &host.alias);
     Ok(Some(crate::remote_launch::RemoteSpec {
-        host_env: own.env.into_iter().map(|v| (v.name, v.value)).collect(),
+        host_env: own.env,
         shell: own.shell,
         worktree: format!("ssh://{}{path}", host.id),
         mux: hub.mux(),
