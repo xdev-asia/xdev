@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { toApiError, type ApiError, type OpenAs, type OpenInApp, type OpenInView } from "@/api";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useSaveBar } from "./useSaveBar";
 import { useI18n } from "@/i18n";
 import { isPresetAdded, OPEN_IN_PRESETS, presetEntry } from "./openInPresets";
 import { SettingRow } from "./SettingRow";
@@ -121,6 +122,16 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
     if (await save(next)) setDraft(null);
   }
 
+  // In Settings the view's SaveBar stores the app being edited and Discard drops it; alone the form keeps its buttons.
+  const barTakesSave = useSaveBar(props, {
+    dirty: draft !== null,
+    onSave: () => void commit(),
+    onDiscard: () => {
+      setFieldError(null);
+      setDraft(null);
+    },
+  });
+
   const header = (
     <header className="settings-head">
       <h3>{t("openIn.title")}</h3>
@@ -224,12 +235,14 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
             {field("command")}
             {field("args", 3)}
           </div>
-          <div className="settings-actions">
-            <button type="button" className="btn-secondary" onClick={() => setDraft(null)}>
-              {t("openIn.cancel")}
-            </button>
-            <Button variant="primary" type="submit">{t("openIn.save")}</Button>
-          </div>
+          {!barTakesSave && (
+            <div className="settings-actions">
+              <button type="button" className="btn-secondary" onClick={() => setDraft(null)}>
+                {t("openIn.cancel")}
+              </button>
+              <Button variant="primary" type="submit">{t("openIn.save")}</Button>
+            </div>
+          )}
         </form>
       )}
       <div className="settings-actions settings-actions-start">

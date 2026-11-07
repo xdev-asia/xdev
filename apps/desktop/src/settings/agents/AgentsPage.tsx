@@ -326,6 +326,7 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
       onReset={(id) => void act(() => api.profileReset(id), close)}
       onRemove={(id) => void act(() => api.profileRemove(id), close)}
       onCancel={close}
+      registerSave={props.registerSave}
     />
   );
 

@@ -3,6 +3,8 @@ import { useState } from "react";
 import type { JSX } from "react";
 import type { Account, ApiError, Approvals, Profile, ProfileView } from "@/api";
 import { useI18n } from "@/i18n";
+import type { SettingsSectionProps } from "@/settings/sections";
+import { useSaveBar } from "@/settings/useSaveBar";
 import { accountsFor, draftCustomArgs, draftFlags, draftMode, draftOf, profileOf, type Draft } from "./agentForm";
 
 /**
@@ -24,6 +26,8 @@ export function ProfileEditor(props: {
   onReset(id: string): void;
   onRemove(id: string): void;
   onCancel(): void;
+  /** In Settings the view's SaveBar stores the profile; Discard closes the editor. */
+  registerSave?: SettingsSectionProps["registerSave"];
 }): JSX.Element {
   const { t } = useI18n();
   const base = props.view?.profile ?? null;
@@ -59,6 +63,13 @@ export function ProfileEditor(props: {
     setLocal(undefined);
     props.onSave(profile);
   }
+
+  const barTakesSave = useSaveBar(props, {
+    dirty: JSON.stringify(draft) !== JSON.stringify(draftOf(base)),
+    busy: props.busy,
+    onSave: save,
+    onDiscard: props.onCancel,
+  });
 
   return (
     <div className="agent-editor" role="group" aria-label={t("settings.agents.editTitle", { name: base?.name ?? t("settings.agents.newProfile") })}>
@@ -197,9 +208,11 @@ export function ProfileEditor(props: {
         <button type="button" className="btn-secondary" disabled={props.busy} onClick={props.onCancel}>
           {t("settings.agents.cancel")}
         </button>
-        <Button variant="primary" type="button" disabled={props.busy} onClick={save}>
-          {t("settings.agents.save")}
-        </Button>
+        {!barTakesSave && (
+          <Button variant="primary" type="button" disabled={props.busy} onClick={save}>
+            {t("settings.agents.save")}
+          </Button>
+        )}
       </div>
     </div>
   );

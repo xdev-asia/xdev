@@ -21,6 +21,12 @@ vi.mock("react", async (original) => {
     ...react,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
+    useRef: (initial: any) => {
+      if (!hooks.active) return react.useRef(initial);
+      const index = hooks.cursor++;
+      if (!(index in hooks.values)) hooks.values[index] = { current: initial };
+      return hooks.values[index];
+    },
   };
 });
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -39,13 +45,13 @@ const other: RepoView = { ...structuredClone(DEMO_WORKSPACE.repos[0]), id: "demo
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
 
-async function view(repoFiles?: Record<string, MockRepoFile>, first: Partial<RepoView> = {}) {
+async function view(repoFiles?: Record<string, MockRepoFile>, first: Partial<RepoView> = {}, registerSave?: (spec: unknown) => void) {
   const api = createMockApi({}, { workspace: { ...structuredClone(DEMO_WORKSPACE), repos: [{ ...structuredClone(DEMO_WORKSPACE.repos[0]), ...first }, other], repoFiles } });
   const onChanged = vi.fn();
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
-    try { return ReposSettings({ api, onChanged }); } finally { hooks.active = false; }
+    try { return ReposSettings({ api, onChanged, registerSave }); } finally { hooks.active = false; }
   };
   draw();
   hooks.effects.forEach((e) => e());
@@ -60,7 +66,8 @@ async function view(repoFiles?: Record<string, MockRepoFile>, first: Partial<Rep
   const error = (id: string, name: string) => all().find((n) => n.props.id === `settings-${id}-${name}-error`);
   const save = (id: string) => nodes(form(id)).find((n) => n.type === Button)!;
   const html = () => renderToStaticMarkup(draw());
-  return { api, onChanged, all, form, field, type, pick, trust, submit, error, save, html };
+  const settle = () => { hooks.effects.length = 0; draw(); hooks.effects.splice(0).forEach((e) => e()); };
+  return { api, onChanged, all, form, field, type, pick, trust, submit, error, save, html, settle };
 }
 
 it("saves a changed short name and shows short_name_taken inline", async () => {
@@ -418,4 +425,31 @@ it("sparse presets: lists none, adds one on its own save, refuses a bad one, and
   expect(update).toHaveBeenLastCalledWith("demo-xdev", { sparsePresets: [] });
   expect(row()).toBeUndefined();
   expect((await v.api.workspaceList()).find((r) => r.id === "demo-xdev")!.sparsePresets ?? []).toEqual([]);
+});
+
+it("in Settings the view's SaveBar stores every changed repo and Discard drops what was typed; the forms have no Save of their own", async () => {
+  const registerSave = vi.fn();
+  const v = await view(undefined, {}, registerSave);
+  const update = vi.spyOn(v.api, "repoUpdate");
+  expect(nodes(v.form("demo-xdev")).some((n) => n.type === Button)).toBe(false);
+  v.settle();
+  expect(registerSave).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: false }));
+
+  v.type("demo-xdev", "shortName", "renamed");
+  v.type("demo-tools", "shortName", "tools2");
+  v.settle();
+  const spec = registerSave.mock.lastCall![0] as { dirty: boolean; onSave(): void; onDiscard(): void };
+  expect(spec.dirty).toBe(true);
+  spec.onSave();
+  await tick();
+  await tick();
+  expect(update).toHaveBeenCalledWith("demo-xdev", { shortName: "renamed" });
+  expect(update).toHaveBeenCalledWith("demo-tools", { shortName: "tools2" });
+
+  v.type("demo-xdev", "shortName", "again");
+  v.settle();
+  (registerSave.mock.lastCall![0] as { onDiscard(): void }).onDiscard();
+  v.settle();
+  expect(registerSave).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: false }));
+  expect(v.field("demo-xdev", "shortName").props.value).not.toBe("again");
 });

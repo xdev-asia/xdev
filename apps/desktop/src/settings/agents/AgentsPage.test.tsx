@@ -25,6 +25,13 @@ vi.mock("react", async (original) => {
     ...react,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
+    useRef: (initial: any) => {
+      if (!hooks.active) return react.useRef(initial);
+      const index = hooks.cursor++;
+      const slots = hooks.values;
+      if (!(index in slots)) slots[index] = { current: initial };
+      return slots[index];
+    },
   };
 });
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -823,4 +830,33 @@ it("install_strings_exist_in_both_languages", () => {
   const keys = ["install.action", "install.title", "install.body", "install.confirm", "install.tab", "install.noWorktree", "install.done", "install.notFound", "install.failed"].map((k) => `settings.agents.${k}`);
   keys.push("error.install_none", "error.npm_missing", "error.install_remote");
   for (const key of keys) for (const locale of ["en", "vi"] as const) expect(translate(locale, key), `${locale} ${key}`).not.toBe(key);
+});
+
+it("in Settings the view's SaveBar stores the edited profile and Discard closes the editor; the editor has no Save of its own", async () => {
+  const registerSave = vi.fn();
+  const p = await page(undefined, { registerSave });
+  const put = vi.spyOn(p.api, "profilePut");
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  const ed = drawEditor(p.editor()!);
+  const settle = () => { hooks.effects.length = 0; ed.draw(); hooks.effects.splice(0).forEach((e) => e()); };
+  expect(ed.draw().some((n) => n.props.children === en("settings.agents.save"))).toBe(false);
+  settle();
+  expect(registerSave).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: false }));
+
+  ed.type("env", "A=1");
+  settle();
+  const spec = registerSave.mock.lastCall![0] as { dirty: boolean; onSave(): void };
+  expect(spec.dirty).toBe(true);
+  spec.onSave();
+  await tick();
+  expect(put).toHaveBeenCalledWith(expect.objectContaining({ id: "claude", env: [{ name: "A", value: "1" }] }));
+  expect(p.editor()).toBeUndefined();
+
+  p.button(p.row("claude"), en("settings.agents.edit")).props.onClick();
+  const again = drawEditor(p.editor()!);
+  again.type("env", "B=2");
+  hooks.effects.length = 0; again.draw(); hooks.effects.splice(0).forEach((e) => e());
+  (registerSave.mock.lastCall![0] as { onDiscard(): void }).onDiscard();
+  expect(p.editor()).toBeUndefined();
+  expect(put).toHaveBeenCalledTimes(1);
 });

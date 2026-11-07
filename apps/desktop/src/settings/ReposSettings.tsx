@@ -15,6 +15,7 @@ import {
 } from "@/api";
 import { openFile } from "@/files/openFile";
 import { ISSUE_VARS, effectiveIssueCommand, renderIssueCommand } from "@/issues/issueTemplate";
+import { useSaveBar } from "./useSaveBar";
 import { useI18n } from "@/i18n";
 import { RepoBadge } from "@/workspace/RepoBadge";
 import { RemoveRepoDialog } from "@/workspace/RemoveRepoDialog";
@@ -176,6 +177,22 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
       setBusy(null);
     }
   }
+
+  // In Settings one SaveBar stores every repo with changes, one after the other, and Discard drops what was typed.
+  const changedRepos = repos?.filter((r) => Object.keys(patchOf(r)).length > 0) ?? [];
+  const barTakesSave = useSaveBar(props, {
+    dirty: changedRepos.length > 0,
+    busy: busy !== null,
+    onSave: () =>
+      void (async () => {
+        for (const repo of changedRepos) await save(repo);
+      })(),
+    onDiscard: () => {
+      setDrafts({});
+      setIdentity({});
+      setFailures({});
+    },
+  });
 
   // Presets save on their own, apart from the form, so typed fields stay as they are.
   async function savePresets(repo: RepoView, presets: SparsePreset[]): Promise<boolean> {
@@ -691,9 +708,11 @@ export function ReposSettings(props: SettingsSectionProps): JSX.Element {
               <button type="button" className="btn-secondary settings-remove" disabled={busy !== null} onClick={() => setForgetting({ repo })}>
                 {t("settings.repos.remove")}
               </button>
-              <Button type="submit" disabled={!changed || busy !== null}>
-                {busy === repo.id ? t("settings.repos.saving") : t("settings.repos.save")}
-              </Button>
+              {!barTakesSave && (
+                <Button type="submit" disabled={!changed || busy !== null}>
+                  {busy === repo.id ? t("settings.repos.saving") : t("settings.repos.save")}
+                </Button>
+              )}
             </div>
           </form>
         );

@@ -17,6 +17,12 @@ vi.mock("react", async (original) => {
     ...react,
     useState: (initial: any) => (hooks.active ? state(initial) : react.useState(initial)),
     useEffect: (effect: any, deps?: any) => (hooks.active ? void hooks.effects.push(effect) : react.useEffect(effect, deps)),
+    useRef: (initial: any) => {
+      if (!hooks.active) return react.useRef(initial);
+      const index = hooks.cursor++;
+      if (!(index in hooks.values)) hooks.values[index] = { current: initial };
+      return hooks.values[index];
+    },
   };
 });
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
@@ -33,14 +39,14 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
 
-async function view(initial?: OpenInApp[]) {
+async function view(initial?: OpenInApp[], registerSave?: (spec: unknown) => void) {
   const api = createMockApi({});
   if (initial) await api.openInSettingsPut({ apps: initial });
   const onChanged = vi.fn();
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
-    try { return OpenInPage({ api, onChanged }); } finally { hooks.active = false; }
+    try { return OpenInPage({ api, onChanged, registerSave }); } finally { hooks.active = false; }
   };
   draw();
   hooks.effects.forEach((e) => e());
@@ -54,7 +60,9 @@ async function view(initial?: OpenInApp[]) {
   const type = (name: string, value: string) => all().find((n) => (n.type === "input" || n.type === "textarea") && n.props.name === name)!.props.onChange({ target: { value } });
   const submit = async () => { all().find((n) => n.type === "form")!.props.onSubmit({ preventDefault() {} }); await tick(); };
   const stored = async () => (await api.openInSettings()).apps;
-  return { api, onChanged, all, act, press, type, submit, stored };
+  // Runs the effects the last draw queued, as a commit would (the SaveBar spec is handed over in one).
+  const settle = () => { hooks.effects.length = 0; draw(); hooks.effects.splice(0).forEach((e) => e()); };
+  return { api, onChanged, all, act, press, type, submit, stored, settle };
 }
 
 it("move and nextId are plain list helpers", () => {
@@ -204,4 +212,29 @@ it("Open agents as starts at a new tab and stores the choice without touching ot
   expect(stored.sleepAfterMin).toBe(5);
   expect(v.onChanged).toHaveBeenCalledTimes(1);
   expect(select().props.value).toBe("splitRight");
+});
+
+it("in Settings the view's SaveBar stores the edited app and Discard drops it; the form has no buttons of its own", async () => {
+  const registerSave = vi.fn();
+  const v = await view(undefined, registerSave);
+  await v.press("add");
+  v.settle();
+  expect(registerSave).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: true }));
+  const form = v.all().find((n) => n.type === "form")!;
+  expect(nodes(form).some((n) => n.props.type === "submit")).toBe(false);
+  v.type("label", "Zed");
+  v.type("command", "zed");
+  v.settle();
+  registerSave.mock.calls.at(-1)![0].onSave();
+  await tick();
+  expect(await v.stored()).toEqual([...DEFAULT_APPS, { id: "app-1", label: "Zed", command: "zed", args: [] }]);
+  expect(v.all().some((n) => n.type === "form")).toBe(false);
+  v.settle();
+  expect(registerSave).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: false }));
+
+  await v.press("add");
+  v.settle();
+  registerSave.mock.calls.at(-1)![0].onDiscard();
+  expect(v.all().some((n) => n.type === "form")).toBe(false);
+  expect(await v.stored()).toHaveLength(2);
 });
