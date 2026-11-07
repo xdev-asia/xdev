@@ -51,7 +51,7 @@ function view(initial?: string) {
 
 it("opens General first and switches to Vaults", () => {
   const v = view();
-  expect(SECTIONS.map((s) => s.id)).toEqual(["general", "repos", "git", "terminal", "editor", "code", "openIn", "browser", "agents", "orchestration", "automations", "usage", "appearance", "notifications", "keys", "qcmd", "capture", "voice", "account", "vaults", "ssh", "peers", "mcp", "cloud", "trackers", "cli", "advanced", "diagnostics", "experimental"]);
+  expect(SECTIONS.map((s) => s.id)).toEqual(["general", "repos", "git", "terminal", "editor", "code", "openIn", "browser", "agents", "orchestration", "automations", "usage", "appearance", "notifications", "keys", "qcmd", "capture", "voice", "account", "vaults", "ssh", "hosts", "peers", "mcp", "cloud", "trackers", "cli", "advanced", "diagnostics", "experimental"]);
   expect(v.items().map((n) => n.props.children)).toEqual([
     en("settings.general.title"),
     en("settings.repos.title"),
@@ -74,6 +74,7 @@ it("opens General first and switches to Vaults", () => {
     en("account.title"),
     en("settings.vaults.title"),
     en("ssh.title"),
+    en("settings.hosts.title"),
     en("peers.title"),
     en("settings.mcp.title"),
     en("cloud.title"),
@@ -83,13 +84,13 @@ it("opens General first and switches to Vaults", () => {
     en("settings.diagnostics.title"),
     en("settings.experimental.title"),
   ]);
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(28).fill(undefined)]);
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual(["page", ...Array(29).fill(undefined)]);
   expect(v.shown().type).toBe(GeneralPage);
   expect(v.shown().props.api).toBe(v.api);
   expect(v.shown().props.onChanged).toBe(v.onChanged);
 
   v.items()[19].props.onClick();
-  expect(v.items().map((n) => n.props["aria-current"])).toEqual([...Array(19).fill(undefined), "page", ...Array(9).fill(undefined)]);
+  expect(v.items().map((n) => n.props["aria-current"])).toEqual([...Array(19).fill(undefined), "page", ...Array(10).fill(undefined)]);
   expect(v.shown().type).toBe(VaultsSettings);
   expect(v.body().props["aria-label"]).toBe(en("settings.vaults.title"));
 });
@@ -208,6 +209,14 @@ it("hands a section the way to open another one", () => {
   const w = view();
   w.shown().props.openSection("nope");
   expect(w.shown().type).toBe(GeneralPage);
+});
+
+it("a link between sections can carry an arg, and the next link without one drops it", () => {
+  const v = view();
+  v.shown().props.openSection("hosts", "h1");
+  expect(v.shown().props.arg).toBe("h1");
+  v.shown().props.openSection("ssh");
+  expect(v.shown().props.arg).toBeUndefined();
 });
 
 it("opening another section clears the query so the section shows", () => {

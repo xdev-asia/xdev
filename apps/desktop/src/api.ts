@@ -303,7 +303,7 @@ export type {
   SetupDecision,
   WorkspaceMode,
 } from "@xdev/bindings";
-import type { HostHistoryStatus, HostScopeEntry, HostSettings, HostSettingsView } from "@xdev/bindings";
+import type { HostEnvVar, HostHistoryStatus, HostScopeEntry, HostSettings, HostSettingsView } from "@xdev/bindings";
 import type { TaskSource, TrackerConnect, TrackerKind, TrackerList, TrackerPulls, TrackersView } from "@xdev/bindings";
 import type {
   AgentSession,
@@ -353,7 +353,7 @@ import { createMockApi, DEMO_AI_EDIT, DEMO_COMMITS, DEMO_OUTSIDE_EDIT, DEMO_ROOT
 import type { AccountRouting, QuotaAlert } from "@xdev/bindings";
 import type { DeployPreset, TargetsView, VpsTarget } from "@xdev/bindings";
 export type { DeployPreset, TargetsView, VpsTarget };
-export type { HostHistoryStatus, HostScopeEntry, HostSettings, HostSettingsView };
+export type { HostEnvVar, HostHistoryStatus, HostScopeEntry, HostSettings, HostSettingsView };
 import type { SimDevice, SimLaunch, SimList, SimPlatform, SimRef, SimState } from "@xdev/bindings";
 export type { SimDevice, SimLaunch, SimList, SimPlatform, SimRef, SimState };
 import type { FailedOver, WorkerFailover } from "@xdev/bindings";

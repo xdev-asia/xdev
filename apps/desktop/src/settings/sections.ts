@@ -23,6 +23,7 @@ import { QuickCommandsPage } from "./quickCommands/QuickCommandsPage";
 import { PeersPage } from "@/peers/PeersPage";
 import { ReposSettings } from "./ReposSettings";
 import { ShortcutsPage } from "./shortcuts/ShortcutsPage";
+import { HostsPage } from "./HostsPage";
 import { SshPage } from "./SshPage";
 import { TerminalPage } from "./TerminalPage";
 import { UsagePage } from "./UsagePage";
@@ -40,7 +41,7 @@ export interface SettingsSectionProps {
   // The settings search; set while a query is typed or a palette item asked for one control.
   filter?: SettingsFilter;
   // Switches the Settings view to another section (General links to Open In Apps).
-  openSection?(id: string): void;
+  openSection?(id: string, arg?: string): void;
   // Switches the window to another view (Automations opens the Automations view).
   openView?(view: string): void;
 }
@@ -95,6 +96,7 @@ export const SECTIONS: SettingsSection[] = [
   { id: "account", group: "integrations", labelKey: "account.title", Component: AccountPage },
   { id: "vaults", group: "integrations", labelKey: "settings.vaults.title", Component: VaultsSettings },
   { id: "ssh", group: "integrations", labelKey: "ssh.title", Component: SshPage },
+  { id: "hosts", group: "integrations", labelKey: "settings.hosts.title", Component: HostsPage },
   { id: "peers", group: "integrations", labelKey: "peers.title", Component: PeersPage },
   { id: "mcp", group: "integrations", labelKey: "settings.mcp.title", Component: McpPage },
   { id: "cloud", group: "integrations", labelKey: "cloud.title", Component: CloudPage },

@@ -159,6 +159,7 @@ export function SshPage(props: SettingsSectionProps): JSX.Element {
           tests={tests}
           conns={conns}
           onToggle={toggle}
+          onSettings={props.openSection ? (h) => props.openSection?.("hosts", h.id) : undefined}
           onEdit={(h) => setEditing({ item: h })}
           onRemove={(h) => setRemoving([h])}
           onTest={(h) => void test(h)}

@@ -14,6 +14,8 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
   const { t } = useI18n();
   const [active, setActive] = useState(() => (SECTIONS.some((s) => s.id === props.initial) ? props.initial! : SECTIONS[0].id));
   const [query, setQuery] = useState("");
+  // What the opener (or a link between sections) asked the section to start with.
+  const [arg, setArg] = useState(props.arg);
   const found = runSearch(query, t, (id) => t(SECTIONS.find((s) => s.id === id)?.labelKey ?? id));
   const visible = found.active ? SECTIONS.filter((s) => found.counts.has(s.id)) : SECTIONS;
   // The chosen section when it has a hit; else the section of the best hit.
@@ -22,9 +24,10 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
   if (found.active) filter = { query, ids: found.ids };
   else if (props.target) filter = { query: "", ids: new Set(entriesFor(PLATFORM).map((e) => e.id)), target: props.target };
   // A section's link to another one (General → Open In Apps); a typed query would hide the target, so it clears.
-  const openSection = (id: string) => {
+  const openSection = (id: string, next?: string) => {
     if (!SECTIONS.some((s) => s.id === id)) return;
     setQuery("");
+    setArg(next);
     setActive(id);
   };
   return (
@@ -56,7 +59,7 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
       {section ? (
         <section className="settings-body" aria-label={t(section.labelKey)}>
           <SurfaceBoundary id="page.settings" surface={`Settings: ${section.id}`} resetKey={section.id} titleKey="boundary.page.title">
-            <section.Component key={section.id} api={props.api} onChanged={props.onChanged} arg={props.arg} filter={filter} openSection={openSection} openView={props.openView} />
+            <section.Component key={section.id} api={props.api} onChanged={props.onChanged} arg={arg} filter={filter} openSection={openSection} openView={props.openView} />
           </SurfaceBoundary>
           {props.target && !found.active && <RevealSetting id={props.target} />}
         </section>

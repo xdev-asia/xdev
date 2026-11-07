@@ -1148,3 +1148,52 @@
 .theme-panel-title {
   margin: 0;
 }
+
+/* Settings → Hosts */
+.host-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.host-links,
+.host-history,
+.host-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.host-links .settings-hint {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.host-actions {
+  justify-content: flex-end;
+}
+
+.host-env {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.host-env-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.host-env-row > * {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.host-env-row > button {
+  flex: 0 0 auto;
+}
