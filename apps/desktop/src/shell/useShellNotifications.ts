@@ -1,28 +1,27 @@
 import { useEffect, useState } from "react";
 import { profileName } from "@/agents/profileStore";
-import type { Api, HookDetail, RepoView, WorktreeView } from "@/api";
+import type { Api, HookDetail, RepoView } from "@/api";
 import type { useI18n } from "@/i18n";
 import { playStatusSound } from "@/status/sound";
-import { loadStatusSettings, type useStatusSettings } from "@/status/statusSettings";
+import { eventOn, loadStatusSettings, type useStatusSettings } from "@/status/statusSettings";
 import { admits } from "@/workspace/attention";
-import type { BellRow } from "@/workspace/BellMenu";
+import { badgeWorktrees, type NeedsYou } from "@/workspace/needsYou";
 import { createNotifier, type Notifier } from "@/workspace/notifier";
 import type { Attention, Sessions, Tab } from "@/workspace/sessions";
 import { worktreeName } from "@/workspace/shellModel";
 
 type T = ReturnType<typeof useI18n>["t"];
 
-/** OS notifications, the taskbar badge and the bell: what wants the person, and the way back to it. */
+/** OS notifications, the taskbar badge and the header inbox: what wants the person, and the way back to it. */
 export function useShellNotifications(o: {
   api: Api;
   sessions: Sessions | null;
   statusSettings: ReturnType<typeof useStatusSettings>;
-  all: WorktreeView[];
-  t: T;
+  needs: NeedsYou;
   live: { t: T; jump(id: string): boolean; notifier: Notifier | null; repos: RepoView[] | null };
 }) {
-  const { api, sessions, statusSettings, all, t, live } = o;
-  const [bellOpen, setBellOpen] = useState(false);
+  const { api, sessions, statusSettings, needs, live } = o;
+  const [inboxOpen, setInboxOpen] = useState(false);
 
   // A pane nobody looks at that wants the person: OS notification, sound, and the jump back on a click.
   useEffect(() => {
@@ -69,24 +68,18 @@ export function useShellNotifications(o: {
     };
   }, [api, sessions]);
 
-  // The bell lists the unread tabs and the taskbar badge counts the unread worktrees, both only for the
-  // events that are switched on (and none with the master switch off).
-  const counted = (tab: Tab) => admits(tab.unreadReason, statusSettings);
-  const unreadTabs = (sessions?.unreadTabs() ?? []).filter(counted);
-  const unreadCount = statusSettings.enabled ? (sessions?.unreadWorktrees(counted).length ?? 0) : 0;
+  // The taskbar badge counts the worktrees where something waits on the person, for the events that are
+  // switched on (none with the master switch off): the same selector as the inbox, the dots and the footer.
+  const badgeCount = badgeWorktrees(needs, (status) => eventOn(statusSettings, status));
   useEffect(() => {
-    live.notifier?.badge(unreadCount);
-  }, [sessions, unreadCount, statusSettings.badge]);
+    live.notifier?.badge(badgeCount);
+  }, [sessions, badgeCount, statusSettings.badge]);
   // A notified tab that is read has its OS notification taken down.
-  const unreadKey = unreadTabs.map((tab) => tab.id).join(",");
+  const counted = (tab: Tab) => admits(tab.unreadReason, statusSettings);
+  const unreadKey = (sessions?.unreadTabs() ?? []).filter(counted).map((tab) => tab.id).join(",");
   useEffect(() => {
     live.notifier?.unread(unreadKey ? unreadKey.split(",") : []);
   }, [sessions, unreadKey]);
-  const bellRows: BellRow[] = unreadTabs.map((tab) => ({
-    tab,
-    worktree: worktreeName(all, tab.worktree),
-    name: tab.title ?? profileName(null, tab.profileId, t),
-  }));
 
   // The notification text: the worktree, then the tab by its profile's name or the one given by
   // hand. Never the terminal's own title, which can carry what was typed.
@@ -96,15 +89,5 @@ export function useShellNotifications(o: {
     await notifier.attention(tab, status, { worktree, tab: name }, detail);
   }
 
-  function toggleBell(): void {
-    const next = !bellOpen;
-    setBellOpen(next);
-    if (!next) return;
-    setTimeout(() => {
-      if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
-      document.querySelector<HTMLElement>(".ws-bell-pop [role=menuitem], .ws-bell-pop")?.focus();
-    }, 0);
-  }
-
-  return { bellOpen, setBellOpen, toggleBell, unreadCount, bellRows };
+  return { inboxOpen, setInboxOpen };
 }

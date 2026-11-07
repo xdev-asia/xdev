@@ -48,6 +48,8 @@ export interface Tab {
   /** Agent tabs count for the worktree's status dot; plain shells do not. */
   agent: boolean;
   status: TabStatus;
+  /** When `status` last changed, in ms; absent until it first does. */
+  statusAt?: number;
   /** The CLI the profile runs; picks the hook caps once the pty reports whether it has hooks. */
   cli: TabCli;
   /** It reached `needs-you`, `done` or `failed` while nobody looked; cleared when it is seen. */
@@ -1161,7 +1163,7 @@ export class Sessions {
       this.clear(this.announce, id);
       // Progress ends with the work.
       const progress = next.status === "working" || next.status === "needs-you" ? {} : { progress: null };
-      this.update(entry, { status: next.status, ...exit, ...progress });
+      this.update(entry, { status: next.status, statusAt: this.now(), ...exit, ...progress });
       if (entry.tab.agent) for (const l of [...this.statusListeners]) l(entry.tab, before.status, next.status, this.now());
     }
     // Only agents ask for the person; a closing tab's exit is expected.

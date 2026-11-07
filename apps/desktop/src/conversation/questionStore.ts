@@ -65,17 +65,23 @@ export function questionOf(tab: string): PendingQuestion | null {
   return byTab.get(tab) ?? null;
 }
 
-function subscribe(fn: () => void): () => void {
+/** Calls `fn` on every change of any tab's question. */
+export function subscribeQuestions(fn: () => void): () => void {
   listeners.add(fn);
   return () => void listeners.delete(fn);
 }
 
 export function useQuestion(tab: string): PendingQuestion | null {
   return useSyncExternalStore(
-    subscribe,
+    subscribeQuestions,
     () => byTab.get(tab) ?? null,
     () => null,
   );
+}
+
+/** The questions of every tab; a new object after each change, so it serves as a snapshot. */
+export function questionsSnapshot(): ReadonlyMap<string, PendingQuestion> {
+  return byTab;
 }
 
 /**

@@ -2,6 +2,7 @@ import { BADGE_DEBOUNCE_MS } from "./notifier";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { AttentionInbox } from "@xdev-asia/ui";
 import { SETUP_PROFILE, createMockApi, type WorkerOpen, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
@@ -24,7 +25,6 @@ import { PaletteHost } from "@/palette/PaletteHost";
 import { NavButtons } from "@/nav/NavButtons";
 import { SettingsView } from "@/settings/SettingsView";
 import { resetStatusSettings } from "@/status/statusSettings";
-import { BellMenu } from "./BellMenu";
 import { ActivityPanel } from "@/activity/ActivityPanel";
 import { Sessions } from "./sessions";
 import { LiveWorkspaceFooter } from "./WorkspaceFooter";
@@ -173,7 +173,7 @@ it("header has repo, branch, search, bell and settings", async () => {
   expect(crumbs).toEqual(["xdev", "main"]);
   expect(inHeader.filter(n => n.type === HeaderSearch)).toHaveLength(1);
   const named = (label: string) => inHeader.find(n => n.type === "button" && n.props["aria-label"] === label);
-  expect(named(en("workspace.header.notifications"))).toBeDefined();
+  expect(inHeader.filter(n => n.type === AttentionInbox)).toHaveLength(1);
   expect(named(en("workspace.header.settings"))).toBeDefined();
   // The language lives in Settings and the setup wizard, not in the title bar.
   expect(inHeader.filter(n => n.type === LanguageSwitch)).toHaveLength(0);
@@ -790,50 +790,47 @@ const OAK = "/demo/wt/xdev-oak";
 // Effects run by `attend`; undone after each test so no timer or listener reaches the next one.
 const cleanups: (() => void)[] = [];
 const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
-const bell = (view: Awaited<ReturnType<typeof harness>>) => nodes(view.all().find(n => n.type === ShellFrame)!.props.actions).find(n => n.type === "button" && n.props["aria-haspopup"] === "menu")!;
+const inboxes = (view: Awaited<ReturnType<typeof harness>>) => nodes(view.all().find(n => n.type === ShellFrame)!.props.actions).filter(n => n.type === AttentionInbox);
+const inbox = (view: Awaited<ReturnType<typeof harness>>) => inboxes(view)[0]!;
 
 it("hidden worktree asking a question raises everything", async () => {
   const api = createMockApi({});
   const notify = vi.spyOn(api, "statusNotify");
   const view = await harness(api);
   const { tab } = attend(view);
-  expect(bell(view).props["aria-label"]).toBe(en("workspace.header.notifications"));
+  expect(inbox(view).props.items).toEqual([]);
+  expect(inbox(view).props.labels.button(0)).toBe(en("needsYou.button", { count: 0 }));
 
   api.__hook(tab.id, "needs-input");
   await settle();
   // The row: glyph and bold name.
   expect(view.list().props.dots[OAK]).toBe("needs-you");
   expect(view.list().props.unread[OAK]).toBe(true);
-  // The bell counts it; the footer says one waits.
-  expect(bell(view).props["aria-label"]).toBe(en("status.bell.label", { count: 1 }));
-  expect(nodes(bell(view).props.children).find(n => n.props.className === "ws-bell-count")!.props.children).toBe("1");
+  // The inbox lists it; the footer says one waits.
+  expect(inbox(view).props.items).toMatchObject([{ id: tab.id, agent: "claude", worktree: "oak" }]);
   expect(view.of(LiveWorkspaceFooter)[0].props.waiting).toBe(1);
   // The OS hears the worktree and the tab, and the sound goes with it.
   expect(notify).toHaveBeenCalledWith("oak · Claude Code · Needs you", "Waiting for you.", tab.id);
   expect(sound.play).toHaveBeenCalledTimes(1);
 
-  // The bell lists the tab; its row goes there.
-  expect(view.of(BellMenu)).toHaveLength(0);
-  bell(view).props.onClick();
-  const menu = view.of(BellMenu)[0];
-  expect(menu.props.rows.map((r: { tab: { id: string }; worktree: string }) => [r.tab.id, r.worktree])).toEqual([[tab.id, "oak"]]);
-  menu.props.onJump(tab);
+  // Its Open goes to the pane and closes the inbox.
+  inbox(view).props.onOpenChange(true);
+  expect(inbox(view).props.open).toBe(true);
+  inbox(view).props.onOpen(tab.id);
   expect(view.list().props.selected).toBe(OAK);
   expect(view.of(WorktreeTabs).find(n => n.props.worktree === OAK)!.props.front).toMatchObject({ id: tab.id });
-  expect(view.of(BellMenu)).toHaveLength(0);
+  expect(inbox(view).props.open).toBe(false);
 });
 
-it("the bell's View activity opens the Activity side tab on the feed", async () => {
-  const view = await harness(createMockApi({}));
-  attend(view);
-  const side = () => view.all().filter(n => n.props.className === "ws-side-tab");
-  expect(side().map(n => n.props.children)).toEqual([en("agentSessions.tab.worktrees"), en("agentSessions.tab.sessions"), en("agentSessions.tab.activity")]);
-  expect(view.of(ActivityPanel)[0].props.ask.tab).toBe("threads");
-  bell(view).props.onClick();
-  view.of(BellMenu)[0].props.onViewActivity();
-  expect(view.of(BellMenu)).toHaveLength(0);
-  expect(side()[2].props["aria-pressed"]).toBe(true);
-  expect(view.of(ActivityPanel)[0].props.ask.tab).toBe("feed");
+it("a failed agent run waits in the inbox and the footer too", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const { tab } = attend(view);
+  api.__hook(tab.id, "turn-failed");
+  await settle();
+  expect(inbox(view).props.items).toMatchObject([{ id: tab.id, kind: "failed" }]);
+  expect(view.list().props.dots[OAK]).toBe("failed");
+  expect(view.of(LiveWorkspaceFooter)[0].props.waiting).toBe(1);
 });
 
 it("a click on the notification, or a focus soon after it, goes to its pane", async () => {
@@ -876,10 +873,8 @@ it("the bell and the sound follow the settings", async () => {
   await settle();
   expect(notify).toHaveBeenCalledTimes(1);
   expect(sound.play).not.toHaveBeenCalled();
-  // The bell is off: no count and no list, but the row still says it.
-  expect(bell(view).props.disabled).toBe(true);
-  expect(bell(view).props.title).toBe(en("status.bell.off"));
-  expect(nodes(bell(view).props.children).some(n => n.props.className === "ws-bell-count")).toBe(false);
+  // The bell is off: no inbox, but the row still says it.
+  expect(inboxes(view)).toHaveLength(0);
   expect(view.list().props.unread[OAK]).toBe(true);
 });
 
@@ -894,7 +889,7 @@ async function rerun(view: Awaited<ReturnType<typeof harness>>) {
   await new Promise((r) => setTimeout(r, BADGE_DEBOUNCE_MS + 50));
 }
 
-it("the badge counts worktrees with something unread, not tabs", async () => {
+it("the badge counts worktrees where something waits, not tabs", async () => {
   const api = createMockApi({});
   const view = await harness(api);
   const { sessions, tab } = attend(view);
@@ -905,8 +900,13 @@ it("the badge counts worktrees with something unread, not tabs", async () => {
   await settle();
   await rerun(view);
   expect(api.__badge()).toBe(1);
-  // Marking the worktree read clears it.
+  // Reading the worktree leaves the badge: the agents still wait. Answering them clears it.
   sessions.markRead(OAK);
+  await rerun(view);
+  expect(api.__badge()).toBe(1);
+  api.__hook(tab.id, "resume");
+  api.__hook(second.id, "resume");
+  await settle();
   await rerun(view);
   expect(api.__badge()).toBe(0);
 });

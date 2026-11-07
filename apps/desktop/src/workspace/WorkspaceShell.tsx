@@ -64,10 +64,9 @@ import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
 import { getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
 import { admits } from "./attention";
-import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
 import { ActivityFeed } from "@/activity/feed";
-import { Button, Icon } from "@xdev-asia/ui";
+import { AttentionInbox, Button, Icon } from "@xdev-asia/ui";
 import { ChecksPanel } from "./ChecksPanel";
 import { PortsItem } from "@/ports/PortsItem";
 import { PortsPanel } from "@/ports/PortsPanel";
@@ -139,6 +138,9 @@ import { useShellAccountSwitch } from "@/shell/useShellAccountSwitch";
 import { useShellCardPorts } from "@/shell/useShellCardPorts";
 import { useShellLayoutRestore } from "@/shell/useShellLayoutRestore";
 import { useShellNotifications } from "@/shell/useShellNotifications";
+import { useNeedsYou } from "@/shell/useNeedsYou";
+import { agentOf, needsDot } from "./needsYou";
+import { ago } from "./ago";
 import { useShellAgentFix } from "@/shell/useShellAgentFix";
 import { useShellCreate } from "@/shell/useShellCreate";
 import { useShellDialogs } from "@/shell/useShellDialogs";
@@ -182,7 +184,7 @@ import { startFileDrop, type DropEvent } from "@/terminal/fileDrop";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
 import { RightPanel } from "@/panel/RightPanel";
 import {
-  AUTO_SLEEP_TICK_MS, NO_CHANGES, readSelected, storeSelected, waitingIn, windowFocused, working, worktreeName,
+  AUTO_SLEEP_TICK_MS, NO_CHANGES, readSelected, storeSelected, windowFocused, working, worktreeName,
   type BulkState, type Creating, type Editing, type PanelTab, type Removing, type Review, type SetupCardAt, type TrustAsk, type View,
 } from "./shellModel";
 import { runWithToast } from "@/quickCommands/runUi";
@@ -370,7 +372,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // A string, so an unchanged store reads as the same snapshot.
   const signature = () =>
     sessions
-      ? paths.map((p) => `${sessions.dot(p) ?? ""}:${working(sessions, p)}:${waitingIn(sessions, p)}:${sessions.unread(p) ? "u" : ""}:${target(p)?.id ?? ""}`).join("|") +
+      ? paths.map((p) => `${sessions.dot(p) ?? ""}:${working(sessions, p)}:${sessions.unread(p) ? "u" : ""}:${target(p)?.id ?? ""}`).join("|") +
         `#${sessions.unreadTabs().map((tab) => `${tab.id}:${tab.status}:${tab.unreadAt}`).join(",")}`
       : "";
   useSyncExternalStore(subscribe, signature, signature);
@@ -378,11 +380,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useSyncExternalStore(stats.subscribe, stats.snapshot, stats.snapshot);
   useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
 
-  const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, sessions?.dot(p) ?? null]));
+  // What waits on the person: one selector feeds the header inbox, the dots, the footer count and the badge.
+  const needs = useNeedsYou(sessions);
+  const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, needsDot(needs, p) ?? sessions?.dot(p) ?? null]));
   const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
   const profiles: Record<string, PtyProfile[]> = Object.fromEntries(paths.map((p) => [p, sessions?.profilesOf(p) ?? []]));
   const running = sessions ? paths.reduce((n, p) => n + working(sessions, p), 0) : 0;
-  const waiting = sessions ? paths.reduce((n, p) => n + waitingIn(sessions, p), 0) : 0;
+  const waiting = needs.count;
+  // Wait times in the inbox are read at render, like every other age on screen.
+  const now = Date.now();
   const unreadMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.unread(p) ?? false]));
   const sleepableMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.sleepable(p) ?? false]));
   const asleepMap: Record<string, boolean> = Object.fromEntries(paths.map((p) => [p, sessions?.asleep(p) ?? false]));
@@ -438,7 +444,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   useShellServices({ api, sessions, view, current, panes, statusSettings, feed, live });
 
-  const { bellOpen, setBellOpen, toggleBell, unreadCount, bellRows } = useShellNotifications({ api, sessions, statusSettings, all, t, live });
+  const { inboxOpen, setInboxOpen } = useShellNotifications({ api, sessions, statusSettings, needs, live });
 
   // Brings a tab's worktree up, puts the tab in front and gives its terminal the keys.
   /** Shows the sessions view of the sidebar; `reveal` marks one session, else the search box takes focus. */
@@ -460,7 +466,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     if (!tab || !wt) return false;
     select(wt);
     show("workspace");
-    setBellOpen(false);
+    setInboxOpen(false);
     setFront((f) => ({ worktree: wt.path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
     // The pane shows after this render; its terminal is looked up then.
     setTimeout(() => {
@@ -892,27 +898,32 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       }
       actions={
         <>
-        {/* The bell: the unread tabs, newest first. Turned off in Settings it shows nothing. */}
-        <div className="ws-bell">
-          <button
-            type="button"
-            className="ws-icon-btn ws-header-btn"
-            disabled={!statusSettings.bell}
-            aria-label={statusSettings.bell && unreadCount > 0 ? t("status.bell.label", { count: unreadCount }) : t("workspace.header.notifications")}
-            title={statusSettings.bell ? t("workspace.header.notifications") : t("status.bell.off")}
-            aria-haspopup="menu"
-            aria-expanded={statusSettings.bell && bellOpen}
-            onClick={toggleBell}
-          >
-            <Icon name="bell" size={16} />
-            {statusSettings.bell && unreadCount > 0 && (
-              <span className="ws-bell-count" aria-hidden="true">
-                {bellCount(unreadCount)}
-              </span>
-            )}
-          </button>
-          {statusSettings.bell && bellOpen && <BellMenu rows={bellRows} now={Date.now()} onJump={(tab) => jumpTo(tab.id)} onToggleRead={(tab) => (tab.unread ? sessions?.markTabRead(tab.id) : sessions?.markTabUnread(tab.id))} onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }} onClose={() => setBellOpen(false)} />}
-        </div>
+        {/* What waits on the person, longest first. Turned off in Settings it shows nothing. */}
+        {statusSettings.bell && (
+          <AttentionInbox
+            items={needs.entries.map((e) => ({
+              id: e.tab.id,
+              agent: agentOf(e.tab),
+              worktree: worktreeName(all, e.tab.worktree),
+              text: e.ask ?? e.tab.title ?? profileName(nameView, e.tab.profileId, t),
+              since: e.since,
+              kind: e.kind,
+            }))}
+            onOpen={(id) => void jumpTo(id)}
+            open={inboxOpen}
+            onOpenChange={setInboxOpen}
+            now={now}
+            labels={{
+              title: t("needsYou.title"),
+              button: (count) => t("needsYou.button", { count }),
+              empty: t("needsYou.empty"),
+              open: t("needsYou.open"),
+              openItem: (item) => t("needsYou.openItem", { worktree: item.worktree }),
+              kind: { approval: t("needsYou.kind.approval"), question: t("needsYou.kind.question"), failed: t("needsYou.kind.failed") },
+              waited: (ms) => ago(now - ms, now, t),
+            }}
+          />
+        )}
         {view === "workspace" && <LayoutControls api={api} sessions={sessions} worktree={current?.path ?? null} />}
         <HelpButton onPick={pickHelp} />
         <button

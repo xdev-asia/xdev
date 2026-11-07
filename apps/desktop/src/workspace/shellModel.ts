@@ -49,11 +49,6 @@ export function working(sessions: Sessions, path: string): number {
   return sessions.tabs(path).filter((tab) => tab.agent && tab.status === "working").length;
 }
 
-/** Agent tabs of a worktree that wait on the person. */
-export function waitingIn(sessions: Sessions, path: string): number {
-  return sessions.tabs(path).filter((tab) => tab.agent && tab.status === "needs-you").length;
-}
-
 /** The listed name of a worktree; the folder name when the list does not have it. */
 export function worktreeName(list: WorktreeView[], path: string): string {
   return list.find((w) => w.path === path)?.name ?? path.split(/[\\/]/).filter(Boolean).pop() ?? path;
