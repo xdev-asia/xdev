@@ -15,6 +15,7 @@ use crate::settings::{HOST_DAYS_RANGE, HostEnvVar, HostSettings, Settings, Setti
 use crate::settings_store;
 
 /// Where a path runs.
+#[allow(dead_code)] // the plan fixes this interface for the launch overlay that follows
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostScope {
     Local,
@@ -23,6 +24,7 @@ pub enum HostScope {
 
 /// `Ssh(id)` for an `ssh://<id>/...` worktree, or for a local checkout that has a remote target
 /// ("run on host"); `Local` for anything else, including an `ssh://` string with a bad host id.
+#[allow(dead_code)]
 pub fn scope_of(path: &str, data: &Path) -> HostScope {
     if let Some(r) = crate::remote_ssh::remote_ref(Path::new(path)) {
         return HostScope::Ssh(r.host_id);

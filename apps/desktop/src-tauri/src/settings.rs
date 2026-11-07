@@ -785,10 +785,10 @@ impl HostSettings {
         }
         self.history.claude_home = host_path(self.history.claude_home.take(), true, "claudeHome")?;
         self.history.codex_home = host_path(self.history.codex_home.take(), true, "codexHome")?;
-        if let Some(days) = self.history.days {
-            if !HOST_DAYS_RANGE.contains(&days) {
-                return Err(("bad_arg", format!("days: {days}")));
-            }
+        if let Some(days) = self.history.days
+            && !HOST_DAYS_RANGE.contains(&days)
+        {
+            return Err(("bad_arg", format!("days: {days}")));
         }
         Ok(self)
     }
