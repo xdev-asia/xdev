@@ -239,9 +239,9 @@ export function AutomationEditorDialog(props: {
         )}
         <div className="dialog-actions">
           <p className="au-note">{t("automations.editor.note")}</p>
-          <button type="button" className="btn-secondary" data-act="cancel" onClick={props.onCancel}>
+          <Button type="button" data-act="cancel" onClick={props.onCancel}>
             {t("automations.editor.cancel")}
-          </button>
+          </Button>
           <Button variant="primary" type="submit" data-act="save" disabled={saving}>
             {t(automation ? "automations.editor.save" : "automations.editor.create")}
           </Button>

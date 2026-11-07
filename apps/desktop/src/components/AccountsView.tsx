@@ -427,7 +427,7 @@ export function AccountsView({ api }: { api: Api }) {
       <Button type="button" style={COMPACT} onClick={async () => { try { await navigator.clipboard.writeText(command); setCopy("copied"); } catch { setCopy("copyFailed"); } }}>{t("connect.copy")}</Button>
       {copy && <span role="status">{t(`connect.${copy}`)}</span>}
     </div>}
-    {accounts === undefined ? !problem && <div className="placeholder" role="status" aria-label={t("accounts.loading")}><Skeleton shape="block" height="var(--x-space-12)" /></div> : accounts.accounts.length === 0 ? <div className="placeholder"><p>{t("accounts.empty")}</p><Button variant="primary" type="button" style={COMPACT} onClick={() => openForm(false)}>{t("accounts.add")}</Button></div> : <>{resets()}{toolbar()}{list()}</>}
+    {accounts === undefined ? !problem && <div className="placeholder" role="status" aria-label={t("accounts.loading")}><Skeleton shape="block" /></div> : accounts.accounts.length === 0 ? <div className="placeholder"><p>{t("accounts.empty")}</p><Button variant="primary" type="button" style={COMPACT} onClick={() => openForm(false)}>{t("accounts.add")}</Button></div> : <>{resets()}{toolbar()}{list()}</>}
     <RoutingRules api={api} />
   </div>;
 }
