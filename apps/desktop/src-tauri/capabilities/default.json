@@ -45,6 +45,8 @@
     "allow-app-icon-set",
     "allow-layout-load",
     "allow-layout-save",
+    "allow-floating-load",
+    "allow-floating-save",
     "allow-open-in-settings",
     "allow-open-in-settings-put",
     "allow-open-in",

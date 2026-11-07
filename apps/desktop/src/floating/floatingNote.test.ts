@@ -1,40 +1,31 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadNote, saveNote } from "./floatingNote";
+import { clearLegacyNote, loadLegacyNote } from "./floatingNote";
 
-function fakeStorage() {
-  const m = new Map<string, string>();
-  return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
+function fakeStorage(init: Record<string, string> = {}) {
+  const m = new Map(Object.entries(init));
+  return {
+    getItem: (k: string) => m.get(k) ?? null,
+    setItem: (k: string, v: string) => void m.set(k, v),
+    removeItem: (k: string) => void m.delete(k),
+  };
 }
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("floatingNote", () => {
-  it("saves and loads", () => {
-    vi.stubGlobal("localStorage", fakeStorage());
-    expect(loadNote()).toBe("");
-    expect(saveNote("hello")).toBe(true);
-    expect(loadNote()).toBe("hello");
+describe("legacy floating note", () => {
+  it("reads and clears the phase 1 key", () => {
+    vi.stubGlobal("localStorage", fakeStorage({ "xdev.floating.note.v1": "hello" }));
+    expect(loadLegacyNote()).toBe("hello");
+    clearLegacyNote();
+    expect(loadLegacyNote()).toBe("");
   });
 
   it("survives a throwing store", () => {
-    vi.stubGlobal("localStorage", {
-      getItem: () => {
-        throw new Error("no");
-      },
-      setItem: () => {
-        throw new Error("no");
-      },
-    });
-    expect(loadNote()).toBe("");
-    expect(saveNote("x")).toBe(false);
-  });
-
-  it("does not write over 256 KiB", () => {
-    const store = fakeStorage();
-    const set = vi.spyOn(store, "setItem");
-    vi.stubGlobal("localStorage", store);
-    expect(saveNote("a".repeat(256 * 1024 + 1))).toBe(false);
-    expect(set).not.toHaveBeenCalled();
-    expect(saveNote("a".repeat(256 * 1024))).toBe(true);
+    const boom = () => {
+      throw new Error("no");
+    };
+    vi.stubGlobal("localStorage", { getItem: boom, setItem: boom, removeItem: boom });
+    expect(loadLegacyNote()).toBe("");
+    expect(() => clearLegacyNote()).not.toThrow();
   });
 });

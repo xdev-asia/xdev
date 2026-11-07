@@ -1,8 +1,9 @@
+// The phase 1 scratch note lived in localStorage. It is read once and moved into a note tab; the key
+// goes only after the first save of `floating.json` that succeeded.
 const KEY = "xdev.floating.note.v1";
-const MAX_BYTES = 256 * 1024;
 
-/** The scratch note's saved text; empty when there is none or the store cannot be read. */
-export function loadNote(): string {
+/** The legacy note's text; empty when there is none or the store cannot be read. */
+export function loadLegacyNote(): string {
   try {
     return localStorage.getItem(KEY) ?? "";
   } catch {
@@ -10,13 +11,11 @@ export function loadNote(): string {
   }
 }
 
-/** Saves the text; false when it is over the cap or the store refuses it. */
-export function saveNote(text: string): boolean {
+/** Removes the legacy key; a store that refuses is left as it is. */
+export function clearLegacyNote(): void {
   try {
-    if (new TextEncoder().encode(text).length > MAX_BYTES) return false;
-    localStorage.setItem(KEY, text);
-    return true;
+    localStorage.removeItem(KEY);
   } catch {
-    return false;
+    // Nothing to do: the next start reads it again, and the note tab already exists.
   }
 }

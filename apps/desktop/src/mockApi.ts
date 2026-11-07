@@ -455,6 +455,8 @@ type MockOptions = {
 };
 
 export function createMockApi(seed: Record<string, string>, options: MockOptions = {}): MockApi {
+  // The saved floating workspace, in memory (the real one is floating.json).
+  let floatingSlot: unknown = null;
   const profiles = createMockProfiles();
   const accounts: Account[] = ["claude-2", "claude-3", "old"].map((name): Account => ({
     name, provider: "claude", dir: `/demo/accounts/${name}`,
@@ -707,6 +709,8 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockAgentSessions(settingsApi),
     ...createMockPaneChrome(),
     ...createMockLayout(null, typeof location !== "undefined" && new URLSearchParams(location.search).has("layoutkeep") ? sessionStorage : undefined),
+    async floatingLoad() { return floatingSlot; },
+    async floatingSave(snapshot) { floatingSlot = structuredClone(snapshot); },
     ...createMockCrash(),
     ...configEnv,
     ...createMockCli(),

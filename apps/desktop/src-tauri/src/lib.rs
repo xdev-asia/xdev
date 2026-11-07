@@ -41,6 +41,7 @@ mod endpoint;
 mod file_head;
 mod file_watch;
 mod files;
+mod floating;
 mod foreign_terms;
 mod gitlab;
 mod history;
@@ -398,6 +399,8 @@ pub fn run() {
             commands::app_icon_set,
             layout::layout_load,
             layout::layout_save,
+            floating::floating_load,
+            floating::floating_save,
             open_in::open_in_settings,
             open_in::open_in_settings_put,
             open_in::open_in,
