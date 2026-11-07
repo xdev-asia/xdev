@@ -29,6 +29,20 @@ export interface BoardViewProps {
   onClearFilters(): void;
   /** Lane task-decompose passes it; without it the button is not shown. */
   onDecompose?(): void;
+  /** Without it the card menu has no Delete. */
+  onDelete?(task: BoardTask): void;
+}
+
+/** A card's menu: start, the columns to move to, then Delete set apart. */
+export function taskMenu(task: BoardTask, h: { onStart(task: BoardTask): void; move(task: BoardTask, to: TaskStatus): void; onDelete?(task: BoardTask): void }): MenuItem[] {
+  const items: MenuItem[] = [
+    { id: "start", labelKey: "board.start", run: () => h.onStart(task) },
+    { id: "sep", labelKey: "board.start", kind: "separator" },
+    ...COLUMNS.map((s): MenuItem => ({ id: `move:${s}`, labelKey: statusKey(s), checked: task.status === s, run: () => h.move(task, s) })),
+  ];
+  const onDelete = h.onDelete;
+  if (onDelete) items.push({ id: "sep:delete", labelKey: "board.delete", kind: "separator" }, { id: "delete", labelKey: "board.delete", danger: true, run: () => onDelete(task) });
+  return items;
 }
 
 interface Drag {
@@ -120,11 +134,7 @@ export function BoardView(props: BoardViewProps): JSX.Element {
     window.addEventListener("pointercancel", onCancel);
   };
 
-  const menuItems = (task: BoardTask): MenuItem[] => [
-    { id: "start", labelKey: "board.start", run: () => props.onStart(task) },
-    { id: "sep", labelKey: "board.start", kind: "separator" },
-    ...COLUMNS.map((s): MenuItem => ({ id: `move:${s}`, labelKey: statusKey(s), checked: task.status === s, run: () => move(task, s) })),
-  ];
+  const menuItems = (task: BoardTask): MenuItem[] => taskMenu(task, { onStart: props.onStart, move, onDelete: props.onDelete });
 
   const card = (task: BoardTask): JSX.Element => {
     const l = link(task.id);

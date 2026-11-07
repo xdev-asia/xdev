@@ -35,7 +35,7 @@ function formOf(task: TaskFull | undefined, draft: TaskDraft | undefined): Form 
 export const parseLabels = (text: string): string[] => text.split(",").map((l) => l.trim()).filter(Boolean);
 
 /**
- * Creates a task (`draft`, or blank) or edits one (`task`). An edit sends the `updated` it read, so a
+ * Creates a task (`draft`, or blank) or edits one (`task`); an edit can also be deleted. An edit sends the `updated` it read, so a
  * file changed on disk since then shows the conflict banner instead of being overwritten.
  */
 export function TaskEditor(props: {
@@ -46,6 +46,8 @@ export function TaskEditor(props: {
   draft?: TaskDraft;
   onClose(): void;
   onSaved(task: BoardTask): void;
+  /** Shown for an existing task only. The caller hides it and offers Undo. */
+  onDelete?(task: TaskFull): void;
 }): JSX.Element | null {
   const { api, repo, open } = props;
   const { t } = useI18n();
@@ -179,6 +181,13 @@ export function TaskEditor(props: {
         </div>
         <Field name="labels" label={t("board.field.labels")} hint={t("board.field.labels.hint")} value={form.labels} onChange={(e) => set("labels", e.target.value)} />
         <Textarea name="body" label={t("board.field.body")} rows={8} value={form.body} onChange={(e) => set("body", e.target.value)} />
+        {base && props.onDelete ? (
+          <div className="board-editor-actions">
+            <Button type="button" variant="secondary" icon="trash" data-act="delete" disabled={busy} onClick={() => props.onDelete?.(base)}>
+              {t("board.delete")}
+            </Button>
+          </div>
+        ) : null}
       </form>
     </Dialog>
   );

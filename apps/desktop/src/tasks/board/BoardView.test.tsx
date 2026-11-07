@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { translate } from "@/i18n";
 import { task } from "./fixtures";
-import { BoardView, type BoardViewProps } from "./BoardView";
+import { BoardView, taskMenu, type BoardViewProps } from "./BoardView";
 
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
@@ -79,4 +79,17 @@ it("a linked task with an open tab shows the dot and Open tab; with a closed tab
   expect(gone).toContain("The tab that worked on this task is closed");
   expect(gone).not.toContain("Open tab");
   expect(gone).not.toContain("Working in");
+});
+
+it("the card menu ends with Delete, set apart and marked as destructive", () => {
+  const onDelete = vi.fn();
+  const move = vi.fn();
+  const items = taskMenu(tasks[0]!, { onStart: () => {}, move, onDelete });
+  expect(items.map((i) => i.id)).toEqual(["start", "sep", "move:backlog", "move:todo", "move:in-progress", "move:in-review", "move:done", "sep:delete", "delete"]);
+  const del = items.at(-1)!;
+  expect(del).toMatchObject({ labelKey: "board.delete", danger: true });
+  del.run!();
+  expect(onDelete).toHaveBeenCalledExactlyOnceWith(tasks[0]);
+  // Without a delete handler the menu has no Delete.
+  expect(taskMenu(tasks[0]!, { onStart: () => {}, move }).map((i) => i.id)).not.toContain("delete");
 });

@@ -1,5 +1,5 @@
 import { Banner, Button, EmptyState, Select, Tabs } from "@xdev-asia/ui";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import { toApiError, type Api, type BoardTask, type RepoView, type TaskDraft, type TaskFull, type TaskLink, type TaskStatus } from "@/api";
@@ -12,6 +12,7 @@ import { moveTask, startTask, type StartRequest, type StartWhere } from "./board
 import { BoardView, UnreadableBanner } from "./BoardView";
 import { DecomposeDialog } from "./DecomposeDialog";
 import { FilterBar } from "./FilterBar";
+import { deleteTask, isPendingDelete, pendingDeleteVersion, subscribePendingDeletes } from "./pendingDelete";
 import { StartTaskDialog } from "./StartTaskDialog";
 import { TaskEditor } from "./TaskEditor";
 import { TaskList } from "./TaskList";
@@ -130,7 +131,10 @@ function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "lis
   useEffect(() => sessions?.subscribe(() => setTick((n) => n + 1)), [sessions]);
 
   const agentName = (id: string): string => profileName(view, id, t);
-  const shown = useMemo(() => applyFilters(board.tasks, filters), [board.tasks, filters]);
+  // A deleted task is hidden while its Undo is offered; its file is still there.
+  const hidden = useSyncExternalStore(subscribePendingDeletes, pendingDeleteVersion, pendingDeleteVersion);
+  const tasks = useMemo(() => board.tasks.filter((x) => !isPendingDelete(repo.path, x.id)), [board.tasks, hidden, repo.path]);
+  const shown = useMemo(() => applyFilters(tasks, filters), [tasks, filters]);
   const clear = (): void => setFilters(NO_FILTERS);
 
   async function open(task: BoardTask): Promise<void> {
@@ -191,6 +195,10 @@ function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "lis
     }
   }
 
+  function remove(id: string): void {
+    deleteTask(api, repo.path, id, { deleted: t("board.deleted"), undo: t("board.undo"), failed: t("board.err.delete") }, board.reload);
+  }
+
   const tabOpen = (l: TaskLink): boolean => sessions?.tab(l.tabId) != null;
   const newTask = (status: TaskStatus): void => setEditing({ kind: "new", draft: { title: "", status, labels: [], body: "" } });
 
@@ -213,11 +221,11 @@ function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "lis
           }
         />
       ) : null}
-      {board.tasks.length > 0 ? <FilterBar tasks={board.tasks} filters={filters} agentName={agentName} onChange={setFilters} /> : null}
+      {tasks.length > 0 ? <FilterBar tasks={tasks} filters={filters} agentName={agentName} onChange={setFilters} /> : null}
       {tab === "board" ? (
         <BoardView
           tasks={shown}
-          total={board.tasks.length}
+          total={tasks.length}
           unreadable={board.unreadable}
           links={board.links}
           tabOpen={tabOpen}
@@ -229,11 +237,12 @@ function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "lis
           onOpenTab={(l) => props.onOpenTab?.(l)}
           onClearFilters={clear}
           onDecompose={props.onDecompose ?? (() => setDeciding(true))}
+          onDelete={(x) => remove(x.id)}
         />
       ) : (
         <>
           <UnreadableBanner items={board.unreadable} />
-          <TaskList tasks={shown} total={board.tasks.length} agentName={agentName} onOpen={(x) => void open(x)} onNew={() => newTask("backlog")} onClearFilters={clear} />
+          <TaskList tasks={shown} total={tasks.length} agentName={agentName} onOpen={(x) => void open(x)} onNew={() => newTask("backlog")} onClearFilters={clear} />
           <TrackerSections api={api} repo={repo} agents={agents} current={props.current ?? null} onStart={props.onStart} />
         </>
       )}
@@ -250,6 +259,10 @@ function RepoBoard(props: BoardHostProps & { repo: RepoView; tab: "board" | "lis
             setEditing(null);
             pushToast({ id: "board-saved", text: t("board.saved") });
             void board.reload();
+          }}
+          onDelete={(full) => {
+            setEditing(null);
+            remove(full.task.id);
           }}
         />
       ) : null}
