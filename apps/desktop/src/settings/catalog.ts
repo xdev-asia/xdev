@@ -142,6 +142,12 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.minimumContrast", "settings.terminal.render.contrast", ["contrast", "readable", "accessibility", "tương phản", "tuong phan", "màu", "mau"], "settings.terminal.render.contrastHint"),
   e("terminal.scrollSensitivity", "settings.terminal.interaction.scroll", ["scroll", "speed", "wheel", "cuộn", "cuon", "tốc độ", "toc do"]),
   e("terminal.fastScrollSensitivity", "settings.terminal.interaction.fastScroll", ["scroll", "fast", "alt", "speed", "cuộn", "cuon", "nhanh"]),
+  e("terminal.tuiScrollSensitivity", "settings.terminal.interaction.tuiScroll", ["tui", "vim", "less", "wheel", "mouse", "cuộn", "cuon"], "settings.terminal.interaction.tuiScrollHint"),
+  e("terminal.copyTrimsGutter", "settings.terminal.clipboard.trimGutter", ["copy", "gutter", "border", "trim", "sao chép", "sao chep", "viền", "vien"], "settings.terminal.clipboard.trimGutterHint"),
+  only(["mac"], e("terminal.jisYen", "settings.terminal.keyboard.jisYen", ["jis", "yen", "backslash", "japanese", "¥", "nhật", "nhat"], "settings.terminal.keyboard.jisYenHint")),
+  e("terminal.maxRunningTerminals", "settings.terminal.advanced.maxRunning", ["limit", "max", "pty", "terminals", "giới hạn", "gioi han"], "settings.terminal.advanced.maxRunningHint"),
+  only(["win"], e("terminal.windowsPowershell", "settings.terminal.advanced.powershell", ["powershell", "pwsh", "shell", "windows"], "settings.terminal.advanced.powershellHint")),
+  e("terminal.scrollReset", "settings.terminal.interaction.scrollReset", ["reset", "scroll", "đặt lại", "dat lai"]),
   only(["linux"], e("terminal.middleClickPaste", "settings.terminal.interaction.middleClickPaste", ["middle", "click", "paste", "selection", "primary", "x11", "linux", "chuột giữa", "chuot giua", "dán", "dan", "vùng chọn", "vung chon"], "settings.terminal.interaction.middleClickPasteHint")),
   e("terminal.focusFollowsMouse", "settings.terminal.interaction.focusFollowsMouse", ["focus", "mouse", "hover", "pointer", "tiêu điểm", "tieu diem", "chuột", "chuot"], "settings.terminal.interaction.focusFollowsMouseHint"),
   e("terminal.shellIntegration", "settings.terminal.interaction.shellIntegration", ["shell", "integration", "prompt", "exit code", "osc 133", "osc 7", "bash", "zsh", "fish", "powershell", "dấu nhắc", "dau nhac", "mã thoát", "ma thoat"], "settings.terminal.interaction.shellIntegrationHint"),
@@ -223,7 +229,7 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("vaults.repo", "settings.vaults.repo", ["docs", "notes", "repo", "tài liệu", "tai lieu"]),
   e("vaults.shared", "settings.vaults.shared", ["docs", "notes", "add", "forget", "folder", "tài liệu", "tai lieu", "chia sẻ", "chia se"]),
   // Shortcuts and quick commands: the page keeps its own list search, so one entry each.
-  e("keys.page", "keys.title", ["shortcut", "keybinding", "hotkey", "chord", "phím tắt", "phim tat"]),
+  e("keys.page", "keys.title", ["shortcut", "keybinding", "hotkey", "chord", "phím tắt", "phim tat", "cursor", "vs code", "reveal", "reload", "keybindings.json"]),
   e("qcmd.page", "qcmd.title", ["quick", "command", "script", "alias", "lệnh nhanh", "lenh nhanh"]),
   // Screenshots
   e("capture.enabled", "settings.capture.enabled", ["screenshot", "capture", "screen", "global", "shortcut", "region", "ảnh chụp", "anh chup", "chụp màn hình", "chup man hinh"], "settings.capture.enabledHint"),

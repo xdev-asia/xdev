@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import type { TerminalBell, TerminalLinkClick } from "@/api";
 import { useI18n } from "@/i18n";
 import { PLATFORM } from "@/platform";
-import { DEFAULT_WORD_SEPARATORS } from "@/settings/terminalDefaults";
+import { DEFAULT_WORD_SEPARATORS, TERMINAL_DEFAULTS } from "@/settings/terminalDefaults";
 import { TERMINAL_LIMITS } from "@/terminal/terminalSettings";
 import { SettingGroup, SettingRow, settingShown } from "../SettingRow";
 import { parseNumber, type TerminalSectionProps } from "./sectionProps";
@@ -14,13 +14,16 @@ const LINK_IDS = ["terminal.linkClick", "terminal.urlMiddleClick"];
 const INTERACTION_IDS = [
   "terminal.scrollSensitivity",
   "terminal.fastScrollSensitivity",
+  "terminal.tuiScrollSensitivity",
+  "terminal.scrollReset",
   "terminal.focusFollowsMouse",
   "terminal.middleClickPaste",
   "terminal.shellIntegration",
 ];
 const BELL_IDS = ["terminal.bell"];
 const WORD_IDS = ["terminal.wordSeparators"];
-type SpeedField = "scrollSensitivity" | "fastScrollSensitivity";
+type SpeedField = "scrollSensitivity" | "fastScrollSensitivity" | "tuiScrollSensitivity";
+const SCROLL_FIELDS: SpeedField[] = ["scrollSensitivity", "fastScrollSensitivity", "tuiScrollSensitivity"];
 
 /** Settings → Terminal → Interaction, Links, Bell and Word separators. */
 export function TerminalBehaviourSection(props: TerminalSectionProps): JSX.Element {
@@ -36,7 +39,7 @@ export function TerminalBehaviourSection(props: TerminalSectionProps): JSX.Eleme
     const rest = { ...speed };
     delete rest[field];
     setSpeed(rest);
-    const value = parseNumber(raw, 2);
+    const value = parseNumber(raw, field === "tuiScrollSensitivity" ? 0 : 2);
     if (value === null || value === current[field]) return;
     void patch({ [field]: value });
   }
@@ -82,7 +85,36 @@ export function TerminalBehaviourSection(props: TerminalSectionProps): JSX.Eleme
               {speedInput("fastScrollSensitivity", 0.5)}
             </label>
           </SettingRow>
+          <SettingRow id="terminal.tuiScrollSensitivity" filter={filter}>
+            <label className="ws-field">
+              <span>{t("settings.terminal.interaction.tuiScroll")}</span>
+              {speedInput("tuiScrollSensitivity", 1)}
+              <small className="settings-hint">{t("settings.terminal.interaction.tuiScrollHint")}</small>
+            </label>
+          </SettingRow>
         </div>
+        {SCROLL_FIELDS.some((f) => current[f] !== TERMINAL_DEFAULTS[f]) && (
+          <SettingRow id="terminal.scrollReset" filter={filter}>
+            <div className="settings-actions settings-actions-start">
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy}
+                data-field="scroll-reset"
+                onClick={() => {
+                  setSpeed({});
+                  void patch({
+                    scrollSensitivity: TERMINAL_DEFAULTS.scrollSensitivity,
+                    fastScrollSensitivity: TERMINAL_DEFAULTS.fastScrollSensitivity,
+                    tuiScrollSensitivity: TERMINAL_DEFAULTS.tuiScrollSensitivity,
+                  });
+                }}
+              >
+                {t("settings.terminal.interaction.scrollReset")}
+              </button>
+            </div>
+          </SettingRow>
+        )}
         <ul className="settings-list">
           {settingShown(filter, "terminal.focusFollowsMouse") && (
             <li className="settings-item" data-switch="focusFollowsMouse" data-setting-id="terminal.focusFollowsMouse">

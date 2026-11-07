@@ -1,4 +1,6 @@
 import { copyText } from "@/ui/clipboard";
+import { trimGutter } from "./copyText";
+import { getTerminalSettings } from "./terminalSettings";
 import { pasteClipboard, type PasteResult } from "./clipboardPaste";
 import type { ShellKind } from "./pathPaste";
 import type { PtyClient } from "./ptyClient";
@@ -44,7 +46,7 @@ export function createTerminalHandle(deps: HandleDeps): TerminalHandle {
       const term = deps.term();
       if (!term?.hasSelection()) return false;
       const text = term.getSelection();
-      return text ? copyText(text) : false;
+      return text ? copyText(getTerminalSettings().copyTrimsGutter ? trimGutter(text) : text) : false;
     },
     async paste() {
       if (!deps.term()) return;

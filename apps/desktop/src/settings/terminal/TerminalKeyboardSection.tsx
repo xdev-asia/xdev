@@ -5,11 +5,11 @@ import type { MacOptionAsAlt } from "@/api";
 import { useI18n } from "@/i18n";
 import { IS_MAC } from "@/platform";
 import { getDetectedLayout, subscribeDetectedLayout, type DetectedLayout } from "@/terminal/optionAsAlt";
-import { SettingGroup, SettingRow } from "../SettingRow";
+import { SettingGroup, SettingRow, settingShown } from "../SettingRow";
 import type { TerminalSectionProps } from "./sectionProps";
 
 export const OPTION_MODES: readonly MacOptionAsAlt[] = ["auto", "both", "left", "right", "off"];
-const KEYBOARD_IDS = ["terminal.optionAsAlt"];
+const KEYBOARD_IDS = ["terminal.optionAsAlt", "terminal.jisYen"];
 
 /** The i18n key and variables of the line that says what the chosen mode does now. */
 export function optionStateText(mode: MacOptionAsAlt, layout: DetectedLayout): { key: string; layoutKey?: string } {
@@ -52,6 +52,25 @@ export function TerminalKeyboardSection(props: TerminalSectionProps): JSX.Elemen
         </p>
         <p className="settings-hint">{t("settings.terminal.keyboard.choose")}</p>
       </SettingRow>
+      {settingShown(filter, "terminal.jisYen") && (
+        <ul className="settings-list">
+          <li className="settings-item" data-switch="macJisYenToBackslash" data-setting-id="terminal.jisYen">
+            <div className="settings-item-text">
+              <strong>{t("settings.terminal.keyboard.jisYen")}</strong>
+              <span className="settings-path">{t("settings.terminal.keyboard.jisYenHint")}</span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              className="agent-switch"
+              aria-checked={current.macJisYenToBackslash}
+              aria-label={t("settings.terminal.keyboard.jisYen")}
+              disabled={busy}
+              onClick={() => void patch({ macJisYenToBackslash: !current.macJisYenToBackslash })}
+            />
+          </li>
+        </ul>
+      )}
     </SettingGroup>
   );
 }

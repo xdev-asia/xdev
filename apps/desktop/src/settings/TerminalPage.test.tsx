@@ -98,6 +98,7 @@ it("renders the stored values", async () => {
     en("settings.terminal.copyOnSelect"),
     en("settings.terminal.rightClickPaste"),
     en("settings.terminal.osc52Clipboard"),
+    en("settings.terminal.clipboard.trimGutter"),
   ]);
   expect(p.field("preview").props.style).toMatchObject({ fontFamily: "Fira Code", fontSize: 16 });
 });
@@ -353,6 +354,50 @@ it("word separators: committed on blur, Reset shown only when not default and pu
   expect(p.all().some((n) => n.props["data-field"] === "words-reset")).toBe(false);
 });
 
+it("trim gutter on copy is on by default and a click puts it off", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  expect(p.sw("copyTrimsGutter").props["aria-checked"]).toBe(true);
+  p.sw("copyTrimsGutter").props.onClick();
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, copyTrimsGutter: false });
+});
+
+it("TUI scroll speed commits whole steps and clamps to 10", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  p.field("tuiScrollSensitivity").props.onChange({ target: { value: "4" } });
+  p.field("tuiScrollSensitivity").props.onBlur();
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, tuiScrollSensitivity: 4 });
+  p.field("tuiScrollSensitivity").props.onChange({ target: { value: "99" } });
+  p.field("tuiScrollSensitivity").props.onBlur();
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, tuiScrollSensitivity: 99 });
+  expect(p.field("tuiScrollSensitivity").props.value).toBe("10");
+});
+
+it("scroll Reset shows only off the defaults and puts all three scroll defaults at once", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  const reset = () => p.all().find((n) => n.props["data-field"] === "scroll-reset");
+  expect(reset()).toBeUndefined();
+  p.field("scrollSensitivity").props.onChange({ target: { value: "2" } });
+  p.field("scrollSensitivity").props.onBlur();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(1);
+  reset()!.props.onClick();
+  await tick();
+  expect(put).toHaveBeenCalledTimes(2);
+  expect(put).toHaveBeenLastCalledWith({
+    ...TERMINAL_DEFAULTS,
+    scrollSensitivity: TERMINAL_DEFAULTS.scrollSensitivity,
+    fastScrollSensitivity: TERMINAL_DEFAULTS.fastScrollSensitivity,
+    tuiScrollSensitivity: TERMINAL_DEFAULTS.tuiScrollSensitivity,
+  });
+  expect(reset()).toBeUndefined();
+});
+
 it("empty word separators put the default", async () => {
   const p = await page({ wordSeparators: " /" });
   const put = vi.spyOn(p.api, "terminalSettingsPut");
@@ -380,6 +425,7 @@ it("search shows only the matching row (webgl, chuông)", async () => {
   expect(await rows("chuông")).toEqual(["terminal.bell"]);
   expect(await rows("liên kết")).toEqual(["terminal.linkClick", "terminal.urlMiddleClick"]);
   expect(await rows("middle")).toEqual(["terminal.urlMiddleClick"]);
+  expect(await rows("vim")).toEqual(["terminal.tuiScrollSensitivity"]);
 });
 
 const mine = { id: "custom-mine", name: "Mine", mode: "dark" as const, colors: TERMINAL_SCHEMES[0]!.colors };

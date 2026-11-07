@@ -71,6 +71,7 @@ import type {
   NotificationPermission,
   SettingsChanged,
   TerminalSettings,
+  TerminalHostInfo,
   KeySettings,
   KeybindingsChanged,
   KeybindingsText,
@@ -655,6 +656,8 @@ export type {
   TerminalGpu,
   TerminalBell,
   MacOptionAsAlt,
+  WindowsPowershell,
+  TerminalHostInfo,
   TerminalLinkClick,
   SettingsSection,
   SettingsChanged,
@@ -798,6 +801,7 @@ export type ErrorCode =
   | "pty_exists"
   | "pty_unknown"
   | "pty_spawn"
+  | "too_many_terminals"
   | "pty_resize"
   | "pty_gone"
   | "scan_failed"
@@ -1216,6 +1220,8 @@ export interface Api {
   // Settings -> Terminal; the put returns what was stored, with numbers clamped to their ranges.
   terminalSettings(): Promise<TerminalSettings>;
   terminalSettingsPut(s: TerminalSettings): Promise<TerminalSettings>;
+  /** The system PTY limit and which PowerShell is installed; fields that cannot be read are null or false. */
+  terminalHostInfo(): Promise<TerminalHostInfo>;
   /** Saves the clipboard image as a PNG in the temp folder; null when the clipboard holds no image. Rejects `too_large`. */
   clipboardImageSave(): Promise<string | null>;
   /** macOS keyboard input source id; null elsewhere. */
@@ -1234,6 +1240,10 @@ export interface Api {
   keybindingsWrite(text: string): Promise<void>;
   // Opens the folder, writing an empty version-1 file first when there is none.
   keybindingsReveal(): Promise<void>;
+  /** Opens keybindings.json in the system default app (null) or in VS Code or Cursor; rejects `not_found` when that editor is not installed. */
+  keybindingsOpenWith(editor: "code" | "cursor" | null): Promise<void>;
+  /** Shows keybindings.json selected in the file manager (the folder on Linux). */
+  keybindingsRevealFile(): Promise<void>;
   // After our own write and when the file changes on disk.
   onKeybindingsChanged(fn: (text: string | null) => void): Promise<() => void>;
   // xDev ID (the person's xDev account). The token never leaves Rust.
@@ -2761,6 +2771,7 @@ const tauriApi: Api = {
   setGitSettings: (git) => call("set_git_settings", { git }),
   terminalSettings: () => call("terminal_settings_get"),
   terminalSettingsPut: (settings) => call("terminal_settings_put", { settings }),
+  terminalHostInfo: () => call("terminal_host_info"),
   clipboardImageSave: () => call("clipboard_image_save"),
   keyboardInputSource: () => call("keyboard_input_source"),
   onSettingsChanged: (listener) => {
@@ -2773,6 +2784,8 @@ const tauriApi: Api = {
   keybindingsRead: () => call("keybindings_read"),
   keybindingsWrite: (text) => call("keybindings_write", { text }),
   keybindingsReveal: () => call("keybindings_reveal"),
+  keybindingsOpenWith: (editor) => call("keybindings_open_with", { editor }),
+  keybindingsRevealFile: () => call("keybindings_reveal_file"),
   onKeybindingsChanged: (fn) => listen<KeybindingsChanged>("keybindings://changed", (e) => fn(e.payload.text)),
   xdevIdState: () => call("xdev_id_state"),
   xdevIdSignIn: () => call("xdev_id_sign_in"),

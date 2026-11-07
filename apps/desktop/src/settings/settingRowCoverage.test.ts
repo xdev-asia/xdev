@@ -15,7 +15,7 @@ const PAGES: Record<string, string[]> = {
   orchestration: ["orchestration/OrchestrationPage.tsx", "orchestration/FailoverSection.tsx"],
   usage: ["UsagePage.tsx", "ApiKeysSection.tsx"],
   notifications: ["notifications/NotificationsPage.tsx"],
-  terminal: ["TerminalPage.tsx", "terminal/TerminalLookSection.tsx", "terminal/TerminalBehaviourSection.tsx", "terminal/TerminalKeyboardSection.tsx"],
+  terminal: ["TerminalPage.tsx", "terminal/TerminalLookSection.tsx", "terminal/TerminalBehaviourSection.tsx", "terminal/TerminalKeyboardSection.tsx", "terminal/TerminalAdvancedSection.tsx"],
   editor: ["EditorPage.tsx"],
   code: ["CodeIntelPage.tsx"],
   repos: ["ReposSettings.tsx"],

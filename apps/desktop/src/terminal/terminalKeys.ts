@@ -17,6 +17,8 @@ export type KeyContext = {
   alternateScreen: boolean;
   /** The pane runs an agent CLI rather than a plain shell or tool. */
   agent: boolean;
+  /** macOS, JIS keyboard: the Yen key types a backslash. */
+  jisYenToBackslash: boolean;
 };
 
 export type KeyAction = { type: "send"; data: string } | { type: "scroll"; to: "top" | "bottom" };
@@ -112,6 +114,9 @@ export function resolveTerminalKey(e: KeyLike, ctx: KeyContext): KeyAction | nul
   const only = (m: "meta" | "ctrl" | "alt" | "shift") =>
     meta === (m === "meta") && ctrl === (m === "ctrl") && alt === (m === "alt") && shift === (m === "shift");
   const numpad = e.code?.startsWith("Numpad") ?? false;
+
+  // A JIS keyboard's Yen key sends a backslash when Settings says so; Option keeps its own rules.
+  if (mac && ctx.jisYenToBackslash && e.key === "¥" && !meta && !ctrl && !alt) return send("\\");
 
   switch (e.key) {
     case "Enter":

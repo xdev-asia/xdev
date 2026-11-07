@@ -31,6 +31,8 @@ import { middlePasteText } from "./middlePaste";
 import { pasteClipboard, type PasteResult } from "./clipboardPaste";
 import { registerDropTarget } from "./fileDrop";
 import { trackInputModes } from "./inputModes";
+import { createTuiWheelHandler } from "./tuiScroll";
+import { trimGutter } from "./copyText";
 import { shellKindFor, type ShellKind } from "./pathPaste";
 import { effectiveOptionAsAlt, getDetectedLayout, subscribeDetectedLayout } from "./optionAsAlt";
 import { createOptionSideTracker, resolveTerminalKey } from "./terminalKeys";
@@ -252,6 +254,26 @@ export function Terminal(props: {
     const renderer = attachRenderer(term, getTerminalSettings().gpu);
     // What the program asked for (kitty flags, modifyOtherKeys) and which Option keys are held.
     const modes = trackInputModes(term);
+    // What a copy puts on the clipboard: without a TUI's border or line-number gutter when Settings says so.
+    const copied = (text: string) => (getTerminalSettings().copyTrimsGutter ? trimGutter(text) : text);
+    // Full-screen programs that track the mouse get the wheel steps times the TUI scroll speed.
+    term.attachCustomWheelEventHandler(
+      createTuiWheelHandler({
+        speed: () => getTerminalSettings().tuiScrollSensitivity,
+        trackingMode: () => term.modes.mouseTrackingMode,
+        encoding: () => modes.mouseEncoding(),
+        cell: (ev) => {
+          const box = el.querySelector(".xterm-screen")?.getBoundingClientRect();
+          if (!box || box.width <= 0 || !term.cols || !term.rows) return null;
+          const w = box.width / term.cols;
+          const h = box.height / term.rows;
+          const col = Math.min(term.cols, Math.max(1, Math.floor((ev.clientX - box.left) / w) + 1));
+          const row = Math.min(term.rows, Math.max(1, Math.floor((ev.clientY - box.top) / h) + 1));
+          return { col, row, height: h };
+        },
+        send: (data) => void client.input(data).catch(() => {}),
+      }),
+    );
     const optionSides = createOptionSideTracker();
     // The program is gone: its keyboard modes go with it.
     let offExit: (() => void) | null = null;
@@ -292,6 +314,7 @@ export function Terminal(props: {
           modifyOtherKeys: modes.modifyOtherKeys(),
           alternateScreen: term.buffer.active.type === "alternate",
           agent: isAgent.current,
+          jisYenToBackslash: getTerminalSettings().macJisYenToBackslash,
         });
         if (resolved === null) return true;
         if (resolved.type === "scroll") {
@@ -316,7 +339,7 @@ export function Terminal(props: {
           break;
         case "terminal.copy": {
           const text = term.getSelection();
-          if (text) void navigator.clipboard?.writeText(text).catch(() => {});
+          if (text) void navigator.clipboard?.writeText(copied(text)).catch(() => {});
           break;
         }
         case "terminal.paste":
@@ -339,7 +362,7 @@ export function Terminal(props: {
     });
     term.onSelectionChange(() => {
       const text = term.getSelection();
-      if (text && getTerminalSettings().copyOnSelect) void navigator.clipboard?.writeText(text).catch(() => {});
+      if (text && getTerminalSettings().copyOnSelect) void navigator.clipboard?.writeText(copied(text)).catch(() => {});
     });
     term.parser.registerOscHandler(7, (data) => {
       const cwd = cwdFromOsc7(data);

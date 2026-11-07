@@ -39,6 +39,11 @@ export const TERMINAL_DEFAULTS: TerminalSettings = {
   paddingPx: 8,
   backgroundOpacity: 1,
   shellIntegration: true,
+  tuiScrollSensitivity: 1,
+  copyTrimsGutter: true,
+  maxRunningTerminals: 256,
+  windowsPowershell: "auto",
+  macJisYenToBackslash: false,
 };
 
 // The double-click word separators when none are set (`DEFAULT_WORD_SEPARATORS` in Rust).
@@ -56,6 +61,8 @@ export const TERMINAL_LIMITS = {
   paneDividerPx: { min: 1, max: 4 },
   paddingPx: { min: 0, max: 24 },
   backgroundOpacity: { min: 0.5, max: 1 },
+  tuiScrollSensitivity: { min: 1, max: 10 },
+  maxRunningTerminals: { min: 1, max: 1024 },
 } as const;
 
 const clamp = (n: number, { min, max }: { min: number; max: number }) => Math.max(min, Math.min(max, n));
@@ -91,5 +98,11 @@ export function clampTerminalSettings(s: TerminalSettings): TerminalSettings {
     paneDividerPx: clamp(Math.round(s.paneDividerPx), TERMINAL_LIMITS.paneDividerPx),
     paddingPx: clamp(Math.round(s.paddingPx), TERMINAL_LIMITS.paddingPx),
     backgroundOpacity: clampOr(s.backgroundOpacity, TERMINAL_LIMITS.backgroundOpacity, TERMINAL_DEFAULTS.backgroundOpacity),
+    tuiScrollSensitivity: clampOr(
+      Math.round(s.tuiScrollSensitivity),
+      TERMINAL_LIMITS.tuiScrollSensitivity,
+      TERMINAL_DEFAULTS.tuiScrollSensitivity,
+    ),
+    maxRunningTerminals: clamp(Math.round(s.maxRunningTerminals), TERMINAL_LIMITS.maxRunningTerminals),
   };
 }

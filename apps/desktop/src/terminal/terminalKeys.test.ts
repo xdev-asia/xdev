@@ -16,6 +16,7 @@ const ctx = (platform: Platform, over: Partial<KeyContext> = {}): KeyContext => 
   modifyOtherKeys: 0,
   alternateScreen: false,
   agent: true,
+  jisYenToBackslash: false,
   ...over,
 });
 const key = (k: string, mods: Partial<Record<"meta" | "ctrl" | "alt" | "shift", boolean>> = {}, extra: Partial<KeyLike> = {}): KeyLike => ({
@@ -289,5 +290,19 @@ describe("plain shell versus agent and the alternate screen", () => {
     const c = ctx("linux", { agent: true, alternateScreen: true });
     expect(sent(key("ArrowLeft", { alt: true }), c)).toBe("\x1bb");
     expect(sent(key("Enter", { shift: true }), c)).toBe("\x1b\r");
+  });
+});
+
+describe("JIS Yen", () => {
+  const yen = "¥";
+  it("sends a backslash on mac when on", () => {
+    expect(resolveTerminalKey(key(yen), ctx("mac", { jisYenToBackslash: true }))).toEqual({ type: "send", data: "\\" });
+  });
+  it("leaves the key alone when off or off mac", () => {
+    expect(resolveTerminalKey(key(yen), ctx("mac"))).toBeNull();
+    expect(resolveTerminalKey(key(yen), ctx("win", { jisYenToBackslash: true }))).toBeNull();
+  });
+  it("does not apply with meta", () => {
+    expect(resolveTerminalKey(key(yen, { meta: true }), ctx("mac", { jisYenToBackslash: true }))).not.toEqual({ type: "send", data: "\\" });
   });
 });
