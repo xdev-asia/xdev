@@ -1459,6 +1459,14 @@ pub fn pty_spawn(
     }
     add_extra_args(&mut launch, extra_args.as_deref().unwrap_or_default())?;
     add_network_env(&mut launch.env, &settings_store::read(&app).network);
+    // The PowerShell version of Settings -> Terminal, before shell integration reads the program.
+    if cfg!(windows) && remote.is_none() {
+        crate::powershell_choice::apply(
+            &mut launch,
+            settings_store::read(&app).terminal.windows_powershell,
+            &|name| find_program(name),
+        );
+    }
     // A local shell marks its prompts and reports its folder, unless turned off.
     if remote.is_none() && settings_store::read(&app).terminal.shell_integration {
         crate::shell_integration::apply(&mut launch, data);
@@ -1856,6 +1864,24 @@ mod tests {
             )
             .expect("end of pty_spawn");
         assert!(body[..end].contains("ssh_tab_host("));
+    }
+
+    #[test]
+    fn pty_spawn_applies_the_choice_before_shell_integration() {
+        let src = include_str!("pty.rs");
+        let at = src.find("pub fn pty_spawn(").expect("pty_spawn");
+        let body = &src[at..];
+        let end = body
+            .find(
+                "
+}
+",
+            )
+            .expect("end of pty_spawn");
+        let body = &body[..end];
+        let choice = body.find("powershell_choice::apply").expect("choice");
+        let integration = body.find("shell_integration::apply").expect("integration");
+        assert!(choice < integration);
     }
 
     use std::sync::mpsc;

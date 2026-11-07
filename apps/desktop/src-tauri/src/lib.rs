@@ -73,6 +73,7 @@ mod orchestration;
 mod peers;
 mod ports;
 mod power;
+mod powershell_choice;
 mod pr_panel;
 mod pr_review;
 mod profiles;
