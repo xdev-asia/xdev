@@ -182,6 +182,14 @@ it("reports status after the folder opens", async () => {
   expect(h.status.at(-1)).toMatchObject({ dirty: false, save: "saved", docs: 2, stale: 0, folder: "handbook", path: "/p/handbook" });
 });
 
+it("reports the open doc and none before one is open", async () => {
+  const h = await host();
+  expect(h.status.at(-1)).toMatchObject({ doc: null });
+  h.of(Sidebar)[0].props.onOpen("a.md");
+  await h.settle();
+  expect(h.status.at(-1)).toMatchObject({ doc: "a.md" });
+});
+
 it("reports no folder while none is open", async () => {
   const h = await host({ api: noFolderApi() });
   expect(h.status.at(-1)).toMatchObject({ docs: 0, changes: null, folder: null, path: null });

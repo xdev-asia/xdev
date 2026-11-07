@@ -48,7 +48,7 @@ const SEARCH_LIMIT = 50;
 type Vault = { path: string; docs: DocEntry[]; open?: string };
 
 /** What the host tells the shell: the footer status plus which folder it is. */
-export type DocsHostStatus = DocsStatus & { folder: string | null; path: string | null };
+export type DocsHostStatus = DocsStatus & { folder: string | null; path: string | null; /** The doc open in the stage, relative to the folder. */ doc: string | null };
 
 export type DocsHostProps = {
   api?: Api;
@@ -68,7 +68,7 @@ function folderName(path: string): string {
   return path.split(/[/\\]/).filter(Boolean).pop() ?? path;
 }
 
-const NO_FOLDER: DocsHostStatus = { dirty: false, save: "saved", docs: 0, stale: 0, changes: null, folder: null, path: null };
+const NO_FOLDER: DocsHostStatus = { dirty: false, save: "saved", docs: 0, stale: 0, changes: null, folder: null, path: null, doc: null };
 
 /** Docs: the vault, its docs and the agents that work on them. It draws no chrome of its own. */
 export function DocsHost(props: DocsHostProps): JSX.Element {
@@ -478,10 +478,10 @@ export function VaultView(props: VaultViewProps): JSX.Element {
   const { onStatus } = props;
   const folder = folderName(props.vault.path);
   useEffect(() => {
-    onStatus({ dirty, save, docs: docs.length, stale: staleDocs.length, changes: changeCount, folder, path: props.vault.path });
+    onStatus({ dirty, save, docs: docs.length, stale: staleDocs.length, changes: changeCount, folder, path: props.vault.path, doc: state.path });
     // The shell's handler may change every render; only the values decide when to report.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, save, docs.length, staleDocs.length, changeCount, folder]);
+  }, [dirty, save, docs.length, staleDocs.length, changeCount, folder, state.path]);
 
   const list =
     searchOpen ? (

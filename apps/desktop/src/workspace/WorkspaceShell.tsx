@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
@@ -228,7 +228,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [navOpen, setNavOpen] = useState(false);
   // Docs draws its side list into this slot of the sidebar and tells the shell its status.
   const [navSlot, setNavSlot] = useState<HTMLElement | null>(null);
-  const [, setDocsStatus] = useState<DocsHostStatus | null>(null);
+  const [docsStatus, setDocsStatus] = useState<DocsHostStatus | null>(null);
   const docsRef = useRef<DocsHandle | null>(null);
   // The right panel (Files / Changes / Checks); hidden, not unmounted, so its state stays.
   const [sessions, setSessions] = useState<Sessions | null>(null);
@@ -428,6 +428,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }, [api, sessions]);
   const currentRepo = repos?.find((r) => r.worktrees.some((w) => w.path === current?.path)) ?? null;
   const branch = current ? (current.branch ?? t("workspace.detached")) : null;
+  // The header names where the user is: repo and branch, the docs folder and doc, or the place.
+  const placeLabel: Partial<Record<typeof view, string>> = { tasks: t("apps.tasks"), squads: t("apps.squads"), kit: t("apps.kit"), accounts: t("apps.accounts"), automations: t("workspace.nav.automations") };
+  const crumbs: { text: string; mono?: boolean }[] =
+    view === "workspace"
+      ? currentRepo && current ? [{ text: currentRepo.shortName }, { text: branch ?? "", mono: true }] : []
+      : view === "docs"
+        ? docsStatus?.folder ? [{ text: docsStatus.folder }, ...(docsStatus.doc ? [{ text: docsStatus.doc, mono: true }] : [])] : []
+        : placeLabel[view] ? [{ text: placeLabel[view] as string }] : [];
   // Noted during render, so the first frame of a worktree already has its tabs.
   const seen = current && !visited.includes(current.path) ? [...visited, current.path] : visited;
   if (seen !== visited) setVisited(seen);
@@ -918,19 +926,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
           <Icon name="sidebar" size={16} />
         </button>
         <NavButtons canBack={nav.canBack} canForward={nav.canForward} onBack={nav.back} onForward={nav.forward} />
-        {/* The docs app shows its own folder, so the crumbs go with the workspace view. */}
-        {view === "workspace" && currentRepo && current && (
-          <>
+        {crumbs.map((c, i) => (
+          <Fragment key={i}>
             <span className="ws-crumb-sep" aria-hidden="true">
               /
             </span>
-            <span className="ws-crumb">{currentRepo.shortName}</span>
-            <span className="ws-crumb-sep" aria-hidden="true">
-              /
-            </span>
-            <span className="ws-crumb ws-mono">{branch}</span>
-          </>
-        )}
+            <span className={c.mono ? "ws-crumb ws-mono" : "ws-crumb"}>{c.text}</span>
+          </Fragment>
+        ))}
         <div className="ws-header-center">
           <HeaderSearch onOpen={openSearch} onJump={() => setJumpOpen(true)} />
         </div>

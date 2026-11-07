@@ -104,6 +104,7 @@ function nodes(value: unknown): Node[] {
       ...nodes([p.titlebar, p.brand, p.crumbs, p.actions, p.sidebar, p.children, p.footer, p.overlays]),
       rail("workspace", p.labels.workspace),
       rail("docs", p.labels.docs),
+      ...(["tasks", "squads", "kit", "accounts"] as const).filter((x) => p.places.includes(x)).map((x) => rail(x, p.labels[x])),
       ...(p.places.includes("automations") ? [rail("automations", p.labels.automations)] : []),
     ];
   }
@@ -247,6 +248,28 @@ it("opening a vault from the nav remounts docs", async () => {
   nav.props.onOpened("/demo/xdev/docs");
   expect(view.of(DocsHost)).toHaveLength(1);
   expect(key()).not.toBe(before);
+});
+
+const STATUS = { dirty: false, save: "saved" as const, docs: 2, stale: 0, changes: 0, folder: "handbook", path: "/p/handbook", doc: null as string | null };
+
+it("docs crumbs show the folder and the doc path", async () => {
+  const view = await harness();
+  const crumbs = () => view.all().filter(n => String(n.props.className ?? "").includes("ws-crumb") && !String(n.props.className).includes("sep")).map(text);
+  view.nav(en("workspace.nav.docs")).props.onClick();
+  expect(crumbs()).toEqual([]);
+  view.of(DocsHost)[0].props.onStatus(STATUS);
+  expect(crumbs()).toEqual(["handbook"]);
+  view.of(DocsHost)[0].props.onStatus({ ...STATUS, doc: "guide/a.md" });
+  expect(crumbs()).toEqual(["handbook", "guide/a.md"]);
+});
+
+it("tasks crumb shows the place name", async () => {
+  const view = await harness();
+  const crumbs = () => view.all().filter(n => String(n.props.className ?? "").includes("ws-crumb") && !String(n.props.className).includes("sep")).map(text);
+  view.nav(en("apps.tasks")).props.onClick();
+  expect(crumbs()).toEqual([en("apps.tasks")]);
+  view.nav(en("workspace.nav.workspace")).props.onClick();
+  expect(crumbs()).toEqual(["xdev", "main"]);
 });
 
 it("blocks a folder switch while the doc is not saved", async () => {
