@@ -1,10 +1,9 @@
-import { onTreeReveal } from "@/files/treeReveal";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import pkg from "../../package.json";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, SSH_SHELL_PREFIX, profileName } from "@/agents/profileStore";
-import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type IssuesPreset, type CreateRequest, type PrSummary, type MrSummary, type MenuAction, type SetupDecision, type BaseDrift, type Provider, type ProfilesView } from "@/api";
+import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MrSummary, type MenuAction, type SetupDecision, type BaseDrift, type Provider, type ProfilesView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp } from "@/DocsApp";
 import { useI18n } from "@/i18n";
@@ -133,6 +132,7 @@ import { SshAuthPrompts } from "@/components/SshAuthDialog";
 import { PeersHost } from "@/peers/PeersHost";
 import { runMenuAction } from "@/shell/menuActions";
 import { useShellLabels } from "@/shell/shellLabels";
+import { useShellPanels } from "@/shell/useShellPanels";
 import { useShellViews } from "@/shell/useShellViews";
 import { annotateClipboard } from "@/capture/annotateBridge";
 import { CaptureHost } from "@/capture/CaptureHost";
@@ -149,7 +149,7 @@ import { PrCommentStore } from "./prCommentStore";
 import { PrStore } from "./prs";
 import { WorktreeStats } from "./stats";
 import type { TabStatus } from "./status";
-import { WorktreeChanges, type ChangesHandlers } from "./WorktreeChanges";
+import { WorktreeChanges } from "./WorktreeChanges";
 import { worktreeTarget } from "./groups";
 import { WorktreeList } from "./WorktreeList";
 import { NameDialog } from "./NameDialog";
@@ -205,19 +205,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [navOpen, setNavOpen] = useState(false);
   // The right panel (Files / Changes / Checks); hidden, not unmounted, so its state stays.
-  const [rightOpen, setRightOpen] = useState(true);
-  // The mounted changes panel's bulk actions, for the palette.
-  const changesHandlers = useRef<ChangesHandlers | null>(null);
-  const [changesReady, setChangesReady] = useState(false);
-  const registerChanges = useCallback((h: ChangesHandlers | null) => {
-    changesHandlers.current = h;
-    setChangesReady(h !== null);
-  }, []);
-  const runOnChanges = (run: (h: ChangesHandlers) => void) => {
-    setSidebarOpen(true);
-    setPanelTab("changes");
-    if (changesHandlers.current) run(changesHandlers.current);
-  };
   const [sessions, setSessions] = useState<Sessions | null>(null);
   // The agent session history, and which of the two sidebar views shows.
   const [history, setHistory] = useState<AgentSessionsStore | null>(null);
@@ -279,14 +266,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [reveal, setReveal] = useState<(Reveal & { worktree: string }) | null>(null);
   // The commit the commit tab shows, and the worktree it belongs to.
   const [commitAsk, setCommitAsk] = useState<(CommitAsk & { worktree: string }) | null>(null);
-  // How many files the Changes panel last listed, for the worktree it listed them for.
-  const [changeCount, setChangeCount] = useState<{ worktree: string; count: number } | null>(null);
-  // The files the Changes panel last listed; the Files tree marks them.
-  const [changeList, setChangeList] = useState<{ worktree: string; list: WorktreeChange[] } | null>(null);
-  const [panelTab, setPanelTab] = useState<PanelTab>("files");
-  // Settings → Git: where the Issues panel opens, and whether its tab shows. The shortcut pins the tab for the session.
-  const [issuesGit, setIssuesGit] = useState<{ preset: IssuesPreset; tab: boolean }>({ preset: "all", tab: true });
-  const [issuesPinned, setIssuesPinned] = useState(false);
   // The window has the person: focused and not minimised. Only then is a pane on screen seen.
   const [focused, setFocused] = useState(windowFocused);
   // The terminal panes on screen in each worktree, as its tab strip reports them.
@@ -308,8 +287,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The jump palette, and the settings section it asked for; a new `seq` is a new request.
   const [jumpOpen, setJumpOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
-  // A new value asks the search tab for the keyboard.
-  const [searchFocus, setSearchFocus] = useState(0);
   // Asks the front terminal of a worktree to take keyboard focus, as the palette closes.
   const [termFocus, setTermFocus] = useState<{ worktree: string; seq: number } | null>(null);
   const focusTerminal = (worktree: string) => setTermFocus((f) => ({ worktree, seq: (f?.seq ?? 0) + 1 }));
@@ -375,6 +352,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     void load();
     // Loaded once; every action below reloads after it changes the list.
   }, [api]);
+  const {
+    rightOpen, setRightOpen, changesReady, registerChanges, runOnChanges, panelTab, setPanelTab, issuesGit, issuesPinned,
+    searchFocus, focusSearch, prPage, panelKey, openPrTab, openPrPage, changeCount, setChangeCount, changeList, setChangeList,
+  } = useShellPanels({ api, view, show, setSidebarOpen });
 
   useEffect(() => {
     const mac = IS_MAC;
@@ -414,8 +395,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }, [api, sessions]);
 
   // An account crossing a quota threshold raises a toast that can move new tabs to another account.
-  // "Reveal in file tree" from an editor tab shows the files panel.
-  useEffect(() => onTreeReveal(() => { setRightOpen(true); setPanelTab("files"); }), []);
   useEffect(() => watchQuotaAlerts({ api, t: (key, vars) => live.t(key, vars), toast: pushToast }), [api]);
   useEffect(() => watchFailovers({ api, t: (key, vars) => live.t(key, vars), toast: pushToast }), [api]);
 
@@ -965,40 +944,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     void loadZoom(api);
   }, []);
   // Keys that work in every view; the worktree keys below need the workspace.
-  // A panel key shows that tab of the right panel; pressed again on the tab in front, it closes the panel.
-  function panelKey(tab: PanelTab): void {
-    show("workspace");
-    if (rightOpen && panelTab === tab) {
-      setRightOpen(false);
-      return;
-    }
-    setRightOpen(true);
-    setPanelTab(tab);
-    if (tab === "issues") setIssuesPinned(true);
-  }
-  // The PR chip and the palette open the pull request panel; unlike a panel key, a second ask keeps it open.
-  function openPrTab(): void {
-    show("workspace");
-    setRightOpen(true);
-    setPanelTab("pr");
-  }
   live.openPrTab = openPrTab;
+  live.openPrPage = () => openPrPage(current?.path ?? null);
   useEffect(() => onPrPanelOpen(() => live.openPrTab()), []);
-  // "Open full view" and the palette open the pull request as a page among the worktree's tabs.
-  const [prPage, setPrPage] = useState<{ worktree: string; seq: number } | null>(null);
-  live.openPrPage = () => {
-    show("workspace");
-    if (current) setPrPage((p) => ({ worktree: current.path, seq: (p?.seq ?? 0) + 1 }));
-  };
   useEffect(() => onPrPageOpen(() => live.openPrPage()), []);
-  // Read on start and again when the person comes back from Settings.
-  useEffect(() => {
-    if (view === "settings") return;
-    api.gitSettings().then(
-      (git) => setIssuesGit({ preset: git.issuesDefaultView, tab: git.showIssuesTab }),
-      () => undefined,
-    );
-  }, [api, view]);
   useEffect(() => startQuickCommands(api), [api]);
   useShellLabels(api);
   useCaptureFailures(api);
@@ -1051,8 +1000,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     "panel.search": () => {
       show("workspace");
       setRightOpen(true);
-      setPanelTab("search");
-      setSearchFocus((n) => n + 1);
+      focusSearch();
     },
     "panel.sourceControl": () => panelKey("changes"),
     "panel.issues": () => panelKey("issues"),
@@ -2545,7 +2493,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                 </p>
               )}
             </main>
-            <RightPanel open={rightOpen} tab={panelTab} changes={count} failing={failing} issuesTab={issuesGit.tab} issuesPinned={issuesPinned} onTab={(tab, focusSearch) => { setPanelTab(tab); if (focusSearch) setSearchFocus((n) => n + 1); }}>
+            <RightPanel open={rightOpen} tab={panelTab} changes={count} failing={failing} issuesTab={issuesGit.tab} issuesPinned={issuesPinned} onTab={(tab, focus) => { setPanelTab(tab); if (focus) focusSearch(); }}>
               <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
                 <SurfaceBoundary id="panel.files" surface="Right sidebar: files" resetKey={current?.path} titleKey="boundary.panel.title">
                   {current ? (
@@ -2559,10 +2507,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                       onOpen={(file) => openFile(current.path, file)}
                       activeFile={fileTabRel(shownTab[current.path] ?? "")}
                       onOpenTerminal={(dir) => void newTerminalIn(current, dir)}
-                      onSearch={() => {
-                        setPanelTab("search");
-                        setSearchFocus((n) => n + 1);
-                      }}
+                      onSearch={focusSearch}
                     />
                   ) : (
                     <p className="ws-empty">{t("workspace.panel.empty")}</p>
