@@ -1239,6 +1239,10 @@ export interface Api {
   keybindingsWrite(text: string): Promise<void>;
   // Opens the folder, writing an empty version-1 file first when there is none.
   keybindingsReveal(): Promise<void>;
+  /** Opens keybindings.json in the system default app (null) or in VS Code or Cursor; rejects `not_found` when that editor is not installed. */
+  keybindingsOpenWith(editor: "code" | "cursor" | null): Promise<void>;
+  /** Shows keybindings.json selected in the file manager (the folder on Linux). */
+  keybindingsRevealFile(): Promise<void>;
   // After our own write and when the file changes on disk.
   onKeybindingsChanged(fn: (text: string | null) => void): Promise<() => void>;
   // xDev ID (the person's xDev account). The token never leaves Rust.
@@ -2779,6 +2783,8 @@ const tauriApi: Api = {
   keybindingsRead: () => call("keybindings_read"),
   keybindingsWrite: (text) => call("keybindings_write", { text }),
   keybindingsReveal: () => call("keybindings_reveal"),
+  keybindingsOpenWith: (editor) => call("keybindings_open_with", { editor }),
+  keybindingsRevealFile: () => call("keybindings_reveal_file"),
   onKeybindingsChanged: (fn) => listen<KeybindingsChanged>("keybindings://changed", (e) => fn(e.payload.text)),
   xdevIdState: () => call("xdev_id_state"),
   xdevIdSignIn: () => call("xdev_id_sign_in"),

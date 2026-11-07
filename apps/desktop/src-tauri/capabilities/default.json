@@ -82,6 +82,8 @@
     "allow-keybindings-read",
     "allow-keybindings-write",
     "allow-keybindings-reveal",
+    "allow-keybindings-open-with",
+    "allow-keybindings-reveal-file",
     "allow-git-user-name",
     "allow-vault-setup",
     "allow-dismiss-vault-prompt",

@@ -13,8 +13,9 @@ use notify_debouncer_full::notify::{self, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, NoCache, new_debouncer_opt};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::accounts::data_dir;
 use crate::atomic::write_atomic;
-use crate::commands::CmdError;
+use crate::commands::{AppState, CmdError};
 
 pub const FILE_NAME: &str = "keybindings.json";
 /// Emitted after our own write and when the file changes on disk, with a
@@ -149,6 +150,58 @@ pub fn keybindings_reveal(app: AppHandle) -> Result<(), CmdError> {
     crate::reveal::reveal(dir, false).map_err(io_err)
 }
 
+/// The program an editor name stands for. Only these two names are accepted, so the webview
+/// cannot run an arbitrary program. `None` is the system default app.
+fn editor_command(editor: Option<&str>) -> Result<Option<&'static str>, CmdError> {
+    match editor {
+        None => Ok(None),
+        Some("code") => Ok(Some("code")),
+        Some("cursor") => Ok(Some("cursor")),
+        Some(_) => Err(crate::workspace::bad_arg("editor")),
+    }
+}
+
+/// Opens `keybindings.json` (written empty first when there is none) in the system default app
+/// for `.json` files, or with `editor` ("code" or "cursor"). `not_found` when that editor is not
+/// on `PATH`; `bad_arg` for any other name.
+#[tauri::command(async)]
+pub fn keybindings_open_with(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    editor: Option<String>,
+) -> Result<(), CmdError> {
+    let command = editor_command(editor.as_deref())?;
+    let path = file_path(&app)?;
+    create_if_missing(&path).map_err(io_err)?;
+    match command {
+        None => {
+            use tauri_plugin_opener::OpenerExt;
+            app.opener()
+                .open_path(path.to_string_lossy(), None::<&str>)
+                .map_err(|e| CmdError {
+                    code: "open_failed",
+                    detail: Some(e.to_string()),
+                })
+        }
+        Some(command) => crate::open_in::open_file_with_command(data_dir(&state)?, command, &path),
+    }
+}
+
+/// Shows `keybindings.json` in the file manager, selected where the OS can (the folder on
+/// Linux); writes an empty file first when there is none.
+#[tauri::command]
+pub fn keybindings_reveal_file(app: AppHandle) -> Result<(), CmdError> {
+    reveal_file_at(&file_path(&app)?, crate::reveal::reveal)
+}
+
+fn reveal_file_at(
+    path: &Path,
+    reveal: impl FnOnce(&Path, bool) -> io::Result<()>,
+) -> Result<(), CmdError> {
+    create_if_missing(path).map_err(io_err)?;
+    reveal(path, true).map_err(io_err)
+}
+
 /// Watching stops when this is dropped; kept in app state for the app's life.
 pub struct KeybindingsWatcher {
     _debouncer: Mutex<Debouncer<RecommendedWatcher, NoCache>>,
@@ -218,6 +271,32 @@ mod tests {
             .collect();
         out.sort();
         out
+    }
+
+    #[test]
+    fn editor_names_are_limited() {
+        assert_eq!(editor_command(None).unwrap(), None);
+        assert_eq!(editor_command(Some("code")).unwrap(), Some("code"));
+        assert_eq!(editor_command(Some("cursor")).unwrap(), Some("cursor"));
+        let err = editor_command(Some("rm")).unwrap_err();
+        assert_eq!(
+            (err.code, err.detail.as_deref()),
+            ("bad_arg", Some("editor"))
+        );
+    }
+
+    #[test]
+    fn reveal_file_creates_the_file_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cfg").join(FILE_NAME);
+        let mut seen = None;
+        reveal_file_at(&path, |p, select| {
+            seen = Some((p.to_owned(), select, p.exists()));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(seen, Some((path.clone(), true, true)));
+        assert_eq!(fs::read_to_string(&path).unwrap(), EMPTY_FILE);
     }
 
     #[test]

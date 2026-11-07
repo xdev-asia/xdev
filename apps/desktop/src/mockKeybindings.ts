@@ -1,12 +1,24 @@
 import type { Api } from "./api";
 
-type KeybindingsApi = Pick<Api, "keybindingsRead" | "keybindingsWrite" | "keybindingsReveal" | "onKeybindingsChanged">;
+type KeybindingsApi = Pick<
+  Api,
+  | "keybindingsRead"
+  | "keybindingsWrite"
+  | "keybindingsReveal"
+  | "keybindingsOpenWith"
+  | "keybindingsRevealFile"
+  | "onKeybindingsChanged"
+>;
 
 export type MockKeybindings = KeybindingsApi & {
   // Changes the file the way an editor would (`null` deletes it); the change event fires.
   __editKeybindings(text: string | null): void;
   // How often `keybindingsReveal` ran.
   __reveals(): number;
+  // The editor of each `keybindingsOpenWith` call, in order (`null` is the default app).
+  __opens(): (string | null)[];
+  // How often `keybindingsRevealFile` ran.
+  __revealFiles(): number;
 };
 
 export const MOCK_KEYBINDINGS_PATH = "/demo/config/keybindings.json";
@@ -17,6 +29,8 @@ const MAX_BYTES = 1024 * 1024;
 export function createMockKeybindings(initial: string | null = null): MockKeybindings {
   let text = initial;
   let reveals = 0;
+  let revealFiles = 0;
+  const opens: (string | null)[] = [];
   const listeners = new Set<(text: string | null) => void>();
   const emit = () => {
     for (const l of [...listeners]) l(text);
@@ -37,6 +51,20 @@ export function createMockKeybindings(initial: string | null = null): MockKeybin
         emit();
       }
     },
+    async keybindingsOpenWith(editor) {
+      opens.push(editor);
+      if (text === null) {
+        text = EMPTY_FILE;
+        emit();
+      }
+    },
+    async keybindingsRevealFile() {
+      revealFiles += 1;
+      if (text === null) {
+        text = EMPTY_FILE;
+        emit();
+      }
+    },
     async onKeybindingsChanged(fn) {
       listeners.add(fn);
       return () => void listeners.delete(fn);
@@ -46,5 +74,7 @@ export function createMockKeybindings(initial: string | null = null): MockKeybin
       emit();
     },
     __reveals: () => reveals,
+    __opens: () => [...opens],
+    __revealFiles: () => revealFiles,
   };
 }

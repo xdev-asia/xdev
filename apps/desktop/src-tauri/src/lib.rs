@@ -439,6 +439,8 @@ pub fn run() {
             keybindings::keybindings_read,
             keybindings::keybindings_write,
             keybindings::keybindings_reveal,
+            keybindings::keybindings_open_with,
+            keybindings::keybindings_reveal_file,
             commands::git_user_name,
             commands::vault_setup,
             commands::dismiss_vault_prompt,

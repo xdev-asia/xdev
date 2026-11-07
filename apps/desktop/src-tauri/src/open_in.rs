@@ -114,6 +114,43 @@ pub fn open_in(
     )
 }
 
+/// Opens `file` in the program `command` found on `PATH`, for a file that is not in a checkout
+/// (the keybindings file). `not_found` when the program is missing.
+pub(crate) fn open_file_with_command(
+    data: &Path,
+    command: &str,
+    file: &Path,
+) -> Result<(), CmdError> {
+    open_file_with(data, command, file, &Search::from_env(), start)
+}
+
+fn open_file_with(
+    data: &Path,
+    command: &str,
+    file: &Path,
+    search: &Search,
+    run: impl FnOnce(Launch) -> io::Result<()>,
+) -> Result<(), CmdError> {
+    let program = search.find(command).ok_or_else(|| not_found(command))?;
+    let cwd = file.parent().unwrap_or(file).to_owned();
+    let action = Action::RunCommand {
+        program: command.to_owned(),
+        args: vec![file.to_string_lossy().into_owned()],
+        cwd: cwd.clone(),
+    };
+    // The person picked the editor from the menu: that is the approval.
+    allowed(data, &action, true)?;
+    run(Launch::App {
+        program,
+        args: vec![file.as_os_str().to_owned()],
+        cwd,
+    })
+    .map_err(|e| CmdError {
+        code: "io",
+        detail: Some(e.to_string()),
+    })
+}
+
 /// What `open_in` starts; tests record it instead of starting it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Launch {
@@ -511,6 +548,58 @@ mod tests {
             (err.code, err.detail.as_deref()),
             ("not_found", Some("no-such-editor"))
         );
+    }
+
+    #[test]
+    fn open_file_with_finds_the_editor_and_runs_it() {
+        let fx = fx();
+        let file = fx.repo.join("keybindings.json");
+        let mut seen = None;
+        open_file_with(&fx.data, "code", &file, &fx.search(), |l| {
+            seen = Some(l);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            seen,
+            Some(Launch::App {
+                program: fx.code(),
+                args: vec![file.as_os_str().to_owned()],
+                cwd: fx.repo.clone(),
+            })
+        );
+    }
+
+    #[test]
+    fn open_file_with_reports_a_missing_editor() {
+        let fx = fx();
+        let file = fx.repo.join("keybindings.json");
+        let mut ran = false;
+        let err = open_file_with(&fx.data, "cursor", &file, &fx.search(), |_| {
+            ran = true;
+            Ok(())
+        })
+        .unwrap_err();
+        assert_eq!(
+            (err.code, err.detail.as_deref()),
+            ("not_found", Some("cursor"))
+        );
+        assert!(!ran);
+    }
+
+    #[test]
+    fn open_file_with_respects_the_policy() {
+        let fx = fx();
+        std::fs::write(fx.data.join("policy.json"), "{not json").unwrap();
+        let file = fx.repo.join("keybindings.json");
+        let mut ran = false;
+        let err = open_file_with(&fx.data, "code", &file, &fx.search(), |_| {
+            ran = true;
+            Ok(())
+        })
+        .unwrap_err();
+        assert_eq!(err.code, "policy_invalid");
+        assert!(!ran);
     }
 
     #[test]
