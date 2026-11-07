@@ -665,6 +665,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
   });
   // The `remoteHost` each `ptySpawn` got, by pty id.
   const remoteHosts: Record<string, string> = {};
+  const xdevId = createMockXdevId(options.xdevId);
   const api: MockApi = {
     ...createMockBoard(),
     ...createMockTasks({
@@ -702,7 +703,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockTermConfig(settingsHub.emit),
     agentsSettingsPut: power.agentsSettingsPut,
     ...createMockKeybindings(options.keybindings ?? null),
-    ...createMockXdevId(options.xdevId),
+    ...xdevId,
     ...createMockKit(async () => (await settingsApi.usageSettings()).scan),
     ...createMockOpenIn(settingsHub.emit, workspace.repoAdd),
     ...createMockTermLinks(workspace.filesList),
@@ -749,7 +750,7 @@ export function createMockApi(seed: Record<string, string>, options: MockOptions
     ...createMockPeers(),
     ...createMockLicense(),
     ...createMockTargets(() => api.__ptyWrittenAll()),
-    ...createMockCloud(() => void api.xdevIdSignOut()),
+    ...createMockCloud((serverUrl) => xdevId.__xdevIdServerChanged(serverUrl)),
     async clipboardImageSave() {
       if (mockClipboardImage === null || typeof mockClipboardImage === "string") return mockClipboardImage;
       throw mockClipboardImage;

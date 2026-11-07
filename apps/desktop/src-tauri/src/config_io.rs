@@ -22,8 +22,8 @@ const SHOWN_MAX: usize = 80;
 
 /// The settings sections a file may carry, as their keys in `settings.json`.
 /// Not listed on purpose: `version`, `lastVault` and `vaultPrompted` (this
-/// machine), `quickCommandsRecent` (history) and `xdevId` (the account's
-/// server and sign-in).
+/// machine), `quickCommandsRecent` (history) and `cloud` (the xDev server
+/// the account signs in at, and its keys).
 pub const SECTIONS: &[&str] = &[
     "git",
     "status",

@@ -176,7 +176,7 @@ export function AccountPage(props: SettingsSectionProps): JSX.Element {
         </div>
       </SettingRow>
       <LicensePanel api={api} filter={filter} signedIn={state.state === "signedIn"} />
-      <ServerRow api={api} filter={filter} signedIn={state.state === "signedIn"} />
+      <ServerRow api={api} filter={filter} openSection={props.openSection} />
       <RoutingSection api={api} filter={filter} />
     </div>
   );

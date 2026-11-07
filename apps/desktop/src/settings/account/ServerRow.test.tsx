@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { Banner, Button, FieldMessage } from "@xdev-asia/ui";
+import { Banner, Button, Field } from "@xdev-asia/ui";
 import { createMockApi } from "@/api";
 import { translate } from "@/i18n";
 import { ServerRow } from "./ServerRow";
@@ -29,104 +29,80 @@ function nodes(value: unknown): Node[] {
   return [node, ...nodes(node.props.children)];
 }
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
-const en = (key: string) => translate("en", key);
+const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; });
 
-async function view(signedIn: boolean, prepare?: (api: ReturnType<typeof createMockApi>) => void) {
-  const api = createMockApi({}, { xdevId: signedIn ? "signedIn" : "signedOut" });
+async function view(prepare?: (api: ReturnType<typeof createMockApi>) => void, openSection?: (id: string) => void) {
+  const api = createMockApi({}, { xdevId: "signedOut" });
   prepare?.(api);
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
-    try { return ServerRow({ api, signedIn }); } finally { hooks.active = false; }
+    try { return ServerRow({ api, openSection }); } finally { hooks.active = false; }
   };
   draw();
   hooks.effects.forEach((e) => e());
   await tick();
   const all = () => nodes(draw());
-  const button = (label: string) => all().find((n) => n.type === Button && n.props.children === label);
-  const labels = () => all().filter((n) => n.type === Button).map((n) => n.props.children);
+  const texts = () => all().map((n) => n.props.children);
+  const buttons = () => all().filter((n) => n.type === Button);
   const banners = () => all().filter((n) => n.type === Banner).map((n) => n.props.title);
-  const field = () => all().find((n) => n.props.label === en("account.server.label"))!;
-  const submit = async () => { all().find((n) => n.type === "form")!.props.onSubmit({ preventDefault() {} }); await tick(); };
-  return { api, all, button, labels, banners, field, submit };
+  return { api, all, texts, buttons, banners };
 }
 
-it("the Server row shows the server in use, its source, an empty field and two secondary buttons", async () => {
-  const v = await view(false);
-  const texts = v.all().map((n) => n.props.children);
-  expect(texts).toContain(translate("en", "account.server.current", { origin: "https://id.xdev.asia" }));
-  expect(texts).toContain(en("account.server.source.default"));
-  expect(v.field().props.value).toBe("");
-  expect(v.labels()).toEqual([en("account.server.save"), en("account.server.useDefault")]);
-  // The sign-in button is the page's one primary action, so neither of these is.
-  expect(v.labels().every((l) => v.button(l as string)!.props.variant === "secondary")).toBe(true);
-  expect(v.button(en("account.server.save"))!.props.type).toBe("submit");
-  expect(v.button(en("account.server.useDefault"))!.props.type).toBe("button");
+it("one setting: both places call it the xDev server", () => {
+  expect(en("account.server.title")).toBe("xDev server");
+  expect(en("cloud.server.title")).toBe("xDev server");
+  expect(translate("vi", "account.server.title")).toBe(translate("vi", "cloud.server.title"));
+});
+
+it("the row only shows the server in use and where it comes from; it has no field of its own", async () => {
+  const v = await view();
+  expect(v.texts()).toContain(en("account.server.title"));
+  expect(v.texts()).toContain(en("account.server.current", { origin: "https://id.xdev.asia" }));
+  expect(v.texts()).toContain(en("account.server.source.default"));
+  expect(v.texts()).toContain(en("account.server.hint"));
+  expect(v.all().some((n) => n.type === Field || n.type === "form" || n.type === "input")).toBe(false);
   expect(v.banners()).toEqual([]);
+  // Without a way to switch sections there is nothing to press.
+  expect(v.buttons()).toEqual([]);
 });
 
-it("an invalid address shows the error and changes nothing", async () => {
-  const v = await view(false);
-  v.field().props.onChange({ target: { value: "http://id.corp.test" } });
-  await v.submit();
-  expect(v.all().find((n) => n.type === FieldMessage)!.props.children).toBe(en("error.account_server"));
-  expect(v.all().map((n) => n.props.children)).toContain(translate("en", "account.server.current", { origin: "https://id.xdev.asia" }));
+it("Change opens Settings → Cloud, the one place that edits it", async () => {
+  const openSection = vi.fn();
+  const v = await view(undefined, openSection);
+  const change = v.buttons();
+  expect(change.map((b) => b.props.children)).toEqual([en("account.server.change")]);
+  // The sign-in button is the page's one primary action.
+  expect(change[0]!.props.variant).toBe("secondary");
+  expect(change[0]!.props.type).toBe("button");
+  change[0]!.props.onClick();
+  expect(openSection).toHaveBeenCalledWith("cloud");
 });
 
-it("signed out: Save switches at once and Use default goes back", async () => {
-  const v = await view(false);
-  const spy = vi.spyOn(v.api, "xdevIdServerSet");
-  v.field().props.onChange({ target: { value: " https://id.corp.test " } });
-  await v.submit();
-  expect(spy).toHaveBeenCalledWith("https://id.corp.test");
-  const texts = () => v.all().map((n) => n.props.children);
-  expect(texts()).toContain(translate("en", "account.server.current", { origin: "https://id.corp.test" }));
-  expect(texts()).toContain(en("account.server.source.setting"));
-  expect(v.field().props.value).toBe("https://id.corp.test");
-  v.button(en("account.server.useDefault"))!.props.onClick();
-  await tick();
-  expect(spy).toHaveBeenLastCalledWith("");
-  expect(texts()).toContain(en("account.server.source.default"));
-});
-
-it("signed in: a change asks first, and only the yes signs out and switches", async () => {
-  const v = await view(true);
-  const spy = vi.spyOn(v.api, "xdevIdServerSet");
-  v.field().props.onChange({ target: { value: "https://id.corp.test" } });
-  await v.submit();
-  expect(spy).not.toHaveBeenCalled();
-  expect(v.banners()).toEqual([en("account.server.confirm.title")]);
-  expect(v.labels()).toEqual([en("account.server.confirm.yes"), en("account.server.confirm.no")]);
-  v.button(en("account.server.confirm.no"))!.props.onClick();
-  await tick();
-  expect(spy).not.toHaveBeenCalled();
-  expect(v.labels()).toEqual([en("account.server.save"), en("account.server.useDefault")]);
-  await v.submit();
-  v.button(en("account.server.confirm.yes"))!.props.onClick();
-  await tick();
-  expect(spy).toHaveBeenCalledWith("https://id.corp.test");
-  expect(await v.api.xdevIdState()).toEqual({ state: "signedOut", notice: null });
-  expect(v.banners()).toEqual([]);
+it("a server saved in Settings → Cloud shows here as the setting", async () => {
+  const v = await view((api) => {
+    vi.spyOn(api, "xdevIdServer").mockResolvedValue({ origin: "https://id.corp.test", source: "setting", setting: "https://id.corp.test", invalid: false });
+  });
+  expect(v.texts()).toContain(en("account.server.current", { origin: "https://id.corp.test" }));
+  expect(v.texts()).toContain(en("account.server.source.setting"));
 });
 
 it("an invalid setting found at startup shows a notice", async () => {
-  const v = await view(false, (api) => {
+  const v = await view((api) => {
     vi.spyOn(api, "xdevIdServer").mockResolvedValue({ origin: "https://id.xdev.asia", source: "default", setting: "nope", invalid: true });
   });
   expect(v.banners()).toEqual([en("account.server.invalid")]);
-  expect(v.field().props.value).toBe("nope");
 });
 
-it("under XDEV_ID_URL the row says so and a save never asks to sign out", async () => {
-  const v = await view(true, (api) => {
+it("under XDEV_ID_URL the row says so", async () => {
+  const v = await view((api) => {
     vi.spyOn(api, "xdevIdServer").mockResolvedValue({ origin: "https://id.env.test", source: "env", setting: "", invalid: false });
   });
-  expect(v.all().map((n) => n.props.children)).toContain(en("account.server.source.env"));
-  const spy = vi.spyOn(v.api, "xdevIdServerSet").mockResolvedValue({ origin: "https://id.env.test", source: "env", setting: "https://id.corp.test", invalid: false });
-  v.field().props.onChange({ target: { value: "https://id.corp.test" } });
-  await v.submit();
-  expect(spy).toHaveBeenCalledWith("https://id.corp.test");
-  expect(v.banners()).toEqual([]);
+  expect(v.texts()).toContain(en("account.server.source.env"));
+});
+
+it("the api has no second way to save the server", () => {
+  expect("xdevIdServerSet" in createMockApi({}, {})).toBe(false);
 });

@@ -201,10 +201,10 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("repos.sharedScripts", "settings.repos.scripts.shared", ["trust", "script", "tin cậy", "tin cay"], "settings.repos.scripts.trustNote"),
   // Account
   e("account.xdevId", "account.xdevId", ["account", "sign in", "sign out", "login", "xdev id", "tài khoản", "tai khoan", "đăng nhập", "dang nhap", "đăng xuất", "dang xuat"], "account.about"),
-  e("account.server", "account.server.title", ["server", "on-prem", "self-hosted", "url", "address", "xdev id", "máy chủ", "may chu", "địa chỉ", "dia chi"], "account.server.hint"),
+  e("account.server", "account.server.title", ["xdev server", "server", "on-prem", "self-hosted", "url", "address", "xdev id", "sign-in", "máy chủ", "may chu", "máy chủ xdev", "may chu xdev", "địa chỉ", "dia chi"], "account.server.hint"),
   e("account.license", "license.title", ["license", "pro", "plan", "seat", "device", "buy", "purchase", "refresh", "activate", "giấy phép", "giay phep", "gói", "goi", "mua", "thiết bị", "thiet bi", "làm mới", "lam moi", "kích hoạt", "kich hoat"], "license.about"),
   // Cloud
-  e("cloud.server", "cloud.server.title", ["cloud", "server", "license", "self-hosted", "on-prem", "key", "trusted", "root", "fingerprint", "máy chủ", "may chu", "giấy phép", "giay phep", "khóa", "khoa", "tin cậy", "tin cay", "dấu vân tay", "dau van tay"], "cloud.server.hint"),
+  e("cloud.server", "cloud.server.title", ["cloud", "xdev server", "server", "xdev id", "sign-in", "url", "address", "máy chủ xdev", "may chu xdev", "license", "self-hosted", "on-prem", "key", "trusted", "root", "fingerprint", "máy chủ", "may chu", "giấy phép", "giay phep", "khóa", "khoa", "tin cậy", "tin cay", "dấu vân tay", "dau van tay"], "cloud.server.hint"),
   // Open in
   e("openIn.apps", "openIn.title", ["editor", "vscode", "app", "command", "args", "mở bằng", "mo bang"], "openIn.intro"),
   // Browser

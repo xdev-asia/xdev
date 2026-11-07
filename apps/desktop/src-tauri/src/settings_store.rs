@@ -40,6 +40,26 @@ impl SettingsStore {
         settings::load(&self.path)
     }
 
+    /// Once at startup: an older file is migrated and saved at `VERSION`, so
+    /// each migration (and any warning it logs) runs once. A missing, broken
+    /// or newer file is left as it is. Returns whether it saved.
+    pub fn upgrade(&self) -> io::Result<bool> {
+        let _held = self.lock.lock().unwrap_or_else(PoisonError::into_inner);
+        let old = std::fs::read(&self.path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .filter(serde_json::Value::is_object)
+            .and_then(|v| v.get("version").map_or(Some(0), serde_json::Value::as_u64))
+            .is_some_and(|version| version < u64::from(VERSION));
+        if !old {
+            return Ok(false);
+        }
+        let mut next = settings::load(&self.path);
+        next.version = VERSION;
+        settings::save(&self.path, &next)?;
+        Ok(true)
+    }
+
     /// Loads, applies `f`, stamps the current version and saves atomically,
     /// all under the lock. Returns what was saved.
     pub fn update<F: FnOnce(&mut Settings)>(&self, f: F) -> io::Result<Settings> {
@@ -271,6 +291,44 @@ mod tests {
         assert_eq!(loaded.ui.zoom, 2.0);
         assert_eq!(loaded.ui.restore, settings::RestoreMode::AgentsOnly);
         assert_eq!(loaded.last_vault.as_deref(), Some("D:/docs"));
+    }
+
+    #[test]
+    fn upgrade_saves_an_old_file_once_at_the_current_version() {
+        let (_dir, store) = store();
+        // No file yet: nothing to upgrade, nothing written.
+        assert!(!store.upgrade().unwrap());
+        assert!(!store.path().exists());
+        std::fs::create_dir_all(store.path().parent().unwrap()).unwrap();
+        std::fs::write(
+            store.path(),
+            r#"{ "version": 1, "xdevId": { "server": "https://id.corp.test" } }"#,
+        )
+        .unwrap();
+        assert!(store.upgrade().unwrap());
+        let raw: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
+        assert_eq!(raw["version"], VERSION);
+        assert!(raw.get("xdevId").is_none());
+        assert_eq!(raw["cloud"]["serverUrl"], "https://id.corp.test");
+        // Done once: a second start leaves the file alone.
+        let before = std::fs::read(store.path()).unwrap();
+        assert!(!store.upgrade().unwrap());
+        assert_eq!(std::fs::read(store.path()).unwrap(), before);
+    }
+
+    #[test]
+    fn upgrade_leaves_a_newer_or_broken_file_alone() {
+        let (_dir, store) = store();
+        std::fs::create_dir_all(store.path().parent().unwrap()).unwrap();
+        for raw in [
+            r#"{ "version": 99, "xdevId": { "server": "x" } }"#,
+            "not json",
+        ] {
+            std::fs::write(store.path(), raw).unwrap();
+            assert!(!store.upgrade().unwrap());
+            assert_eq!(std::fs::read_to_string(store.path()).unwrap(), raw);
+        }
     }
 
     #[test]

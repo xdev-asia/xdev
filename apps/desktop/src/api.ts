@@ -1257,10 +1257,9 @@ export interface Api {
   /** Opens the running attempt's link again; starts no new attempt. */
   xdevIdReopen(): Promise<void>;
   xdevIdManage(): Promise<void>;
-  /** The server in use, where it came from, and the stored setting. */
+  /** The server in use, where it came from, and the stored setting. The one xDev server
+   *  setting is `cloud.serverUrl`, saved through `cloudSettingsPut`. */
   xdevIdServer(): Promise<XdevIdServer>;
-  /** Saves `xdevId.server` (empty: the default). A different server signs out first. */
-  xdevIdServerSet(value: string): Promise<XdevIdServer>;
   // `xdev-id://changed`: after sign-in, sign-out, expiry, refresh or a new avatar.
   onXdevIdChanged(cb: (s: XdevIdState) => void): Promise<() => void>;
   // The terminal policy and the hint toggle (settings.json `keys`); the put returns what was stored.
@@ -2798,7 +2797,6 @@ const tauriApi: Api = {
   xdevIdReopen: () => call("xdev_id_reopen"),
   xdevIdManage: () => call("xdev_id_manage"),
   xdevIdServer: () => call("xdev_id_server"),
-  xdevIdServerSet: (value) => call("xdev_id_server_set", { value }),
   onXdevIdChanged: (cb) => listen<XdevIdState>("xdev-id://changed", (e) => cb(e.payload)),
   keySettingsGet: () => call("key_settings_get"),
   keySettingsPut: (settings) => call("key_settings_put", { settings }),

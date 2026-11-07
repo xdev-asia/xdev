@@ -24,10 +24,11 @@ function origin(value: string): string | null {
 }
 
 /**
- * Settings → Cloud in memory. A different server calls `onServerChange`, as Rust signs out of
- * xDev ID and drops the cached license there.
+ * Settings → Cloud in memory. `serverUrl` is the one xDev server setting: a different server
+ * calls `onServerChange` with it, as Rust switches xDev ID (signing out) and drops the cached
+ * license there.
  */
-export function createMockCloud(onServerChange: () => void = () => undefined): CloudApi {
+export function createMockCloud(onServerChange: (serverUrl: string | null) => void = () => undefined): CloudApi {
   let stored: CloudSettings = { serverUrl: null, pinnedRoots: [] };
   return {
     cloudSettings: () => Promise.resolve(structuredClone(stored)),
@@ -45,7 +46,7 @@ export function createMockCloud(onServerChange: () => void = () => undefined): C
       const next: CloudSettings = { serverUrl, pinnedRoots: serverUrl === null ? [] : roots };
       const moved = next.serverUrl !== stored.serverUrl;
       stored = next;
-      if (moved) onServerChange();
+      if (moved) onServerChange(stored.serverUrl);
       return Promise.resolve(structuredClone(stored));
     },
   };

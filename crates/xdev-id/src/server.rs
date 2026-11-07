@@ -1,5 +1,5 @@
-//! Which xDev ID server the app talks to: `XDEV_ID_URL`, then the `xdevId.server`
-//! setting, then the default. Every candidate passes `check_origin`, so a token can only go
+//! Which xDev ID server the app talks to: `XDEV_ID_URL`, then the one xDev server
+//! setting (`cloud.serverUrl`), then the default. Every candidate passes `check_origin`, so a token can only go
 //! to https or a loopback http origin with no path, query, fragment or user info.
 
 use serde::Serialize;
