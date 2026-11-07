@@ -23,6 +23,8 @@ pub struct TerminalHostInfo {
 }
 
 /// A positive number in `text`; None for anything else, zero included.
+// Only Linux and macOS read a PTY limit; Windows keeps it for the shared tests.
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn parse_pty_max(text: &str) -> Option<u32> {
     text.trim().parse::<u32>().ok().filter(|n| *n > 0)
 }
