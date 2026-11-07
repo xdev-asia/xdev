@@ -132,6 +132,8 @@ import { SshAuthPrompts } from "@/components/SshAuthDialog";
 import { PeersHost } from "@/peers/PeersHost";
 import { runMenuAction } from "@/shell/menuActions";
 import { useShellLabels } from "@/shell/shellLabels";
+import { useShellAccountSwitch } from "@/shell/useShellAccountSwitch";
+import { useShellCardPorts } from "@/shell/useShellCardPorts";
 import { useShellLayoutRestore } from "@/shell/useShellLayoutRestore";
 import { useShellPanels } from "@/shell/useShellPanels";
 import { useShellViews } from "@/shell/useShellViews";
@@ -399,27 +401,11 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   const { restored, quitting } = useShellLayoutRestore({ api, sessions, repos, t, live });
 
-  // "Use" on an account in the usage popover. Running tabs keep their account; with an agent tab of that
-  // provider in front, the dialog asks whether it moves that tab or the default for new tabs.
-  const [switching, setSwitching] = useState<{ provider: Provider; to: string; tab: SwitchTab } | null>(null);
-  const setDefaultAccount = (provider: Provider, name: string) =>
-    void api.accountActivate(provider, name).catch((e) => pushToast({ text: t("accounts.switch.failed", { code: toApiError(e).code }) }));
-  function pickAccount(provider: Provider, name: string): void {
-    const front = sessions && current ? sendTarget(sessions.tabs(current.path), shownTab[current.path] ?? null) : null;
-    if (!front || front.cli !== provider || front.account === name) return setDefaultAccount(provider, name);
-    const label = `${front.title ?? profileName(null, front.profileId, t)} · ${front.worktree.split(/[\\/]/).filter(Boolean).pop() ?? front.worktree}`;
-    setSwitching({ provider, to: name, tab: { id: front.id, label, account: front.account, working: front.status === "working" } });
-  }
-  function answerSwitch(scope: SwitchScope): void {
-    const pending = switching;
-    setSwitching(null);
-    if (!pending) return;
-    if (scope === "default") return setDefaultAccount(pending.provider, pending.to);
-    if (!sessions) return;
-    // The tab's conversation is carried to the new account's home, then it restarts there.
-    const move = { provider: pending.provider, from: pending.tab.account, to: pending.to, tabIds: [pending.tab.id] };
-    void restartTabs({ api, sessions, notify: (key, vars) => pushToast({ text: live.t(key, vars) }) }, move, move.tabIds);
-  }
+
+  const { switching, setSwitching, pickAccount, answerSwitch } = useShellAccountSwitch({
+    api, sessions, t, live,
+    frontTab: () => (sessions && current ? sendTarget(sessions.tabs(current.path), shownTab[current.path] ?? null) : null),
+  });
 
   const paths = repos?.flatMap((r) => r.worktrees.map((w) => w.path)) ?? [];
   const subscribe = useCallback((listener: () => void) => sessions?.subscribe(listener) ?? (() => {}), [sessions]);
@@ -436,25 +422,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useSyncExternalStore(stats.subscribe, stats.snapshot, stats.snapshot);
   useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
 
-  // The cards' ports chip reads the same store as the Ports panel: one scanner, one poll.
-  useSyncExternalStore(useCallback((fn: () => void) => ports.subscribe(fn), [ports]), ports.snapshot, ports.snapshot);
-  const cardPorts = prefs.card.ports && !prefs.compactCards;
-  useEffect(() => {
-    ports.want("cards", cardPorts);
-    return () => ports.want("cards", false);
-  }, [ports, cardPorts]);
-  // A hidden window polls the ports every 30 s instead of every 5 s.
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const update = () => ports.setHidden(document.visibilityState === "hidden");
-    update();
-    document.addEventListener("visibilitychange", update);
-    return () => document.removeEventListener("visibilitychange", update);
-  }, [ports]);
-  const livePorts = cardPorts ? livePortsByWorktree(ports.state().scan) : {};
-  async function stopPort(_wt: WorktreeView, port: LivePort): Promise<void> {
-    await stopFromCard(ports, port, (key, vars) => pushToast({ text: t(key, vars) }));
-  }
   const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, sessions?.dot(p) ?? null]));
   const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
   const profiles: Record<string, PtyProfile[]> = Object.fromEntries(paths.map((p) => [p, sessions?.profilesOf(p) ?? []]));
@@ -468,17 +435,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // A stored path that no longer exists falls back to the first worktree.
   const current = all.find((w) => w.path === selected) ?? all[0] ?? null;
 
-  const allPaths = JSON.stringify(all.map((w) => w.path));
-  useEffect(() => {
-    ports.setWorktrees(JSON.parse(allPaths) as string[]);
-  }, [ports, allPaths]);
-  useEffect(() => {
-    const off = ports.watch();
-    return () => {
-      void off.then((fn) => fn());
-      ports.dispose();
-    };
-  }, [ports]);
+  const { livePorts, stopPort } = useShellCardPorts({ ports, prefs, all, t });
 
   // Auto sleep: once a minute, tabs of finished agents that nobody looks at and that went quiet sleep.
   // The inputs sit in a ref, so a worktree switch does not restart the timer; the settings are read on each tick.
