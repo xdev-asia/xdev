@@ -1,12 +1,17 @@
 import type { JSX, ReactNode } from "react";
-import { ActivityBar, AppShell } from "@xdev-asia/ui";
+import { ActivityBar, AppShell, type AppId } from "@xdev-asia/ui";
+import type { Place } from "./places";
 
 /** The places the rail switches between. Settings has its own button in the header. */
-export type RailView = "workspace" | "docs" | "automations" | "settings";
+export type RailView = Place;
 
 export interface ShellFrameLabels {
   workspace: string;
   docs: string;
+  tasks: string;
+  squads: string;
+  kit: string;
+  accounts: string;
   automations: string;
   /** aria-label of the rail. */
   rail: string;
@@ -23,10 +28,10 @@ export interface ShellFrameLabels {
  */
 export function ShellFrame(props: {
   titlebar: ReactNode;
-  view: RailView;
-  onView: (view: RailView) => void;
-  /** Whether the Automations place shows in the rail. */
-  automations: boolean;
+  view: Place;
+  onView: (view: Place) => void;
+  /** The places the rail lists, in order. Settings is never one of them. */
+  places: Place[];
   labels: ShellFrameLabels;
   /** Desktop: the side list folds away. */
   sidebarOpen: boolean;
@@ -45,19 +50,22 @@ export function ShellFrame(props: {
   children: ReactNode;
 }): JSX.Element {
   const { labels } = props;
-  // `ActivityBar` highlights `active`; settings is not a rail place, so it leaves the rail without a highlight.
-  const active = props.view === "workspace" ? "terminal" : props.view === "docs" ? "docs" : props.view === "automations" ? "automations" : "";
+  // `ActivityBar` names the workspace place `terminal`; Automations is an extra item. Settings is not a rail place,
+  // so it leaves the rail without a highlight.
+  const apps = props.places.flatMap((p): AppId[] => (p === "workspace" ? ["terminal"] : p === "automations" || p === "settings" ? [] : [p]));
+  const automations = props.places.includes("automations");
+  const active = props.view === "workspace" ? "terminal" : props.view === "settings" ? "" : props.view;
   return (
     <div className="ws-shell">
       {props.titlebar}
       <div className="ws-frame">
         <div className="ws-rail">
           <ActivityBar
-            apps={["terminal", "docs"]}
-            extraItems={props.automations ? [{ id: "automations", icon: "automation", label: labels.automations }] : undefined}
+            apps={apps}
+            extraItems={automations ? [{ id: "automations", icon: "automation", label: labels.automations }] : undefined}
             active={active}
-            labels={{ terminal: labels.workspace, docs: labels.docs, nav: labels.rail }}
-            onSelect={(id) => props.onView(id === "docs" ? "docs" : id === "automations" ? "automations" : "workspace")}
+            labels={{ terminal: labels.workspace, docs: labels.docs, tasks: labels.tasks, squads: labels.squads, kit: labels.kit, accounts: labels.accounts, nav: labels.rail }}
+            onSelect={(id) => props.onView(id === "terminal" ? "workspace" : (id as Place))}
           />
         </div>
         <AppShell

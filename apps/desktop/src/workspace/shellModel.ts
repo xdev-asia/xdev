@@ -1,3 +1,4 @@
+import type { Place } from "@/shell/places";
 import type { ApiError, WorkStatus, WorktreeChange, WorktreeView } from "@/api";
 import type { ScriptKind } from "@/api";
 import type { AgentChoice } from "./CreateWorktreeDialog";
@@ -27,7 +28,8 @@ export function storeSelected(path: string): void {
   }
 }
 
-export type View = "workspace" | "docs" | "settings" | "automations";
+/** The page the shell shows: one of the rail places, or Settings. */
+export type View = Place;
 export type PanelTab = "files" | "search" | "changes" | "checks" | "pr" | "issues" | "ports";
 export type Creating = { repoId: string; name?: string; status?: WorkStatus | null; agents: AgentChoice[]; defaultAgent: string | null };
 export type Editing = { worktree: WorktreeView; busy: boolean; error?: ApiError["code"] };

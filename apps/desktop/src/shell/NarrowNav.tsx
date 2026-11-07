@@ -4,7 +4,7 @@ import { useI18n } from "@/i18n";
 import type { RailView } from "./ShellFrame";
 
 /** The places the narrow bar reaches: the rail's, plus Tasks and Accounts, which open inside Docs. */
-export type NarrowPlace = "sessions" | "tasks" | "docs" | "automations" | "accounts" | "settings";
+export type NarrowPlace = "sessions" | "tasks" | "docs" | "squads" | "kit" | "automations" | "accounts" | "settings";
 
 /** The bar's tab for the page on screen; Tasks and Accounts live in Docs, so Docs stands for them. */
 export function narrowValue(view: RailView): NarrowPlace {

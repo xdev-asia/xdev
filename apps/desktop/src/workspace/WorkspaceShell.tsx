@@ -83,6 +83,8 @@ import { FileTree } from "./FileTree";
 import { HeaderSearch } from "./HeaderSearch";
 import { Titlebar } from "./Titlebar";
 import { ShellFrame } from "@/shell/ShellFrame";
+import { railPlaces } from "@/shell/places";
+import { useAppOrder, useHiddenApps } from "@/ui/hiddenApps";
 import { NarrowNav, type NarrowPlace } from "@/shell/NarrowNav";
 import { RemoteBanner } from "@/remote/RemoteBanner";
 import { RemoteGroup } from "@/remote/RemoteGroup";
@@ -850,6 +852,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     return () => void (live = false);
   }, [api]);
 
+  const hiddenApps = useHiddenApps();
+  const appOrder = useAppOrder();
+  const places = railPlaces(hiddenApps, appOrder, automationsSettings.showButton);
+
   // A place from the narrow bottom bar; Tasks and Accounts open inside Docs.
   function pickNarrow(place: NarrowPlace): void {
     setNavOpen(false);
@@ -867,10 +873,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       titlebar={<Titlebar />}
       view={view}
       onView={(next) => show(next)}
-      automations={automationsSettings.showButton}
+      places={places}
       labels={{
         workspace: t("workspace.nav.workspace"),
         docs: t("workspace.nav.docs"),
+        tasks: t("apps.tasks"),
+        squads: t("apps.squads"),
+        kit: t("apps.kit"),
+        accounts: t("apps.accounts"),
         automations: t("workspace.nav.automations"),
         rail: t("workspace.nav.label"),
         sidebar: t("workspace.sidebar"),
