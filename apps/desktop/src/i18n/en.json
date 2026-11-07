@@ -6342,5 +6342,6 @@
   "needsYou.kind.failed": "Failed",
   "workspace.panel.resize": "Resize the side panel",
   "conversation.approval.allow": "Allow",
-  "conversation.approval.deny": "Deny"
+  "conversation.approval.deny": "Deny",
+  "workspace.changes.commitOptions": "Commit options"
 }

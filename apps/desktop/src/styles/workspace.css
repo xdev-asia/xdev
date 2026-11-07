@@ -2267,8 +2267,15 @@ button.ws-tree-row[data-flash="true"] {
 
 .ws-commit-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.ws-commit-split {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x-space-1);
 }
 
 .ws-hook {

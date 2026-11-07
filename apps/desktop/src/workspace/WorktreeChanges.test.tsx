@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Button } from "@xdev-asia/ui";
+import { Button, MenuButton } from "@xdev-asia/ui";
 import { ProblemNote } from "@/components/ChangesPanel";
 import { createMockApi, type Api, type ConflictState, type WorktreeChange, type WorktreeView } from "@/api";
 import { DiffView } from "@/components/DiffView";
@@ -446,7 +446,13 @@ it("amend pushed asks then confirms", async () => {
   const commit = vi.spyOn(api, "worktreeCommit");
   const view = changes(api);
   await tick();
-  view.find((n) => n.type === "input" && n.props["aria-label"] === undefined && n.props.type === "checkbox" && n.props.checked === false)!.props.onChange();
+  // Amend is an option of the commit split button.
+  const options = () => view.find((n) => n.type === MenuButton)!;
+  expect(options().props.label).toBe(en("workspace.changes.commitOptions"));
+  const amendItem = () => options().props.items.find((i: { label: string }) => i.label === en("ship.amend.toggle"));
+  expect(amendItem().checked).toBe(false);
+  amendItem().onSelect();
+  expect(amendItem().checked).toBe(true);
   view.message().props.onChange({ target: { value: "fix: reword" } });
   expect(view.commit().props.children).toBe(en("ship.amend.button"));
   view.commit().props.onClick();

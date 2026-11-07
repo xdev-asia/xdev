@@ -1,4 +1,4 @@
-import { Button, Icon, pathRows, Tag, type TreeRow } from "@xdev-asia/ui";
+import { Button, Icon, MenuButton, pathRows, Tag, type TreeRow } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import { onChangesTouched, touchChanges } from "./changesBus";
 import type { JSX } from "react";
@@ -760,14 +760,20 @@ export function WorktreeChanges(props: {
           }}
         />
       </label>
-      <label className="ws-amend">
-        <input type="checkbox" checked={amend} disabled={busy} onChange={() => setAmend((a) => !a)} />
-        {t("ship.amend.toggle")}
-      </label>
       <div className="ws-commit-actions">
-        <Button variant="primary" type="button" disabled={blocked} onClick={() => void commit()}>
-          {amend ? t("ship.amend.button") : t("workspace.changes.commit", { count: checked.length })}
-        </Button>
+        {/* The panel's primary: a split button, Commit and its options. */}
+        <span className="ws-commit-split">
+          <Button variant="primary" type="button" disabled={blocked} onClick={() => void commit()}>
+            {amend ? t("ship.amend.button") : t("workspace.changes.commit", { count: checked.length })}
+          </Button>
+          <MenuButton
+            variant="icon"
+            icon="chevron"
+            align="end"
+            label={t("workspace.changes.commitOptions")}
+            items={[{ label: t("ship.amend.toggle"), checked: amend, disabled: busy, onSelect: () => setAmend((a) => !a) }]}
+          />
+        </span>
         {git.sourceControlAi && (
           <button type="button" className="btn-secondary" disabled={drafting || busy || checked.length === 0} onClick={() => void draft()}>
             {drafting ? t("ship.drafting") : t("ship.draft")}
