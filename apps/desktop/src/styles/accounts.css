@@ -44,12 +44,7 @@
 .account-dot[data-state="full"] { background: var(--x-color-danger); }
 
 /* Bars */
-.account-bar { position: relative; height: var(--x-space-2); margin-top: var(--x-space-2); background: var(--x-color-surface-2); border-radius: var(--x-radius-sm); overflow: hidden; }
-.account-fill { height: 100%; background: var(--x-color-accent); }
-.account-fill[data-state="reserve"] { background: var(--x-color-warn); }
-.account-fill[data-state="full"] { background: var(--x-color-danger); }
 /* Where the reserve begins. */
-.account-limit { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--x-color-ink); opacity: 0.45; }
 
 /* States */
 .account-state { border: 1px solid transparent; }
@@ -74,7 +69,6 @@
 .account-cell-bar { min-width: 0; }
 .account-cell-bar .account-row { gap: var(--x-space-2); flex-wrap: nowrap; }
 .account-cell-bar .doc-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account-cell-bar .account-bar { margin-top: var(--x-space-1); height: 6px; }
 .account-cell-actions { display: flex; justify-content: flex-end; gap: var(--x-space-2); }
 .account-remove:hover:not(:disabled) { color: var(--x-color-danger); border-color: var(--x-color-danger); }
 @media (max-width: 1100px) {
