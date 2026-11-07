@@ -53,7 +53,7 @@ import { startKeepAwakeReport } from "@/status/keepAwake";
 import { flash } from "./flash";
 import { startBusyReport } from "@/stats/busyReport";
 import { startNotchReport } from "@/notch/notchReport";
-import { PrPanel } from "./PrPanel";
+import { ReviewPanel } from "./ReviewPanel";
 import { onPrPageOpen, onPrPanelOpen } from "./prPanelEvents";
 import { ForeignTermsHost } from "@/foreignTerms/ForeignTermsHost";
 import { currentCloseWindow, openRestoredFile, restoreLayout, sessionFallback, startLayoutSave, undoRestore } from "./layoutPersist";
@@ -2228,7 +2228,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
                       reveal={reveal?.worktree === path ? { file: reveal.file, seq: reveal.seq, base: reveal.base } : undefined}
                       commit={commitAsk?.worktree === path ? { id: commitAsk.id, file: commitAsk.file, seq: commitAsk.seq } : undefined}
                       prPage={prPage?.worktree === path ? prPage.seq : undefined}
-                      renderPrPage={(shown) => <PrPanel page api={api} worktree={path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={shown} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} onOpenFile={(rel) => openFile(path, rel)} />}
+                      renderPrPage={(shown) => <ReviewPanel page api={api} worktree={path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={shown} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} onOpenFile={(rel) => openFile(path, rel)} />}
                       front={front?.worktree === path ? { id: front.id, seq: front.seq } : undefined}
                       focusSeq={termFocus?.worktree === path ? termFocus.seq : undefined}
                       onShowHistory={showInHistory}
@@ -2477,7 +2477,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "pr"}>
                 <SurfaceBoundary id="panel.pr" surface="Right sidebar: pull request" resetKey={current?.path} titleKey="boundary.panel.title">
                   {current ? (
-                    <PrPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={rightOpen && panelTab === "pr"} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} onOpenFile={(rel) => openFile(current.path, rel)} onOpenPage={() => live.openPrPage()} />
+                    <ReviewPanel key={current.path} api={api} worktree={current.path} prs={prs} comments={prComments} sessions={sessions} onSendComments={sendComments} visible={rightOpen && panelTab === "pr"} onFix={(check) => fixCheck(check)} onFixAll={(checks) => fixChecks(checks)} onOpenFile={(rel) => openFile(current.path, rel)} onOpenPage={() => live.openPrPage()} />
                   ) : (
                     <p className="ws-empty">{t("workspace.panel.empty")}</p>
                   )}
