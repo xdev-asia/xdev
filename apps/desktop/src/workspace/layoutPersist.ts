@@ -131,6 +131,8 @@ export async function restoreLayout(
   try {
     const began = Date.now();
     const [snapshot, ui] = await Promise.all([api.layoutLoad(), api.uiSettingsGet()]);
+    // The panel width is the window's, not the tabs': it comes back under every restore mode.
+    if (snapshot && snapshot.version === LAYOUT_VERSION && typeof snapshot.panelWidth === "number" && sessions.panelWidth() === null) sessions.setPanelWidth(snapshot.panelWidth);
     if (!snapshot || snapshot.version !== LAYOUT_VERSION || ui.restore === "none") {
       void markStartup(api, { id: "layout.restore", ok: true, ms: Date.now() - began });
       return null;

@@ -6339,5 +6339,6 @@
   "needsYou.openItem": "Open {worktree}",
   "needsYou.kind.approval": "Approval",
   "needsYou.kind.question": "Question",
-  "needsYou.kind.failed": "Failed"
+  "needsYou.kind.failed": "Failed",
+  "workspace.panel.resize": "Resize the side panel"
 }

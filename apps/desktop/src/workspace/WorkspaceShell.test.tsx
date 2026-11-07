@@ -2,7 +2,7 @@ import { BADGE_DEBOUNCE_MS } from "./notifier";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AttentionInbox, Tabs, type TabsItem } from "@xdev-asia/ui";
+import { AttentionInbox, SplitHandle, Tabs, type TabsItem } from "@xdev-asia/ui";
 import { SETUP_PROFILE, createMockApi, type WorkerOpen, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
@@ -41,7 +41,7 @@ import { NO_DETAILS } from "@/workspace/worktreeDetails";
 
 // Hooks are stubbed only while the shell itself is called; children rendered to markup use React's own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
-import { PanelTabBar, RightPanel } from "@/panel/RightPanel";
+import { PANEL_DEFAULT, PANEL_MAX, PANEL_MIN, PanelTabBar, RightPanel } from "@/panel/RightPanel";
 import { ShellOverlays } from "./ShellOverlays";
 import { ShellSidebar } from "./ShellSidebar";
 import { WorkspaceStage } from "./WorkspaceStage";
@@ -579,6 +579,31 @@ it("hands the list the line counts, times and agents of each worktree", async ()
   expect(props.activity["/demo/wt/xdev-oak"]).toBeNull();
   expect(props.profiles["/demo/wt/xdev-oak"]).toEqual([]);
   expect(typeof props.now).toBe("number");
+});
+
+it("the panel's left edge resizes it within its bounds, and the width goes to the saved layout", async () => {
+  const view = await harness();
+  const handle = () => view.all().find(n => n.type === SplitHandle && n.props.className === "ws-panel-handle")!;
+  const aside = () => view.all().find(n => n.props.className === "ws-panel")!;
+  const sessions = view.of(WorktreeTabs)[0].props.sessions as Sessions;
+  expect(handle().props).toMatchObject({ direction: "horizontal", reverse: true, value: PANEL_DEFAULT, min: PANEL_MIN, max: PANEL_MAX, label: en("workspace.panel.resize") });
+  expect(aside().props.style).toBeUndefined();
+  handle().props.onResize(420);
+  view.draw();
+  expect(handle().props.value).toBe(420);
+  expect(aside().props.style).toEqual({ "--w-panel": "420px" });
+  expect(sessions.snapshot().panelWidth).toBe(420);
+  // Out of bounds is brought back in.
+  handle().props.onResize(9999);
+  view.draw();
+  expect(sessions.panelWidth()).toBe(PANEL_MAX);
+  // A closed panel has no handle.
+  keymap.handlers["panel.issues"]();
+  view.draw();
+  keymap.handlers["panel.issues"]();
+  view.draw();
+  expect(aside().props.hidden).toBe(true);
+  expect(view.all().some(n => n.type === SplitHandle && n.props.className === "ws-panel-handle")).toBe(false);
 });
 
 it("panel has Files and Changes icon tabs with a change badge", async () => {

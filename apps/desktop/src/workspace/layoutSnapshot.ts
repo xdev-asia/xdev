@@ -16,6 +16,8 @@ export interface LayoutSnapshot {
   savedAt: number;
   /** Key: the worktree path. */
   worktrees: Record<string, WorktreeSnapshot>;
+  /** The right panel's width in this window, px; absent until the person resizes it (and in older snapshots). */
+  panelWidth?: number;
 }
 
 export interface WorktreeSnapshot {

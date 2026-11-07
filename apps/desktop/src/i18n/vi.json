@@ -6339,5 +6339,6 @@
   "needsYou.openItem": "Mở {worktree}",
   "needsYou.kind.approval": "Phê duyệt",
   "needsYou.kind.question": "Câu hỏi",
-  "needsYou.kind.failed": "Lỗi"
+  "needsYou.kind.failed": "Lỗi",
+  "workspace.panel.resize": "Đổi độ rộng bảng bên phải"
 }

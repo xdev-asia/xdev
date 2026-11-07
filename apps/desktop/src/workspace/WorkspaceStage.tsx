@@ -83,7 +83,7 @@ export function WorkspaceStage(p: {
   const { addRepo } = p.repo;
   const { cardFor, cards, dropCard, openTabsFor, runSetup } = p.setup;
   const { fixCheck, fixChecks, fixNote, fixWithAgent, resolveConflicts, sendComments } = p.fix;
-  const { focusSearch, issuesGit, issuesPinned, panelTab, prPage, registerChanges, rightOpen, searchFocus, setChangeCount, setChangeList, setPanelTab } = p.panels;
+  const { focusSearch, issuesGit, issuesPinned, panelTab, panelWidth, prPage, registerChanges, resizePanel, rightOpen, searchFocus, setChangeCount, setChangeList, setPanelTab } = p.panels;
   const { openSettings, view } = p.views;
   const { reconnectRemote } = p.remoteActs;
   const { startFromIssue } = p.cr;
@@ -176,7 +176,7 @@ export function WorkspaceStage(p: {
                 </p>
               )}
             </main>
-            <RightPanel open={rightOpen} tab={panelTab} changes={count} failing={failing} issuesTab={issuesGit.tab} issuesPinned={issuesPinned} onTab={(tab, focus) => { setPanelTab(tab); if (focus) focusSearch(); }}>
+            <RightPanel open={rightOpen} width={panelWidth} onResize={resizePanel} tab={panelTab} changes={count} failing={failing} issuesTab={issuesGit.tab} issuesPinned={issuesPinned} onTab={(tab, focus) => { setPanelTab(tab); if (focus) focusSearch(); }}>
               <div className="ws-panel-body" role="tabpanel" hidden={panelTab !== "files"}>
                 <SurfaceBoundary id="panel.files" surface="Right sidebar: files" resetKey={current?.path} titleKey="boundary.panel.title">
                   {current ? (

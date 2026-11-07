@@ -1,5 +1,5 @@
-import type { JSX, ReactNode } from "react";
-import { Icon, Tabs, type IconName } from "@xdev-asia/ui";
+import type { CSSProperties, JSX, ReactNode } from "react";
+import { Icon, SplitHandle, Tabs, type IconName } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import { issuesTabVisible } from "@/issues/issuesPreset";
 import type { PanelTab } from "@/workspace/shellModel";
@@ -78,8 +78,22 @@ export function PanelTabBar(props: PanelTabBarProps): JSX.Element {
   );
 }
 
+/** The right panel's width, px: the design token's 300 until it is resized, within these bounds. */
+export const PANEL_DEFAULT = 300;
+export const PANEL_MIN = 240;
+export const PANEL_MAX = 640;
+
+/** A saved or dragged width brought within the bounds; null (never resized) stays null. */
+export function clampPanelWidth(px: number | null): number | null {
+  return px === null || !Number.isFinite(px) ? null : Math.min(PANEL_MAX, Math.max(PANEL_MIN, Math.round(px)));
+}
+
 export interface RightPanelProps extends PanelTabBarProps {
   open: boolean;
+  /** The width the person gave it, px; null keeps the design token's. */
+  width?: number | null;
+  /** Called while the handle on its left edge is dragged or moved with the arrow keys. */
+  onResize?(px: number): void;
   /** The tab bodies. All stay mounted, so the change list and the open folders survive a tab switch. */
   children: ReactNode;
 }
@@ -88,9 +102,23 @@ export interface RightPanelProps extends PanelTabBarProps {
 export function RightPanel(props: RightPanelProps): JSX.Element {
   const { t } = useI18n();
   return (
-    <aside className="ws-panel" hidden={!props.open} aria-label={t("workspace.panel.label")}>
-      <PanelTabBar {...props} />
-      {props.children}
-    </aside>
+    <>
+      {props.open && props.onResize && (
+        <SplitHandle
+          className="ws-panel-handle"
+          direction="horizontal"
+          reverse
+          value={props.width ?? PANEL_DEFAULT}
+          min={PANEL_MIN}
+          max={PANEL_MAX}
+          label={t("workspace.panel.resize")}
+          onResize={props.onResize}
+        />
+      )}
+      <aside className="ws-panel" hidden={!props.open} aria-label={t("workspace.panel.label")} style={props.width != null ? ({ "--w-panel": `${props.width}px` } as CSSProperties) : undefined}>
+        <PanelTabBar {...props} />
+        {props.children}
+      </aside>
+    </>
   );
 }

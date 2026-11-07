@@ -1,12 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Api, IssuesPreset, WorktreeChange } from "@/api";
 import { onTreeReveal } from "@/files/treeReveal";
+import { clampPanelWidth } from "@/panel/RightPanel";
+import type { Sessions } from "@/workspace/sessions";
 import type { ChangesHandlers } from "@/workspace/WorktreeChanges";
 import type { PanelTab, View } from "@/workspace/shellModel";
 
 /** The right panel: which tab shows, whether it is open, and what its panels report back to the shell. */
-export function useShellPanels(o: { api: Api; view: View; show(view: View): void; setSidebarOpen(open: boolean): void }) {
-  const { api, view, show, setSidebarOpen } = o;
+export function useShellPanels(o: { api: Api; view: View; show(view: View): void; setSidebarOpen(open: boolean): void; sessions?: Sessions | null }) {
+  const { api, view, show, setSidebarOpen, sessions = null } = o;
+  // The panel width lives with the window's layout, so it is saved and comes back with it.
+  const subscribeWidth = useCallback((fn: () => void) => sessions?.subscribe(fn) ?? (() => {}), [sessions]);
+  const panelWidth = clampPanelWidth(useSyncExternalStore(subscribeWidth, () => sessions?.panelWidth() ?? null, () => sessions?.panelWidth() ?? null));
+  const resizePanel = useCallback((px: number) => {
+    const w = clampPanelWidth(px);
+    if (w !== null) sessions?.setPanelWidth(w);
+  }, [sessions]);
   // The right panel (Files / Changes / Checks); hidden, not unmounted, so its state stays.
   const [rightOpen, setRightOpen] = useState(true);
   // The mounted changes panel's bulk actions, for the palette.
@@ -78,6 +87,6 @@ export function useShellPanels(o: { api: Api; view: View; show(view: View): void
 
   return {
     rightOpen, setRightOpen, changesReady, registerChanges, runOnChanges, panelTab, setPanelTab, issuesGit, issuesPinned,
-    searchFocus, focusSearch, prPage, panelKey, openPrTab, openPrPage, changeCount, setChangeCount, changeList, setChangeList,
+    searchFocus, focusSearch, prPage, panelKey, openPrTab, openPrPage, changeCount, setChangeCount, changeList, setChangeList, panelWidth, resizePanel,
   };
 }

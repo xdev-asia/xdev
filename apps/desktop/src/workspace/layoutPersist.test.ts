@@ -47,6 +47,25 @@ describe("layout save", () => {
     expect(save).toHaveBeenCalledTimes(1);
     saver.stop();
   });
+
+  it("a resized panel is saved with the layout; one never resized leaves the field out", () => {
+    const api = createMockApi({});
+    const save = vi.spyOn(api, "layoutSave");
+    const s = (sessions = new Sessions(api));
+    expect(s.panelWidth()).toBeNull();
+    expect("panelWidth" in s.snapshot()).toBe(false);
+    const saver = startLayoutSave(api, s);
+    s.setPanelWidth(412.4);
+    vi.advanceTimersByTime(SAVE_DEBOUNCE_MS);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][0].panelWidth).toBe(412);
+    // The same width again is no change.
+    s.setPanelWidth(412);
+    s.setPanelWidth(Number.NaN);
+    vi.advanceTimersByTime(SAVE_DEBOUNCE_MS);
+    expect(save).toHaveBeenCalledTimes(1);
+    saver.stop();
+  });
 });
 
 describe("window close", () => {
@@ -162,6 +181,23 @@ describe("restore at start", () => {
     api.layoutLoad = () => Promise.reject({ code: "io" });
     expect(await restoreLayout(api, s, () => true, async () => false)).toBeNull();
     expect(restore).not.toHaveBeenCalled();
+  });
+
+  it("the saved panel width comes back under every restore mode, and an older snapshot leaves it unset", async () => {
+    const api = createMockApi({});
+    const s = (sessions = new Sessions(api));
+    await restoreLayout(api, s, () => true, async () => false);
+    expect(s.panelWidth()).toBeNull();
+    const first = new Sessions(api);
+    first.open(A, "shell");
+    first.setPanelWidth(420);
+    await api.layoutSave(first.snapshot());
+    first.dispose();
+    await api.uiSettingsPut({ ...(await api.uiSettingsGet()), restore: "none" });
+    const again = new Sessions(api);
+    expect(await restoreLayout(api, again, () => true, async () => false)).toBeNull();
+    expect(again.panelWidth()).toBe(420);
+    again.dispose();
   });
 
   it("a rejecting layoutLoad still returns null and marks layout.restore not ok", async () => {

@@ -308,7 +308,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     void load();
     // Loaded once; every action below reloads after it changes the list.
   }, [api]);
-  const panels = useShellPanels({ api, view, show, setSidebarOpen });
+  const panels = useShellPanels({ api, view, show, setSidebarOpen, sessions });
   const {
     rightOpen, setRightOpen, changesReady, registerChanges, runOnChanges, panelTab, setPanelTab, issuesGit, issuesPinned,
     searchFocus, focusSearch, prPage, panelKey, openPrTab, openPrPage, changeCount, setChangeCount, changeList, setChangeList,

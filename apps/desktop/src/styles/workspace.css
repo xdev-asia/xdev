@@ -1436,6 +1436,11 @@
     flex-basis: 41px;
   }
 
+  /* The rail has a fixed width: no handle. */
+  .ws-panel-handle {
+    display: none;
+  }
+
   .ws-panel-tabs {
     flex-direction: column;
     height: auto;

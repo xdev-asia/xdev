@@ -192,6 +192,7 @@ export class Sessions {
   private readonly layouts = new Map<string, PaneLayout>();
   private readonly recent = new Map<string, string[]>();
   private readonly listeners = new Set<() => void>();
+  private panelPx: number | null = null;
   private readonly waiting = new Map<string, () => void>();
   // Restored tabs whose attach is in flight: the service can report an exit before the attach
   // returns, and such an exit waits here until the tab is registered.
@@ -290,6 +291,19 @@ export class Sessions {
     return entry.tab;
   }
 
+  /** The right panel's width in this window, px; null until it is resized or a saved width comes back. */
+  panelWidth(): number | null {
+    return this.panelPx;
+  }
+
+  /** Sets the right panel's width; it is saved with the layout. A width that is not a number is ignored. */
+  setPanelWidth(px: number): void {
+    const w = Math.round(px);
+    if (!Number.isFinite(w) || w === this.panelPx) return;
+    this.panelPx = w;
+    this.emit();
+  }
+
   /** What `layout.json` keeps of every worktree's tabs and panes; only `savedAt` depends on the clock. */
   snapshot(): LayoutSnapshot {
     const worktrees: LayoutSnapshot["worktrees"] = {};
@@ -299,7 +313,7 @@ export class Sessions {
     }
     // Worktrees that were not loaded keep their saved entry, unless they have tabs now.
     for (const [path, one] of this.carried) if (!this.layouts.has(path)) worktrees[path] ??= one;
-    return { version: LAYOUT_VERSION, savedAt: this.now(), worktrees };
+    return { version: LAYOUT_VERSION, savedAt: this.now(), worktrees, ...(this.panelPx !== null ? { panelWidth: this.panelPx } : {}) };
   }
 
   /**
