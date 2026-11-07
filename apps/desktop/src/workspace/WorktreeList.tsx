@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Badge, Button } from "@xdev-asia/ui";
+import { Badge, Button, Icon } from "@xdev-asia/ui";
 import type { JSX } from "react";
 import type { ApiError, Check, FolderEntry, KeptView, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorkStatus, WorktreeStat, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
@@ -417,9 +417,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     return (
       <li key={s.key} className="ws-group" data-group={dataGroup}>
         <button type="button" className="ws-group-head" data-group={dataGroup} aria-expanded={open} onClick={() => toggle(s.key)}>
-          <svg aria-hidden="true" className="ws-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="m6 9 6 6 6-6" />
-          </svg>
+          <Icon name="chevron" size={12} className="ws-chevron" />
           {s.mode === "activity" && <span className={s.id === "working" ? "ws-group-dot ws-pulse" : "ws-group-dot"} data-group={s.id} aria-hidden="true" />}
           {s.mode === "pr" && s.id !== "none" && <span className="ws-dot" data-pr={s.id} aria-hidden="true" />}
           {s.mode === "project" && s.repo && <RepoBadge repo={s.repo} />}
@@ -434,12 +432,8 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
   const pinnedSection = () => (
     <li key="pinned" className="ws-group ws-group-pinned" data-group="pinned">
       <button type="button" className="ws-group-head" data-group="pinned" aria-expanded={!pinnedShut} onClick={() => setPinnedShut(!pinnedShut)}>
-        <svg aria-hidden="true" className="ws-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="m6 9 6 6 6-6" />
-        </svg>
-        <svg className="ws-pin" aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z" />
-        </svg>
+        <Icon name="chevron" size={12} className="ws-chevron" />
+        <Icon name="pin" size={12} className="ws-pin" />
         <span className="ws-group-name">{t("sidebar.pinned.title")}</span>
         <span className="ws-group-count">{pinnedRows.length}</span>
       </button>
@@ -503,9 +497,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           title={t("workspace.found.hint")}
           onClick={() => setFoundOpen(open ? foundOpen.filter((id) => id !== repo.id) : [...foundOpen, repo.id])}
         >
-          <svg aria-hidden="true" className="ws-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="m6 9 6 6 6-6" />
-          </svg>
+          <Icon name="chevron" size={12} className="ws-chevron" />
           <span className="ws-group-name">{t("workspace.found.title", { count: found.length })}</span>
           {many && <span className="ws-tag">{repo.shortName}</span>}
         </button>
@@ -616,9 +608,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           aria-expanded={open}
           onClick={() => setArchivedOpen(open ? archivedOpen.filter((id) => id !== repo.id) : [...archivedOpen, repo.id])}
         >
-          <svg aria-hidden="true" className="ws-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="m6 9 6 6 6-6" />
-          </svg>
+          <Icon name="chevron" size={12} className="ws-chevron" />
           <span className="ws-group-name">{t("archived.title", { count: recent.length })}</span>
         </button>
         {open && (
@@ -663,9 +653,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       return [
         <li key={folder.id} className="ws-repo ws-folder" data-folder={folder.id} title={folder.path} tabIndex={0} data-dragging={dragging === folder.id ? "true" : undefined} onContextMenu={menuAt("folder", folder.id)} {...reorder(folder.id)}>
           <button type="button" className="ws-folder-main" onClick={() => props.onOpenFolder?.(folder)}>
-            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 7h6l2 2h10v10H3z" />
-            </svg>
+            <Icon name="folder" size={12} />
             <span className="ws-repo-name">{folder.name}</span>
           </button>
           {moreButton("folder", folder.id, folder.name)}
@@ -679,9 +667,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       <li key={group.id} className="ws-project-group" data-project-group={group.id}>
         <div className="ws-repo ws-group-row" tabIndex={0} data-dragging={dragging === group.id ? "true" : undefined} onContextMenu={menuAt("group", group.id)} {...reorder(group.id)}>
           <button type="button" className="ws-group-head ws-project-head" aria-expanded={open} onClick={() => setShut(open ? [...shut, group.id] : shut.filter((id) => id !== group.id))}>
-            <svg aria-hidden="true" className="ws-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="m6 9 6 6 6-6" />
-            </svg>
+            <Icon name="chevron" size={12} className="ws-chevron" />
             <span className="ws-group-name">{group.name}</span>
             <span className="ws-group-count">{group.members.length}</span>
           </button>
@@ -805,9 +791,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
         {props.onPrefs && <SidebarOptions prefs={prefs} onPrefs={props.onPrefs} onOpenVisibility={() => setVisOpen(true)} />}
         {props.onOpenBoard && (
           <button type="button" className="ws-icon-btn" aria-label={t("kanban.open")} title={t("kanban.open")} onClick={() => props.onOpenBoard?.()}>
-            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 5h5v14H4zM15 5h5v9h-5z" />
-            </svg>
+            <Icon name="grid" size={14} />
           </button>
         )}
         <button
@@ -818,9 +802,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
           disabled={repoList.every((r) => r.missing)}
           onClick={() => props.onCreate()}
         >
-          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+          <Icon name="plus" size={14} />
         </button>
       </div>
       <div className="ws-list">
@@ -878,24 +860,18 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
       }} onClose={() => { setPortsOpen(null); setStopAsk(null); }} />}
       <div className="ws-sidebar-foot">
         <button type="button" className="ws-add-repo" onClick={() => props.onAddRepo()}>
-          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+          <Icon name="plus" size={14} />
           <span className="ws-add-label">{t("workspace.addRepo")}</span>
         </button>
         {props.onAddFolder && (
           <button type="button" className="ws-add-repo ws-add-secondary" title={t("folder.add")} aria-label={t("folder.add")} onClick={() => props.onAddFolder?.()}>
-            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 7h6l2 2h10v10H3z" />
-            </svg>
+            <Icon name="folder" size={14} />
             <span className="ws-add-label">{t("folder.add")}</span>
           </button>
         )}
         {props.onNewGroup && (
           <button type="button" className="ws-add-repo ws-add-secondary" title={t("group.new")} aria-label={t("group.new")} onClick={() => props.onNewGroup?.()}>
-            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 5h16M4 12h16M4 19h10" />
-            </svg>
+            <Icon name="list" size={14} />
             <span className="ws-add-label">{t("group.new")}</span>
           </button>
         )}

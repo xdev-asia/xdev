@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, PointerEvent as ReactPointerEvent } from "react";
-import { Checkbox, FilterChip, IconButton, Popover, SearchInput, Segmented, Tag } from "@xdev-asia/ui";
+import { Checkbox, FilterChip, Icon, IconButton, Popover, SearchInput, Segmented, Tag } from "@xdev-asia/ui";
 import type { Api, PtyProfile, WorkStatus, WorktreeView } from "@/api";
 import { useI18n } from "@/i18n";
 import { profileLetter, profileName, useProfiles } from "@/agents/profileStore";
@@ -226,9 +226,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           {t("kanban.title")}
         </h2>
         <button type="button" className="ws-icon-btn" aria-label={t("kanban.close")} title={t("kanban.close")} onClick={props.onClose}>
-          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
+          <Icon name="close" size={14} />
         </button>
       </div>
       {props.worktrees.length === 0 ? (

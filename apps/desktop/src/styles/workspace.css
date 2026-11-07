@@ -79,6 +79,79 @@
   color: var(--text-1);
 }
 
+/* Frame: the places rail beside the design system AppShell. */
+
+.ws-frame {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.ws-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg-1);
+}
+
+.ws-rail .activitybar {
+  height: auto;
+  border-right: 0;
+}
+
+.ws-rail-extra {
+  flex: none;
+}
+
+.ws-appshell {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+}
+
+/* The side list folds away on desktop; the brand folds with it. */
+.ws-appshell.ws-side-off {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ws-appshell.ws-side-off .x-shell-side {
+  display: none;
+}
+
+/* The stage, docs, automations and settings hold their own padding and scroll. */
+.ws-appshell .x-shell-main {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* The header row lives in the AppShell's own top bar, which draws the border and the height. */
+.x-shell-top .ws-header {
+  height: auto;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.x-shell-side .x-shell-nav {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.x-shell-nav .ws-sidebar {
+  flex: 1;
+  border-right: 0;
+  background: transparent;
+}
+
+.ws-footer-host[hidden] {
+  display: none;
+}
+
 /* Header */
 
 .ws-header {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { JSX, ReactNode, Ref } from "react";
 import type { Accounts, Api, Provider, Quota, StatusBarItems, UsageDisplay, UsageSettings } from "@/api";
 import { useI18n } from "@/i18n";
+import { StatusBar } from "@xdev-asia/ui";
 import { LicenseStatus } from "@/components/StatusBar";
 import { useLicense } from "@/license/useLicense";
 import { setUsageSettings, useUsageSettings } from "@/settings/usageSettings";
@@ -155,69 +156,75 @@ export function WorkspaceFooter(props: {
         props.onEmptyMenu?.({ x: e.clientX, y: e.clientY });
       }
     : undefined;
+  const entries: (ReactNode | "spacer")[] = [
+    items.branch && props.branch ? <span key="branch" className="ws-mono ws-footer-branch">{`⎇ ${props.branch}`}</span> : null,
+    meters.length > 0 ? (
+      props.onToggleUsage ? (
+        <button
+          key="meters"
+          type="button"
+          className="ws-meters ws-meters-btn"
+          data-action="usage"
+          ref={props.usageButtonRef}
+          aria-label={t("usage.popover.open")}
+          aria-haspopup="dialog"
+          aria-expanded={props.usageOpen === true}
+          onClick={props.onToggleUsage}
+          onContextMenu={onMetersContext}
+          onKeyDown={onMetersKey}
+        >
+          {meters.map((m) => (
+            <MeterItem key={m.label} meter={m} display={display} />
+          ))}
+        </button>
+      ) : (
+        // One tab stop, so the footer is in the focus order and the meters are read out.
+        <span key="meters" className="ws-meters" role="group" aria-label={t("workspace.footer.usage")} tabIndex={0} onContextMenu={onMetersContext} onKeyDown={onMetersKey}>
+          {meters.map((m) => (
+            <MeterItem key={m.label} meter={m} display={display} />
+          ))}
+        </span>
+      )
+    ) : null,
+    meters.length === 0 && props.emptyCta ? (
+      <button key="setup" type="button" className="ws-footer-link" data-action="usage-setup" title={t("usage.empty.hint")} onClick={props.onSetupUsage} onContextMenu={onEmptyContext}>
+        {t("usage.empty.cta")}
+      </button>
+    ) : null,
+    props.usageOpen ? props.usagePopover : null,
+    props.menu,
+    items.tokenUsage && props.onOpenUsage ? (
+      <button key="tokens" type="button" className="ws-footer-link" data-action="token-usage" onClick={props.onOpenUsage}>
+        {t("kit.usage.link")}
+      </button>
+    ) : null,
+    "spacer",
+    items.agents ? (
+      <span key="running" className="ws-running">
+        {props.running > 0 && <span className="ws-dot ws-pulse" data-dot="working" aria-hidden="true" />}
+        {t("workspace.footer.running", { count: props.running })}
+      </span>
+    ) : null,
+    items.agents ? (
+      <span key="waiting" className="ws-waiting">
+        {props.waiting > 0 && <span className="ws-dot" data-dot="needs-you" aria-hidden="true" />}
+        {t("workspace.footer.waiting", { count: props.waiting })}
+      </span>
+    ) : null,
+    props.floating,
+    props.license,
+    props.ssh,
+    props.peers,
+    items.ports ? props.ports : null,
+    items.keepAwake ? props.keepAwake : null,
+    items.version ? <span key="version" className="ws-mono">{`v${props.version}`}</span> : null,
+    props.update ? <UpdateItem key="update" update={props.update} onRestart={props.onRestartUpdate} /> : null,
+  ].filter((entry) => entry !== null && entry !== undefined && entry !== false);
+  // The design system bar has no `hidden`; the wrapper carries it.
   return (
-    <footer className="ws-footer" hidden={props.hidden}>
-      {items.branch && props.branch && <span className="ws-mono ws-footer-branch">{`⎇ ${props.branch}`}</span>}
-      {meters.length > 0 &&
-        (props.onToggleUsage ? (
-          <button
-            type="button"
-            className="ws-meters ws-meters-btn"
-            data-action="usage"
-            ref={props.usageButtonRef}
-            aria-label={t("usage.popover.open")}
-            aria-haspopup="dialog"
-            aria-expanded={props.usageOpen === true}
-            onClick={props.onToggleUsage}
-            onContextMenu={onMetersContext}
-            onKeyDown={onMetersKey}
-          >
-            {meters.map((m) => (
-              <MeterItem key={m.label} meter={m} display={display} />
-            ))}
-          </button>
-        ) : (
-          // One tab stop, so the footer is in the focus order and the meters are read out.
-          <span className="ws-meters" role="group" aria-label={t("workspace.footer.usage")} tabIndex={0} onContextMenu={onMetersContext} onKeyDown={onMetersKey}>
-            {meters.map((m) => (
-              <MeterItem key={m.label} meter={m} display={display} />
-            ))}
-          </span>
-        ))}
-      {meters.length === 0 && props.emptyCta && (
-        <button type="button" className="ws-footer-link" data-action="usage-setup" title={t("usage.empty.hint")} onClick={props.onSetupUsage} onContextMenu={onEmptyContext}>
-          {t("usage.empty.cta")}
-        </button>
-      )}
-      {props.usageOpen && props.usagePopover}
-      {props.menu}
-      {items.tokenUsage && props.onOpenUsage && (
-        <button type="button" className="ws-footer-link" data-action="token-usage" onClick={props.onOpenUsage}>
-          {t("kit.usage.link")}
-        </button>
-      )}
-      <span className="ws-footer-spacer" />
-      {items.agents && (
-        <>
-          <span className="ws-running">
-            {props.running > 0 && <span className="ws-dot ws-pulse" data-dot="working" aria-hidden="true" />}
-            {t("workspace.footer.running", { count: props.running })}
-          </span>
-          <span className="ws-waiting">
-            {props.waiting > 0 && <span className="ws-dot" data-dot="needs-you" aria-hidden="true" />}
-            {t("workspace.footer.waiting", { count: props.waiting })}
-          </span>
-        </>
-      )}
-      {props.floating}
-      {props.license}
-      {props.ssh}
-      {props.peers}
-      {items.ports && props.ports}
-      {items.keepAwake && props.keepAwake}
-      {items.version && <span className="ws-mono">{`v${props.version}`}</span>}
-      {props.update && <UpdateItem update={props.update} onRestart={props.onRestartUpdate} />}
-    </footer>
+    <div className="ws-footer-host" hidden={props.hidden}>
+      <StatusBar items={entries} />
+    </div>
   );
 }
 

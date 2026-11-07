@@ -86,13 +86,6 @@ export const DocsView = forwardRef<DocsHandle, DocsViewProps>(function DocsView(
   return <Folder key={source.path} {...props} source={source} ref={ref} />;
 });
 
-/** The quieter of the two buttons, in tokens. */
-const SECONDARY = {
-  background: "var(--x-color-surface)",
-  color: "var(--x-color-ink)",
-  border: "1px solid var(--x-color-line)",
-} as const;
-
 /** No folder: only the sections that need none are usable. */
 const Bare = forwardRef<DocsHandle, DocsViewProps>(function Bare(props, ref) {
   const { t } = useI18n();
@@ -113,7 +106,7 @@ const Bare = forwardRef<DocsHandle, DocsViewProps>(function Bare(props, ref) {
               <Button variant="primary" type="button" onClick={props.onCreateDocs}>
                 {t("docsview.empty.create")}
               </Button>
-              <Button variant="primary" type="button" style={SECONDARY} onClick={props.onAddShared}>
+              <Button type="button" onClick={props.onAddShared}>
                 {t("docsview.empty.add")}
               </Button>
             </div>

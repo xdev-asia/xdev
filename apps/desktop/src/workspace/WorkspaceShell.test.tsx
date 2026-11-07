@@ -42,6 +42,7 @@ import { NO_DETAILS } from "@/workspace/worktreeDetails";
 // Hooks are stubbed only while the shell itself is called; children rendered to markup use React's own.
 const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[] }));
 import { PanelTabBar, RightPanel } from "@/panel/RightPanel";
+import { ShellFrame } from "@/shell/ShellFrame";
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
   const state = (initial: unknown) => {
@@ -87,6 +88,19 @@ function nodes(value: unknown): Node[] {
   const node = value as Node;
   // Extracted layout parts hold no state; draw them so their markup is walked like the rest.
   if (node.type === RightPanel || node.type === PanelTabBar) return nodes((node.type as (p: unknown) => unknown)(node.props));
+  // The frame passes its parts as slots; the rail's places stand in as the buttons they are.
+  if (node.type === ShellFrame) {
+    const p = node.props;
+    const rail = (view: string, label: string): Node =>
+      ({ type: "button", props: { className: "ws-nav-item", "aria-current": p.view === view ? "page" : undefined, onClick: () => p.onView(view), children: label } }) as unknown as Node;
+    return [
+      node,
+      ...nodes([p.titlebar, p.brand, p.crumbs, p.actions, p.sidebar, p.children, p.footer, p.overlays]),
+      rail("workspace", p.labels.workspace),
+      rail("docs", p.labels.docs),
+      ...(p.automations ? [rail("automations", p.labels.automations)] : []),
+    ];
+  }
   return [node, ...nodes(node.props.children)];
 }
 const text = (node: Node): string => nodes(node.props.children).map(n => (typeof n.props.children === "string" ? n.props.children : "")).join("") + (typeof node.props.children === "string" ? node.props.children : "");
@@ -150,8 +164,8 @@ it("header has repo, branch, search, bell and settings", async () => {
   const box = { focus: vi.fn(), select: vi.fn() };
   const query = vi.fn(() => box);
   vi.stubGlobal("document", { querySelector: query });
-  const header = view.all().find(n => n.type === "header")!;
-  const inHeader = nodes(header.props.children);
+  const frame = view.all().find(n => n.type === ShellFrame)!;
+  const inHeader = nodes([frame.props.crumbs, frame.props.actions]);
   const crumbs = inHeader.filter(n => String(n.props.className ?? "").includes("ws-crumb") && !String(n.props.className).includes("sep")).map(text);
   expect(crumbs).toEqual(["xdev", "main"]);
   expect(inHeader.filter(n => n.type === HeaderSearch)).toHaveLength(1);
@@ -773,7 +787,7 @@ const OAK = "/demo/wt/xdev-oak";
 // Effects run by `attend`; undone after each test so no timer or listener reaches the next one.
 const cleanups: (() => void)[] = [];
 const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
-const bell = (view: Awaited<ReturnType<typeof harness>>) => nodes(view.all().find(n => n.type === "header")!.props.children).find(n => n.type === "button" && n.props["aria-haspopup"] === "menu")!;
+const bell = (view: Awaited<ReturnType<typeof harness>>) => nodes(view.all().find(n => n.type === ShellFrame)!.props.actions).find(n => n.type === "button" && n.props["aria-haspopup"] === "menu")!;
 
 it("hidden worktree asking a question raises everything", async () => {
   const api = createMockApi({});

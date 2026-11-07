@@ -234,7 +234,7 @@ export function SkillsTab(props: { api: Api; worktree: string | null }): JSX.Ele
           ))}
         </select>
         <span className="kit-spacer" />
-        <Button variant="primary" type="button" disabled={targets.length === 0} title={targets.length === 0 ? t("kit.skills.noTarget") : undefined} onClick={startAdd}>
+        <Button type="button" disabled={targets.length === 0} title={targets.length === 0 ? t("kit.skills.noTarget") : undefined} onClick={startAdd}>
           {t("kit.skills.new")}
         </Button>
       </div>

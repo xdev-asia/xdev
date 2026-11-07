@@ -1,3 +1,4 @@
+import { Icon } from "@xdev-asia/ui";
 import { useState } from "react";
 import type { JSX } from "react";
 import type { SidebarPrefs } from "@/api";
@@ -59,9 +60,7 @@ export function SidebarFilters(props: {
         data-on={on ? "true" : undefined}
         onClick={() => setOpen(!open)}
       >
-        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 5h18l-7 8v6l-4-2v-4z" />
-        </svg>
+        <Icon name="filter" size={14} />
       </button>
       {open && (
         <div className="ws-filters-pop" role="group" aria-label={t("filters.button")} onKeyDown={(e) => e.key === "Escape" && setOpen(false)}>

@@ -221,7 +221,8 @@ function findAction(node: unknown, action: string): El | null {
   }
   const el = node as El;
   if (el.props?.["data-action"] === action) return el;
-  return findAction(el.props?.children, action);
+  // The design system status bar takes its entries as `items`.
+  return findAction(el.props?.children, action) ?? findAction(el.props?.items, action);
 }
 const tree = (quota: Quota[] | null, extra: Partial<Parameters<typeof WorkspaceFooter>[0]> = {}) =>
   WorkspaceFooter({ branch: "main", running: 0, waiting: 0, quota, version: "0.3.0", ...extra });
@@ -239,7 +240,9 @@ it("right-click on the plain meter group does the same", () => {
   const onMetersMenu = vi.fn();
   const preventDefault = vi.fn();
   const root = tree([account("a", [["five_hour", 1]])], { onMetersMenu }) as unknown as El;
-  const kids = (root.props!.children as unknown[]).flat() as (El | false | null)[];
+  // The wrapper holds the status bar, which takes the entries as `items`.
+  const bar = root.props!.children as El;
+  const kids = (bar.props!.items as unknown[]).flat() as (El | false | null)[];
   const group = kids.find((k) => k && (k.props as { role?: string } | undefined)?.role === "group") as El;
   (group.props!.onContextMenu as (e: unknown) => void)({ preventDefault, clientX: 1, clientY: 2 });
   expect(onMetersMenu).toHaveBeenCalledWith({ x: 1, y: 2 });
