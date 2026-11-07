@@ -165,47 +165,15 @@ import { IS_MAC, PLATFORM } from "@/platform";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { startFileDrop, type DropEvent } from "@/terminal/fileDrop";
 import { WorktreeTabs, type Reveal } from "./WorktreeTabs";
+import {
+  AUTO_SLEEP_TICK_MS, NO_CHANGES, readSelected, storeSelected, waitingIn, windowFocused, working, worktreeName,
+  type BulkState, type Creating, type Editing, type PanelTab, type Removing, type Review, type SetupCardAt, type TrustAsk, type View,
+} from "./shellModel";
 import { runWithToast } from "@/quickCommands/runUi";
 import { startQuickCommands } from "@/quickCommands/store";
 
-const SELECTED_KEY = "xdev.workspace.selected";
-
-// Storage can be missing or refuse access; the selection is only a convenience.
-function readSelected(): string | null {
-  try {
-    return localStorage.getItem(SELECTED_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function storeSelected(path: string): void {
-  try {
-    localStorage.setItem(SELECTED_KEY, path);
-  } catch {
-    // Not remembered; the next launch starts at the first worktree.
-  }
-}
-
-type View = "workspace" | "docs" | "settings" | "automations";
-type PanelTab = "files" | "search" | "changes" | "checks" | "pr" | "issues" | "ports";
-type Creating = { repoId: string; name?: string; status?: WorkStatus | null; agents: AgentChoice[]; defaultAgent: string | null };
-type Editing = { worktree: WorktreeView; busy: boolean; error?: ApiError["code"] };
-type SetupCardAt = { kind: "detected"; command: string; repoId: string } | { kind: "ask"; repoId: string };
-type TrustAsk = { path: string; repoId: string; kind: ScriptKind | "lists"; text: string; hash: string; lists: PendingLists; changed: boolean; busy: boolean; error?: ApiError["code"] };
-type BulkState = { mode: "delete" | "archive"; worktrees: WorktreeView[]; dirty: Record<string, boolean>; busy: boolean; result?: BulkResult };
-type Review = { repoId: string | null; busy: boolean; error?: ApiError["code"] };
-type Removing = { worktree: WorktreeView; dirty: boolean; busy: boolean; error?: ApiError["code"]; archiving?: boolean; failed?: { code: number | null; output: string };
-  /** Removed without asking (Settings → General): the dialog stays hidden until something needs an answer. */
-  quiet?: boolean;
-  /** Opened from "Delete with nested worktrees": the nested tick starts on. */
-  nested?: boolean;
-};
 
 /** The app frame: repos and worktrees on the left, the selected worktree in the middle. */
-/** How often the auto sleep check runs. */
-const AUTO_SLEEP_TICK_MS = 60_000;
-
 export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const { api } = props;
   const { t } = useI18n();
@@ -2917,26 +2885,4 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     </UpsellHost>
     </ProfilesProvider>
   );
-}
-
-// One array for every render, so an unlisted worktree does not look like a new list each time.
-const NO_CHANGES: WorktreeChange[] = [];
-
-function working(sessions: Sessions, path: string): number {
-  return sessions.tabs(path).filter((tab) => tab.agent && tab.status === "working").length;
-}
-
-/** Agent tabs of a worktree that wait on the person. */
-function waitingIn(sessions: Sessions, path: string): number {
-  return sessions.tabs(path).filter((tab) => tab.agent && tab.status === "needs-you").length;
-}
-
-/** The listed name of a worktree; the folder name when the list does not have it. */
-function worktreeName(list: WorktreeView[], path: string): string {
-  return list.find((w) => w.path === path)?.name ?? path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-}
-
-function windowFocused(): boolean {
-  if (typeof document === "undefined") return true;
-  return document.visibilityState !== "hidden" && (typeof document.hasFocus !== "function" || document.hasFocus());
 }
