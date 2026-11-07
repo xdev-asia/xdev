@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
+import { Button } from "@xdev-asia/ui";
 import type { Api, ReviewBase, ReviewBranch } from "@/api";
 import { useI18n } from "@/i18n";
 
@@ -38,22 +39,22 @@ export function BasePicker(props: { api: Api; worktree: string; base: ReviewBase
   return (
     <div className="rv-base">
       <span className="rv-base-label">{t("review.base.label")}</span>
-      <button type="button" className="rv-base-button ws-mono" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <Button type="button" size="sm" className="rv-base-button ws-mono" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
         {label}
-      </button>
+      </Button>
       {open && (
         <div className="rv-base-menu" role="listbox" aria-label={t("review.base.label")}>
-          <button type="button" role="option" aria-selected={base.kind === "start"} onClick={() => choose(null)}>
+          <Button type="button" variant="ghost" size="sm" role="option" aria-selected={base.kind === "start"} onClick={() => choose(null)}>
             {t("review.base.start")}
-          </button>
-          <button type="button" role="option" aria-selected={base.name === baseRef} className="ws-mono" onClick={() => choose(baseRef)}>
+          </Button>
+          <Button type="button" variant="ghost" size="sm" role="option" aria-selected={base.name === baseRef} className="ws-mono" onClick={() => choose(baseRef)}>
             {baseRef}
-          </button>
+          </Button>
           {branches === null && <p className="ws-empty">{t("review.loading")}</p>}
           {others.map((b) => (
-            <button key={b.name} type="button" role="option" aria-selected={base.name === b.name} className="ws-mono" onClick={() => choose(b.name)}>
+            <Button key={b.name} type="button" variant="ghost" size="sm" role="option" aria-selected={base.name === b.name} className="ws-mono" onClick={() => choose(b.name)}>
               {b.name}
-            </button>
+            </Button>
           ))}
           <form
             className="rv-base-free"

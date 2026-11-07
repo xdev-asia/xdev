@@ -4,6 +4,7 @@ import { getChunks, MergeView, unifiedMergeView } from "@codemirror/merge";
 import type { Chunk } from "@codemirror/merge";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
+import { Button } from "@xdev-asia/ui";
 import { useEffect, useRef, useState } from "react";
 import type { JSX, ReactNode } from "react";
 import { toApiError, type Api, type LineAttribution, type ReviewFile, type ReviewNote, type WorktreeFileDiff } from "@/api";
@@ -221,7 +222,7 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
   return (
     <section className="rv-file" data-path={file.path} ref={root}>
       <header className="rv-file-head">
-        <button type="button" className="rv-file-toggle" aria-expanded={open} onClick={() => props.onToggle(file.path)}>
+        <Button type="button" variant="ghost" className="rv-file-toggle" aria-expanded={open} onClick={() => props.onToggle(file.path)}>
           <span className="rv-caret" aria-hidden="true">
             {open ? "▾" : "▸"}
           </span>
@@ -229,18 +230,18 @@ export function FileDiff(props: FileDiffProps): JSX.Element {
             {LETTER[file.kind]}
           </span>
           <span className="rv-file-path ws-mono">{file.path}</span>
-        </button>
+        </Button>
         {props.extra}
         {shown && <DiffStats base={shown.old ?? ""} current={shown.new ?? ""} />}
         {file.unstaged && (
-          <button type="button" className="rv-stage" disabled={props.busy} onClick={() => props.onStage(file, true)}>
+          <Button type="button" size="sm" disabled={props.busy} onClick={() => props.onStage(file, true)}>
             {t("review.stage")}
-          </button>
+          </Button>
         )}
         {file.staged && (
-          <button type="button" className="rv-stage" disabled={props.busy} onClick={() => props.onStage(file, false)}>
+          <Button type="button" size="sm" disabled={props.busy} onClick={() => props.onStage(file, false)}>
             {t("review.unstage")}
-          </button>
+          </Button>
         )}
       </header>
       {open && problem && <ProblemNote problem={problem} />}

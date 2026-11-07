@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { Button } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import type { ReviewNote } from "@/api";
 import { NoteCard, noteLabel, renderNote } from "./NoteCard";
@@ -100,7 +101,7 @@ it("composer: plain Enter adds a line and Esc cancels", () => {
 it("composer: an empty note cannot be saved", () => {
   const onSave = vi.fn();
   const c = mount(() => NoteComposer({ label: "a.ts:3", onSave, onCancel: vi.fn() }));
-  expect(c.find((n) => n.type === "button" && n.props.children === en("review.note.save"))!.props.disabled).toBe(true);
+  expect(c.find((n) => (n.type === Button || n.type === "button") && n.props.children === en("review.note.save"))!.props.disabled).toBe(true);
   typed(c, "  \n ");
   press(c, { ctrlKey: true });
   expect(onSave).not.toHaveBeenCalled();
@@ -134,9 +135,9 @@ it("card: Edit opens the composer with the body, Delete calls back", () => {
   const onEdit = vi.fn();
   const onDelete = vi.fn();
   const c = mount(() => NoteCard({ note: note({ body: "old" }), onEdit, onDelete }));
-  c.find((n) => n.type === "button" && n.props.children === en("review.note.delete"))!.props.onClick();
+  c.find((n) => (n.type === Button || n.type === "button") && n.props.children === en("review.note.delete"))!.props.onClick();
   expect(onDelete).toHaveBeenCalled();
-  c.find((n) => n.type === "button" && n.props.children === en("review.note.edit"))!.props.onClick();
+  c.find((n) => (n.type === Button || n.type === "button") && n.props.children === en("review.note.edit"))!.props.onClick();
   const composer = c.find((n) => n.type === NoteComposer)!;
   expect(composer.props.initial).toBe("old");
   composer.props.onSave("new");

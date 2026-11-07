@@ -1,5 +1,6 @@
 import MarkdownIt from "markdown-it";
 import { useState } from "react";
+import { Button } from "@xdev-asia/ui";
 import type { JSX } from "react";
 import { toApiError, type ReviewNote } from "@/api";
 import { useI18n } from "@/i18n";
@@ -80,16 +81,16 @@ export function NoteCard(props: {
         )}
         <span className="rv-note-actions">
           {props.onPostToPr && !note.outdated && (
-            <button type="button" data-post-pr disabled={posting || posted || !!props.postBlocked} title={blocked ? t(blocked) : undefined} onClick={() => void post()}>
+            <Button type="button" size="sm" data-post-pr disabled={posting || posted || !!props.postBlocked} title={blocked ? t(blocked) : undefined} onClick={() => void post()}>
               {t(posted ? "review.note.posted" : "review.note.postToPr")}
-            </button>
+            </Button>
           )}
-          <button type="button" onClick={() => setEditing(true)}>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(true)}>
             {t("review.note.edit")}
-          </button>
-          <button type="button" onClick={props.onDelete}>
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={props.onDelete}>
             {t("review.note.delete")}
-          </button>
+          </Button>
         </span>
       </header>
       <div className="rv-note-body" dangerouslySetInnerHTML={{ __html: renderNote(note.body) }} />

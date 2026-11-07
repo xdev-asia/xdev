@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { JSX } from "react";
+import { Button } from "@xdev-asia/ui";
 import { MAX_BODY } from "./notes";
 import { useI18n } from "@/i18n";
 
@@ -35,12 +36,12 @@ export function NoteComposer(props: { label: string; initial?: string; onSave(bo
         }}
       />
       <div className="rv-composer-actions">
-        <button type="button" className="rv-stage" disabled={empty} onClick={save}>
+        <Button type="button" variant="primary" size="sm" disabled={empty} onClick={save}>
           {t("review.note.save")}
-        </button>
-        <button type="button" className="rv-stage" onClick={props.onCancel}>
+        </Button>
+        <Button type="button" size="sm" onClick={props.onCancel}>
           {t("review.note.cancel")}
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -314,7 +314,7 @@ it("the base picker lists the start, the base branch and the others", async () =
   const base = { kind: "start" as const, name: null, id: START };
   const p = mount(() => BasePicker({ api, worktree: OAK, base, baseRef: "main", onPick }));
   expect(list).not.toHaveBeenCalled();
-  p.find((n) => n.type === "button" && n.props["aria-haspopup"] === "listbox")!.props.onClick();
+  p.find((n) => n.props["aria-haspopup"] === "listbox")!.props.onClick();
   // The branch list is read when the menu first opens; this draw schedules that effect.
   p.draw();
   hooks.effects.at(-1)?.();

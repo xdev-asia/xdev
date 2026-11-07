@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { JSX } from "react";
+import { Button } from "@xdev-asia/ui";
 import type { ReviewNote } from "@/api";
 import { useI18n } from "@/i18n";
 import { sendToChosenTab, type SendChoice } from "@/workspace/agentPrompt";
@@ -44,8 +45,9 @@ export function SendNotesMenu(props: {
 
   return (
     <div className="rv-notes rv-send">
-      <button
+      <Button
         type="button"
+        size="sm"
         className="rv-base-button"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -53,7 +55,7 @@ export function SendNotesMenu(props: {
         onClick={() => setOpen(!open)}
       >
         {t(list.length === 1 ? "review.send.one" : "review.send", { count: list.length })}
-      </button>
+      </Button>
       {open && (
         <div className="rv-base-menu rv-send-menu" role="menu" aria-label={t("review.send.title")}>
           <label className="rv-check">
