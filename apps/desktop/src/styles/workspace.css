@@ -1368,37 +1368,23 @@
   background: var(--bg-1);
 }
 
+/* The design system tabs, compact; each tab is an icon with its name for screen readers. */
 .ws-panel-tabs {
-  display: flex;
   flex-shrink: 0;
   align-items: stretch;
   height: var(--h-tab);
   box-sizing: border-box;
   padding: 0 var(--x-space-1);
-  border-bottom: 1px solid var(--line);
 }
 
-/* An icon button; the selected one carries an accent bar along its bottom edge. */
-.ws-panel-tab {
-  position: relative;
-  display: flex;
-  align-items: center;
+.ws-panel-tabs .kit-tab {
   justify-content: center;
-  width: 36px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-3);
+  min-width: 36px;
 }
 
-.ws-panel-tab:hover {
-  background: color-mix(in srgb, var(--text-1) 4%, transparent);
-  color: var(--text-1);
-}
-
-.ws-panel-tab[aria-selected="true"] {
-  color: var(--text-1);
-  box-shadow: inset 0 -2px 0 var(--accent);
+.ws-panel-tab {
+  display: inline-flex;
+  align-items: center;
 }
 
 .ws-panel-body {
@@ -1410,21 +1396,6 @@
 
 .ws-panel-body[hidden] {
   display: none;
-}
-
-.ws-panel-badge {
-  position: absolute;
-  top: 3px;
-  right: 2px;
-  min-width: 15px;
-  padding: 0 4px;
-  border-radius: var(--radius-l);
-  background: var(--accent);
-  color: var(--bg-0);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 15px;
-  text-align: center;
 }
 
 /* Under 600px the header keeps the menu, search, bell, help, settings and language; the sidebar
@@ -1472,12 +1443,13 @@
     border-bottom: 0;
   }
 
-  .ws-panel-tab {
+  .ws-panel-tabs .kit-tab {
     height: 34px;
+    margin-bottom: 0;
   }
 
-  .ws-panel-tab[aria-selected="true"] {
-    box-shadow: none;
+  .ws-panel-tabs .kit-tab[aria-selected="true"] {
+    border-bottom-color: transparent;
     background: var(--bg-2);
   }
 
@@ -2560,10 +2532,6 @@ button.ws-tree-row[data-flash="true"] {
 
 .ws-dot[data-check="pending"] {
   background: var(--warn);
-}
-
-.ws-panel-badge[data-tone="danger"] {
-  background: var(--danger);
 }
 
 .ws-pr {

@@ -2,7 +2,7 @@ import { BADGE_DEBOUNCE_MS } from "./notifier";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AttentionInbox } from "@xdev-asia/ui";
+import { AttentionInbox, Tabs, type TabsItem } from "@xdev-asia/ui";
 import { SETUP_PROFILE, createMockApi, type WorkerOpen, type WorktreeChange, type WorktreeView } from "@/api";
 import { DocsApp } from "@/DocsApp";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
@@ -544,16 +544,16 @@ it("switching worktrees keeps every visited worktree's tabs mounted", async () =
 it("changes tab counts the worktree's files and opens a diff next to the terminals", async () => {
   const view = await harness();
   const panel = () => view.of(WorktreeChanges)[0];
-  const tab = () => view.all().find(n => n.props.className === "ws-panel-tab" && n.props["aria-label"].startsWith(en("workspace.panel.changes")))!;
+  const tab = () => panelTab(view, "changes");
   expect(panel().props.worktree.path).toBe("/demo/xdev");
-  expect(tab().props["aria-label"]).toBe(en("workspace.panel.changes"));
+  expect(tab().name).toBe(en("workspace.panel.changes"));
 
   view.list().props.onSelect(view.worktree("oak"));
   expect(panel().props.worktree.path).toBe("/demo/wt/xdev-oak");
   expect(panel().props.sessions).toBe(view.of(WorktreeTabs)[0].props.sessions);
   panel().props.onCount(3);
-  expect(tab().props["aria-label"]).toBe(en("workspace.panel.changesCount", { count: 3 }));
-  expect(renderToStaticMarkup(tab())).toContain(">3<");
+  expect(tab().name).toBe(en("workspace.panel.changesCount", { count: 3 }));
+  expect(tab().badge).toBe('<span aria-hidden="true">3</span>');
 
   const oak = () => view.of(WorktreeTabs).find(n => n.props.worktree === "/demo/wt/xdev-oak")!;
   expect(oak().props.reveal).toBeUndefined();
@@ -564,7 +564,7 @@ it("changes tab counts the worktree's files and opens a diff next to the termina
   // Other worktrees get no file, and their count is not this one's.
   expect(view.of(WorktreeTabs).find(n => n.props.worktree === "/demo/xdev")!.props.reveal).toBeUndefined();
   view.list().props.onSelect(view.worktree("elm"));
-  expect(tab().props["aria-label"]).toBe(en("workspace.panel.changes"));
+  expect(tab().name).toBe(en("workspace.panel.changes"));
 });
 
 it("hands the list the line counts, times and agents of each worktree", async () => {
@@ -583,15 +583,15 @@ it("hands the list the line counts, times and agents of each worktree", async ()
 
 it("panel has Files and Changes icon tabs with a change badge", async () => {
   const view = await harness();
-  const tabs = () => view.all().filter(n => n.props.className === "ws-panel-tab");
+  const tabs = () => panelTabs(view);
   const files = () => tabs()[0];
   const changes = () => tabs()[2];
-  // Icon buttons: a name for screen readers and no visible text.
-  expect(tabs().map(n => n.props["aria-label"])).toEqual([en("workspace.panel.files"), en("search.files.tab"), en("workspace.panel.changes"), en("prPanel.tab"), en("checks.tab"), en("issues.tab"), en("ports.tab")]);
-  expect(tabs().every(n => n.props.role === "tab" && n.type === "button")).toBe(true);
-  expect(renderToStaticMarkup(files())).not.toContain("ws-panel-badge");
+  // Compact design system tabs; each is an icon with a name for screen readers.
+  expect(view.all().find(n => n.type === Tabs && n.props.className === "ws-panel-tabs")!.props.size).toBe("sm");
+  expect(tabs().map(n => n.name)).toEqual([en("workspace.panel.files"), en("search.files.tab"), en("workspace.panel.changes"), en("prPanel.tab"), en("checks.tab"), en("issues.tab"), en("ports.tab")]);
+  expect(files().badge).toBe("");
   // Files is the default tab, and the tree and the changes list are both mounted.
-  expect(tabs().map(n => n.props["aria-selected"])).toEqual([true, false, false, false, false, false, false]);
+  expect(tabs().map(n => n.selected)).toEqual([true, false, false, false, false, false, false]);
   const panels = () => view.all().filter(n => n.props.role === "tabpanel");
   expect(panels().map(n => n.props.hidden)).toEqual([false, true, true, true, true, true, true]);
   expect(view.of(FileTree)).toHaveLength(1);
@@ -605,16 +605,16 @@ it("panel has Files and Changes icon tabs with a change badge", async () => {
   view.of(WorktreeChanges)[0].props.onChanges(list);
   view.of(WorktreeChanges)[0].props.onCount(1);
   expect(view.of(FileTree)[0].props.changes).toBe(list);
-  expect(renderToStaticMarkup(changes())).toContain(">1<");
-  expect(changes().props["aria-label"]).toBe(en("workspace.panel.changesCount.one", { count: 1 }));
+  expect(changes().badge).toContain(">1<");
+  expect(changes().name).toBe(en("workspace.panel.changesCount.one", { count: 1 }));
 
   // Opening a changed file from the tree opens its diff, like the Changes list does.
   const oak = () => view.of(WorktreeTabs).find(n => n.props.worktree === "/demo/wt/xdev-oak")!;
   view.of(FileTree)[0].props.onOpen("src/session.ts");
   expect(oak().props.reveal).toEqual({ file: "src/session.ts", seq: 1 });
 
-  changes().props.onClick();
-  expect(tabs().map(n => n.props["aria-selected"])).toEqual([false, false, true, false, false, false, false]);
+  changes().click();
+  expect(tabs().map(n => n.selected)).toEqual([false, false, true, false, false, false, false]);
   expect(panels().map(n => n.props.hidden)).toEqual([true, true, false, true, true, true, true]);
   // Another worktree has its own list.
   view.list().props.onSelect(view.worktree("elm"));
@@ -630,14 +630,15 @@ it("checks tab badge counts failing checks", async () => {
     { name: "c", workflow: null, bucket: "pass" as const, link: null },
   ];
   const view = await harness(createMockApi({}, { workspace: { ...DEMO_WORKSPACE, prs: { [oak]: pr }, checks: { [oak]: checks } } }));
-  const tab = () => view.all().find(n => n.props.className === "ws-panel-tab" && String(n.props["aria-label"]).startsWith(en("checks.tab")))!;
+  const tab = () => panelTab(view, "checks");
   view.list().props.onSelect(view.worktree("oak"));
-  expect(tab().props["aria-label"]).toBe(en("checks.tab"));
+  expect(tab().name).toBe(en("checks.tab"));
   expect(view.list().props.prs).toEqual({});
   const store = view.of(ChecksPanel)[0].props.prs;
   await store.load(oak, { checks: true });
-  expect(tab().props["aria-label"]).toBe(en("checks.tabFailing", { count: 2 }));
-  expect(renderToStaticMarkup(tab())).toContain(">2<");
+  expect(tab().name).toBe(en("checks.tabFailing", { count: 2 }));
+  expect(tab().badge).toContain(">2<");
+  expect(tab().tone).toBe("danger");
   expect(view.list().props.prs[oak].pr.number).toBe(5);
 });
 
@@ -792,6 +793,19 @@ const cleanups: (() => void)[] = [];
 const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
 const inboxes = (view: Awaited<ReturnType<typeof harness>>) => nodes(view.all().find(n => n.type === ShellFrame)!.props.actions).filter(n => n.type === AttentionInbox);
 const inbox = (view: Awaited<ReturnType<typeof harness>>) => inboxes(view)[0]!;
+// The right panel's tab row: the design system tabs, read as one entry per tab.
+const panelTabs = (view: Awaited<ReturnType<typeof harness>>) => {
+  const bar = view.all().find(n => n.type === Tabs && n.props.className === "ws-panel-tabs")!;
+  return (bar.props.items as TabsItem[]).map(item => ({
+    id: item.id,
+    name: String(nodes(item.label).find(n => n.props.className === "x-sr-only")!.props.children),
+    selected: bar.props.value === item.id,
+    badge: item.badge ? renderToStaticMarkup(item.badge as ReactElement) : "",
+    tone: item.badgeTone,
+    click: () => bar.props.onChange(item.id),
+  }));
+};
+const panelTab = (view: Awaited<ReturnType<typeof harness>>, id: string) => panelTabs(view).find(t => t.id === id)!;
 
 it("hidden worktree asking a question raises everything", async () => {
   const api = createMockApi({});
@@ -1528,23 +1542,23 @@ it("Don't ask again saves askBeforeDeleteWorktree off and toasts with Open setti
 it("the issues tab shows the panel of the current repo", async () => {
   const view = await harness();
   view.list().props.onSelect(view.worktree("oak"));
-  const tab = () => view.all().find(n => n.props.className === "ws-panel-tab" && n.props["aria-label"] === en("issues.tab"))!;
+  const tab = () => panelTab(view, "issues");
   const body = () => view.all().find(n => n.props.role === "tabpanel" && nodes(n.props.children).some(c => c.type === IssuesPanel))!;
   expect(body().props.hidden).toBe(true);
   expect(view.of(IssuesPanel)[0].props.repoId).toBe("demo-xdev");
-  tab().props.onClick();
-  expect(tab().props["aria-selected"]).toBe(true);
+  tab().click();
+  expect(tab().selected).toBe(true);
   expect(body().props.hidden).toBe(false);
 });
 
 it("the issues key opens the tab and closes the panel when pressed again", async () => {
   const view = await harness();
   const panel = () => view.all().find(n => n.props.className === "ws-panel")!;
-  const tab = () => view.all().find(n => n.props.className === "ws-panel-tab" && n.props["aria-label"] === en("issues.tab"))!;
+  const tab = () => panelTab(view, "issues");
   keymap.handlers["panel.issues"]();
   view.draw();
   expect(panel().props.hidden).toBe(false);
-  expect(tab().props["aria-selected"]).toBe(true);
+  expect(tab().selected).toBe(true);
   keymap.handlers["panel.issues"]();
   view.draw();
   expect(panel().props.hidden).toBe(true);

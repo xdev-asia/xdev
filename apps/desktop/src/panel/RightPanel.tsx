@@ -1,5 +1,5 @@
 import type { JSX, ReactNode } from "react";
-import { Icon, type IconName } from "@xdev-asia/ui";
+import { Icon, Tabs, type IconName } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import { issuesTabVisible } from "@/issues/issuesPreset";
 import type { PanelTab } from "@/workspace/shellModel";
@@ -30,7 +30,7 @@ interface TabDef {
   badge?: { count: number; tone?: "danger" };
 }
 
-/** The icon row on top of the right panel. */
+/** The icon row on top of the right panel: the design system tabs, compact. */
 export function PanelTabBar(props: PanelTabBarProps): JSX.Element {
   const { t } = useI18n();
   const { tab, changes, failing } = props;
@@ -55,28 +55,26 @@ export function PanelTabBar(props: PanelTabBarProps): JSX.Element {
     ...(issuesTabVisible(props.issuesTab, props.issuesPinned, tab === "issues") ? [{ id: "issues", icon: "info", label: t("issues.tab") } satisfies TabDef] : []),
     { id: "ports", icon: "plug", label: t("ports.tab") },
   ];
+  // Icon tabs: the name is for screen readers (with the count when there is one) and the tooltip.
   return (
-    <div className="ws-panel-tabs" role="tablist" aria-label={t("workspace.panel.label")}>
-      {defs.map((d) => (
-        <button
-          key={d.id}
-          type="button"
-          role="tab"
-          className="ws-panel-tab"
-          aria-selected={tab === d.id}
-          aria-label={d.aria ?? d.label}
-          title={d.label}
-          onClick={() => props.onTab(d.id, d.id === "search")}
-        >
-          <Icon name={d.icon} size={16} />
-          {d.badge && (
-            <span className="ws-panel-badge" data-tone={d.badge.tone} aria-hidden="true">
-              {d.badge.count}
-            </span>
-          )}
-        </button>
-      ))}
-    </div>
+    <Tabs
+      size="sm"
+      className="ws-panel-tabs"
+      label={t("workspace.panel.label")}
+      value={tab}
+      onChange={(id) => props.onTab(id as PanelTab, id === "search")}
+      items={defs.map((d) => ({
+        id: d.id,
+        label: (
+          <span className="ws-panel-tab" title={d.label}>
+            <Icon name={d.icon} size={16} />
+            <span className="x-sr-only">{d.aria ?? d.label}</span>
+          </span>
+        ),
+        badge: d.badge ? <span aria-hidden="true">{d.badge.count}</span> : undefined,
+        badgeTone: d.badge?.tone,
+      }))}
+    />
   );
 }
 
