@@ -379,6 +379,7 @@
     "allow-host-scopes-list",
     "allow-host-settings-get",
     "allow-host-settings-put",
+    "allow-host-history-sync",
     "allow-ssh-host-test",
     "allow-ssh-connect",
     "allow-ssh-disconnect",

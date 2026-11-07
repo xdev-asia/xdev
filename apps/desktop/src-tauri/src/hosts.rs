@@ -270,6 +270,96 @@ fn saved_hosts(data: &Path) -> Result<Vec<SshHost>, CmdError> {
     xdev_ssh::load(data).map_err(crate::ssh::cmd_error)
 }
 
+/// The most one sync copies, and the most a host's mirror keeps (each agent gets half).
+pub const SYNC_BUDGET: u64 = 32 << 20;
+pub const MIRROR_CAP: u64 = 512 << 20;
+
+const DAY_MS: u64 = 86_400_000;
+
+fn io_err(e: impl std::fmt::Display) -> CmdError {
+    CmdError {
+        code: "io",
+        detail: Some(e.to_string()),
+    }
+}
+
+/// `~` and `~/x` against the host's login folder; an absolute path stays.
+pub fn resolve_home(path: &str, login: &str) -> String {
+    let login = login.trim_end_matches('/');
+    match path.strip_prefix("~/") {
+        Some(rest) => format!("{login}/{rest}"),
+        None if path == "~" => login.to_owned(),
+        None => path.to_owned(),
+    }
+}
+
+/// One sync of host `id`: copies the new log bytes into `<data>/hosts/<id>/logs`, brings the
+/// host's session index up to date, and persists `status.json`. `login` is the host's login
+/// folder, `now_ms` the clock.
+pub fn sync_with<S: xdev_ssh::remote_logs::LogSource + ?Sized>(
+    src: &mut S,
+    login: &str,
+    data: &Path,
+    id: &str,
+    history: &EffectiveHistory,
+    now_ms: u64,
+) -> Result<HostHistoryStatus, CmdError> {
+    use std::collections::HashMap;
+    use xdev_ssh::remote_logs::{LogLayout, SyncCaps, apply, list_logs, plan_sync, scan_mirror};
+
+    let root = host_dir(data, id);
+    let since = now_ms.saturating_sub(u64::from(history.days) * DAY_MS);
+    let mut budget = SYNC_BUDGET;
+    let mut capped = false;
+    let mut files = 0u32;
+    let mut bytes = 0u64;
+    let agents = [
+        ("claude", LogLayout::Claude, &history.claude_home),
+        ("codex", LogLayout::Codex, &history.codex_home),
+    ];
+    for (name, layout, home) in agents {
+        let dest = root.join("logs").join(name);
+        std::fs::create_dir_all(&dest).map_err(io_err)?;
+        let home = resolve_home(home, login);
+        let remote = list_logs(src, &home, layout, since)?;
+        let mirror = scan_mirror(&dest);
+        let caps = SyncCaps {
+            since_ms: since,
+            budget,
+            host_cap: MIRROR_CAP / 2,
+            file_cap: xdev_kit::LOG_BYTES_MAX,
+        };
+        let (steps, was_capped) = plan_sync(&remote, &mirror, &caps);
+        capped |= was_capped;
+        let mtimes: HashMap<String, u64> =
+            remote.iter().map(|l| (l.rel.clone(), l.mtime_ms)).collect();
+        let fetched = apply(src, &home, &dest, &steps, &mtimes)?;
+        budget = budget.saturating_sub(fetched);
+        let after = scan_mirror(&dest);
+        files += u32::try_from(after.len()).unwrap_or(u32::MAX);
+        bytes += after.iter().map(|m| m.size).sum::<u64>();
+    }
+
+    let homes = xdev_kit::host_homes(&root, id);
+    let mut index = xdev_kit::SessionIndex::load(&root);
+    index.refresh_since(
+        &homes,
+        Some(i64::try_from(since).unwrap_or(i64::MAX)),
+        &mut |_| {},
+    );
+    index.save(&root).map_err(|e| io_err(format!("{e:?}")))?;
+
+    let file = StatusFile {
+        last_sync_ms: Some(now_ms),
+        files,
+        bytes,
+        capped,
+    };
+    let json = serde_json::to_vec(&file).map_err(io_err)?;
+    std::fs::write(status_path(data, id), json).map_err(io_err)?;
+    Ok(read_status(data, id))
+}
+
 /// Local, then each saved SSH host.
 #[tauri::command(async)]
 pub fn host_scopes_list(
@@ -319,6 +409,45 @@ pub fn host_settings_put(
         remove_mirror(data, &host_id);
     }
     view_of(data, &hosts, &saved, &host_id)
+}
+
+/// One history sync now. Without a live connection nothing is fetched: the answer is the last
+/// status with `remote_offline`.
+#[tauri::command(async)]
+pub fn host_history_sync(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    hub: State<'_, crate::remote_ssh::RemoteHub>,
+    host_id: String,
+) -> Result<HostHistoryStatus, CmdError> {
+    let data = data_dir(&state)?;
+    let hosts = saved_hosts(data)?;
+    let host = find_host(&hosts, &host_id)?;
+    let settings = settings_store::read(&app);
+    let eff = effective(settings.hosts.0.get(&host_id), &host.alias);
+    if !eff.history.enabled {
+        return Ok(read_status(data, &host_id));
+    }
+    if !hub.is_connected(&host_id) {
+        let mut status = read_status(data, &host_id);
+        status.error = Some(crate::remote_ssh::offline("not connected"));
+        return Ok(status);
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
+    let history = eff.history;
+    hub.with_fs(host, |fs| {
+        let login = fs.home()?;
+        Ok(sync_with(
+            &mut fs.sftp,
+            &login,
+            data,
+            &host_id,
+            &history,
+            now,
+        ))
+    })?
 }
 
 #[cfg(test)]
@@ -566,3 +695,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod mirror_tests;

@@ -50,10 +50,11 @@ use crate::review_ai::{ReviewAiHunk, ReviewAiPlan, ReviewFinding};
 use crate::review_notes::ReviewNote;
 use crate::settings::{
     AgentsSettings, AutomationsSettings, DiffSettings, EditorSettings, EditorTheme, GitSettings,
-    HostEnvVar, HostHistory, HostSettings, HostsSettings, IssuesPreset, KeySettings, MacOptionAsAlt, NavigationSettings, NetworkSettings, OpenInSettings,
-    OrchestrationSettings, RestoreMode, SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs,
-    StatusBarItems, StatusSettings, TerminalLinkClick, TerminalSettings, Theme, TitlebarMode,
-    UiSettings, UpdateChannel, UsageSettings, XdevIdSettings,
+    HostEnvVar, HostHistory, HostSettings, HostsSettings, IssuesPreset, KeySettings,
+    MacOptionAsAlt, NavigationSettings, NetworkSettings, OpenInSettings, OrchestrationSettings,
+    RestoreMode, SettingsChanged, ShellSettings, SidebarLook, SidebarPrefs, StatusBarItems,
+    StatusSettings, TerminalLinkClick, TerminalSettings, Theme, TitlebarMode, UiSettings,
+    UpdateChannel, UsageSettings, XdevIdSettings,
 };
 use crate::shell::{CloseIntent, CloseRequest, HelpLink, MenuEvent, QuitMode, ShellLabels};
 use crate::ship::ShipView;

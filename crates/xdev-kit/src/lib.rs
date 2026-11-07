@@ -16,13 +16,13 @@ mod usage_report;
 mod write;
 
 pub use drafts::{DRAFT_MAX_BYTES, DRAFTS_MAX, Drafts};
-pub use homes::{Agent, Home, HomeSource, KitError, approx_tokens, homes};
+pub use homes::{Agent, Home, HomeSource, KitError, approx_tokens, homes, host_homes};
 pub use logs::FileMark;
 pub use memory::{
     IssueKind, MemoryFile, MemoryIssue, MemoryKind, MemorySet, project_slug, scan_memory,
 };
 pub use pricing::{PRICES_AS_OF, Rates, cost_nanos, rates_for};
-pub use sessions::{AgentSession, SessionIndex};
+pub use sessions::{AgentSession, LOG_BYTES_MAX, SessionIndex};
 pub use skills::{
     AGENT_SKILL_ROOTS, Skill, SkillScope, mark_duplicates, scan_agent_roots, scan_skill_root,
     scan_skills,

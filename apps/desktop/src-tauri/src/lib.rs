@@ -721,6 +721,7 @@ pub fn run() {
             hosts::host_scopes_list,
             hosts::host_settings_get,
             hosts::host_settings_put,
+            hosts::host_history_sync,
             ssh_connect::ssh_host_test,
             ssh_connect::ssh_connect,
             ssh_connect::ssh_disconnect,

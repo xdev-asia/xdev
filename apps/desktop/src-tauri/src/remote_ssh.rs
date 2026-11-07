@@ -348,6 +348,12 @@ impl RemoteHub {
         lock(&self.inner.hosts).get(host_id).cloned()
     }
 
+    /// Whether the host has a live connection now; never connects.
+    pub(crate) fn is_connected(&self, host_id: &str) -> bool {
+        self.existing(host_id)
+            .is_some_and(|s| matches!(&*lock(&s.state), RemoteState::Connected { .. }))
+    }
+
     /// The host's state; `Idle` for one never connected.
     pub(crate) fn view(&self, host: &SshHost) -> RemoteHostView {
         let conn = self
