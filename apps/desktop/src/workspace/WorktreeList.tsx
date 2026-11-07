@@ -892,8 +892,6 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
 
 function PinMark(props: { t: T }): JSX.Element {
   return (
-    <svg className="ws-pin" role="img" aria-label={props.t("workspace.pinned")} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z" />
-    </svg>
+    <Icon name="pin" className="ws-pin" size={12} label={props.t("workspace.pinned")} />
   );
 }

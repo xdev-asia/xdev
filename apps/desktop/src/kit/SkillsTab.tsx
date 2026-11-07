@@ -1,4 +1,4 @@
-import { Button } from "@xdev-asia/ui";
+import { Button, Icon } from "@xdev-asia/ui";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent, JSX } from "react";
 import type { Api, Home, Skill } from "@/api";
@@ -78,7 +78,7 @@ function ToastLine(props: { toast: Toast; onClose(): void }): JSX.Element {
         </button>
       )}
       <button type="button" className="kit-link" aria-label={t("kit.dismiss")} onClick={onClose}>
-        ×
+        <Icon name="close" size={12} />
       </button>
     </div>
   );

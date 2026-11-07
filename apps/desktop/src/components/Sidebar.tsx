@@ -78,19 +78,7 @@ export function Sidebar(props: {
                   onClick={() => props.onOpen(doc.path)}
                 >
                   <span className="docitem-line">
-                    <svg
-                      className="docitem-icon"
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.75"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-                      <path d="M14 3v5h5" />
-                    </svg>
+                    <Icon name="file" className="docitem-icon" size={15} />
                     <span className="docitem-title">{doc.title}</span>
                     <StaleMark doc={marks.get(doc.path)} />
                   </span>

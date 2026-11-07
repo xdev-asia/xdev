@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { StatusDot, Switch, type MenuEntry } from "@xdev-asia/ui";
+import { Icon, StatusDot, Switch, type MenuEntry } from "@xdev-asia/ui";
 import { useI18n } from "@/i18n";
 import { lastRunCell, sortLabel, type Row, type Sort, type SortKey } from "./listModel";
 import { MenuButton } from "./MenuButton";
@@ -26,7 +26,7 @@ export function AutomationList(props: {
       <th scope="col" aria-sort={dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"}>
         <button type="button" className="au-sort" data-act={`sort-${key}`} aria-label={label ?? column} onClick={() => props.onSort(key)}>
           {column}
-          {dir && <span aria-hidden="true">{dir === "asc" ? " ↑" : " ↓"}</span>}
+          {dir && <> <Icon name={dir === "asc" ? "arrow-up" : "arrow-down"} size={12} /></>}
         </button>
       </th>
     );
@@ -78,7 +78,7 @@ export function AutomationList(props: {
               {/* The menu acts on the row without selecting it. */}
               <td className="au-actions" onClick={(e) => e.stopPropagation()}>
                 <MenuButton label={t("automations.actions.label", { name: a.name })} items={items} className="ws-icon-btn" action="actions">
-                  <span aria-hidden="true">⋯</span>
+                  <Icon name="more" />
                 </MenuButton>
               </td>
             </tr>

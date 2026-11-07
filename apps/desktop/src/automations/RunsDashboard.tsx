@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
-import { EmptyState, Segmented, StatTile, StatusDot } from "@xdev-asia/ui";
+import { EmptyState, Icon, Segmented, StatTile, StatusDot } from "@xdev-asia/ui";
 import type { Api, RunRow, RunsRange, RunsSummary } from "@/api";
 import { useI18n } from "@/i18n";
 import { formatCount } from "@/kit/kitUi";
@@ -74,7 +74,7 @@ export function RunsDashboard(props: {
         <th scope="col" aria-sort={dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"}>
           <button type="button" className="au-sort" data-act={`sort-${key}`} aria-label={t("automations.dash.sortBy", { column })} onClick={() => setSort(nextSort(sort, key))}>
             {column}
-            {dir && <span aria-hidden="true">{dir === "asc" ? " ↑" : " ↓"}</span>}
+            {dir && <> <Icon name={dir === "asc" ? "arrow-up" : "arrow-down"} size={12} /></>}
           </button>
         </th>
       );

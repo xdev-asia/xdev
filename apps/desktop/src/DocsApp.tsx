@@ -17,6 +17,7 @@ import { ActivityBar } from "./components/ActivityBar";
 import { AgentContext } from "./components/AgentContext";
 import { AgentKitView, type KitHost } from "./components/AgentKitView";
 import { Backlinks } from "./components/Backlinks";
+import { Icon as UiIcon } from "@xdev-asia/ui";
 import { ChangesPanel, ChangeView, ICON, Icon } from "./components/ChangesPanel";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ConflictBanner } from "./components/ConflictBanner";
@@ -458,25 +459,12 @@ export function VaultView(props: { vault: Vault; kit?: KitHost; appRequest?: App
           <BrandMark className="topbar-logo" size={20} />
           <span className="topbar-brand">{t("app.name")}</span>
           <span className="topbar-folder">
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            </svg>
+            <UiIcon name="folder" />
             <span className="topbar-name">{folderName(props.vault.path)}</span>
           </span>
         </div>
         <div className="search">
-          <svg className="search-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
+          <UiIcon name="search" className="search-icon" />
           <input
             ref={searchInput}
             type="search"

@@ -284,7 +284,7 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
           <span className="pal-chip pal-scope-chip" data-active="true">
             {scopeName}
             <button type="button" className="pal-scope-clear" aria-label={t("palette.scope.clear")} title={t("palette.scope.clear")} tabIndex={-1} onMouseDown={keepFocus} onClick={() => pickScope(null)}>
-              ×
+              <Icon name="close" size={12} />
             </button>
           </span>
         )}
