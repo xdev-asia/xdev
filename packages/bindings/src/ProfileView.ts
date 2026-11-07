@@ -34,6 +34,10 @@ modeFlags: Array<ModeFlags>,
  */
 docs: boolean, 
 /**
+ * The command Install runs on this host; None for custom, WSL or rows without one.
+ */
+install: string | null, 
+/**
  * The first prompt is typed after the agent starts, not passed as an
  * argument.
  */

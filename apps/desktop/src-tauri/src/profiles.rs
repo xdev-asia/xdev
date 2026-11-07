@@ -56,6 +56,8 @@ pub struct ProfileView {
     pub mode_flags: Vec<ModeFlags>,
     /// A built-in with a docs or install link.
     pub docs: bool,
+    /// The command Install runs on this host; None for custom, WSL or rows without one.
+    pub install: Option<String>,
     /// The first prompt is typed after the agent starts, not passed as an
     /// argument.
     pub prompt_after: bool,
@@ -188,6 +190,11 @@ fn build(profiles: &Profiles, find: Find<'_>, distros: &[String]) -> ProfilesVie
                     modes: p.cli.map(modes).unwrap_or_default(),
                     mode_flags: p.cli.map(mode_flags).unwrap_or_default(),
                     docs: p.cli.is_some(),
+                    // A WSL profile always counts as installed: no row to hang Install on.
+                    install: p
+                        .cli
+                        .filter(|_| p.wsl.is_none())
+                        .and_then(xdev_agent::install_line),
                     prompt_after: p
                         .cli
                         .is_some_and(|cli| spec(cli).prompt == PromptMode::AfterStart),
@@ -407,6 +414,33 @@ mod tests {
         assert_eq!(code(&["Ubuntu".to_owned()]), "wsl_unchecked");
         assert_eq!(code(&["ubuntu".to_owned()]), "wsl_unchecked");
         assert_eq!(code(&[]), "wsl_distro");
+    }
+
+    #[test]
+    fn install_is_the_catalog_line_for_a_local_builtin_only() {
+        let profiles = Profiles::default();
+        let line = |p: Profile| {
+            let mut ps = profiles.clone();
+            ps.profiles = vec![p];
+            build(&ps, &|_| None, &[]).profiles.remove(0).install
+        };
+        let with = Cli::ALL
+            .into_iter()
+            .find(|c| xdev_agent::install_line(*c).is_some())
+            .unwrap();
+        let without = Cli::ALL
+            .into_iter()
+            .find(|c| xdev_agent::install_line(*c).is_none())
+            .unwrap();
+        assert_eq!(line(builtin(with)), xdev_agent::install_line(with));
+        assert!(line(builtin(with)).is_some());
+        assert_eq!(line(builtin(without)), None);
+        let wsl = Profile {
+            wsl: Some("Ubuntu".into()),
+            ..builtin(with)
+        };
+        assert_eq!(line(wsl), None);
+        assert_eq!(line(custom("mine")), None);
     }
 
     fn only_claude(p: &Profile) -> Option<PathBuf> {
