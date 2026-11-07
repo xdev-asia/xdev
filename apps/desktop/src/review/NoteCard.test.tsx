@@ -43,7 +43,8 @@ function nodes(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
   if (!value || typeof value !== "object" || !("props" in value)) return [];
   const node = value as Node;
-  return [node, ...nodes(node.props.children)];
+  // A review comment carries its body and its buttons in props, not children.
+  return [node, ...nodes(node.props.children), ...nodes(node.props.body), ...nodes(node.props.footer)];
 }
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
@@ -193,4 +194,13 @@ it("card: a blocked note shows Post on PR disabled with the reason, and never po
 it("card: an unread PR head says so", () => {
   const html = mount(() => NoteCard({ note: note(), onEdit: vi.fn(), onDelete: vi.fn(), onPostToPr: async () => {}, postBlocked: "unknown" })).html();
   expect(html).toContain(en("review.note.postBlocked.unknown"));
+});
+
+it("a note is a design system review comment by the person, labelled with its file and lines", () => {
+  const c = mount(() => NoteCard({ note: note({ startLine: 3, line: 5 }), onEdit: vi.fn(), onDelete: vi.fn() }));
+  const html = c.html();
+  expect(html).toContain("x-review-comment");
+  expect(html).toContain(en("review.note.author"));
+  expect(html).toContain("src/a.ts:3–5");
+  expect(html).not.toContain("Line ");
 });

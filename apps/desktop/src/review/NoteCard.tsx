@@ -1,6 +1,6 @@
 import MarkdownIt from "markdown-it";
 import { useState } from "react";
-import { Button } from "@xdev-asia/ui";
+import { Button, ReviewComment } from "@xdev-asia/ui";
 import type { JSX } from "react";
 import { toApiError, type ReviewNote } from "@/api";
 import { useI18n } from "@/i18n";
@@ -24,7 +24,7 @@ export const renderNote = (body: string): string => md.render(body);
 export const noteLabel = (note: Pick<ReviewNote, "file" | "startLine" | "line">): string =>
   note.startLine === note.line ? `${note.file}:${note.line}` : `${note.file}:${note.startLine}–${note.line}`;
 
-/** One note under its lines: where it is, its body, whether it went out or went stale, and Edit / Delete. */
+/** One note under its lines, as a design system review comment: where it is, its body, whether it went out or went stale, and Edit / Delete. */
 export function NoteCard(props: {
   note: ReviewNote;
   onEdit(body: string): void;
@@ -70,36 +70,44 @@ export function NoteCard(props: {
     );
   }
   return (
-    <article className="rv-note" data-sent={note.sentAt !== null} data-outdated={note.outdated}>
-      <header className="rv-note-head">
-        <span className="rv-note-label ws-mono">{noteLabel(note)}</span>
-        {note.sentAt !== null && <span className="rv-mark rv-mark-sent">{t("review.note.sent")}</span>}
-        {note.outdated && (
-          <span className="rv-mark rv-mark-outdated" title={t("review.note.outdatedHint")}>
-            {t("review.note.outdated")}
-          </span>
-        )}
-        <span className="rv-note-actions">
-          {props.onPostToPr && !note.outdated && (
-            <Button type="button" size="sm" data-post-pr disabled={posting || posted || !!props.postBlocked} title={blocked ? t(blocked) : undefined} onClick={() => void post()}>
-              {t(posted ? "review.note.posted" : "review.note.postToPr")}
-            </Button>
+    <ReviewComment
+      className="rv-note"
+      author={t("review.note.author")}
+      // The label is the note's own `file:line`, so it reads the same as in the notes list.
+      line={noteLabel(note)}
+      labels={{ line: (where) => String(where) }}
+      body={<div className="rv-note-body" dangerouslySetInnerHTML={{ __html: renderNote(note.body) }} />}
+      footer={
+        <>
+          <div className="rv-note-head">
+            {note.sentAt !== null && <span className="rv-mark rv-mark-sent">{t("review.note.sent")}</span>}
+            {note.outdated && (
+              <span className="rv-mark rv-mark-outdated" title={t("review.note.outdatedHint")}>
+                {t("review.note.outdated")}
+              </span>
+            )}
+            <span className="rv-note-actions">
+              {props.onPostToPr && !note.outdated && (
+                <Button type="button" size="sm" data-post-pr disabled={posting || posted || !!props.postBlocked} title={blocked ? t(blocked) : undefined} onClick={() => void post()}>
+                  {t(posted ? "review.note.posted" : "review.note.postToPr")}
+                </Button>
+              )}
+              <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(true)}>
+                {t("review.note.edit")}
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={props.onDelete}>
+                {t("review.note.delete")}
+              </Button>
+            </span>
+          </div>
+          {blocked && props.onPostToPr && !note.outdated && <p className="ws-empty">{t(blocked)}</p>}
+          {error && (
+            <p className="error-text" role="alert">
+              {error}
+            </p>
           )}
-          <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(true)}>
-            {t("review.note.edit")}
-          </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={props.onDelete}>
-            {t("review.note.delete")}
-          </Button>
-        </span>
-      </header>
-      <div className="rv-note-body" dangerouslySetInnerHTML={{ __html: renderNote(note.body) }} />
-      {blocked && props.onPostToPr && !note.outdated && <p className="ws-empty">{t(blocked)}</p>}
-      {error && (
-        <p className="error-text" role="alert">
-          {error}
-        </p>
-      )}
-    </article>
+        </>
+      }
+    />
   );
 }

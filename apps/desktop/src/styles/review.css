@@ -308,7 +308,6 @@
   line-height: 1.5;
 }
 
-.rv-note,
 .rv-composer {
   display: flex;
   flex-direction: column;
@@ -322,6 +321,7 @@
 
 .rv-note-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }

@@ -6372,5 +6372,6 @@
   "review.verdict.notes": "{count} notes go with it",
   "review.more": "View options",
   "review.more.view": "View",
-  "review.more.ai": "AI review"
+  "review.more.ai": "AI review",
+  "review.note.author": "You"
 }
