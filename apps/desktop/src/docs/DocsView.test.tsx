@@ -8,7 +8,7 @@ import { AgentContext } from "@/components/AgentContext";
 import { AgentKitView } from "@/components/AgentKitView";
 import { ChangesPanel } from "@/components/ChangesPanel";
 import { Editor } from "@/components/Editor";
-import { SearchPanel } from "@/components/SearchPanel";
+import { SearchPanel } from "./SearchPanel";
 import { Sidebar } from "@/components/Sidebar";
 import { SquadsView } from "@/components/SquadsView";
 import { StatusBar } from "@/components/StatusBar";

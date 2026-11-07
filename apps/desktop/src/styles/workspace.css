@@ -1911,6 +1911,21 @@ button.ws-tree-row[data-flash="true"] {
   display: none;
 }
 
+/* The docs side list: folders, search, the section switch, then the list. */
+
+.docs-nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--x-space-2);
+  min-height: 0;
+  padding: var(--x-space-2);
+}
+
+.docs-nav-sources:empty {
+  display: none;
+}
+
 /* The docs stage: the open doc, a diff or the agent context. */
 
 .docs-stage {

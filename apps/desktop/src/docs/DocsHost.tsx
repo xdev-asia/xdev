@@ -25,7 +25,7 @@ import { FreshnessBanner } from "@/components/FreshnessBanner";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { NewDocForm } from "@/components/NewDocForm";
 import { Preview } from "@/components/Preview";
-import { resultId, RESULTS_ID, SearchPanel } from "@/components/SearchPanel";
+import { SearchPanel } from "./SearchPanel";
 import { Sidebar } from "@/components/Sidebar";
 import { isDirty } from "@/doc/docState";
 import { agentsEditable, parseFrontmatter, setAgents, setVerified } from "@/doc/frontmatter";
@@ -33,16 +33,16 @@ import { useDoc } from "@/doc/useDoc";
 import { useI18n } from "@/i18n";
 import { useKeymap } from "@/keys/keymap";
 import { docFileName, newDocContent } from "@/shell/newDoc";
-import type { DocsSection } from "@/shell/places";
+import { docsSections, type DocsSection } from "@/shell/places";
+import { useAppOrder, useHiddenApps } from "@/ui/hiddenApps";
 import { setUpVault } from "@/shell/setUpVault";
 import type { DocsRequest } from "@/shell/useShellViews";
-import { DOCS_SEARCH_ID } from "./ids";
+import { DocsNav, SHORTCUT } from "./DocsNav";
 import type { DocsHandle, DocsSaveState, DocsStatus } from "./types";
 import { VaultEmpty, type VaultFailure } from "./VaultEmpty";
 
 const SEARCH_DEBOUNCE_MS = 150;
 const SEARCH_LIMIT = 50;
-const SHORTCUT = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K";
 
 // `open` is a doc to show first, e.g. the starter doc of a folder just created.
 type Vault = { path: string; docs: DocEntry[]; open?: string };
@@ -218,7 +218,10 @@ export function VaultView(props: VaultViewProps): JSX.Element {
   const { api } = props;
   const doc = useDoc(api);
   const review = useChanges(api, doc.flush);
-  const [section, setSection] = useState<DocsSection>("docs");
+  const [asked, setSection] = useState<DocsSection>("docs");
+  const sections = docsSections(useHiddenApps(), useAppOrder());
+  // A section hidden in Appearance falls back to the docs list.
+  const section = sections.includes(asked) ? asked : "docs";
   const [selected, setSelected] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [rejecting, setRejecting] = useState<Change[] | null>(null);
@@ -517,27 +520,18 @@ export function VaultView(props: VaultViewProps): JSX.Element {
     <>
       {props.navSlot &&
         createPortal(
-          <>
-            {props.vaultNav}
-            <div className="docs-nav-fields">
-              <input
-                id={DOCS_SEARCH_ID}
-                type="search"
-                className="search-input"
-                value={query}
-                placeholder={t("search.placeholder", { shortcut: SHORTCUT })}
-                aria-label={t("search.label")}
-                aria-controls={RESULTS_ID}
-                aria-activedescendant={searchOpen && hits[active] ? resultId(active) : undefined}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={onSearchKey}
-              />
-              <button type="button" className="btn-secondary" onClick={changeFolder} disabled={state.status === "conflict"}>
-                {t("vault.change")}
-              </button>
-            </div>
+          <DocsNav
+            sections={sections}
+            section={section}
+            onSection={goTo}
+            changeCount={changeCount}
+            search={{ query, hits, searching, error: searchError ?? null, active, onQuery: setQuery, onKey: onSearchKey }}
+            canChangeFolder={state.status !== "conflict"}
+            onOpenFolder={changeFolder}
+            vaultNav={props.vaultNav}
+          >
             {list}
-          </>,
+          </DocsNav>,
           props.navSlot,
         )}
       <div className="docs-stage">

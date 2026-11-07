@@ -28,7 +28,7 @@ import { HistoryPanel } from "./components/HistoryPanel";
 import { LanguageSwitch } from "./components/LanguageSwitch";
 import { NoVaultView, type VaultFailure } from "./components/NoVaultView";
 import { Preview } from "./components/Preview";
-import { resultId, RESULTS_ID, SearchPanel } from "./components/SearchPanel";
+import { resultId, RESULTS_ID, SearchPanel } from "./docs/SearchPanel";
 import { NewDocForm } from "./components/NewDocForm";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";

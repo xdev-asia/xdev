@@ -6,8 +6,10 @@ import { AgentContext } from "@/components/AgentContext";
 import { ChangesPanel } from "@/components/ChangesPanel";
 import { Editor } from "@/components/Editor";
 import { Sidebar } from "@/components/Sidebar";
+import { DocsNav } from "./DocsNav";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { DocsHost, type DocsHostProps, type DocsHostStatus } from "./DocsHost";
+import { SearchPanel } from "./SearchPanel";
 import { VaultEmpty } from "./VaultEmpty";
 import type { DocsHandle } from "./types";
 
@@ -53,6 +55,7 @@ vi.mock("@/i18n", async (original) => ({
   useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
 }));
 vi.mock("@/keys/keymap", () => ({ useKeymap: () => undefined }));
+vi.mock("@/ui/hiddenApps", () => ({ useHiddenApps: () => [], useAppOrder: () => [] }));
 
 type Node = ReactElement<Record<string, any>>;
 const LOCAL = new Set(["DocsHost", "VaultView"]);
@@ -131,6 +134,31 @@ it("draws the doc list into the nav slot and the doc stage beside it", async () 
   expect(h.all().some((n) => n.props.className === "docview")).toBe(true);
   const none = await host({ navSlot: null });
   expect(none.of(Sidebar)).toHaveLength(0);
+});
+
+it("the side list is the docs nav with every section", async () => {
+  const h = await host();
+  const nav = h.of(DocsNav)[0];
+  expect(nav.props.sections).toEqual(["docs", "changes", "agents"]);
+  expect(nav.props.section).toBe("docs");
+  expect(nav.props.canChangeFolder).toBe(true);
+});
+
+it("picking a section in the nav shows it and tells the shell", async () => {
+  const asked: string[] = [];
+  const h = await host({ onOpenSection: (s) => asked.push(s) });
+  h.of(DocsNav)[0].props.onSection("agents");
+  await h.settle();
+  expect(h.of(AgentContext)).toHaveLength(1);
+  expect(asked).toEqual(["agents"]);
+});
+
+it("a query in the nav search shows the hits instead of the doc list", async () => {
+  const h = await host();
+  h.of(DocsNav)[0].props.search.onQuery("a");
+  await h.settle();
+  expect(h.of(Sidebar)).toHaveLength(0);
+  expect(h.of(SearchPanel)).toHaveLength(1);
 });
 
 it("a request for the changes section shows the changes list", async () => {

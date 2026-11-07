@@ -6404,5 +6404,8 @@
   "keys.page.reload": "Tải lại từ đĩa",
   "keys.page.editorFailed": "Không mở được trình soạn thảo bên ngoài.",
   "palette.kinds": "Loại",
-  "error.license_device_conflict": "Dịch vụ giấy phép không đăng ký được thiết bị này vì trùng với một thiết bị đã có trong tài khoản. Hãy gỡ mục cũ trong tài khoản rồi thử lại."
+  "error.license_device_conflict": "Dịch vụ giấy phép không đăng ký được thiết bị này vì trùng với một thiết bị đã có trong tài khoản. Hãy gỡ mục cũ trong tài khoản rồi thử lại.",
+  "docsnav.sources": "Thư mục",
+  "docsnav.sections": "Các mục tài liệu",
+  "docsnav.openFolder": "Mở thư mục"
 }

@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import type { ApiError, SearchHit } from "@/api";
 import { useI18n } from "@/i18n";
-import { renderSnippet } from "./renderSnippet";
+import { renderSnippet } from "@/components/renderSnippet";
 
 export const RESULTS_ID = "search-results";
 
