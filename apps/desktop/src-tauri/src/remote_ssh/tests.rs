@@ -1007,6 +1007,34 @@ fn a_remote_project_launch_keeps_alive_only_with_tmux() {
     );
 }
 
+#[test]
+fn a_remote_launch_carries_the_host_env_and_shell() {
+    use crate::settings::{HostEnvVar, HostSettings, HostsSettings};
+    let rig = rig();
+    let cwd = PathBuf::from(format!("ssh://devbox{ROOT}"));
+    let entry = |name: &str| HostSettings {
+        shell: Some("/bin/zsh".into()),
+        env: vec![HostEnvVar {
+            name: name.into(),
+            value: "1".into(),
+        }],
+        ..HostSettings::default()
+    };
+    let mut hosts = HostsSettings::default();
+    hosts.0.insert("devbox".into(), entry("A"));
+    let spec = launch_spec(&rig.hub, rig.data.path(), &cwd, None, Vec::new(), &hosts)
+        .unwrap()
+        .unwrap();
+    assert_eq!(spec.host_env, [("A".to_owned(), "1".to_owned())]);
+    assert_eq!(spec.shell.as_deref(), Some("/bin/zsh"));
+
+    let rig = self::rig();
+    hosts.0.insert("devbox".into(), entry("1A"));
+    let e = launch_spec(&rig.hub, rig.data.path(), &cwd, None, Vec::new(), &hosts).unwrap_err();
+    assert_eq!(e.code, "bad_env");
+    assert_eq!(rig.spawner.count(), 0, "a refused launch does not connect");
+}
+
 fn rig_without_tmux() -> Rig {
     let rig = rig();
     rig.spawner.host.lock().unwrap().tmux = false;
