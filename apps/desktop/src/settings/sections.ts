@@ -43,6 +43,9 @@ export interface SettingsSectionProps {
   openSection?(id: string): void;
   // Switches the window to another view (Automations opens the Automations view).
   openView?(view: string): void;
+  // Opens a terminal tab running `profile` in the current worktree, named `title`; the tab id, or
+  // `null` when no worktree is open (Agents: Install).
+  openTerminal?(profile: string, title: string): string | null;
 }
 
 export interface SettingsFilter {

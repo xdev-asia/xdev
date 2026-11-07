@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { RadioGroup } from "@xdev-asia/ui";
 import {
+  installProfile,
   toApiError,
   type Account,
   type AgentsSettings,
@@ -15,6 +16,7 @@ import {
   type StatusSettings,
 } from "@/api";
 import { useProfiles } from "@/agents/profileStore";
+import { watchInstall } from "@/agents/installWatch";
 import { patchStatusSettings, setStatusSettings } from "@/status/statusSettings";
 import { Banner, Button, Disclosure, Field, IconButton, StatusDot, Switch, Tag } from "@xdev-asia/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -53,6 +55,9 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
   const [confirmSkip, setConfirmSkip] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // The row whose Install is being confirmed.
+  const [installing, setInstalling] = useState<ProfileView | null>(null);
+  const [noWorktree, setNoWorktree] = useState(false);
   const [error, setError] = useState<ApiError["code"]>();
   // The status channel settings; this page owns only `hooks`.
   const [status, setStatus] = useState<StatusSettings | null>(null);
@@ -226,6 +231,13 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
     }
   }
 
+  function startInstall(p: ProfileView): void {
+    setInstalling(null);
+    const tab = props.openTerminal?.(installProfile(p.profile.id), t("settings.agents.install.tab", { name: p.profile.name })) ?? null;
+    setNoWorktree(tab === null);
+    if (tab !== null) void watchInstall(api, tab, p.profile.name, p.profile.id, store.update);
+  }
+
   const toggle = (p: ProfileView) => act(() => api.profilePut({ ...p.profile, enabled: !p.profile.enabled }));
   const close = () => setEditing(null);
   const editingView = editing === "new" ? null : (current.profiles.find((p) => p.profile.id === editing) ?? null);
@@ -259,11 +271,25 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         {p.followsApprovals && <span className="settings-path">{t("settings.agents.follows")}</span>}
       </div>
       <div className="settings-actions">
+        {p.builtin && !p.installed && p.install !== null && (
+          <Button
+            variant="secondary"
+            type="button"
+            data-field="install"
+            disabled={busy}
+            onClick={() => {
+              setNoWorktree(false);
+              setInstalling(p);
+            }}
+          >
+            {t("settings.agents.install.action")}
+          </Button>
+        )}
         {p.docs && (
           <IconButton
             icon="external"
             data-field="docs"
-            label={p.installed ? t("settings.agents.catalog.docs") : t("settings.agents.catalog.install")}
+            label={p.installed || p.install !== null ? t("settings.agents.catalog.docs") : t("settings.agents.catalog.install")}
             onClick={() => void openDocs(p.profile.id)}
           />
         )}
@@ -312,6 +338,11 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
       {error && editing === null && (
         <p className="error-text" role="alert">
           {t(`error.${error}`)}
+        </p>
+      )}
+      {noWorktree && (
+        <p className="error-text" role="alert">
+          {t("settings.agents.install.noWorktree")}
         </p>
       )}
 
@@ -608,6 +639,18 @@ export function AgentsPage(props: SettingsSectionProps & { onStatusSaved?(settin
         }}
         onCancel={() => setConfirmSkip(false)}
       />
+
+      <ConfirmDialog
+        open={installing !== null}
+        titleId="agent-install-title"
+        title={t("settings.agents.install.title", { name: installing?.profile.name ?? "" })}
+        body={t("settings.agents.install.body")}
+        confirmLabel={t("settings.agents.install.confirm")}
+        onConfirm={() => installing && startInstall(installing)}
+        onCancel={() => setInstalling(null)}
+      >
+        <code className="ws-mono settings-path">{installing?.install}</code>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={confirmClear}
