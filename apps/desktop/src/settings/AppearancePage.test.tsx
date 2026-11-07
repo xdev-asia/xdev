@@ -65,8 +65,9 @@ beforeEach(() => {
   resetTitlebarForTests();
 });
 
-async function page(filter?: SettingsFilter, openSection?: (id: string) => void) {
+async function page(filter?: SettingsFilter, openSection?: (id: string) => void, seed?: Partial<typeof UI_SETTINGS_DEFAULTS>) {
   const api = createMockApi({});
+  if (seed) await api.uiSettingsPut({ ...UI_SETTINGS_DEFAULTS, ...seed });
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
@@ -282,13 +283,27 @@ it("an app switch hides one app, and the last visible app cannot be hidden", asy
   p.sw("app-kit").props.onClick();
   await tick();
   expect((await p.api.uiSettingsGet()).hiddenApps).toEqual([]);
-  for (const id of ["changes", "tasks", "squads", "agents", "kit", "accounts", "terminal"]) {
+  for (const id of ["changes", "tasks", "squads", "agents", "kit"]) {
     p.sw(`app-${id}`).props.onClick();
     await tick();
   }
-  expect((await p.api.uiSettingsGet()).hiddenApps).toHaveLength(7);
-  expect(p.sw("app-docs").props.disabled).toBe(true);
+  expect((await p.api.uiSettingsGet()).hiddenApps).toHaveLength(5);
+  expect(p.sw("app-accounts").props.disabled).toBe(true);
   expect(p.sw("app-kit").props.disabled).toBe(false);
+});
+
+it("parts list shows tasks, squads, kit, accounts, changes, agents", async () => {
+  paintEnv();
+  const p = await page();
+  expect(order(p).sort()).toEqual(["accounts", "agents", "changes", "kit", "squads", "tasks"]);
+});
+
+it("keeps docs and terminal ids it does not show", async () => {
+  paintEnv();
+  const p = await page(undefined, undefined, { hiddenApps: ["docs", "terminal", "kit"] });
+  p.sw("app-squads").props.onClick();
+  await tick();
+  expect((await p.api.uiSettingsGet()).hiddenApps).toEqual(["docs", "terminal", "kit", "squads"]);
 });
 
 it("the status bar has a keep-awake switch", async () => {
@@ -329,24 +344,24 @@ const order = (p: Awaited<ReturnType<typeof page>>) => p.all().filter((n) => n.t
 it("workspace parts: Alt+Arrow moves a part, saves the order and tells screen readers", async () => {
   paintEnv();
   const p = await page();
-  expect(order(p)).toEqual(["docs", "changes", "tasks", "squads", "agents", "kit", "accounts", "terminal"]);
+  expect(order(p)).toEqual(["changes", "tasks", "squads", "agents", "kit", "accounts"]);
   const e = keyOf("ArrowUp");
   row(p, "kit").props.onKeyDown(e);
   await tick();
   expect(e.preventDefault).toHaveBeenCalled();
   expect((await p.api.uiSettingsGet()).appOrder).toEqual(["docs", "changes", "tasks", "squads", "kit", "agents", "accounts", "terminal"]);
-  expect(order(p).slice(4, 6)).toEqual(["kit", "agents"]);
+  expect(order(p).slice(3, 5)).toEqual(["kit", "agents"]);
   const status = p.all().find((n) => n.props.role === "status" && n.props["data-testid"] === "parts-status")!;
-  expect(status.props.children).toBe(translate("en", "settings.parts.moved", { app: translate("en", "apps.kit"), place: 5, total: 8 }));
+  expect(status.props.children).toBe(translate("en", "settings.parts.moved", { app: translate("en", "apps.kit"), place: 4, total: 6 }));
 });
 
 it("workspace parts: a plain arrow key or a move past the end does nothing", async () => {
   paintEnv();
   const p = await page();
   const plain = keyOf("ArrowDown", { altKey: false });
-  row(p, "docs").props.onKeyDown(plain);
-  row(p, "docs").props.onKeyDown(keyOf("ArrowUp"));
-  row(p, "terminal").props.onKeyDown(keyOf("ArrowDown"));
+  row(p, "changes").props.onKeyDown(plain);
+  row(p, "changes").props.onKeyDown(keyOf("ArrowUp"));
+  row(p, "accounts").props.onKeyDown(keyOf("ArrowDown"));
   await tick();
   expect(plain.preventDefault).not.toHaveBeenCalled();
   expect((await p.api.uiSettingsGet()).appOrder).toEqual([]);
@@ -360,13 +375,13 @@ it("workspace parts: the move buttons carry names and reorder; reset restores th
   expect(down.props.label).toBe(translate("en", "settings.parts.down", { app: translate("en", "apps.kit") }));
   down.props.onClick();
   await tick();
-  expect(order(p).slice(5, 7)).toEqual(["accounts", "kit"]);
-  p.sw("app-docs").props.onClick();
+  expect(order(p).slice(4, 6)).toEqual(["accounts", "kit"]);
+  p.sw("app-tasks").props.onClick();
   await tick();
   p.all().find((n) => n.props["data-act"] === "parts-reset")!.props.onClick();
   await tick();
   const ui = await p.api.uiSettingsGet();
   expect(ui.appOrder).toEqual([]);
   expect(ui.hiddenApps).toEqual([]);
-  expect(order(p)[5]).toBe("kit");
+  expect(order(p)[4]).toBe("kit");
 });

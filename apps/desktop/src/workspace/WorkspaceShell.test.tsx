@@ -263,6 +263,19 @@ it("docs crumbs show the folder and the doc path", async () => {
   expect(crumbs()).toEqual(["handbook", "guide/a.md"]);
 });
 
+it("footer shows in docs with the docs segment", async () => {
+  const view = await harness();
+  const footer = () => view.all().find(n => n.type === LiveWorkspaceFooter)!;
+  expect(footer().props.hidden).toBeFalsy();
+  expect(footer().props.docs).toBeUndefined();
+  view.nav(en("workspace.nav.docs")).props.onClick();
+  expect(footer().props.hidden).toBeFalsy();
+  view.of(DocsHost)[0].props.onStatus(STATUS);
+  expect(footer().props.docs.length).toBeGreaterThan(0);
+  view.nav(en("workspace.nav.workspace")).props.onClick();
+  expect(footer().props.docs).toBeUndefined();
+});
+
 it("tasks crumb shows the place name", async () => {
   const view = await harness();
   const crumbs = () => view.all().filter(n => String(n.props.className ?? "").includes("ws-crumb") && !String(n.props.className).includes("sep")).map(text);

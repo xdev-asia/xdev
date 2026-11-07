@@ -129,6 +129,8 @@ export function WorkspaceFooter(props: {
   floating?: ReactNode;
   /** The Computers segment (paired computers), after the SSH one. */
   peers?: ReactNode;
+  /** The Docs segment; the shell passes it only while Docs is the view. */
+  docs?: ReactNode[];
   hidden?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -158,6 +160,7 @@ export function WorkspaceFooter(props: {
     : undefined;
   const entries: (ReactNode | "spacer")[] = [
     items.branch && props.branch ? <span key="branch" className="ws-mono ws-footer-branch">{`⎇ ${props.branch}`}</span> : null,
+    ...(props.docs ?? []),
     meters.length > 0 ? (
       props.onToggleUsage ? (
         <button
@@ -247,6 +250,7 @@ export function LiveWorkspaceFooter(props: {
   onOpenLicense?: () => void;
   /** The floating workspace item. */
   floating?: ReactNode;
+  docs?: ReactNode[];
   hidden?: boolean;
 }): JSX.Element {
   const { api, hidden, onOpenLicense, onManageAccounts, onUseAccount, onUsageSettings, onManageSsh, onOpenSshTerminal, ...rest } = props;

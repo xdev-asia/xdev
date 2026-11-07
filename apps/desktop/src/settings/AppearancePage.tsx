@@ -4,6 +4,7 @@ import { FontField, Segmented, Select, Switch, ThemeSwitch, UI_FONT_SUGGESTIONS 
 import { toApiError, type ApiError, type EditorTheme, type SidebarLook, type StatusBarItems, type TitlebarMode, type UiSettings } from "@/api";
 import { useI18n } from "@/i18n";
 import { APPS, orderedApps, type AppId } from "@/shell/apps";
+import { MOVABLE } from "@/shell/places";
 import { clampTintOpacity, SIDEBAR_TINTS, TINT_OPACITY } from "@/ui/sidebarTint";
 import { applyAppearance } from "@/ui/theme";
 import type { AppIconId } from "@/ui/appIcon";
@@ -19,7 +20,9 @@ export const TITLEBAR_MODES: TitlebarMode[] = ["native", "custom"];
 export const STATUS_BAR_ITEMS = ["branch", "tokenUsage", "agents", "ports", "keepAwake", "version"] as const satisfies readonly (keyof StatusBarItems)[];
 
 const LOOK_IDS = ["appearance.theme", "appearance.font", "appearance.sidebar", "appearance.sidebarTint", "appearance.reduceEffects", "appearance.titlebar", "appearance.titlebarName", "appearance.appIcon"];
-const APP_IDS = APPS.map((id) => `appearance.app.${id}`);
+// The parts Settings orders: the rail places that can move, and the Docs sections. Docs and Terminal are fixed.
+const PARTS: readonly AppId[] = [...MOVABLE, "changes", "agents"];
+const APP_IDS = APPS.filter((id) => PARTS.includes(id)).map((id) => `appearance.app.${id}`);
 const EDITOR_IDS = ["appearance.editorTheme"];
 const STATUS_IDS = STATUS_BAR_ITEMS.map((k) => `appearance.statusBar.${k}`);
 const LINK_IDS = ["appearance.terminalLink", "appearance.usageLink"];
@@ -76,7 +79,8 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
     if (ui && opacity !== clampTintOpacity(ui.sidebarTintOpacity)) void patch({ sidebarTintOpacity: opacity });
   };
   const hidden = ui?.hiddenApps ?? [];
-  const order = orderedApps(ui?.appOrder ?? []);
+  const fullOrder = orderedApps(ui?.appOrder ?? []);
+  const order = fullOrder.filter((id) => PARTS.includes(id));
   const toggleApp = (id: AppId) => {
     setNote("");
     void patch({ hiddenApps: hidden.includes(id) ? hidden.filter((h) => h !== id) : [...hidden, id] });
@@ -84,8 +88,11 @@ export function AppearancePage(props: SettingsSectionProps): JSX.Element {
   const moveApp_ = (id: AppId, delta: -1 | 1, control: PartControl) => {
     const next = moveApp(order, id, delta);
     if (next === order) return;
+    // The ids that are not shown keep their places; the shown ones fill the rest in the new order.
+    const queue = [...next];
+    const saved = fullOrder.map((a) => (PARTS.includes(a) ? (queue.shift() as AppId) : a));
     setNote(t("settings.parts.moved", { app: t(`apps.${id}`), place: next.indexOf(id) + 1, total: next.length }));
-    void patch({ appOrder: [...next] }).then(() => setTimeout(() => focusPart(id, control), 0));
+    void patch({ appOrder: saved }).then(() => setTimeout(() => focusPart(id, control), 0));
   };
   const resetParts = () => {
     setNote(t("settings.parts.resetDone"));

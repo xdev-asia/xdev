@@ -305,3 +305,10 @@ it("shows the floating item after the agent counts and before the licence notice
   expect(html.indexOf('data-x="f"')).toBeLessThan(html.indexOf('data-x="lic"'));
   expect(render(null)).not.toContain('data-x="f"');
 });
+
+it("shows the docs segment after the branch, and none without it", () => {
+  const html = render(null, { docs: [createElement("span", { key: "d", "data-x": "docs" }, "handbook")] });
+  expect(html).toContain('data-x="docs"');
+  expect(html.indexOf('data-x="docs"')).toBeGreaterThan(html.indexOf("⎇ main"));
+  expect(render(null)).not.toContain('data-x="docs"');
+});
