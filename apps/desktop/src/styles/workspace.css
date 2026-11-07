@@ -654,60 +654,6 @@
   z-index: 20;
 }
 
-.ws-menu {
-  position: absolute;
-  top: 30px;
-  right: 4px;
-  z-index: 21;
-  display: flex;
-  flex-direction: column;
-  min-width: 140px;
-  padding: var(--x-space-1);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-l);
-  background: var(--bg-2);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-1) 16%, transparent);
-  font: var(--type-menu);
-}
-
-.ws-menu button {
-  height: var(--h-row);
-  padding: 0 var(--x-space-2);
-  border: 0;
-  border-radius: var(--radius-s);
-  background: transparent;
-  font: inherit;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.ws-menu button:hover {
-  background: var(--bg-3);
-}
-
-.ws-menu .ws-menu-danger {
-  color: var(--danger);
-}
-
-.ws-menu-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.ws-menu-group + .ws-menu-group {
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid var(--line);
-}
-
-.ws-menu-label {
-  padding: var(--x-space-1) var(--x-space-2) 2px;
-  color: var(--text-3);
-  font: var(--type-section);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .ws-missing-list {
   margin: 4px 0 0;
   padding: 0;
@@ -1114,10 +1060,14 @@
   width: 32px;
 }
 
-.ws-tab-add .ws-menu {
+/* The `+` menu (design system Menu) under its button; it scrolls in a short window. */
+.ws-plus-menu {
+  position: absolute;
   top: var(--h-tab);
-  right: auto;
   left: 0;
+  z-index: 21;
+  max-height: calc(100vh - var(--h-tab) - var(--x-space-6));
+  overflow: auto;
 }
 
 /* The agent picker under the `+` button; it fits a 360px window. */
@@ -2643,15 +2593,6 @@ button.ws-tree-row[data-flash="true"] {
   font-size: 11px;
 }
 
-/* The tab context menu opens where the pointer was. */
-.ws-tab-add .ws-menu.ws-menu-at {
-  position: fixed;
-}
-
-.ws-menu button[aria-disabled="true"] {
-  opacity: 0.4;
-  cursor: default;
-}
 
 .ws-tab-rename {
   width: 140px;

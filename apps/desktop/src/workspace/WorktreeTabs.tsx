@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { JSX, ReactNode } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
 import { RemoteTargetDialog } from "@/remote/RemoteTargetDialog";
-import { RemoteTargetMenu } from "@/remote/RemoteTargetMenu";
+import { remoteTargetEntries } from "@/remote/RemoteTargetMenu";
 import { sshProfiles, useSshAliases } from "./sshHosts";
 import { type Api, type ApiError, type PtyProfile, type RemoteTarget, type TerminalSet } from "@/api";
 import { FileView } from "@/files/FileView";
@@ -28,7 +28,9 @@ import { useUsageSettings } from "@/settings/usageSettings";
 import { useCacheTimers } from "./cacheTimer";
 import { buildSections } from "@/quickCommands/model";
 import { QuickCommandsControl } from "@/quickCommands/QuickCommandsControl";
-import { RunTargetsMenu } from "@/targets/RunTargetsMenu";
+import { runTargetEntries, useMenuTargets } from "@/targets/RunTargetsMenu";
+import { simEntries, useMenuSims } from "@/targets/SimsGroup";
+import { requestTargets } from "@/targets/targetsEvents";
 import { useRunTargets } from "@/targets/useRunTargets";
 import { runWithToast } from "@/quickCommands/runUi";
 import { getQuickCommands, selectCommands } from "@/quickCommands/store";
@@ -425,6 +427,9 @@ export function WorktreeTabs(props: {
   const shells = view ? view.shells.map((s) => s.id) : [FALLBACK_SHELL];
   // Saved SSH hosts, read again whenever a `+` menu opens; the group is left out with none.
   const sshHosts = sshProfiles(useSshAliases(api, menuPane));
+  // Run targets and simulators, read again whenever a `+` menu opens.
+  const menuTargets = useMenuTargets(api, worktree, menuPane);
+  const menuSims = useMenuSims(api, menuPane);
   const groups: MenuGroup[] = [
     // The menu keeps the first few; the picker reaches the rest.
     { label: t("workspace.tabs.agents"), ids: agents.slice(0, MENU_AGENTS), picker: view !== null },
@@ -1069,50 +1074,29 @@ export function WorktreeTabs(props: {
         active={leaf.active}
         groups={groups}
         menuOpen={menuPane === leaf.id}
-        extra={
-          <>
-          {localProject && (
-            <RemoteTargetMenu
-              alias={target?.alias ?? null}
-              onAgent={() => launchRemote(agents[0] ?? null)}
-              onShell={() => launchRemote(defaultShell)}
-              onSet={() => {
-                setMenuPane(null);
-                setTargetOpen(true);
-              }}
-            />
-          )}
-          <div className="ws-menu-group" role="group">
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setMenuPane(null);
+        extra={[
+          localProject
+            ? remoteTargetEntries(target?.alias ?? null, t, {
+                agent: () => launchRemote(agents[0] ?? null),
+                shell: () => launchRemote(defaultShell),
+                set: () => setTargetOpen(true),
+              })
+            : [],
+          [
+            {
+              label: t("browser.tab.newMenu"),
+              onSelect: () => {
                 if (layout && layout.focused !== leaf.id) setLayout(focusPane(layout, leaf.id));
                 openBrowserTab(worktree);
-              }}
-            >
-              {t("browser.tab.newMenu")}
-            </button>
-          </div>
-          <RunTargetsMenu
-            api={api}
-            worktree={worktree}
-            onDeploy={(p) => {
-              setMenuPane(null);
-              targets.deploy(p);
-            }}
-            onServer={(v) => {
-              setMenuPane(null);
-              targets.server(v);
-            }}
-            onReview={(v) => {
-              setMenuPane(null);
-              targets.review(v);
-            }}
-          />
-          </>
-        }
+              },
+            },
+          ],
+          [
+            ...runTargetEntries(menuTargets, t, { deploy: targets.deploy, server: targets.server, review: targets.review }),
+            // The simulators start a device through the run targets owner (`useRunTargets`).
+            ...simEntries(menuSims, t, (device) => requestTargets({ kind: "sim", device })),
+          ],
+        ]}
         onMenu={(isOpen) => setMenuPane(isOpen ? leaf.id : null)}
         onSelect={(id) => layout && setLayout(selectTab(layout, id))}
         onClose={(id) => void requestClose([id])}

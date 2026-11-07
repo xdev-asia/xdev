@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { EmptyState } from "@xdev-asia/ui";
+import { EmptyState, Menu, type MenuEntry } from "@xdev-asia/ui";
+import { LaunchOptionsDialog } from "@/agentLaunch/LaunchOptionsDialog";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createMockApi, toApiError, type Api, type Profile, type ProfilesView, type PtyExit } from "@/api";
 import { fileTabs } from "@/files/fileTabs";
@@ -76,6 +77,10 @@ function expand(value: unknown): unknown {
   return { ...node, props: { ...node.props, children: expand(node.props.children) } };
 }
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+// The `+` menu is the design system Menu: its entries, and one entry to choose by label.
+const plusEntries = (view: { find(pick: (n: Node) => boolean): Node | undefined }) => (view.find((n) => n.type === Menu)?.props.items ?? []) as MenuEntry[];
+const plusItem = (view: { find(pick: (n: Node) => boolean): Node | undefined }, label: string) =>
+  plusEntries(view).find((e) => e.type !== "group" && e.type !== "separator" && e.label === label) as { onSelect(): void; disabled?: boolean };
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
 const A = "/demo/wt/xdev-oak";
 const B = "/demo/wt/xdev-elm";
@@ -136,12 +141,12 @@ it("plus menu starts claude in the worktree after approval", async () => {
   const live = (sessions = new Sessions(api));
   const view = harness(api, live);
   openMenu(view, live);
-  view.find((n) => n.props.role === "menuitem" && n.props.children === en("terminal.profile.claude"))!.props.onClick();
+  plusItem(view, en("terminal.profile.claude")).onSelect();
   const tab = live.tabs(A).at(-1)!;
   const mine = () => view.terminals().find((t) => t.props.id === tab.id)!;
   expect(tab).toMatchObject({ worktree: A, profileId: "claude" });
   // The menu closes once something is picked.
-  expect(view.find((n) => n.props.role === "menu")).toBeUndefined();
+  expect(view.find((n) => n.type === Menu)).toBeUndefined();
 
   const first = mine();
   expect(first.props).toMatchObject({ id: tab.id, cwd: A, profile: "claude", client: tab.client });
@@ -448,8 +453,8 @@ it("the plus menu of a pane starts a tab in that pane", () => {
   const strips = view.all().filter((n) => n.type === TabStrip);
   expect(strips[0].props.pane).toBe(first);
   strips[0].props.onMenu(true);
-  expect(view.find((n) => n.props.role === "menu")).toBeDefined();
-  view.find((n) => n.props.role === "menuitem" && n.props.children === en("terminal.profile.codex"))!.props.onClick();
+  expect(view.find((n) => n.type === Menu)).toBeDefined();
+  plusItem(view, en("terminal.profile.codex")).onSelect();
   const added = live.tabs(A)[3];
   expect(paneOf(live.layout(A)!, added.id)).toBe(first);
   expect(leafOf(live.layout(A)!, first).active).toBe(added.id);
@@ -460,7 +465,7 @@ it("split right and split down in the plus menu open the default shell in a new 
   const live = (sessions = new Sessions(api));
   const one = live.open(A, "claude");
   const view = harness(api, live);
-  const menuItem = (label: string) => view.find((n) => n.props.role === "menuitem" && n.props.children === label)!;
+  const menuItem = (label: string) => ({ props: { onClick: () => plusItem(view, label).onSelect() } });
   view.labelled(en("workspace.tabs.new")).props.onClick();
   menuItem(en("workspace.tabs.split.right")).props.onClick();
   const l = live.layout(A)!;
@@ -765,8 +770,15 @@ const openMenu = (view: ReturnType<typeof harness>, live: Sessions) => {
   if (!live.tabs(A).length) live.open(A, "shell");
   view.labelled(en("workspace.tabs.new")).props.onClick();
 };
-const group = (view: ReturnType<typeof harness>, label: string) => view.find((n) => n.props.role === "group" && n.props["aria-label"] === label);
-const items = (g: Node | undefined) => (g ? nodes(g.props.children).filter((n) => n.props.role === "menuitem").map((n) => n.props.children) : []);
+// The labels of one section of the `+` menu: the entries after its group title, up to the next title or separator.
+const group = (view: ReturnType<typeof harness>, label: string) => {
+  const all = plusEntries(view);
+  const at = all.findIndex((e) => e.type === "group" && e.label === label);
+  if (at < 0) return undefined;
+  const end = all.findIndex((e, i) => i > at && (e.type === "group" || e.type === "separator"));
+  return all.slice(at + 1, end < 0 ? undefined : end).map((e) => ("label" in e ? e.label : ""));
+};
+const items = (g: string[] | undefined) => g ?? [];
 
 it("plus_menu_lists_agents_and_shells", async () => {
   const api = createMockApi({});
@@ -781,6 +793,23 @@ it("plus_menu_lists_agents_and_shells", async () => {
   expect(view.html()).toContain(`>${en("workspace.tabs.agents")}<`);
 });
 
+it("shift on the click that picks an agent opens its launch options; a plain click launches", async () => {
+  const api = createMockApi({});
+  store.view = await api.profiles();
+  const live = (sessions = new Sessions(api));
+  const view = harness(api, live);
+  openMenu(view, live);
+  const before = live.tabs(A).length;
+  // The capture and the entry come from one draw, as in one click.
+  const all = view.all();
+  all.find((n) => n.props.className === "ws-plus-menu")!.props.onClickCapture({ shiftKey: true });
+  const claude = (all.find((n) => n.type === Menu)!.props.items as { label?: string; onSelect?(): void }[]).find((e) => e.label === en("terminal.profile.claude"))!;
+  claude.onSelect!();
+  expect(live.tabs(A)).toHaveLength(before);
+  expect(view.find((n) => n.type === LaunchOptionsDialog)?.props.profile.profile.id).toBe("claude");
+  expect(view.find((n) => n.type === Menu)).toBeUndefined();
+});
+
 it("wsl_item_opens_that_shell", async () => {
   const api = createMockApi({});
   const spawn = vi.spyOn(api, "ptySpawn");
@@ -788,10 +817,10 @@ it("wsl_item_opens_that_shell", async () => {
   const live = (sessions = new Sessions(api));
   const view = harness(api, live);
   openMenu(view, live);
-  view.find((n) => n.props.role === "menuitem" && n.props.children === "WSL Ubuntu")!.props.onClick();
+  plusItem(view, "WSL Ubuntu").onSelect();
   const tab = live.tabs(A).at(-1)!;
   expect(tab).toMatchObject({ worktree: A, profileId: "shell:wsl:Ubuntu", agent: false });
-  expect(view.find((n) => n.props.role === "menu")).toBeUndefined();
+  expect(view.find((n) => n.type === Menu)).toBeUndefined();
   await run(view.terminals().find((t) => t.props.id === tab.id)!);
   expect(spawn.mock.calls.find((c) => c[0] === tab.id)!.slice(0, 3)).toEqual([tab.id, A, "shell:wsl:Ubuntu"]);
   // A shell never asks.
@@ -849,7 +878,7 @@ it("custom_profile_tab_uses_its_name", async () => {
   const view = harness(api, live);
   openMenu(view, live);
   expect(items(group(view, en("workspace.tabs.agents")))).toContain("Mine");
-  view.find((n) => n.props.role === "menuitem" && n.props.children === "Mine")!.props.onClick();
+  plusItem(view, "Mine").onSelect();
   const tab = live.tabs(A).at(-1)!;
   expect(tab.profileId).toBe("mine");
   const html = view.html();
@@ -1006,10 +1035,10 @@ it("ctrl_t_with_no_shell_opens_the_menu", async () => {
   expect(press(view, CTRL_T).preventDefault).not.toHaveBeenCalled();
   // With a pane, its `+` menu opens instead of a shell.
   live.open(A, "claude");
-  expect(view.find((n) => n.props.role === "menu")).toBeUndefined();
+  expect(view.find((n) => n.type === Menu)).toBeUndefined();
   expect(press(view, CTRL_T).preventDefault).toHaveBeenCalled();
   expect(live.tabs(A)).toHaveLength(1);
-  expect(view.find((n) => n.props.role === "menu")).toBeDefined();
+  expect(view.find((n) => n.type === Menu)).toBeDefined();
 });
 
 it("keys do nothing in a worktree that is not on screen", () => {

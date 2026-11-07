@@ -1,24 +1,17 @@
-import type { JSX } from "react";
-import { useI18n } from "@/i18n";
+import type { MenuEntry } from "@xdev-asia/ui";
+
+type T = (key: string, vars?: Record<string, string | number>) => string;
 
 /** The `+` menu entries of a local project: run on its remote target, or set one. `alias` is null with no target. */
-export function RemoteTargetMenu(props: { alias: string | null; onAgent(): void; onShell(): void; onSet(): void }): JSX.Element {
-  const { t } = useI18n();
-  return (
-    <div className="ws-menu-group" role="group" aria-label={t("remote.sidebar.group")}>
-      {props.alias !== null && (
-        <>
-          <button type="button" role="menuitem" onClick={props.onAgent}>
-            {t("remote.plus.agent", { host: props.alias })}
-          </button>
-          <button type="button" role="menuitem" onClick={props.onShell}>
-            {t("remote.plus.shell", { host: props.alias })}
-          </button>
-        </>
-      )}
-      <button type="button" role="menuitem" onClick={props.onSet}>
-        {t("remote.target.set")}
-      </button>
-    </div>
-  );
+export function remoteTargetEntries(alias: string | null, t: T, on: { agent(): void; shell(): void; set(): void }): MenuEntry[] {
+  return [
+    { type: "group", label: t("remote.sidebar.group") },
+    ...(alias !== null
+      ? [
+          { label: t("remote.plus.agent", { host: alias }), onSelect: on.agent },
+          { label: t("remote.plus.shell", { host: alias }), onSelect: on.shell },
+        ]
+      : []),
+    { label: t("remote.target.set"), onSelect: on.set },
+  ];
 }

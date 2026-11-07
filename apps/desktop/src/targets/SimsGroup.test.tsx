@@ -1,47 +1,45 @@
 import { expect, it, vi } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
+import type { MenuEntry } from "@xdev-asia/ui";
 import type { SimList } from "@/api";
-import { I18nProvider } from "@/i18n";
-import { SimsItems } from "./SimsGroup";
+import { translate } from "@/i18n";
+import { simEntries } from "./SimsGroup";
 
-const draw = (list: SimList | null) =>
-  renderToStaticMarkup(
-    <I18nProvider>
-      <SimsItems list={list} onPick={vi.fn()} onRefresh={vi.fn()} />
-    </I18nProvider>,
-  );
+const t = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
+const labels = (list: SimList | null, onPick = vi.fn()) => simEntries(list, t, onPick).map((e: MenuEntry) => ("label" in e ? e.label : "-"));
 
 it("says it is looking while loading", () => {
-  expect(draw(null)).toContain("Looking for simulators");
+  expect(labels(null).join("\n")).toContain("Looking for simulators");
 });
 
 it("shows the empty text and both problems when no tool is found", () => {
-  const html = draw({ ios: null, android: null, problems: ["targets.sim.noXcode", "targets.sim.noAndroid"] });
-  expect(html).toContain("No simulators found.");
-  expect(html).toContain("Xcode command line tools were not found.");
-  expect(html).toContain("The Android emulator was not found.");
-  expect(html).toContain("Refresh");
+  const all = labels({ ios: null, android: null, problems: ["targets.sim.noXcode", "targets.sim.noAndroid"] }).join(" | ");
+  expect(all).toContain("No simulators found.");
+  expect(all).toContain("Xcode command line tools were not found.");
+  expect(all).toContain("The Android emulator was not found.");
 });
 
 it("off macOS the empty text does not mention Xcode", () => {
-  const html = draw({ ios: null, android: [], problems: [] });
-  expect(html).toContain("No emulators found.");
-  expect(html).not.toContain("Xcode");
+  const all = labels({ ios: null, android: [], problems: [] }).join("\n");
+  expect(all).toContain("No emulators found.");
+  expect(all).not.toContain("Xcode");
 });
 
-it("lists rows with their state and action", () => {
-  const html = draw({
+it("lists rows with their state and action, and a row starts its device", () => {
+  const onPick = vi.fn();
+  const list: SimList = {
     ios: [
       { platform: "ios", id: "a", name: "iPhone 16", runtime: "iOS 18.0", state: "booted", serial: null },
       { platform: "ios", id: "b", name: "iPhone 15", runtime: "iOS 17.5", state: "shutdown", serial: null },
     ],
     android: [],
     problems: [],
-  });
-  expect(html).toContain("iPhone 16 · iOS 18.0 · Running");
-  expect(html).toContain("iPhone 15 · iOS 17.5 · Not running");
-  expect(html).toContain("Stream logs");
-  expect(html).toContain("Start and stream logs");
-  expect(html).not.toContain("No simulators found.");
-  expect(html).not.toContain("Android emulators");
+  };
+  const all = labels(list, onPick).join("\n");
+  expect(all).toContain("iPhone 16 · iOS 18.0 · Running · Stream logs");
+  expect(all).toContain("iPhone 15 · iOS 17.5 · Not running · Start and stream logs");
+  expect(all).not.toContain("No simulators found.");
+  expect(all).not.toContain("Android emulators");
+  const row = simEntries(list, t, onPick).find((e) => "label" in e && e.label.startsWith("iPhone 15")) as { onSelect(): void };
+  row.onSelect();
+  expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ id: "b" }));
 });

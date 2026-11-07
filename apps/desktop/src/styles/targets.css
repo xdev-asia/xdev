@@ -11,24 +11,3 @@
   overflow-wrap: anywhere;
 }
 
-.targets-hint {
-  padding: 2px 8px;
-  color: var(--text-2);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
-.ws-menu button.targets-item {
-  min-height: 24px;
-}
-
-.targets-source {
-  margin-left: 6px;
-  color: var(--text-2);
-  font-size: 11px;
-}
-
-.targets-item .ws-dot {
-  margin-right: 6px;
-  flex: none;
-}

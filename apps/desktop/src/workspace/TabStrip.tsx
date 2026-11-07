@@ -1,4 +1,4 @@
-import { Icon, Spinner } from "@xdev-asia/ui";
+import { Icon, Menu, Spinner, type MenuEntry } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { CSSProperties, JSX, ReactNode } from "react";
 import { profileName, useProfiles } from "@/agents/profileStore";
@@ -170,8 +170,8 @@ export function TabStrip(props: {
   onAgentPicker?: () => void;
   /** Opens a chat tab with the default (or first chat-capable) agent. Absent hides New chat tab. */
   onNewChat?: () => void;
-  /** Extra block of the `+` menu, after the launch groups and before split (Run targets). */
-  extra?: ReactNode;
+  /** Extra sections of the `+` menu, after the launch groups and before split (remote, browser, run targets). */
+  extra?: MenuEntry[][];
   /** The open agent picker of this pane, drawn under the `+` button. */
   agentPicker?: ReactNode;
   /** Splits this pane, opening the default shell in the new one. */
@@ -289,23 +289,35 @@ export function TabStrip(props: {
             ? t("commitView.tab", { id: item.commit.id.slice(0, 7) })
             : t("review.tab");
 
-  const menuItem = (key: string, label: string, run: () => void, extra?: { danger?: boolean; disabled?: boolean }) => (
-    <button
-      key={key}
-      type="button"
-      role="menuitem"
-      className={extra?.danger ? "ws-menu-danger" : undefined}
-      aria-disabled={extra?.disabled ? true : undefined}
-      onClick={() => {
-        if (extra?.disabled) return;
-        setContext(null);
-        props.onMenu(false);
-        run();
-      }}
-    >
-      {label}
-    </button>
-  );
+  // The `+` menu: one section per launch group, the extra sections, then split. Choosing closes it first.
+  // Shift on the click that chose an agent opens its launch options; the capture below sees it first.
+  const shift = { on: false };
+  const close = (entry: MenuEntry): MenuEntry =>
+    entry.type === "separator" || entry.type === "group" || !entry.onSelect
+      ? entry
+      : {
+          ...entry,
+          onSelect: () => {
+            setContext(null);
+            props.onMenu(false);
+            entry.onSelect?.();
+          },
+        };
+  const sections: MenuEntry[][] = [
+    ...groups.map((g): MenuEntry[] => [
+      { type: "group", label: g.label },
+      ...g.ids.map((p): MenuEntry => ({ label: profileName(view, p, t), onSelect: () => (shift.on && props.onLaunchOptions && g.picker ? props.onLaunchOptions(p) : props.onLaunch(p)) })),
+      ...(g.picker && props.onAgentPicker ? [{ label: t("workspace.tabs.agentPicker"), onSelect: props.onAgentPicker }] : []),
+      ...(g.picker && props.onNewChat ? [{ label: t("workspace.tabs.newChat"), onSelect: props.onNewChat }] : []),
+      ...(g.picker && props.onLaunchOptionsPicker ? [{ label: t("workspace.tabs.launchOptions"), onSelect: props.onLaunchOptionsPicker }] : []),
+    ]),
+    ...(props.extra ?? []),
+    [
+      { label: t("workspace.tabs.split.right"), onSelect: () => props.onSplit("right") },
+      { label: t("workspace.tabs.split.down"), onSelect: () => props.onSplit("down") },
+    ],
+  ].filter((section) => section.length > 0);
+  const plusEntries: MenuEntry[] = sections.flatMap((section, i) => [...(i > 0 ? [{ type: "separator" } as const] : []), ...section.map(close)]);
 
   const hoverTab = hover.open ? (items.find((i) => i.id === hover.open!.id)?.tab ?? null) : null;
   const picked = context ? items.find((i) => i.id === context.id) : null;
@@ -569,32 +581,8 @@ export function TabStrip(props: {
         {props.menuOpen && (
           <>
             <div className="ws-menu-backdrop" onClick={() => props.onMenu(false)} />
-            <div className="ws-menu" role="menu">
-              {groups.map((g) => (
-                <div key={g.label} className="ws-menu-group" role="group" aria-label={g.label}>
-                  <div className="ws-menu-label" aria-hidden="true">
-                    {g.label}
-                  </div>
-                  {g.ids.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      role="menuitem"
-                      onClick={(e) => (e?.shiftKey && props.onLaunchOptions && g.picker ? props.onLaunchOptions(p) : props.onLaunch(p))}
-                    >
-                      {profileName(view, p, t)}
-                    </button>
-                  ))}
-                  {g.picker && props.onAgentPicker && menuItem("agent-picker", t("workspace.tabs.agentPicker"), props.onAgentPicker)}
-                  {g.picker && props.onNewChat && menuItem("new-chat", t("workspace.tabs.newChat"), props.onNewChat)}
-                  {g.picker && props.onLaunchOptionsPicker && menuItem("launch-options", t("workspace.tabs.launchOptions"), props.onLaunchOptionsPicker)}
-                </div>
-              ))}
-              {props.extra}
-              <div className="ws-menu-group" role="group">
-                {menuItem("split-right", t("workspace.tabs.split.right"), () => props.onSplit("right"))}
-                {menuItem("split-down", t("workspace.tabs.split.down"), () => props.onSplit("down"))}
-              </div>
+            <div className="ws-plus-menu" onClickCapture={(e) => (shift.on = e.shiftKey)}>
+              <Menu items={plusEntries} label={t("workspace.tabs.new")} onClose={() => props.onMenu(false)} />
             </div>
           </>
         )}
