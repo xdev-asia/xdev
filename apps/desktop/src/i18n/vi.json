@@ -6338,5 +6338,20 @@
   "settings.terminal.clipboard.trimGutter": "Bỏ viền khi sao chép",
   "settings.terminal.clipboard.trimGutterHint": "Khi sao chép, bỏ viền khung và khoảng trắng cuối dòng.",
   "settings.terminal.keyboard.jisYen": "Phím Yên JIS (¥) thành dấu gạch ngược (\\)",
-  "settings.terminal.keyboard.jisYenHint": "Phím ¥ của bàn phím tiếng Nhật gõ dấu gạch ngược trong terminal."
+  "settings.terminal.keyboard.jisYenHint": "Phím ¥ của bàn phím tiếng Nhật gõ dấu gạch ngược trong terminal.",
+  "settings.terminal.advanced.group": "Nâng cao",
+  "settings.terminal.advanced.maxRunning": "Số terminal chạy tối đa",
+  "settings.terminal.advanced.maxRunningSuffix": "terminal",
+  "settings.terminal.advanced.ptyLimit": "Giới hạn PTY của hệ thống: {value}",
+  "settings.terminal.advanced.maxRunningHint": "Terminal mới bị từ chối khi vượt số này. Terminal đang chạy không bị đóng.",
+  "settings.terminal.advanced.hostInfoFailed": "Không đọc được giới hạn của hệ thống.",
+  "settings.terminal.advanced.retry": "Thử lại",
+  "settings.terminal.advanced.powershell": "Phiên bản PowerShell",
+  "settings.terminal.advanced.powershell.auto": "Tự động",
+  "settings.terminal.advanced.powershell.windows": "Windows PowerShell",
+  "settings.terminal.advanced.powershell.pwsh": "PowerShell 7+",
+  "settings.terminal.advanced.powershellHint": "Áp dụng cho terminal mở sau khi đổi.",
+  "settings.terminal.advanced.powershellMissing": "Chưa cài đặt",
+  "settings.terminal.advanced.powershellDownload": "Tải PowerShell 7+",
+  "error.too_many_terminals": "Có quá nhiều terminal đang chạy. Hãy đóng bớt, hoặc tăng giới hạn trong Cài đặt > Terminal > Nâng cao."
 }

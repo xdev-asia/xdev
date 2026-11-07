@@ -7,6 +7,7 @@ import { setTerminalSettings, TERMINAL_DEFAULTS, TERMINAL_LIMITS } from "@/termi
 import { RunningTerminals } from "./RunningTerminals";
 import { SettingGroup, SettingRow, settingShown } from "./SettingRow";
 import { TerminalAppearanceSection } from "./terminal/TerminalAppearanceSection";
+import { TerminalAdvancedSection } from "./terminal/TerminalAdvancedSection";
 import { TerminalBehaviourSection } from "./terminal/TerminalBehaviourSection";
 import { TerminalKeyboardSection } from "./terminal/TerminalKeyboardSection";
 import { TerminalLookSection } from "./terminal/TerminalLookSection";
@@ -344,6 +345,8 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
       <SettingRow id="terminal.running" filter={filter}>
         <RunningTerminals api={api} />
       </SettingRow>
+
+      <TerminalAdvancedSection api={api} current={current} busy={busy} patch={patch} filter={filter} />
 
       <SettingRow id="terminal.reset" filter={filter}>
       <div className="settings-actions settings-actions-start">

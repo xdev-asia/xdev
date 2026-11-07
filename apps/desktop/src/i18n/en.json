@@ -6338,5 +6338,20 @@
   "settings.terminal.clipboard.trimGutter": "Trim gutter on copy",
   "settings.terminal.clipboard.trimGutterHint": "Copy drops box borders and trailing spaces from the selection.",
   "settings.terminal.keyboard.jisYen": "JIS Yen (¥) to Backslash (\\)",
-  "settings.terminal.keyboard.jisYenHint": "The ¥ key of a Japanese keyboard types a backslash in the terminal."
+  "settings.terminal.keyboard.jisYenHint": "The ¥ key of a Japanese keyboard types a backslash in the terminal.",
+  "settings.terminal.advanced.group": "Advanced",
+  "settings.terminal.advanced.maxRunning": "Maximum running terminals",
+  "settings.terminal.advanced.maxRunningSuffix": "terminals",
+  "settings.terminal.advanced.ptyLimit": "System PTY limit: {value}",
+  "settings.terminal.advanced.maxRunningHint": "New terminals are refused above this number. Running terminals are not closed.",
+  "settings.terminal.advanced.hostInfoFailed": "Could not read the system limits.",
+  "settings.terminal.advanced.retry": "Retry",
+  "settings.terminal.advanced.powershell": "PowerShell version",
+  "settings.terminal.advanced.powershell.auto": "Auto",
+  "settings.terminal.advanced.powershell.windows": "Windows PowerShell",
+  "settings.terminal.advanced.powershell.pwsh": "PowerShell 7+",
+  "settings.terminal.advanced.powershellHint": "Applies to terminals opened after the change.",
+  "settings.terminal.advanced.powershellMissing": "Not installed",
+  "settings.terminal.advanced.powershellDownload": "Download PowerShell 7+",
+  "error.too_many_terminals": "Too many terminals are running. Close one, or raise the limit in Settings > Terminal > Advanced."
 }

@@ -801,6 +801,7 @@ export type ErrorCode =
   | "pty_exists"
   | "pty_unknown"
   | "pty_spawn"
+  | "too_many_terminals"
   | "pty_resize"
   | "pty_gone"
   | "scan_failed"

@@ -39,3 +39,10 @@ it("only start failures ask for a verdict", () => {
   expect(wantsVerdict("denied")).toBe(false);
   expect(wantsVerdict("needs_approval")).toBe(false);
 });
+
+it("too many terminals reads as the cap message, with the cap as detail", () => {
+  const copy = failureCopy(t, "", { code: "too_many_terminals", detail: "256" }, null);
+  expect(copy.text).toBe(t("error.too_many_terminals"));
+  expect(copy.text).toContain("Settings > Terminal > Advanced");
+  expect(copy.detail).toBe("256");
+});
