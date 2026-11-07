@@ -17,3 +17,64 @@ export interface FloatingSnapshot {
   active: number | null; // index into tabs
   tabs: FloatingTabSnapshot[];
 }
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const num = (v: unknown, dflt: number): number => (typeof v === "number" && Number.isFinite(v) ? v : dflt);
+
+/** `text` cut to at most `max` UTF-8 bytes, at a character boundary. */
+export function cutUtf8(text: string, max: number): string {
+  const enc = new TextEncoder();
+  if (enc.encode(text).length <= max) return text;
+  let out = "";
+  let used = 0;
+  for (const ch of text) {
+    const size = enc.encode(ch).length;
+    if (used + size > max) break;
+    out += ch;
+    used += size;
+  }
+  return out;
+}
+
+function parseTab(v: unknown): FloatingTabSnapshot | null {
+  if (!isObj(v)) return null;
+  if (v.kind === "terminal") {
+    if (typeof v.id !== "string" || v.id === "") return null;
+    const tab: FloatingTabSnapshot = { kind: "terminal", id: v.id, n: num(v.n, 1) };
+    if (typeof v.cwd === "string" && v.cwd !== "") tab.cwd = v.cwd;
+    if (typeof v.seq === "number" && Number.isFinite(v.seq) && v.seq >= 0) tab.seq = v.seq;
+    return tab;
+  }
+  if (v.kind === "browser") {
+    if (typeof v.url !== "string") return null;
+    return { kind: "browser", url: v.url, title: typeof v.title === "string" ? v.title : null };
+  }
+  if (v.kind === "note") {
+    if (typeof v.body !== "string") return null;
+    return { kind: "note", n: num(v.n, 1), body: cutUtf8(v.body, NOTE_MAX_BYTES) };
+  }
+  return null;
+}
+
+/** Rows a hand-edited or broken file cannot use are dropped, never thrown. */
+export function parseFloatingSnapshot(v: unknown): FloatingSnapshot | null {
+  if (!isObj(v) || v.version !== FLOATING_VERSION || !Array.isArray(v.tabs)) return null;
+  const tabs: FloatingTabSnapshot[] = [];
+  let notes = 0;
+  // `active` indexes the file's rows, so it is remapped to the rows kept.
+  const kept = new Map<number, number>();
+  v.tabs.forEach((row, i) => {
+    const tab = parseTab(row);
+    if (!tab) return;
+    if (tab.kind === "note" && ++notes > NOTE_MAX_TABS) return;
+    kept.set(i, tabs.length);
+    tabs.push(tab);
+  });
+  const want = typeof v.active === "number" ? kept.get(v.active) : undefined;
+  return {
+    version: FLOATING_VERSION,
+    savedAt: typeof v.savedAt === "string" ? v.savedAt : new Date(0).toISOString(),
+    active: tabs.length === 0 ? null : (want ?? 0),
+    tabs,
+  };
+}
