@@ -20,6 +20,8 @@ import { editorFontStack } from "./editorFont";
 import { editorKeys } from "./editorKeys";
 import { pasteGuard } from "./pasteGuard";
 import { hiddenBom } from "./hiddenBom";
+import { lineAuthorsField, lineAuthorsGutter, setLineAuthors } from "@/review/attribution/lineGutter";
+import type { EditorLineAuthors } from "@/review/attribution/useEditorLineAuthors";
 
 // Marks a change pushed in from props: it is not an edit, and it stays out of the undo history.
 const remote = Annotation.define<boolean>();
@@ -44,6 +46,8 @@ export function CodeEditor(props: {
   goto?: Goto;
   /** The text the change gutter compares with (the last saved text); null shows no markers. */
   base?: string | null;
+  /** Who wrote each line against `HEAD`, and the text those runs are for; null shows no gutter. */
+  lineAuthors?: EditorLineAuthors | null;
   /** Alt+Z. */
   onToggleWrap?(): void;
   /** Gives the toolbar a handle on this editor, and null when it goes. */
@@ -68,6 +72,7 @@ export function CodeEditor(props: {
   const label = useRef(new Compartment());
   const conflicts = useRef(new Compartment());
   const pluginSlot = useRef(new Compartment());
+  const authors = useRef(new Compartment());
   const terminalFont = useSyncExternalStore(subscribeTerminalSettings, () => getTerminalSettings().fontFamily, () => getTerminalSettings().fontFamily);
   const plugins = useEditorPlugins({ worktree: props.worktree, rel: props.rel, secondary: !!props.secondary });
 
@@ -91,6 +96,9 @@ export function CodeEditor(props: {
         extensions: [
           Prec.high(keymap.of([{ key: "Mod-s", preventDefault: true, run: () => (latest.current.onSave(), true) }])),
           editorKeys({ onToggleWrap: () => latest.current.onToggleWrap?.(), onChange: (dir) => goChange(dir) }),
+          // Before `basicSetup`: the leftmost gutter. The field is always there, so its effect is never missed.
+          authors.current.of([]),
+          lineAuthorsField,
           basicSetup,
           hiddenBom(),
           changeGutter(),
@@ -155,6 +163,14 @@ export function CodeEditor(props: {
     const change = minimalChange(current, props.value);
     if (change) v.dispatch({ changes: change, annotations: [Transaction.addToHistory.of(false), remote.of(true)] });
   }, [props.value]);
+
+  // After the text effect above, so runs made for a new text are placed on it.
+  const lineAuthors = props.lineAuthors ?? null;
+  useEffect(() => {
+    view.current?.dispatch({
+      effects: [authors.current.reconfigure(lineAuthors ? lineAuthorsGutter() : []), setLineAuthors.of(lineAuthors && { attr: lineAuthors.attr, strings: t, text: lineAuthors.text })],
+    });
+  }, [lineAuthors, t]);
 
   useEffect(() => {
     view.current?.dispatch({ effects: pluginSlot.current.reconfigure(plugins) });

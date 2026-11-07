@@ -5,6 +5,10 @@
 //! reported an edit or write tool on that path within a short window;
 //! otherwise the only agent tab working in that worktree; otherwise unknown.
 //! Events and snapshots live in the app data dir, never in the repo.
+//!
+//! A change nobody can be named for, made while no agent tab works in the
+//! worktree, to a file that already has an agent version, is kept as a hidden
+//! outside snapshot: the line replay gives its lines to the person.
 
 use std::collections::{HashMap, VecDeque};
 use std::fs;
@@ -28,6 +32,8 @@ pub const HOOK_WINDOW_MS: i64 = 5_000;
 pub const MAX_EVENTS: usize = 5_000;
 /// Versions kept per file, oldest dropped first.
 pub const MAX_VERSIONS: usize = 20;
+/// Outside versions (changes no agent made) kept per file, oldest dropped first.
+pub const MAX_OUTSIDE_VERSIONS: usize = 5;
 /// The largest file that is snapshotted.
 pub const MAX_SNAPSHOT_BYTES: usize = 1_000_000;
 /// Folders that are never tracked, at any depth.
@@ -356,6 +362,40 @@ pub struct Snapshots {
 struct Index {
     path: String,
     versions: Vec<FileVersion>,
+    /// Hidden snapshots of changes no agent made, oldest first; only the line
+    /// replay reads them. Missing in an older index.
+    #[serde(default)]
+    outside: Vec<FileVersion>,
+}
+
+impl Index {
+    fn names(&self, id: &str) -> bool {
+        self.versions
+            .iter()
+            .chain(&self.outside)
+            .any(|v| v.id == id)
+    }
+
+    /// The newest entry of either list; on equal times the agent version.
+    fn newest(&self) -> Option<(&FileVersion, bool)> {
+        match (self.versions.last(), self.outside.last()) {
+            (Some(v), Some(o)) if o.at > v.at => Some((o, true)),
+            (Some(v), _) => Some((v, false)),
+            (None, Some(o)) => Some((o, true)),
+            (None, None) => None,
+        }
+    }
+}
+
+/// Removes the blob `id` unless an entry of either list still names it.
+fn drop_blob_if_unused(folder: &Path, index: &Index, id: &str) {
+    if !index.names(id) {
+        let _ = fs::remove_file(folder.join(id));
+    }
+}
+
+fn content_id(text: &str) -> String {
+    blake3::hash(text.as_bytes()).to_hex()[..32].to_owned()
 }
 
 impl Snapshots {
@@ -373,7 +413,7 @@ impl Snapshots {
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_else(|| Index {
                 path: rel.to_owned(),
-                versions: Vec::new(),
+                ..Index::default()
             })
     }
 
@@ -383,8 +423,9 @@ impl Snapshots {
     }
 
     /// Keeps `bytes` as a version of `rel`. The same content already kept is
-    /// not stored twice: its entry moves to the newest place. At most
-    /// `MAX_VERSIONS` stay. Refuses what is not small text.
+    /// not stored twice: its entry moves to the newest place, and an outside
+    /// entry of that content goes (the agent wins). At most `MAX_VERSIONS`
+    /// stay. Refuses what is not small text.
     pub fn record(
         &self,
         rel: &str,
@@ -397,9 +438,10 @@ impl Snapshots {
             Ok(t) => t,
             Err(r) => return Ok(Err(r)),
         };
-        let id = blake3::hash(text.as_bytes()).to_hex()[..32].to_owned();
+        let id = content_id(text);
         let mut index = self.index(rel);
         index.versions.retain(|v| v.id != id);
+        index.outside.retain(|v| v.id != id);
         let version = FileVersion {
             id: id.clone(),
             at,
@@ -415,10 +457,61 @@ impl Snapshots {
         index.versions.push(version.clone());
         while index.versions.len() > MAX_VERSIONS {
             let old = index.versions.remove(0);
-            let _ = fs::remove_file(folder.join(old.id));
+            drop_blob_if_unused(&folder, &index, &old.id);
         }
         self.save(rel, &index)?;
         Ok(Ok(version))
+    }
+
+    /// Keeps `bytes` as a hidden outside version of `rel` (a change no agent
+    /// made). Only for a file with an agent version; not when it equals the
+    /// newest kept entry. When the newest entry is already outside, this one
+    /// replaces it. At most `MAX_OUTSIDE_VERSIONS` stay. `None` when nothing
+    /// was kept.
+    pub fn record_outside(
+        &self,
+        rel: &str,
+        bytes: &[u8],
+        at: i64,
+    ) -> io::Result<Option<FileVersion>> {
+        let Ok(text) = snapshot_text(bytes) else {
+            return Ok(None);
+        };
+        let id = content_id(text);
+        let mut index = self.index(rel);
+        let (coalesce, same) = match index.newest() {
+            None => return Ok(None),
+            Some((newest, is_outside)) => (is_outside, newest.id == id),
+        };
+        if index.versions.is_empty() || same {
+            return Ok(None);
+        }
+        let mut gone = Vec::new();
+        if coalesce && let Some(old) = index.outside.pop() {
+            gone.push(old.id);
+        }
+        index.outside.retain(|v| v.id != id);
+        let version = FileVersion {
+            id: id.clone(),
+            at,
+            size: bytes.len() as u64,
+            tab_id: None,
+            agent: None,
+        };
+        let folder = self.folder(rel);
+        let blob = folder.join(&id);
+        if !blob.is_file() {
+            crate::atomic::write_atomic(&blob, bytes)?;
+        }
+        index.outside.push(version.clone());
+        while index.outside.len() > MAX_OUTSIDE_VERSIONS {
+            gone.push(index.outside.remove(0).id);
+        }
+        for old in &gone {
+            drop_blob_if_unused(&folder, &index, old);
+        }
+        self.save(rel, &index)?;
+        Ok(Some(version))
     }
 
     /// The versions of `rel`, newest first.
@@ -431,6 +524,22 @@ impl Snapshots {
     /// The text of version `id` of `rel`; None when it is not kept.
     pub fn read(&self, rel: &str, id: &str) -> Option<String> {
         let known = self.index(rel).versions.iter().any(|v| v.id == id);
+        known
+            .then(|| fs::read_to_string(self.folder(rel).join(id)).ok())
+            .flatten()
+    }
+
+    /// The outside versions of `rel`, newest first. Not listed with the agent
+    /// versions and not restorable; only the line replay reads them.
+    pub fn outside(&self, rel: &str) -> Vec<FileVersion> {
+        let mut v = self.index(rel).outside;
+        v.reverse();
+        v
+    }
+
+    /// The text of outside version `id` of `rel`; None when it is not kept.
+    pub fn read_outside(&self, rel: &str, id: &str) -> Option<String> {
+        let known = self.index(rel).outside.iter().any(|v| v.id == id);
         known
             .then(|| fs::read_to_string(self.folder(rel).join(id)).ok())
             .flatten()
@@ -567,7 +676,8 @@ impl Attribution {
     }
 
     /// Takes the changes of one watcher batch: attributes each file, snapshots
-    /// what an agent wrote, and logs it. Returns true when the log changed.
+    /// what an agent wrote (or, with no agent working, keeps it outside), and
+    /// logs it. Returns true when the log changed.
     pub fn changed(
         &self,
         data: &Path,
@@ -625,11 +735,15 @@ impl Attribution {
             if Self::log_of(&mut s, data, worktree).push(event).is_ok() {
                 any = true;
             }
-            if tab_id.is_some()
-                && let Some(b) = bytes
-            {
+            if let Some(b) = bytes {
                 let snaps = Snapshots::new(folder_of(data, worktree).join("snaps"));
-                let _ = snaps.record(&e.rel, &b, now, tab_id, agent);
+                if tab_id.is_some() {
+                    let _ = snaps.record(&e.rel, &b, now, tab_id, agent);
+                } else if working.is_empty() {
+                    // No agent works here: the person or a non-agent tool wrote it.
+                    // With several working tabs the writer is unknown; keep nothing.
+                    let _ = snaps.record_outside(&e.rel, &b, now);
+                }
             }
         }
         any
@@ -1063,6 +1177,146 @@ mod tests {
         assert!(s.record("a.ts", &max, 1, None, None).unwrap().is_ok());
     }
 
+    fn out(s: &Snapshots, text: &str, at: i64) -> Option<FileVersion> {
+        s.record_outside("a.ts", text.as_bytes(), at).unwrap()
+    }
+
+    fn blob_exists(s: &Snapshots, id: &str) -> bool {
+        s.folder("a.ts").join(id).is_file()
+    }
+
+    #[test]
+    fn no_outside_version_without_an_agent_version() {
+        let (_d, s) = snaps();
+        assert_eq!(out(&s, "hand", 10), None);
+        assert!(!s.folder("a.ts").exists());
+        assert!(s.outside("a.ts").is_empty());
+    }
+
+    #[test]
+    fn an_outside_version_is_hidden_from_the_agent_list() {
+        let (_d, s) = snaps();
+        let v1 = put(&s, "v1", 10);
+        let o = out(&s, "hand", 20).unwrap();
+        let outside = s.outside("a.ts");
+        assert_eq!(outside.len(), 1);
+        assert_eq!(
+            (outside[0].tab_id.as_deref(), outside[0].agent.as_deref()),
+            (None, None)
+        );
+        let versions = s.versions("a.ts");
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].id, v1.id);
+        assert_eq!(s.read("a.ts", &o.id), None);
+        assert_eq!(s.read_outside("a.ts", &o.id).as_deref(), Some("hand"));
+    }
+
+    #[test]
+    fn consecutive_outside_versions_coalesce() {
+        let (_d, s) = snaps();
+        put(&s, "v1", 10);
+        let a = out(&s, "A", 20).unwrap();
+        let b = out(&s, "B", 30).unwrap();
+        let outside = s.outside("a.ts");
+        assert_eq!(outside.len(), 1);
+        assert_eq!(outside[0].id, b.id);
+        assert!(!blob_exists(&s, &a.id));
+        assert_eq!(s.read_outside("a.ts", &a.id), None);
+    }
+
+    #[test]
+    fn an_agent_version_between_keeps_both_outside_versions() {
+        let (_d, s) = snaps();
+        put(&s, "v1", 10);
+        let a = out(&s, "A", 20).unwrap();
+        put(&s, "v2", 30);
+        let b = out(&s, "B", 40).unwrap();
+        let ids: Vec<_> = s.outside("a.ts").into_iter().map(|v| v.id).collect();
+        assert_eq!(ids, [b.id, a.id]);
+    }
+
+    #[test]
+    fn an_outside_version_equal_to_the_newest_is_not_kept() {
+        let (_d, s) = snaps();
+        put(&s, "v1", 10);
+        assert_eq!(out(&s, "v1", 20), None);
+        assert!(s.outside("a.ts").is_empty());
+        out(&s, "A", 30).unwrap();
+        assert_eq!(out(&s, "A", 40), None);
+        assert_eq!(s.outside("a.ts")[0].at, 30);
+    }
+
+    #[test]
+    fn at_most_five_outside_versions_oldest_dropped_first() {
+        let (_d, s) = snaps();
+        let mut kept = Vec::new();
+        for i in 0..7 {
+            put(&s, &format!("agent {i}"), i * 10);
+            kept.push(out(&s, &format!("hand {i}"), i * 10 + 5).unwrap());
+        }
+        let outside = s.outside("a.ts");
+        assert_eq!(outside.len(), MAX_OUTSIDE_VERSIONS);
+        assert_eq!(outside[0].id, kept[6].id);
+        assert_eq!(outside[4].id, kept[2].id);
+        assert!(!blob_exists(&s, &kept[0].id));
+        assert!(!blob_exists(&s, &kept[1].id));
+        assert_eq!(s.versions("a.ts").len(), 7);
+    }
+
+    #[test]
+    fn an_agent_version_of_the_same_content_wins() {
+        let (_d, s) = snaps();
+        put(&s, "v1", 10);
+        let x = out(&s, "X", 20).unwrap();
+        let v = put(&s, "X", 25);
+        assert_eq!(v.id, x.id);
+        assert!(s.outside("a.ts").is_empty());
+        assert_eq!(s.versions("a.ts")[0].id, x.id);
+        assert!(blob_exists(&s, &x.id));
+        assert_eq!(s.read("a.ts", &x.id).as_deref(), Some("X"));
+    }
+
+    #[test]
+    fn a_blob_both_lists_name_stays_while_one_does() {
+        let (_d, s) = snaps();
+        let p = put(&s, "P", 10);
+        put(&s, "Q", 20);
+        let o = out(&s, "P", 30).unwrap();
+        assert_eq!(o.id, p.id);
+        for i in 0..MAX_VERSIONS {
+            put(&s, &format!("v{i}"), 100 + i as i64);
+        }
+        assert!(s.versions("a.ts").iter().all(|v| v.id != p.id));
+        assert_eq!(s.read_outside("a.ts", &p.id).as_deref(), Some("P"));
+    }
+
+    #[test]
+    fn an_old_index_without_outside_reads() {
+        let (_d, s) = snaps();
+        let folder = s.folder("a.ts");
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(
+            folder.join("index.json"),
+            r#"{"path":"a.ts","versions":[{"id":"x","at":1,"size":1,"tabId":"t1","agent":"claude"}]}"#,
+        )
+        .unwrap();
+        assert!(s.outside("a.ts").is_empty());
+        assert_eq!(s.versions("a.ts").len(), 1);
+        put(&s, "v2", 2);
+        assert_eq!(s.versions("a.ts").len(), 2);
+        assert!(out(&s, "hand", 3).is_some());
+    }
+
+    #[test]
+    fn big_and_binary_outside_versions_are_refused() {
+        let (_d, s) = snaps();
+        put(&s, "v1", 1);
+        let big = vec![b'a'; MAX_SNAPSHOT_BYTES + 1];
+        assert_eq!(s.record_outside("a.ts", &big, 2).unwrap(), None);
+        assert_eq!(s.record_outside("a.ts", b"ab cd", 3).unwrap(), None);
+        assert!(s.outside("a.ts").is_empty());
+    }
+
     #[test]
     fn skipped_folders_and_gitignored_paths() {
         let dir = tempfile::tempdir().unwrap();
@@ -1274,6 +1528,135 @@ mod tests {
         assert!(fixed);
         assert_eq!(hub.recent(&data, &wt, 1)[0].tab_id.as_deref(), Some("t2"));
         let snaps = Snapshots::new(folder_of(&data, &wt).join("snaps"));
-        assert_eq!(snaps.versions("a.ts")[0].tab_id.as_deref(), Some("t2"));
+        let versions = snaps.versions("a.ts");
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].tab_id.as_deref(), Some("t2"));
+        assert!(snaps.outside("a.ts").is_empty());
+    }
+
+    /// A worktree with `a.ts` on disk and a hub; `agent` keeps an agent
+    /// version of `a.ts` first.
+    struct Hub {
+        _dir: tempfile::TempDir,
+        data: PathBuf,
+        root: PathBuf,
+        wt: String,
+        hub: Attribution,
+        snaps: Snapshots,
+    }
+
+    fn hub_with(agent: bool) -> Hub {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        let root = dir.path().join("wt");
+        fs::create_dir_all(&root).unwrap();
+        let wt = root.to_string_lossy().into_owned();
+        let snaps = Snapshots::new(folder_of(&data, &wt).join("snaps"));
+        if agent {
+            snaps
+                .record(
+                    "a.ts",
+                    b"agent",
+                    1_000,
+                    Some("t1".into()),
+                    Some("claude".into()),
+                )
+                .unwrap()
+                .unwrap();
+        }
+        fs::write(root.join("a.ts"), "hand").unwrap();
+        Hub {
+            _dir: dir,
+            data,
+            root,
+            wt,
+            hub: Attribution::default(),
+            snaps,
+        }
+    }
+
+    impl Hub {
+        fn change(&self, at: i64) -> bool {
+            self.hub
+                .changed(&self.data, &self.root, &self.wt, &changed_batch("a.ts"), at)
+        }
+
+        fn hook(&self, tab: &str, event: HookEvent, tool: Option<&str>, at: i64) -> bool {
+            let input = tool.map(|_| "a.ts");
+            self.hub
+                .hook(&self.data, &hook_in(tab, &self.wt, event, tool, input, at))
+        }
+    }
+
+    #[test]
+    fn with_no_working_tab_a_change_is_kept_outside() {
+        let h = hub_with(true);
+        assert!(h.change(5_000));
+        let outside = h.snaps.outside("a.ts");
+        assert_eq!(outside.len(), 1);
+        assert_eq!(
+            h.snaps.read_outside("a.ts", &outside[0].id).as_deref(),
+            Some("hand")
+        );
+        assert_eq!(h.snaps.versions("a.ts").len(), 1);
+        let recent = h.hub.recent(&h.data, &h.wt, 10);
+        assert_eq!(recent.len(), 1);
+        assert_eq!(
+            (recent[0].tab_id.as_deref(), recent[0].source),
+            (None, AttributionSource::Unknown)
+        );
+    }
+
+    #[test]
+    fn with_two_working_tabs_and_no_hook_nothing_is_kept() {
+        let h = hub_with(true);
+        h.hook("t1", HookEvent::Prompt, None, 1_000);
+        h.hook("t2", HookEvent::Prompt, None, 1_000);
+        assert!(h.change(5_000));
+        assert!(h.snaps.outside("a.ts").is_empty());
+        assert_eq!(h.snaps.versions("a.ts").len(), 1);
+    }
+
+    #[test]
+    fn with_one_working_tab_the_agent_keeps_the_version() {
+        let h = hub_with(true);
+        h.hook("t2", HookEvent::Prompt, None, 1_000);
+        assert!(h.change(5_000));
+        assert!(h.snaps.outside("a.ts").is_empty());
+        let versions = h.snaps.versions("a.ts");
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].tab_id.as_deref(), Some("t2"));
+    }
+
+    #[test]
+    fn a_file_no_agent_wrote_keeps_nothing() {
+        let h = hub_with(false);
+        assert!(h.change(5_000));
+        assert!(h.snaps.outside("a.ts").is_empty());
+        assert!(h.snaps.versions("a.ts").is_empty());
+        assert!(!h.snaps.folder("a.ts").exists());
+    }
+
+    #[test]
+    fn the_own_restore_is_not_kept_outside() {
+        let h = hub_with(true);
+        h.hub.restored(&h.wt, "a.ts", "hand");
+        assert!(!h.change(5_000));
+        assert!(h.snaps.outside("a.ts").is_empty());
+    }
+
+    #[test]
+    fn a_late_hook_turns_an_outside_change_into_the_agents() {
+        let h = hub_with(true);
+        assert!(h.change(5_000));
+        assert_eq!(h.snaps.outside("a.ts").len(), 1);
+        assert!(h.hook("t2", HookEvent::Resume, Some("Write"), 5_100));
+        assert!(h.snaps.outside("a.ts").is_empty());
+        let versions = h.snaps.versions("a.ts");
+        assert_eq!(versions[0].tab_id.as_deref(), Some("t2"));
+        assert_eq!(
+            h.snaps.read("a.ts", &versions[0].id).as_deref(),
+            Some("hand")
+        );
     }
 }

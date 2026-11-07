@@ -654,6 +654,7 @@ pub fn run() {
             attribution::attribution_version_read,
             attribution::attribution_restore,
             line_attribution::attribution_lines,
+            line_attribution::attribution_lines_head,
             ship::worktree_ship,
             ship::worktree_push,
             ship::worktree_pull,

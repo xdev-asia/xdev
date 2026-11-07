@@ -53,7 +53,7 @@ it("a marker is the agent's chip, or the outside ring", () => {
 it("the tooltip names the agent, with the tab suffix when two tabs share it, and the time", () => {
   expect(authorNames(attr, "Unknown")).toEqual(["claude ab12", "claude cd34", ""]);
   expect(tooltipOf(attr, 0, t)).toBe(`claude ab12 wrote this line, ${when(1000)}`);
-  expect(tooltipOf(attr, 2, t)).toBe("You changed this line after the last agent edit");
+  expect(tooltipOf(attr, 2, t)).toBe("You or another tool changed this line");
 });
 
 it("two versions of one tab are one name and one legend entry, outside last", () => {

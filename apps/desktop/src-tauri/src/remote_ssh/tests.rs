@@ -860,7 +860,7 @@ fn local_only_commands_are_guarded() {
         ),
         (
             include_str!("../line_attribution.rs"),
-            &["attribution_lines"][..],
+            &["attribution_lines", "attribution_lines_head"][..],
         ),
         (
             include_str!("../files.rs"),

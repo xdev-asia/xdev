@@ -2074,6 +2074,8 @@ export interface Api {
   attributionRestore(worktree: string, path: string, id: string): Promise<void>;
   /** Who wrote each changed line of `path` against review base id `base`: runs of 1-based lines with their author. `lines` is 0 when the file cannot be shown. Rejects `worktree_unknown`, `bad_ref`, `bad_arg`, `remote_unsupported`. */
   attributionLines(worktree: string, path: string, base: string): Promise<LineAttribution>;
+  /** Who wrote each changed line of `path` against the worktree's `HEAD`, for the file editor. Empty (`lines` 0) with no commit yet or for a file no agent wrote. Rejects `worktree_unknown`, `bad_arg`, `remote_unsupported`. */
+  attributionLinesHead(worktree: string, path: string): Promise<LineAttribution>;
   /** `attribution://changed`: the attributions of a worktree moved. */
   onAttributionChanged(cb: (e: AttributionChanged) => void): Promise<() => void>;
   /** Team charts: every saved chart, oldest first. */
@@ -3180,6 +3182,7 @@ const tauriApi: Api = {
   attributionVersionRead: (worktree, path, id) => call("attribution_version_read", { worktree, path, id }),
   attributionRestore: (worktree, path, id) => call("attribution_restore", { worktree, path, id }),
   attributionLines: (worktree, path, base) => call("attribution_lines", { worktree, path, base }),
+  attributionLinesHead: (worktree, path) => call("attribution_lines_head", { worktree, path }),
   onAttributionChanged: (cb) => listen<AttributionChanged>("attribution://changed", (e) => cb(e.payload)),
   chartsList: () => call("charts_list"),
   chartsSave: (chart) => call("charts_save", { chart }),

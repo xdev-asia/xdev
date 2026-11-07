@@ -1,6 +1,6 @@
 import type { Api, ApiError, AttributionChanged, AttributionEvent, FileAttribution, FileVersion, LineAttribution } from "./api";
 
-type AttributionApi = Pick<Api, "attributionFiles" | "attributionRecent" | "attributionVersions" | "attributionVersionRead" | "attributionRestore" | "attributionLines" | "onAttributionChanged">;
+type AttributionApi = Pick<Api, "attributionFiles" | "attributionRecent" | "attributionVersions" | "attributionVersionRead" | "attributionRestore" | "attributionLines" | "attributionLinesHead" | "onAttributionChanged">;
 
 export type MockAttribution = AttributionApi & {
   /** Plays an agent tab writing `content` to `path`: logs it, keeps a version and writes the file. `who` null is an unknown writer. */
@@ -61,6 +61,9 @@ export function createMockAttribution(disk: { write(worktree: string, rel: strin
     },
     // The preview shows no line authors: lines with no data show nothing.
     async attributionLines(): Promise<LineAttribution> {
+      return { lines: 0, authors: [], runs: [] };
+    },
+    async attributionLinesHead(): Promise<LineAttribution> {
       return { lines: 0, authors: [], runs: [] };
     },
     async onAttributionChanged(cb) {

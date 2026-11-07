@@ -24,6 +24,8 @@ import { gutterMenuItems, type GutterSelection, type SelectionCapture } from "./
 import { fileTabs, useFileEntry } from "./fileTabs";
 import { viewerOf } from "./viewer";
 import { useOpenedAsText } from "./viewMode";
+import { lineAuthorsPref, useLineAuthorsPref } from "./lineAuthorsPref";
+import { useEditorLineAuthors } from "@/review/attribution/useEditorLineAuthors";
 
 /** One open file: reads it when it first shows, then edits it, or says why it cannot. */
 export function FileView(props: { api: Api; worktree: string; rel: string; secondary?: boolean }): JSX.Element {
@@ -40,6 +42,10 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
   const [changes, setChanges] = useState(0);
   const [more, setMore] = useState<{ x: number; y: number } | null>(null);
   const io = { api, store: fileTabs, t };
+  // Who wrote each line against HEAD, read for the text last read or written; off reads nothing.
+  const authorsOn = useLineAuthorsPref();
+  const textReady = entry?.status === "ready" && entry.kind === "text";
+  const lineAuthors = useEditorLineAuthors(api, worktree, rel, textReady ? entry.saved : undefined, authorsOn && textReady);
 
   // Word wrap is one setting for every editor: the write returns what was stored, and every open editor follows it.
   async function toggleWrap(): Promise<void> {
@@ -50,7 +56,10 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
       void pushToast({ text: t(`error.${toApiError(e).code}`) });
     }
   }
-  const moreItems: MenuItem[] = [{ id: "wrap", labelKey: "files.menu.wordWrap", chord: "Alt+Z", checked: settings.wordWrap, run: () => void toggleWrap() }];
+  const moreItems: MenuItem[] = [
+    { id: "wrap", labelKey: "files.menu.wordWrap", chord: "Alt+Z", checked: settings.wordWrap, run: () => void toggleWrap() },
+    { id: "lineAuthors", labelKey: "files.menu.lineAuthors", checked: authorsOn, run: () => lineAuthorsPref.set(!authorsOn) },
+  ];
   // Images and media are read as bytes by their own view, so the text read is skipped for them.
   const direct = viewerOf(rel) !== "text" && viewerOf(rel) !== "markdown";
   useEffect(() => {
@@ -142,6 +151,7 @@ export function FileView(props: { api: Api; worktree: string; rel: string; secon
           settings={settings}
           goto={entry.goto}
           base={entry.saved}
+          lineAuthors={lineAuthors}
           onToggleWrap={() => void toggleWrap()}
           onControls={setControls}
           onChangeCount={setChanges}
