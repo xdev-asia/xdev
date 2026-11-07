@@ -62,6 +62,7 @@ export type MockPtyd = {
 const PROMPT = "$ ";
 // `SETUP_PROFILE`, not imported: api.ts builds the mock api when it loads.
 const SETUP_PROFILE: typeof SetupProfile = "xdev:setup";
+const INSTALL_PREFIX = "xdev:install:";
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 function reject(code: ApiError["code"], detail?: string): Promise<never> {
@@ -79,7 +80,7 @@ const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007|\r/g;
  * once; an agent running as `skip` needs it before every start.
  */
 export function createMockPty(
-  profiles: Pick<MockProfiles, "__launchError" | "__permissions"> & Partial<Pick<MockProfiles, "__account" | "__promptAfter">>,
+  profiles: Pick<MockProfiles, "__launchError" | "__permissions"> & Partial<Pick<MockProfiles, "__account" | "__promptAfter" | "__installCommands">>,
   // The setup script of the worktree at `cwd`, for `SETUP_PROFILE`.
   setupRun: (cwd: string) => Promise<MockSetupRun> = () => reject("hook_none", "setup"),
   // The provider's active account, which a built-in agent with no account of its own runs as.
@@ -157,6 +158,34 @@ export function createMockPty(
           id,
           pid: null,
           program: "sh",
+          agent: false,
+          profile: profileId,
+          permissions: "ask",
+          account: null,
+          accountSource: null,
+          hooks: false,
+          cli: null,
+          hookEvents: [],
+          promptAfter: null,
+        };
+      }
+      if (profileId.startsWith(INSTALL_PREFIX)) {
+        if (ptys.has(id)) return reject("pty_exists");
+        const command = profiles.__installCommands?.[profileId.slice(INSTALL_PREFIX.length)];
+        if (command === undefined) return reject("install_none", profileId);
+        ptys.set(id, { onData, line: "", exited: false });
+        onData(encode(`${command}\r\n`));
+        // The install ends on its own, after the caller has the terminal.
+        setTimeout(() => {
+          const pty = ptys.get(id);
+          if (!pty || pty.exited) return;
+          pty.exited = true;
+          for (const cb of exits) cb({ id, code: 0 });
+        }, 0);
+        return {
+          id,
+          pid: null,
+          program: "npm",
           agent: false,
           profile: profileId,
           permissions: "ask",

@@ -7,6 +7,22 @@ const custom = (id: string) => ({
 });
 
 describe("mock profiles", () => {
+  it("install is the mock command for a built-in, none for the rest", async () => {
+    const api = createMockApi({});
+    const view = async () => (await api.profiles()).profiles;
+    const install = async (id: string) => (await view()).find((v) => v.profile.id === id)!.install;
+    expect(await install("gemini")).toBe("npm install -g @example/gemini");
+    expect(await install("claude")).toBeNull();
+    delete api.__installCommands.gemini;
+    expect(await install("gemini")).toBeNull();
+    api.__installCommands.gemini = "npm install -g @example/gemini";
+    await api.profilePut(custom("mine"));
+    expect(await install("mine")).toBeNull();
+    const gemini = (await view()).find((v) => v.profile.id === "gemini")!.profile;
+    await api.profilePut({ ...gemini, wsl: "Ubuntu" });
+    expect(await install("gemini")).toBeNull();
+  });
+
   it("auto and blank are not profile ids", async () => {
     const api = createMockApi({});
     for (const id of ["auto", "blank"]) await expect(api.profilePut(custom(id))).rejects.toMatchObject({ code: "invalid_profile" });

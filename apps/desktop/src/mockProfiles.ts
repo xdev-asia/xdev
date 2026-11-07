@@ -126,6 +126,8 @@ export interface MockProfiles extends ProfilesApi {
   __verdicts: Record<string, LaunchVerdict>;
   /** Whether the agent's first prompt is typed after start rather than passed as an argument. */
   __promptAfter(id: string): boolean;
+  /** The install command per built-in id, as `ProfileView.install` reports it; an id left out has none. Fake packages: no vendor name lives in a fixture. */
+  __installCommands: Record<string, string>;
 }
 
 /**
@@ -141,6 +143,10 @@ export function createMockProfiles(): MockProfiles {
   let defaultShell: string | null = null;
   let profiles: Profile[] = CLIS.map(builtin);
   const state = { installed: ["claude", "codex", "aider"], docsOpened: [] as string[], verdicts: {} as Record<string, LaunchVerdict> };
+  const installCommands: Record<string, string> = {
+    gemini: "npm install -g @example/gemini",
+    opencode: "npm install -g @example/opencode",
+  };
   let custom: CustomShell[] = [];
 
   const shellViews = (): ShellView[] => [
@@ -168,6 +174,8 @@ export function createMockProfiles(): MockProfiles {
     modes: profile.cli ? SPECS[profile.cli].modes : [],
     modeFlags: profile.cli ? SPECS[profile.cli].modes.map((mode) => ({ mode, flags: FLAGS[profile.cli!][mode] ?? [] })) : [],
     docs: profile.cli !== null,
+    // A WSL profile always counts as installed, so Install has no row to hang on.
+    install: profile.cli !== null && !profile.wsl ? (installCommands[profile.cli] ?? null) : null,
     promptAfter: profile.cli !== null && SPECS[profile.cli].after,
   });
   // Detection is a stub: a built-in is installed when listed, a custom program always is.
@@ -260,6 +268,7 @@ export function createMockProfiles(): MockProfiles {
     get __verdicts() {
       return state.verdicts;
     },
+    __installCommands: installCommands,
     get __docsOpened() {
       return state.docsOpened;
     },

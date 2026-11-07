@@ -896,6 +896,9 @@ export type ErrorCode =
   | "sim_boot_failed"
   | "hook_none"
   | "setup_skipped"
+  | "install_none"
+  | "npm_missing"
+  | "install_remote"
   | "cancelled"
   | "bad_details"
   | "bad_parent"
@@ -1022,6 +1025,12 @@ export type RepoPatch = {
 // with `setup_skipped` when the repo's setup policy is skip, `hook_none` when there is no setup and
 // `hook_untrusted` when its shared part is not trusted.
 export const SETUP_PROFILE = "xdev:setup";
+
+// The `ptySpawn` profile id that installs a built-in agent: `xdev:install:<cli id>`. Rust builds
+// the `npm install -g` line from its table; the id carries no command. Rejects with `install_none`,
+// `npm_missing` or `install_remote`.
+export const INSTALL_PREFIX = "xdev:install:";
+export const installProfile = (id: string) => `${INSTALL_PREFIX}${id}`;
 
 export { QUICK_COMMAND_LIMITS } from "./quickCommands/limits";
 export { TERMINAL_SET_LIMITS } from "./terminalSets/limits";
@@ -2498,6 +2507,9 @@ export const ERROR_CODES: readonly ErrorCode[] = [
   "sim_boot_failed",
   "hook_none",
   "setup_skipped",
+  "install_none",
+  "npm_missing",
+  "install_remote",
   "cancelled",
   "bad_details",
   "bad_parent",
