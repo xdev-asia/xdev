@@ -49,5 +49,9 @@ export const lineAuthorsPref = createLineAuthorsPref(browserStorage);
 
 /** The preference, the same in every open editor. */
 export function useLineAuthorsPref(): boolean {
-  return useSyncExternalStore(lineAuthorsPref.subscribe, lineAuthorsPref.get);
+  return useSyncExternalStore(
+    lineAuthorsPref.subscribe,
+    lineAuthorsPref.get,
+    lineAuthorsPref.get,
+  );
 }
