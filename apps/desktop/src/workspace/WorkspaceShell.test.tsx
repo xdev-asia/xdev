@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AttentionInbox, SplitHandle, Tabs, type TabsItem } from "@xdev-asia/ui";
 import { SETUP_PROFILE, createMockApi, type WorkerOpen, type WorktreeChange, type WorktreeView } from "@/api";
-import { DocsApp } from "@/DocsApp";
+import { DocsHost } from "@/docs/DocsHost";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { translate } from "@/i18n";
 import { ChecksPanel } from "./ChecksPanel";
@@ -159,7 +159,7 @@ it("shell_renders_without_vault", async () => {
   expect(html).toContain(en("workspace.footer.running", { count: 0 }));
   // The main checkout has no changes list.
   expect(html).toContain(en("workspace.changes.primary"));
-  expect(view.of(DocsApp)).toHaveLength(0);
+  expect(view.of(DocsHost)).toHaveLength(0);
   expect(html).not.toContain("vault-dialog");
   expect(lastVault).not.toHaveBeenCalled();
   expect(setup).not.toHaveBeenCalled();
@@ -181,10 +181,10 @@ it("header has repo, branch, search, bell and settings", async () => {
   // The language lives in Settings and the setup wizard, not in the title bar.
   expect(inHeader.filter(n => n.type === LanguageSwitch)).toHaveLength(0);
   // The search opens the docs app, the only search there is for now.
-  expect(view.of(DocsApp)).toHaveLength(0);
+  expect(view.of(DocsHost)).toHaveLength(0);
   vi.useFakeTimers();
   inHeader.find(n => n.type === HeaderSearch)!.props.onOpen();
-  expect(view.of(DocsApp)).toHaveLength(1);
+  expect(view.of(DocsHost)).toHaveLength(1);
   vi.runAllTimers();
   vi.useRealTimers();
   expect(query).toHaveBeenCalledWith("docs-search");
@@ -238,42 +238,63 @@ it("adopting refreshes the list", async () => {
 
 it("opening a vault from the nav remounts docs", async () => {
   const view = await harness();
-  expect(view.of(VaultNav)).toHaveLength(0);
+  expect(view.of(DocsHost)).toHaveLength(0);
   view.nav(en("workspace.nav.docs")).props.onClick();
-  const [nav] = view.of(VaultNav);
-  expect(nav).toBeDefined();
-  const key = () => view.of(DocsApp)[0].key;
+  const nav = view.of(DocsHost)[0].props.vaultNav as ReactElement<Record<string, any>>;
+  expect(nav.type).toBe(VaultNav);
+  const key = () => view.of(DocsHost)[0].key;
   const before = key();
   nav.props.onOpened("/demo/xdev/docs");
-  expect(view.of(DocsApp)).toHaveLength(1);
+  expect(view.of(DocsHost)).toHaveLength(1);
   expect(key()).not.toBe(before);
-  // The vault list goes with the docs view.
-  view.nav(en("workspace.nav.workspace")).props.onClick();
-  expect(view.of(VaultNav)).toHaveLength(0);
 });
 
-it("docs nav mounts the docs app once and keeps the workspace mounted", async () => {
+it("blocks a folder switch while the doc is not saved", async () => {
+  const view = await harness();
+  view.nav(en("workspace.nav.docs")).props.onClick();
+  const host = () => view.of(DocsHost)[0];
+  const flush = vi.fn(async () => false);
+  (host() as any).props.ref.current = { flush };
+  const nav = host().props.vaultNav as ReactElement<Record<string, any>>;
+  expect(await nav.props.canOpen()).toBe(false);
+  expect(flush).toHaveBeenCalledTimes(1);
+  flush.mockResolvedValue(true);
+  expect(await nav.props.canOpen()).toBe(true);
+});
+
+it("the docs host draws into the slot of the sidebar", async () => {
+  const view = await harness();
+  const side = () => view.all().find(n => n.props.className === "ws-nav")!;
+  expect(typeof side().props.ref).toBe("function");
+  view.nav(en("workspace.nav.docs")).props.onClick();
+  expect(view.of(DocsHost)[0].props.navSlot).toBeNull();
+  const slot = {} as HTMLElement;
+  side().props.ref(slot);
+  expect(view.of(DocsHost)[0].props.navSlot).toBe(slot);
+});
+
+it("docs nav mounts the docs host once and keeps the workspace mounted", async () => {
   const view = await harness();
   const region = (cls: string) => view.all().find(n => n.props.className === cls)!;
   const crumbs = () => view.all().filter(n => String(n.props.className ?? "").includes("ws-crumb"));
   expect(crumbs().length).toBeGreaterThan(0);
   view.nav(en("workspace.nav.docs")).props.onClick();
-  // The docs app has its own folder bar, so the shell drops the repo and branch crumbs.
+  // Docs has its own folder source, so the shell drops the repo and branch crumbs.
   expect(crumbs()).toHaveLength(0);
-  expect(view.of(DocsApp)).toHaveLength(1);
+  expect(view.of(DocsHost)).toHaveLength(1);
   expect(region("ws-docs").props.hidden).toBe(false);
   expect(region("ws-stage").props.hidden).toBe(true);
   expect(view.of(WorktreeList)).toHaveLength(1);
   expect(view.nav(en("workspace.nav.docs")).props["aria-current"]).toBe("page");
 
   view.nav(en("workspace.nav.workspace")).props.onClick();
-  expect(view.of(DocsApp)).toHaveLength(1);
+  expect(view.of(DocsHost)).toHaveLength(1);
   expect(region("ws-docs").props.hidden).toBe(true);
   expect(region("ws-stage").props.hidden).toBe(false);
   expect(crumbs().length).toBeGreaterThan(0);
 
   view.nav(en("workspace.nav.docs")).props.onClick();
-  expect(view.of(DocsApp)).toHaveLength(1);
+  expect(view.of(DocsHost)).toHaveLength(1);
 });
 
 it("remembers the selected worktree and falls back to the first", async () => {
@@ -1463,7 +1484,7 @@ it("settings and search keys open their views", async () => {
   expect(view.of(SettingsView)[0].props.initial).toBe("keys");
   keymap.handlers["search.open"]();
   view.draw();
-  expect(view.of(DocsApp)).toHaveLength(1);
+  expect(view.of(DocsHost)).toHaveLength(1);
 });
 
 it("the narrow bottom bar reaches Tasks, Accounts, Settings and back to the sessions", async () => {

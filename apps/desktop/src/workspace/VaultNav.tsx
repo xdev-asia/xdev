@@ -8,7 +8,7 @@ export function VaultNav(props: {
   api: Api;
   onOpened(path: string): void;
   // False while the open doc has unsaved edits: its autosave would write into whichever vault is open by then.
-  canOpen?(): boolean;
+  canOpen?(): boolean | Promise<boolean>;
 }): JSX.Element | null {
   const { api } = props;
   const { t } = useI18n();
@@ -23,7 +23,7 @@ export function VaultNav(props: {
 
   async function open(vault: VaultView): Promise<void> {
     setError(undefined);
-    if (props.canOpen && !props.canOpen()) {
+    if (props.canOpen && !(await props.canOpen())) {
       setError("unsaved");
       return;
     }

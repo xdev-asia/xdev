@@ -5,7 +5,8 @@ import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, SSH_SHELL_PREFIX, profileName } from "@/agents/profileStore";
 import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MrSummary, type MenuAction, type SetupDecision, type BaseDrift, type Provider, type ProfilesView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
-import { DocsApp } from "@/DocsApp";
+import { DocsHost, type DocsHostStatus } from "@/docs/DocsHost";
+import type { DocsHandle } from "@/docs/types";
 import { PlaceStage } from "./PlaceStage";
 import { useI18n } from "@/i18n";
 import { onTryFeature } from "@/featureWall/featureWallStore";
@@ -213,7 +214,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [picked, setPicked] = useState<Selection>(clearPicked);
   const [selected, setSelected] = useState<string | null>(() => readSelected());
   const views = useShellViews();
-  const { view, show, mounted: placesMounted, tasksRequest, openDocsSection, docsKey, setDocsKey, settingsAt, setSettingsAt, openSettings, openUsage, openTask, openTaskBoard, openDecompose, openAccounts, openSearch } = views;
+  const { view, show, mounted: placesMounted, tasksRequest, docsRequest, openDocsSection, docsKey, setDocsKey, settingsAt, setSettingsAt, openSettings, openUsage, openTask, openTaskBoard, openDecompose, openAccounts, openSearch } = views;
   // Agent and shell names for the merge headings and the resource manager rows.
   const [nameView, setNameView] = useState<ProfilesView | null>(null);
   const dialogs = useShellDialogs(api);
@@ -225,6 +226,10 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [shownTab, setShownTab] = useState<Record<string, string | null>>({});
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [navOpen, setNavOpen] = useState(false);
+  // Docs draws its side list into this slot of the sidebar and tells the shell its status.
+  const [navSlot, setNavSlot] = useState<HTMLElement | null>(null);
+  const [, setDocsStatus] = useState<DocsHostStatus | null>(null);
+  const docsRef = useRef<DocsHandle | null>(null);
   // The right panel (Files / Changes / Checks); hidden, not unmounted, so its state stays.
   const [sessions, setSessions] = useState<Sessions | null>(null);
   // The agent session history, and which of the two sidebar views shows.
@@ -1010,7 +1015,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       sidebar={
         <ShellSidebar
           repo={repo} rm={rm} remoteActs={remoteActs} views={views} panels={panels} cr={cr} dialogs={dialogs}
-          api={api} t={t} sessions={sessions} history={history} repos={repos} all={all} current={current} items={items} prefs={prefs}
+          api={api} navRef={setNavSlot} t={t} sessions={sessions} history={history} repos={repos} all={all} current={current} items={items} prefs={prefs}
           picked={picked} setPicked={setPicked} selectable={selectable} setOrder={setOrder} sideView={sideView} setSideView={setSideView}
           sidebarOpen={sidebarOpen} sessionsAsk={sessionsAsk} activityAsk={activityAsk} feed={feed} stats={stats} dots={dots} activity={activity}
           profiles={profiles} unreadMap={unreadMap} asleepMap={asleepMap} sleepableMap={sleepableMap} prMap={prMap} nameView={nameView}
@@ -1058,7 +1063,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
 
         <div className="ws-docs" hidden={view !== "docs"}>
-          {placesMounted.has("docs") && <SurfaceBoundary id="page.docs" surface="Docs" resetKey={docsKey} titleKey="boundary.page.title"><DocsApp key={docsKey} appRequest={null} board={{ repos, defaultRepo: repoOf(repos, current), sessions, current: current ? { path: current.path, branch: current.branch } : null, onStart: startBoardAgent, onOpenTab: (l) => void jumpTo(l.tabId) }} kit={{ worktree: current?.path ?? null, open: null, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} /></SurfaceBoundary>}
+          {placesMounted.has("docs") && <SurfaceBoundary id="page.docs" surface="Docs" resetKey={docsKey} titleKey="boundary.page.title"><DocsHost
+            key={docsKey}
+            ref={docsRef}
+            api={api}
+            navSlot={navSlot}
+            request={docsRequest}
+            onStatus={setDocsStatus}
+            onOpenSection={openDocsSection}
+            vaultNav={<VaultNav api={api} canOpen={() => docsRef.current?.flush() ?? true} onOpened={() => setDocsKey((k) => k + 1)} />}
+          /></SurfaceBoundary>}
         </div>
         <PlaceStage
           api={api}

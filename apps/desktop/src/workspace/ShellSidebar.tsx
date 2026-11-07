@@ -9,7 +9,6 @@ import type { ActivityFeed } from "@/activity/feed";
 import { RemoteGroup } from "@/remote/RemoteGroup";
 import { remoteRows } from "@/remote/model";
 import { parentCandidates } from "./lineage";
-import { VaultNav } from "./VaultNav";
 import type { AgentSessionsStore } from "@/agentSessions/store";
 import { SessionsSidebar } from "@/agentSessions/SessionsSidebar";
 import type { Sessions } from "./sessions";
@@ -34,11 +33,6 @@ import type { TabStatus } from "./status";
 
 type T = ReturnType<typeof useI18n>["t"];
 
-// The docs app marks its status line while the open doc differs from disk; replaced by a handle in the docs host.
-function docsSaved(): boolean {
-  return typeof document === "undefined" || !document.querySelector(".ws-docs .doc-status[data-dirty]");
-}
-
 /** The left sidebar: the docs vault nav, and the worktrees, sessions and activity views. Holds no state: the shell's hooks own it. */
 export function ShellSidebar(p: {
   repo: ReturnType<typeof useShellRepoActions>;
@@ -49,6 +43,8 @@ export function ShellSidebar(p: {
   cr: ReturnType<typeof useShellCreate>;
   dialogs: ReturnType<typeof useShellDialogs>;
   api: Api;
+  /** Receives the element Docs draws its side list into. */
+  navRef: (el: HTMLElement | null) => void;
   t: T;
   sessions: Sessions | null;
   history: AgentSessionsStore | null;
@@ -90,25 +86,15 @@ export function ShellSidebar(p: {
   const { addFolder, addRepo, adopt, changePrefs, openFolder, pin, setDetails, setEditing, setForgetting, setGroupName, sidebarCall } = p.repo;
   const { archive, bulkEach, openBulk, setReview, startRemove } = p.rm;
   const { disconnectRemote, reconnectRemote, removeRemote } = p.remoteActs;
-  const { openSettings, setDocsKey, show, view } = p.views;
+  const { openSettings, show, view } = p.views;
   const { openPrTab } = p.panels;
   const { pending, startCreate } = p.cr;
   const { setBoardOpen, setCheckingOut, setComposerAsk, setMergeSources, setParentFor, setRenaming } = p.dialogs;
-  const { api, t, sessions, history, repos, all, current, items, prefs, picked, setPicked, selectable, setOrder, sideView, setSideView, sidebarOpen, sessionsAsk, activityAsk, feed, stats, dots, activity, profiles, unreadMap, asleepMap, sleepableMap, prMap, nameView, livePorts, stopPort, notice, openInApps, remote, jumpTo, select, copy, openIn, newTerminalIn } = p;
+  const { api, navRef, t, sessions, history, repos, all, current, items, prefs, picked, setPicked, selectable, setOrder, sideView, setSideView, sidebarOpen, sessionsAsk, activityAsk, feed, stats, dots, activity, profiles, unreadMap, asleepMap, sleepableMap, prMap, nameView, livePorts, stopPort, notice, openInApps, remote, jumpTo, select, copy, openIn, newTerminalIn } = p;
   return (
     <>
         <div id="ws-sidebar" className="ws-sidebar" hidden={!sidebarOpen}>
-          <div className="ws-nav" role="group" aria-label={t("workspace.nav.label")} hidden={view !== "docs"}>
-            {view === "docs" && (
-              <VaultNav
-                api={api}
-                canOpen={docsSaved}
-                onOpened={() => {
-                  setDocsKey((k) => k + 1);
-                }}
-              />
-            )}
-          </div>
+          <div className="ws-nav" ref={navRef} role="group" aria-label={t("workspace.nav.label")} hidden={view !== "docs"} />
           <div className="ws-side-tabs" role="group" aria-label={t("agentSessions.tabs.label")}>
             {(["worktrees", "sessions", "activity"] as const).map((v) => (
               <button key={v} type="button" className="ws-side-tab" aria-pressed={sideView === v} onClick={() => setSideView(v)}>
