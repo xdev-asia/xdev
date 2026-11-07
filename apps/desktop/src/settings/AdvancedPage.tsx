@@ -149,7 +149,7 @@ export function AdvancedPage(props: SettingsSectionProps): JSX.Element {
                 onChange={(e) => edit({ machineName: e.target.value })}
               />
             </SettingRow>
-            <Button type="button" data-act="save-advanced" disabled={busy || !changed || !!proxyIssue || !!mirrorIssue} onClick={() => void save()}>
+            <Button variant="primary" type="button" data-act="save-advanced" disabled={busy || !changed || !!proxyIssue || !!mirrorIssue} onClick={() => void save()}>
               {t("settings.advanced.save")}
             </Button>
           </>

@@ -197,7 +197,7 @@ export function ProfileEditor(props: {
         <button type="button" className="btn-secondary" disabled={props.busy} onClick={props.onCancel}>
           {t("settings.agents.cancel")}
         </button>
-        <Button type="button" disabled={props.busy} onClick={save}>
+        <Button variant="primary" type="button" disabled={props.busy} onClick={save}>
           {t("settings.agents.save")}
         </Button>
       </div>

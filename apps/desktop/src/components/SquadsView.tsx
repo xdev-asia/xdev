@@ -330,7 +330,7 @@ export function SquadsView({
           <input value={test} onChange={(e) => setTest(e.target.value)} spellCheck={false} />
         </label>
         <div className="task-row">
-          <Button type="submit" style={COMPACT} disabled={name.trim() === "" || repoValue.trim() === "" || seats.implement === ""}>
+          <Button variant="primary" type="submit" style={COMPACT} disabled={name.trim() === "" || repoValue.trim() === "" || seats.implement === ""}>
             {t("squads.create")}
           </Button>
           <button type="button" className="btn-secondary" onClick={() => setCreating(false)}>
@@ -420,7 +420,7 @@ export function SquadsView({
             {t("squads.steer")}
             <textarea value={steer} rows={3} placeholder={t("squads.steerHint")} onChange={(e) => setSteer(e.target.value)} />
           </label>
-          <Button type="submit" style={COMPACT} disabled={steer.trim() === "" || account === null || v.run === null}>
+          <Button variant="primary" type="submit" style={COMPACT} disabled={steer.trim() === "" || account === null || v.run === null}>
             {t("squads.send")}
           </Button>
         </form>

@@ -385,7 +385,7 @@ export function AccountsView({ api }: { api: Api }) {
       <div className="doc-actions">
         <button type="button" className="btn-secondary" disabled={busy} onClick={() => { setProblem(undefined); setRevision(n => n + 1); }}>{t("accounts.refresh")}</button>
         <button type="button" className="btn-secondary" disabled={busy} onClick={() => openForm(true)}>{t("accounts.import")}</button>
-        {accounts?.accounts.length !== 0 && <Button type="button" style={COMPACT} disabled={busy} onClick={() => openForm(false)}>{t("accounts.add")}</Button>}
+        {accounts?.accounts.length !== 0 && <Button variant={adding ? "secondary" : "primary"} type="button" style={COMPACT} disabled={busy} onClick={() => openForm(false)}>{t("accounts.add")}</Button>}
       </div>
     </div>
     {problem && <ProblemNote problem={problem} />}
@@ -410,7 +410,7 @@ export function AccountsView({ api }: { api: Api }) {
         })}
       </fieldset>
       {!isIsolated(provider) && <p className="account-add-hint" data-single-hint="true">{t("accounts.single.addHint", { provider: t(`accounts.provider.${provider}`) })}</p>}
-      <Button type="submit" style={COMPACT} disabled={busy}>{t(folder !== null ? "accounts.importSubmit" : isIsolated(provider) ? "accounts.addLogin" : "accounts.add")}</Button>
+      <Button variant="primary" type="submit" style={COMPACT} disabled={busy}>{t(folder !== null ? "accounts.importSubmit" : isIsolated(provider) ? "accounts.addLogin" : "accounts.add")}</Button>
       <Button type="button" style={COMPACT} disabled={busy} onClick={closeForm}>{t("accounts.cancel")}</Button>
     </form>}
     {signIn && <SignInPrompt
@@ -430,7 +430,7 @@ export function AccountsView({ api }: { api: Api }) {
       <Button type="button" style={COMPACT} onClick={async () => { try { await navigator.clipboard.writeText(command); setCopy("copied"); } catch { setCopy("copyFailed"); } }}>{t("connect.copy")}</Button>
       {copy && <span role="status">{t(`connect.${copy}`)}</span>}
     </div>}
-    {accounts === undefined ? !problem && <p className="placeholder">{t("accounts.loading")}</p> : accounts.accounts.length === 0 ? <div className="placeholder"><p>{t("accounts.empty")}</p><Button type="button" style={COMPACT} onClick={() => openForm(false)}>{t("accounts.add")}</Button></div> : <>{resets()}{toolbar()}{list()}</>}
+    {accounts === undefined ? !problem && <p className="placeholder">{t("accounts.loading")}</p> : accounts.accounts.length === 0 ? <div className="placeholder"><p>{t("accounts.empty")}</p><Button variant="primary" type="button" style={COMPACT} onClick={() => openForm(false)}>{t("accounts.add")}</Button></div> : <>{resets()}{toolbar()}{list()}</>}
     <RoutingRules api={api} />
   </div>;
 }

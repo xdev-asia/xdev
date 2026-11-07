@@ -228,7 +228,7 @@ export function OpenInPage(props: SettingsSectionProps): JSX.Element {
             <button type="button" className="btn-secondary" onClick={() => setDraft(null)}>
               {t("openIn.cancel")}
             </button>
-            <Button type="submit">{t("openIn.save")}</Button>
+            <Button variant="primary" type="submit">{t("openIn.save")}</Button>
           </div>
         </form>
       )}

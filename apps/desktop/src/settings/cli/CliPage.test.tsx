@@ -66,7 +66,7 @@ it("a stale link offers Repair as the primary action", async () => {
   const { api, m } = await open({ installed: false, stale: true });
   const all = nodesOf(m);
   const repair = act(all, "repair")!;
-  expect(repair.props.variant).toBeUndefined();
+  expect(repair.props.variant).toBe("primary");
   expect(all.some((n) => n.props["data-cli"] === "hint" && textOf(n).includes("gone or old"))).toBe(true);
   repair.props.onClick();
   await tick();

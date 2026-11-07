@@ -41,7 +41,7 @@ export function VaultEmpty(props: { failure?: VaultFailure; busy: boolean; onCre
         <div className="vault-empty-card">
           <Icon name="plus" className="vault-empty-icon" />
           <p className="vault-empty-card-body">{t("vault.empty.createBody")}</p>
-          <Button type="button" disabled={props.busy} onClick={props.onCreate}>
+          <Button variant="primary" type="button" disabled={props.busy} onClick={props.onCreate}>
             {t("vault.create")}
           </Button>
         </div>

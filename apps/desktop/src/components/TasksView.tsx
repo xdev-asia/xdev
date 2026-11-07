@@ -197,7 +197,7 @@ export function TasksView({ api, initial, defaultRepo }: { api: Api; initial?: s
           </span>
         </label>
         <div className="task-row">
-          <Button type="submit" style={COMPACT} disabled={goal.trim() === "" || repoValue.trim() === ""}>
+          <Button variant="primary" type="submit" style={COMPACT} disabled={goal.trim() === "" || repoValue.trim() === ""}>
             {t("tasks.create")}
           </Button>
           <button type="button" className="btn-secondary" onClick={() => setCreating(false)}>

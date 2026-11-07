@@ -32,7 +32,7 @@ it("previews the entry and writes nothing until it is confirmed", async () => {
   expect(await exists(api, repo.path)).toBe(false);
   // One primary: the confirm; the others are secondary.
   const confirm = act(all, "mcp-write")!;
-  expect(confirm.props.variant).toBeUndefined();
+  expect(confirm.props.variant).toBe("primary");
   expect(act(all, "mcp-cancel")!.props.variant).toBe("secondary");
   confirm.props.onClick();
   await tick();

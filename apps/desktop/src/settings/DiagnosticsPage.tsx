@@ -66,7 +66,7 @@ export function DiagnosticsPage(props: SettingsSectionProps): JSX.Element {
             <strong>{t("diagnostics.export.title")}</strong>
             <span>{t("diagnostics.export.body")}</span>
           </div>
-          <Button type="button" disabled={busy} onClick={() => void run()}>
+          <Button variant="primary" type="button" disabled={busy} onClick={() => void run()}>
             {t("diagnostics.export.button")}
           </Button>
         </div>

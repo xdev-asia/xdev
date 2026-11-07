@@ -102,7 +102,7 @@ export function AccountPage(props: SettingsSectionProps): JSX.Element {
                 <span>{t("account.about")}</span>
               </div>
               <div className="settings-actions">
-                <Button type="button" onClick={() => run(() => api.xdevIdSignIn())}>
+                <Button variant="primary" type="button" onClick={() => run(() => api.xdevIdSignIn())}>
                   {t("account.signIn")}
                 </Button>
               </div>

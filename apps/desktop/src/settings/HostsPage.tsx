@@ -66,7 +66,7 @@ export function HostsPanel(props: HostsPanelProps): JSX.Element {
           title={t("settings.hosts.empty")}
           hint={t("settings.hosts.emptyHint")}
           actions={
-            <Button type="button" onClick={props.onOpenSsh}>
+            <Button variant="primary" type="button" onClick={props.onOpenSsh}>
               {t("settings.hosts.addHost")}
             </Button>
           }
@@ -245,7 +245,7 @@ export function HostsPanel(props: HostsPanelProps): JSX.Element {
           </SettingGroup>
           {error && error.field === null && <p className="error-text" role="alert">{text(error.code)}</p>}
           <div className="host-actions">
-            <Button type="submit" disabled={!dirty || props.busy || envBad.length > 0 || daysBad}>
+            <Button variant="primary" type="submit" disabled={!dirty || props.busy || envBad.length > 0 || daysBad}>
               {t("settings.hosts.save")}
             </Button>
           </div>

@@ -118,7 +118,7 @@ export function ImportConfigDialog(props: {
           {t("settings.terminal.import.cancel")}
         </Button>
         {preview && !nothing && (
-          <Button type="button" data-action="apply" disabled={busy || checked.size === 0} onClick={props.onApply}>
+          <Button variant="primary" type="button" data-action="apply" disabled={busy || checked.size === 0} onClick={props.onApply}>
             {t("settings.terminal.importConfig.apply")}
           </Button>
         )}
