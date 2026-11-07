@@ -286,7 +286,7 @@ export function IssueDetailView(props: {
                 <Textarea label={t("issues.edit.body")} value={draft} rows={8} onChange={(e) => setDraft(e.target.value)} />
               )}
               <div className="ws-checks-actions">
-                <Button disabled={busy || (editing === "title" && draft.trim() === "")} onClick={() => void saveEditing()}>
+                <Button variant="primary" disabled={busy || (editing === "title" && draft.trim() === "")} onClick={() => void saveEditing()}>
                   {t("issues.edit.save")}
                 </Button>
                 <Button variant="secondary" onClick={() => setEditing(null)}>

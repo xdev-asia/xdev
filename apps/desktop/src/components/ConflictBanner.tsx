@@ -16,7 +16,7 @@ export function ConflictBanner(props: { onReload(): void; onKeep(): void }): JSX
         <button type="button" className="btn-secondary" onClick={props.onReload}>
           {t("conflict.reload")}
         </button>
-        <Button type="button" onClick={props.onKeep}>
+        <Button variant="primary" type="button" onClick={props.onKeep}>
           {t("conflict.keep")}
         </Button>
       </div>

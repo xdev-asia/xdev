@@ -77,7 +77,7 @@ export function CrashDialog(props: {
         <Button variant="secondary" type="button" onClick={props.onClose}>
           {t("crash.close")}
         </Button>
-        <Button type="button" onClick={() => void copy()}>
+        <Button variant="primary" type="button" onClick={() => void copy()}>
           {t("crash.copy")}
         </Button>
       </div>

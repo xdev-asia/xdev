@@ -101,7 +101,7 @@ export function UsagePopoverView(props: UsagePopoverViewProps): JSX.Element {
           <EmptyState
             title={t("usage.popover.empty")}
             hint={t("usage.popover.emptyHint")}
-            actions={<Button type="button" data-action="usage-connect" onClick={props.onManageAccounts}>{t("usage.popover.connect")}</Button>}
+            actions={<Button variant="primary" type="button" data-action="usage-connect" onClick={props.onManageAccounts}>{t("usage.popover.connect")}</Button>}
           />
         ) : (
           <div className="ws-usage-list">

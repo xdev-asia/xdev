@@ -79,7 +79,7 @@ export function TerminalView({ api }: { api: Api }): JSX.Element {
             {t("terminal.stop")}
           </button>
         ) : (
-          <Button
+          <Button variant="primary"
             style={COMPACT}
             disabled={!cwd}
             onClick={() => cwd && start({ id: nextId(), cwd, profile, approved: false })}

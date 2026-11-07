@@ -765,7 +765,7 @@ export function WorktreeChanges(props: {
         {t("ship.amend.toggle")}
       </label>
       <div className="ws-commit-actions">
-        <Button type="button" disabled={blocked} onClick={() => void commit()}>
+        <Button variant="primary" type="button" disabled={blocked} onClick={() => void commit()}>
           {amend ? t("ship.amend.button") : t("workspace.changes.commit", { count: checked.length })}
         </Button>
         {git.sourceControlAi && (

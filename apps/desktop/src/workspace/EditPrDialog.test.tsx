@@ -75,7 +75,7 @@ it("opens on the current title and body with one primary button, Save", () => {
   expect(area(view).props.value).toBe("Old **body**");
   expect(view.html()).toContain(en("prPanel.edit.title", { number: 7 }));
   const buttons = view.all().filter((n) => n.type === Button);
-  expect(buttons.filter((b) => b.props.variant === undefined).map((b) => b.props.children)).toEqual([en("prPanel.edit.save")]);
+  expect(buttons.filter((b) => b.props.variant === "primary").map((b) => b.props.children)).toEqual([en("prPanel.edit.save")]);
   expect(buttons.every((b) => b.props.type === "submit" || b.props.type === "button")).toBe(true);
 });
 

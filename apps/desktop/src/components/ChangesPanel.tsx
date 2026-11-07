@@ -121,7 +121,7 @@ export function ChangesPanel(props: {
       {status === "no_repo" && (
         <div className="pane-empty pane-note">
           <p>{t("changes.noRepo")}</p>
-          <Button type="button" style={COMPACT} disabled={busy} onClick={() => void props.review.init()}>
+          <Button variant="primary" type="button" style={COMPACT} disabled={busy} onClick={() => void props.review.init()}>
             {busy ? t("changes.starting") : t("changes.start")}
           </Button>
         </div>
@@ -137,7 +137,7 @@ export function ChangesPanel(props: {
               aria-label={t("changes.message")}
               onChange={(e) => props.onMessage(e.target.value)}
             />
-            <Button
+            <Button variant="primary"
               type="button"
               className="changes-approve-all"
               style={COMPACT}
@@ -250,7 +250,7 @@ export function ChangeView(props: {
             <Icon d={ICON.close} />
             {t("changes.reject")}
           </button>
-          <Button type="button" className="changes-approve-all" style={COMPACT} disabled={props.busy} onClick={props.onApprove}>
+          <Button variant="primary" type="button" className="changes-approve-all" style={COMPACT} disabled={props.busy} onClick={props.onApprove}>
             <Icon d={ICON.check} />
             {t("changes.approve")}
           </Button>

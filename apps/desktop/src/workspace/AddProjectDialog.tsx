@@ -279,7 +279,7 @@ export function AddProjectDialog(props: {
             <button type="button" className="btn-secondary" data-act="back" disabled={busy} onClick={back}>
               {t("dialog.cancel")}
             </button>
-            <Button type="submit" disabled={!createReady}>
+            <Button variant="primary" type="submit" disabled={!createReady}>
               {t("addProject.create.submit")}
             </Button>
           </div>
@@ -329,7 +329,7 @@ export function AddProjectDialog(props: {
             <button type="button" className="btn-secondary" data-act="cancel" onClick={cancel}>
               {t("dialog.cancel")}
             </button>
-            <Button type="submit" disabled={!ready}>
+            <Button variant="primary" type="submit" disabled={!ready}>
               {t("addProject.clone")}
             </Button>
           </div>

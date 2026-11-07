@@ -98,7 +98,7 @@ export function QuestionCard(props: QuestionCardProps): JSX.Element {
               <span>{t("conversation.question.sends")}</span> {keysPreview(choice.keys, t)}
             </p>
             <div className="cv-ask-actions">
-              <Button type="button" autoFocus disabled={sending} onClick={() => void send()} data-testid="question-confirm">
+              <Button variant="primary" type="button" autoFocus disabled={sending} onClick={() => void send()} data-testid="question-confirm">
                 {t("conversation.question.confirm.send")}
               </Button>
               <Button
@@ -140,7 +140,7 @@ export function QuestionCard(props: QuestionCardProps): JSX.Element {
               </p>
             )}
             <div className="cv-ask-actions">
-              <Button type="button" autoFocus={back} disabled={!choice} onClick={() => setConfirming(true)} data-testid="question-send">
+              <Button variant="primary" type="button" autoFocus={back} disabled={!choice} onClick={() => setConfirming(true)} data-testid="question-send">
                 {t("conversation.question.send")}
               </Button>
               <Button type="button" variant="secondary" onClick={props.onOpenTerminal}>
@@ -153,7 +153,7 @@ export function QuestionCard(props: QuestionCardProps): JSX.Element {
         <>
           <p className="cv-ask-note">{t("conversation.question.fallback")}</p>
           <div className="cv-ask-actions">
-            <Button type="button" onClick={props.onOpenTerminal} data-testid="question-terminal">
+            <Button variant="primary" type="button" onClick={props.onOpenTerminal} data-testid="question-terminal">
               {t("conversation.question.openTerminal")}
             </Button>
           </div>

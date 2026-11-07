@@ -81,7 +81,7 @@ export function ScheduleForm(props: {
         <Button type="button" variant="secondary" onClick={props.onCancel}>
           {t("dialog.cancel")}
         </Button>
-        <Button type="submit" icon="clock" disabled={!input || !textOk || !!props.disabled}>
+        <Button variant="primary" type="submit" icon="clock" disabled={!input || !textOk || !!props.disabled}>
           {props.confirmLabel}
         </Button>
       </div>

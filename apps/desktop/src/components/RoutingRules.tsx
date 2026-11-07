@@ -245,7 +245,7 @@ export function RoutingRules({ api }: { api: Api }) {
       </div>
       {tableSection()}
       <div className="routing-footer">
-        <Button type="button" style={COMPACT} disabled={busy} onClick={save}>{t("routing.save")}</Button>
+        <Button variant="primary" type="button" style={COMPACT} disabled={busy} onClick={save}>{t("routing.save")}</Button>
         {saved && <span role="status" className="routing-saved">{t("routing.saved")}</span>}
       </div>
     </>}

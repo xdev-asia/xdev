@@ -86,7 +86,7 @@ export function FreshnessBanner(props: {
         )}
       </div>
       <div className="banner-actions">
-        <Button
+        <Button variant="primary"
           type="button"
           className="freshness-verify"
           style={COMPACT}

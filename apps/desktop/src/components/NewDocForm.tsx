@@ -42,7 +42,7 @@ export function NewDocForm(props: {
         <button type="button" className="btn-secondary" disabled={props.busy} onClick={props.onCancel}>
           {t("newDoc.cancel")}
         </button>
-        <Button type="submit" style={COMPACT} disabled={empty || props.busy}>
+        <Button variant="primary" type="submit" style={COMPACT} disabled={empty || props.busy}>
           {t("newDoc.create")}
         </Button>
       </div>

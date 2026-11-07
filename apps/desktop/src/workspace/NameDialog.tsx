@@ -47,7 +47,7 @@ export function NameDialog(props: { heading: string; label: string; initial: str
           <button type="button" className="btn-secondary" onClick={props.onCancel}>
             {t("dialog.cancel")}
           </button>
-          <Button type="submit" disabled={!name}>
+          <Button variant="primary" type="submit" disabled={!name}>
             {t("dialog.save")}
           </Button>
         </div>

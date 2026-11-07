@@ -121,7 +121,7 @@ export function HistoryPanel(props: {
           <>
             <div className="history-head">
               <span className="history-message">{selected.message}</span>
-              <Button
+              <Button variant="primary"
                 type="button"
                 className="changes-approve-all"
                 style={COMPACT}

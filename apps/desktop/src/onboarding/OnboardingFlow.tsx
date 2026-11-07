@@ -60,11 +60,11 @@ export function FlowView(props: { flow: FlowState; busy: boolean; failed: boolea
             {t("onboarding.back")}
           </Button>
           {isLastStep(flow) ? (
-            <Button type="button" disabled={props.busy} onClick={props.onFinish}>
+            <Button variant="primary" type="button" disabled={props.busy} onClick={props.onFinish}>
               {t("onboarding.finish")}
             </Button>
           ) : (
-            <Button type="button" disabled={props.busy} onClick={props.onNext}>
+            <Button variant="primary" type="button" disabled={props.busy} onClick={props.onNext}>
               {t("onboarding.next")}
             </Button>
           )}

@@ -71,7 +71,7 @@ export function AddRemoteFolder(props: {
           title={t("remote.add.noHosts")}
           hint={t("remote.add.noHosts.hint")}
           actions={
-            <Button type="button" onClick={props.onOpenSettings}>
+            <Button variant="primary" type="button" onClick={props.onOpenSettings}>
               {t("remote.add.openSettings")}
             </Button>
           }
@@ -114,7 +114,7 @@ export function AddRemoteFolder(props: {
         <button type="button" className="btn-secondary" data-act="back" disabled={busy} onClick={props.onBack}>
           {t("dialog.cancel")}
         </button>
-        <Button type="submit" disabled={busy || !host || !path}>
+        <Button variant="primary" type="submit" disabled={busy || !host || !path}>
           {t("remote.add.submit")}
         </Button>
       </div>

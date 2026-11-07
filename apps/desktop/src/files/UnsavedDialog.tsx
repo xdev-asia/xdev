@@ -36,7 +36,7 @@ export function UnsavedDialog(props: { name: string; onSave(): void; onDiscard()
         <button type="button" className="ws-danger" onClick={props.onDiscard}>
           {t("files.dontSave")}
         </button>
-        <Button type="button" onClick={props.onSave}>
+        <Button variant="primary" type="button" onClick={props.onSave}>
           {t("files.save")}
         </Button>
       </div>

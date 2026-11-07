@@ -55,7 +55,7 @@ export function StartAgent(props: {
         onChange={(e) => setProfile(e.target.value)}
       />
       <Textarea label={t("peers.agent.prompt")} rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-      <Button
+      <Button variant="primary"
         type="button"
         disabled={props.busy || !chosenProject || !chosenProfile}
         onClick={() => props.onStart(chosenProject, chosenProfile, prompt.trim() === "" ? null : prompt.trim())}

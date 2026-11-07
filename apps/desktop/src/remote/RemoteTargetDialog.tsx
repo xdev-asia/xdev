@@ -103,7 +103,7 @@ export function RemoteTargetDialog(props: {
               {t("remote.target.clear")}
             </button>
           )}
-          <Button type="submit" disabled={busy || !host || !path}>
+          <Button variant="primary" type="submit" disabled={busy || !host || !path}>
             {t("remote.target.save")}
           </Button>
         </div>

@@ -72,7 +72,7 @@ export function CreateVaultDialog(props: {
           <button type="button" className="btn-secondary" disabled={props.busy} onClick={props.onCancel}>
             {t("vault.create.later")}
           </button>
-          <Button type="submit" disabled={empty || props.busy}>
+          <Button variant="primary" type="submit" disabled={empty || props.busy}>
             {props.busy ? t("vault.create.busy") : t("vault.create.confirm")}
           </Button>
         </div>

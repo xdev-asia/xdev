@@ -157,7 +157,7 @@ export function DetailsDialog(props: {
           <button type="button" className="btn-secondary" disabled={props.busy} onClick={props.onCancel}>
             {t("dialog.cancel")}
           </button>
-          <Button type="submit" disabled={props.busy || badItem}>
+          <Button variant="primary" type="submit" disabled={props.busy || badItem}>
             {t("dialog.save")}
           </Button>
         </div>

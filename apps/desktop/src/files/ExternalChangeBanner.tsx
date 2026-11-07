@@ -27,7 +27,7 @@ export function ExternalChangeBanner(props: { io: FileIo; entry: FileEntry; onCo
       <button type="button" className="btn-secondary" title={t("files.external.keepHint")} onClick={() => void keepMineFile(io, worktree, rel)}>
         {t("files.external.keep")}
       </button>
-      {isDirty(entry) && <Button type="button" onClick={() => void overwriteFile(io, worktree, rel)}>{t("files.conflict.overwrite")}</Button>}
+      {isDirty(entry) && <Button variant="primary" type="button" onClick={() => void overwriteFile(io, worktree, rel)}>{t("files.conflict.overwrite")}</Button>}
     </div>
   );
 }

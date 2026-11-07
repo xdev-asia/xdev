@@ -110,10 +110,10 @@ const Bare = forwardRef<DocsHandle, DocsViewProps>(function Bare(props, ref) {
             <h2 className="docsview-empty-title">{t("docsview.empty.title")}</h2>
             <p className="docsview-empty-hint">{t("docsview.empty.hint")}</p>
             <div className="docsview-empty-actions">
-              <Button type="button" onClick={props.onCreateDocs}>
+              <Button variant="primary" type="button" onClick={props.onCreateDocs}>
                 {t("docsview.empty.create")}
               </Button>
-              <Button type="button" style={SECONDARY} onClick={props.onAddShared}>
+              <Button variant="primary" type="button" style={SECONDARY} onClick={props.onAddShared}>
                 {t("docsview.empty.add")}
               </Button>
             </div>

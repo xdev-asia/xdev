@@ -66,7 +66,7 @@ export function TemplatesManager(props: { api: Api; templates: PromptTemplate[];
           <Button type="button" variant="secondary" onClick={() => setEditing(null)}>
             {t("dialog.cancel")}
           </Button>
-          <Button type="submit" disabled={busy || editing.name.trim() === ""}>
+          <Button variant="primary" type="submit" disabled={busy || editing.name.trim() === ""}>
             {t("composer.templates.save")}
           </Button>
         </div>

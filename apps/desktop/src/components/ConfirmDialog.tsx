@@ -51,7 +51,7 @@ export function ConfirmDialog(props: {
         <button type="button" className="btn-secondary" autoFocus onClick={props.onCancel}>
           {t("dialog.cancel")}
         </button>
-        <Button type="button" onClick={props.onConfirm}>
+        <Button variant="primary" type="button" onClick={props.onConfirm}>
           {props.confirmLabel}
         </Button>
       </div>

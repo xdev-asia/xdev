@@ -81,7 +81,7 @@ export function NestedRepoChecklist(props: { api: ScanApi; root: string; onAdd(p
           {state.phase === "scanning" ? t("nested.cancel") : t("nested.back")}
         </Button>
         {state.phase === "done" && (
-          <Button disabled={checked.length === 0} onClick={() => props.onAdd(checked)}>
+          <Button variant="primary" disabled={checked.length === 0} onClick={() => props.onAdd(checked)}>
             {t("nested.addSelected", { count: checked.length })}
           </Button>
         )}
