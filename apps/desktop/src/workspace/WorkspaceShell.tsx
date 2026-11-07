@@ -136,7 +136,9 @@ import { useShellAccountSwitch } from "@/shell/useShellAccountSwitch";
 import { useShellCardPorts } from "@/shell/useShellCardPorts";
 import { useShellLayoutRestore } from "@/shell/useShellLayoutRestore";
 import { useShellNotifications } from "@/shell/useShellNotifications";
+import { useShellAgentFix } from "@/shell/useShellAgentFix";
 import { useShellCreate } from "@/shell/useShellCreate";
+import { useShellRemoteActions } from "@/shell/useShellRemoteActions";
 import { useShellRemove } from "@/shell/useShellRemove";
 import { useShellSetup } from "@/shell/useShellSetup";
 import { useShellServices } from "@/shell/useShellServices";
@@ -230,7 +232,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [checkingOut, setCheckingOut] = useState<WorktreeView | null>(null);
   const [parentFor, setParentFor] = useState<{ worktree: WorktreeView; candidates: WorktreeView[] } | null>(null);
   const [notice, setNotice] = useState<ApiError["code"]>();
-  const [fixNote, setFixNote] = useState(false);
   // A request to bring a tab to the front of its worktree; a new `seq` is a new request.
   const [front, setFront] = useState<{ worktree: string; id: string; seq: number } | null>(null);
   // Worktrees shown so far; their tabs stay mounted, hidden, so a switch never stops a pty.
@@ -967,31 +968,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     runHelpPick(pick, { openSettings: (page) => openSettings(page), openUpdates, openAbout, toast: (key) => pushToast({ text: t(key) }), api });
   }
 
-  // The first remote project whose host is not connected: what the palette's Reconnect acts on.
-  const pendingReconnect = reconnectCandidate(remote.projects);
-  function remoteProject(id: string) {
-    return remote.projects.find((p) => p.id === id);
-  }
-  async function reconnectRemote(id: string): Promise<void> {
-    const p = remoteProject(id);
-    if (!p) return;
-    try {
-      await api.remoteConnect(p.hostId);
-    } catch (e) {
-      pushToast({ text: remoteError(t, toApiError(e).code, p.hostAlias) });
-    }
-  }
-  async function disconnectRemote(id: string): Promise<void> {
-    const p = remoteProject(id);
-    if (p) await api.remoteDisconnect(p.hostId).catch(() => undefined);
-  }
-  async function removeRemote(id: string): Promise<void> {
-    const p = remoteProject(id);
-    if (!p) return;
-    await api.remoteProjectRemove(id).catch((e: unknown) => pushToast({ text: t(`error.${toApiError(e).code}`) }));
-    await remote.reload();
-    void sessions?.closeWorktree(p.worktree);
-  }
+  const { pendingReconnect, reconnectRemote, disconnectRemote, removeRemote } = useShellRemoteActions({ api, t, sessions, remote });
 
   // "Try it" on the feature wall opens the page or panel.
   const tryFeatureRef = useRef<(target: { kind: string; section?: string }) => void>(() => {});
@@ -1001,58 +978,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   };
   useEffect(() => onTryFeature((target) => tryFeatureRef.current(target)), []);
 
-  // Types into the tab in front when it is a live agent tab. No Enter is sent, so the person reads it first.
-  async function sendToAgent(text: string): Promise<boolean> {
-    const tab = target(current?.path);
-    if (!tab) return false;
-    await tab.client.input(text);
-    return true;
-  }
-
-  // Gives a failed commit hook's output to an agent of the worktree, as its recipe says, and brings its tab to the front.
-  async function fixWithAgent(id: "fixCommitFailure" | "fixPushFailure", output: string, branch = current?.branch ?? ""): Promise<void> {
-    if (!sessions || !current) return;
-    const path = current.path;
-    const tab = await sendFix(api, sessions, path, shownTab[path] ?? null, id, { branch, output });
-    setFixNote(!tab);
-    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
-  }
-
-  // Gives the conflicts of the operation in progress to an agent of the worktree, as its recipe says.
-  async function resolveConflicts(vars: Record<string, string>): Promise<void> {
-    if (!sessions || !current) return;
-    const path = current.path;
-    const tab = await sendFix(api, sessions, path, shownTab[path] ?? null, "resolveConflicts", vars);
-    setFixNote(!tab);
-    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
-  }
-
-  // Gives every failing check, each with its log when there is one, to one agent prompt.
-  async function fixChecks(checks: Check[]): Promise<void> {
-    if (!sessions || !current) return;
-    const path = current.path;
-    const tab = await sendChecksFix(api, sessions, path, shownTab[path] ?? null, current.branch ?? "", checks);
-    setFixNote(!tab);
-    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
-  }
-
-  // Gives a failed check, with its log when there is one, to an agent of the worktree.
-  async function fixCheck(check: Check): Promise<void> {
-    if (!sessions || !current) return;
-    const path = current.path;
-    const tab = await sendCheckFix(api, sessions, path, shownTab[path] ?? null, current.branch ?? "", check);
-    setFixNote(!tab);
-    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
-  }
-
-  // Gives the queued PR comments to the chosen agent tab; with `ack` on, resolves and replies after.
-  async function sendComments(pr: { number: number; title: string; url: string }, groups: CommentGroup[], choice: SendChoice, ack: boolean): Promise<SendOutcome> {
-    if (!sessions || !current) return { ok: false, summary: null };
-    const path = current.path;
-    const { tab, summary } = await sendCommentsFix(api, sessions, prComments, { ...pr, worktree: path, branch: current.branch ?? "" }, groups, choice, ack);
-    if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
-    return { ok: tab !== null, summary };
-  }
+  const { fixNote, setFixNote, sendToAgent, fixWithAgent, resolveConflicts, fixChecks, fixCheck, sendComments } = useShellAgentFix({ api, sessions, current, shownTab, prComments, target, setFront });
 
   const removingRepo = removing ? repos?.find((r) => r.worktrees.some((w) => w.path === removing.worktree.path)) : undefined;
 
