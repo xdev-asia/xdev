@@ -46,6 +46,7 @@ import { ShellOverlays } from "./ShellOverlays";
 import { ShellSidebar } from "./ShellSidebar";
 import { WorkspaceStage } from "./WorkspaceStage";
 import { ShellFrame } from "@/shell/ShellFrame";
+import { BellMenu } from "./BellMenu";
 import { NarrowNav } from "@/shell/NarrowNav";
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
@@ -819,6 +820,7 @@ const cleanups: (() => void)[] = [];
 const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
 const inboxes = (view: Awaited<ReturnType<typeof harness>>) => nodes(view.all().find(n => n.type === ShellFrame)!.props.actions).filter(n => n.type === AttentionInbox);
 const inbox = (view: Awaited<ReturnType<typeof harness>>) => inboxes(view)[0]!;
+const bell = (view: Awaited<ReturnType<typeof harness>>) => nodes(view.all().find(n => n.type === ShellFrame)!.props.actions).find(n => n.type === "button" && n.props["aria-haspopup"] === "menu")!;
 // The right panel's tab row: the design system tabs, read as one entry per tab.
 const panelTabs = (view: Awaited<ReturnType<typeof harness>>) => {
   const bar = view.all().find(n => n.type === Tabs && n.props.className === "ws-panel-tabs")!;
@@ -840,6 +842,7 @@ it("hidden worktree asking a question raises everything", async () => {
   const { tab } = attend(view);
   expect(inbox(view).props.items).toEqual([]);
   expect(inbox(view).props.labels.button(0)).toBe(en("needsYou.button", { count: 0 }));
+  expect(bell(view).props["aria-label"]).toBe(en("workspace.header.notifications"));
 
   api.__hook(tab.id, "needs-input");
   await settle();
@@ -849,6 +852,9 @@ it("hidden worktree asking a question raises everything", async () => {
   // The inbox lists it; the footer says one waits.
   expect(inbox(view).props.items).toMatchObject([{ id: tab.id, agent: "claude", worktree: "oak" }]);
   expect(view.of(LiveWorkspaceFooter)[0].props.waiting).toBe(1);
+  // The bell counts it too.
+  expect(bell(view).props["aria-label"]).toBe(en("status.bell.label", { count: 1 }));
+  expect(nodes(bell(view).props.children).find(n => n.props.className === "ws-bell-count")!.props.children).toBe("1");
   // The OS hears the worktree and the tab, and the sound goes with it.
   expect(notify).toHaveBeenCalledWith("oak · Claude Code · Needs you", "Waiting for you.", tab.id);
   expect(sound.play).toHaveBeenCalledTimes(1);
@@ -860,6 +866,48 @@ it("hidden worktree asking a question raises everything", async () => {
   expect(view.list().props.selected).toBe(OAK);
   expect(view.of(WorktreeTabs).find(n => n.props.worktree === OAK)!.props.front).toMatchObject({ id: tab.id });
   expect(inbox(view).props.open).toBe(false);
+});
+
+it("the bell lists the unread tab, newest first, and its row goes there", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const { tab } = attend(view);
+  api.__hook(tab.id, "needs-input");
+  await settle();
+  expect(view.of(BellMenu)).toHaveLength(0);
+  bell(view).props.onClick();
+  const menu = view.of(BellMenu)[0];
+  expect(menu.props.rows.map((r: { tab: { id: string }; worktree: string }) => [r.tab.id, r.worktree])).toEqual([[tab.id, "oak"]]);
+  menu.props.onJump(tab);
+  expect(view.list().props.selected).toBe(OAK);
+  expect(view.of(WorktreeTabs).find(n => n.props.worktree === OAK)!.props.front).toMatchObject({ id: tab.id });
+});
+
+it("a bell row toggles between read and unread", async () => {
+  const api = createMockApi({});
+  const view = await harness(api);
+  const { sessions, tab } = attend(view);
+  api.__hook(tab.id, "needs-input");
+  await settle();
+  bell(view).props.onClick();
+  // The row hands over the tab as it is now: unread, so the toggle reads it.
+  view.of(BellMenu)[0].props.onToggleRead(sessions.unreadTabs()[0]);
+  expect(sessions.unreadTabs()).toEqual([]);
+  view.of(BellMenu)[0].props.onToggleRead({ ...tab, unread: false });
+  expect(sessions.unreadTabs().map(t => t.id)).toEqual([tab.id]);
+});
+
+it("the bell's View activity opens the Activity side tab on the feed", async () => {
+  const view = await harness(createMockApi({}));
+  attend(view);
+  const side = () => view.all().filter(n => n.props.className === "ws-side-tab");
+  expect(side().map(n => n.props.children)).toEqual([en("agentSessions.tab.worktrees"), en("agentSessions.tab.sessions"), en("agentSessions.tab.activity")]);
+  expect(view.of(ActivityPanel)[0].props.ask.tab).toBe("threads");
+  bell(view).props.onClick();
+  view.of(BellMenu)[0].props.onViewActivity();
+  expect(view.of(BellMenu)).toHaveLength(0);
+  expect(side()[2].props["aria-pressed"]).toBe(true);
+  expect(view.of(ActivityPanel)[0].props.ask.tab).toBe("feed");
 });
 
 it("a failed agent run waits in the inbox and the footer too", async () => {
@@ -929,7 +977,7 @@ async function rerun(view: Awaited<ReturnType<typeof harness>>) {
   await new Promise((r) => setTimeout(r, BADGE_DEBOUNCE_MS + 50));
 }
 
-it("the badge counts worktrees where something waits, not tabs", async () => {
+it("the badge counts worktrees with something unread, not tabs", async () => {
   const api = createMockApi({});
   const view = await harness(api);
   const { sessions, tab } = attend(view);
@@ -940,13 +988,8 @@ it("the badge counts worktrees where something waits, not tabs", async () => {
   await settle();
   await rerun(view);
   expect(api.__badge()).toBe(1);
-  // Reading the worktree leaves the badge: the agents still wait. Answering them clears it.
+  // Marking the worktree read clears it.
   sessions.markRead(OAK);
-  await rerun(view);
-  expect(api.__badge()).toBe(1);
-  api.__hook(tab.id, "resume");
-  api.__hook(second.id, "resume");
-  await settle();
   await rerun(view);
   expect(api.__badge()).toBe(0);
 });

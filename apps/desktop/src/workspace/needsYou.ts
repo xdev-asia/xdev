@@ -62,11 +62,6 @@ export function needsDot(needs: NeedsYou, worktree: string): "needs-you" | "fail
   return needs.entries.some((e) => e.tab.worktree === worktree && e.kind !== "failed") ? "needs-you" : "failed";
 }
 
-/** The worktrees the taskbar badge counts: those with a waiting tab whose kind of news is switched on. */
-export function badgeWorktrees(needs: NeedsYou, on: (status: "needs-you" | "failed") => boolean): number {
-  return new Set(needs.entries.filter((e) => on(e.kind === "failed" ? "failed" : "needs-you")).map((e) => e.tab.worktree)).size;
-}
-
 /** The design system's agent chip for a tab's CLI. */
 export function agentOf(tab: Pick<Tab, "cli">): AgentProfile {
   return tab.cli ?? "custom";

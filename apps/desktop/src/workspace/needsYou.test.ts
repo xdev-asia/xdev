@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PendingQuestion } from "@/conversation/questionStore";
 import { ASK_DETAIL, detail } from "@/conversation/fixtures/hookDetails";
-import { NO_NEEDS, agentOf, badgeWorktrees, needsDot, selectNeedsYou, sessionState } from "./needsYou";
+import { NO_NEEDS, agentOf, needsDot, selectNeedsYou, sessionState } from "./needsYou";
 import type { Tab } from "./sessions";
 
 let n = 0;
@@ -86,19 +86,6 @@ describe("needsDot", () => {
     expect(needsDot(needs, "/w/oak")).toBe("needs-you");
     expect(needsDot(needs, "/w/elm")).toBe("failed");
     expect(needsDot(needs, "/w/ash")).toBeNull();
-  });
-});
-
-describe("badgeWorktrees", () => {
-  it("counts worktrees, not tabs, for the kinds of news switched on", () => {
-    const needs = selectNeedsYou([
-      tab({ status: "needs-you", worktree: "/w/oak" }),
-      tab({ status: "needs-you", worktree: "/w/oak" }),
-      tab({ status: "failed", worktree: "/w/elm" }),
-    ]);
-    expect(badgeWorktrees(needs, () => true)).toBe(2);
-    expect(badgeWorktrees(needs, (s) => s === "needs-you")).toBe(1);
-    expect(badgeWorktrees(needs, () => false)).toBe(0);
   });
 });
 

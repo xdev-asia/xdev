@@ -67,6 +67,7 @@ import { admits } from "./attention";
 import { ActivityPanel, type ActivityTab } from "@/activity/ActivityPanel";
 import { ActivityFeed } from "@/activity/feed";
 import { AttentionInbox, Button, Icon } from "@xdev-asia/ui";
+import { BellMenu, bellCount, type BellRow } from "./BellMenu";
 import { ChecksPanel } from "./ChecksPanel";
 import { PortsItem } from "@/ports/PortsItem";
 import { PortsPanel } from "@/ports/PortsPanel";
@@ -381,7 +382,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useSyncExternalStore(stats.subscribe, stats.snapshot, stats.snapshot);
   useSyncExternalStore(useCallback((fn: () => void) => prs.subscribe(fn), [prs]), () => prs.snapshot(), () => prs.snapshot());
 
-  // What waits on the person: one selector feeds the header inbox, the dots, the footer count and the badge.
+  // What waits on the person: one selector feeds the header inbox, the dots and the footer count.
   const needs = useNeedsYou(sessions);
   const dots: Record<string, TabStatus | null> = Object.fromEntries(paths.map((p) => [p, needsDot(needs, p) ?? sessions?.dot(p) ?? null]));
   const activity: Record<string, number | null> = Object.fromEntries(paths.map((p) => [p, sessions?.lastActivity(p) ?? null]));
@@ -445,7 +446,18 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
 
   useShellServices({ api, sessions, view, current, panes, statusSettings, feed, live });
 
-  const { inboxOpen, setInboxOpen } = useShellNotifications({ api, sessions, statusSettings, needs, live });
+  const { inboxOpen, setInboxOpen, unreadTabs, unreadCount } = useShellNotifications({ api, sessions, statusSettings, live });
+  // The bell: every unread tab (the events switched on), newest first; a toggle marks a row read or unread.
+  const [bellOpen, setBellOpen] = useState(false);
+  function toggleBell(): void {
+    const next = !bellOpen;
+    setBellOpen(next);
+    if (!next) return;
+    setTimeout(() => {
+      if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
+      document.querySelector<HTMLElement>(".ws-bell-pop [role=menuitem], .ws-bell-pop")?.focus();
+    }, 0);
+  }
 
   // Brings a tab's worktree up, puts the tab in front and gives its terminal the keys.
   /** Shows the sessions view of the sidebar; `reveal` marks one session, else the search box takes focus. */
@@ -910,6 +922,36 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       }
       actions={
         <>
+        {/* The bell: the unread tabs, newest first. Turned off in Settings it shows nothing. */}
+        <div className="ws-bell">
+          <button
+            type="button"
+            className="ws-icon-btn ws-header-btn"
+            disabled={!statusSettings.bell}
+            aria-label={statusSettings.bell && unreadCount > 0 ? t("status.bell.label", { count: unreadCount }) : t("workspace.header.notifications")}
+            title={statusSettings.bell ? t("workspace.header.notifications") : t("status.bell.off")}
+            aria-haspopup="menu"
+            aria-expanded={statusSettings.bell && bellOpen}
+            onClick={toggleBell}
+          >
+            <Icon name="inbox" size={16} />
+            {statusSettings.bell && unreadCount > 0 && (
+              <span className="ws-bell-count" aria-hidden="true">
+                {bellCount(unreadCount)}
+              </span>
+            )}
+          </button>
+          {statusSettings.bell && bellOpen && (
+            <BellMenu
+              rows={unreadTabs.map((tab): BellRow => ({ tab, worktree: worktreeName(all, tab.worktree), name: tab.title ?? profileName(nameView, tab.profileId, t) }))}
+              now={Date.now()}
+              onJump={(tab) => void jumpTo(tab.id)}
+              onToggleRead={(tab) => (tab.unread ? sessions?.markTabRead(tab.id) : sessions?.markTabUnread(tab.id))}
+              onViewActivity={() => { setBellOpen(false); setSidebarOpen(true); setSideView("activity"); setActivityAsk((a) => ({ tab: "feed", seq: a.seq + 1 })); }}
+              onClose={() => setBellOpen(false)}
+            />
+          )}
+        </div>
         {/* What waits on the person, longest first. Turned off in Settings it shows nothing. */}
         {statusSettings.bell && (
           <AttentionInbox
