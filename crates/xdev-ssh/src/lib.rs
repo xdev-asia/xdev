@@ -9,6 +9,7 @@ mod connection;
 mod reconnect;
 mod remote_cmd;
 mod remote_fs;
+pub mod remote_logs;
 mod remote_view;
 mod rpath;
 mod sftp;
