@@ -6,8 +6,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { ProfilesProvider, SSH_SHELL_PREFIX, profileName } from "@/agents/profileStore";
 import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type IssuesPreset, type CreateRequest, type PrSummary, type MrSummary, type MenuAction, type SetupDecision, type BaseDrift, type Provider, type ProfilesView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
-import { DocsApp, type AppRequest } from "@/DocsApp";
-import type { KitTab } from "@/components/AgentKitView";
+import { DocsApp } from "@/DocsApp";
 import { useI18n } from "@/i18n";
 import { onTryFeature } from "@/featureWall/featureWallStore";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
@@ -62,7 +61,6 @@ import { loadZoom, stepZoom, ZOOM_STEP } from "@/ui/zoom";
 import { useJumpKey } from "@/palette/useJumpKey";
 import { getNavigationSettings, setNavigationSettings, useNavigationSettings } from "@/settings/navigationSettings";
 import { SettingsView } from "@/settings/SettingsView";
-import { settingsIntent } from "@/settings/settingsIntent";
 import { playStatusSound } from "@/status/sound";
 import { usePresence } from "@/status/presence";
 import { getStatusSettings, loadStatusSettings, useStatusSettings } from "@/status/statusSettings";
@@ -135,6 +133,7 @@ import { SshAuthPrompts } from "@/components/SshAuthDialog";
 import { PeersHost } from "@/peers/PeersHost";
 import { runMenuAction } from "@/shell/menuActions";
 import { useShellLabels } from "@/shell/shellLabels";
+import { useShellViews } from "@/shell/useShellViews";
 import { annotateClipboard } from "@/capture/annotateBridge";
 import { CaptureHost } from "@/capture/CaptureHost";
 import { startCapture, useCaptureFailures } from "@/capture/useCaptureFailures";
@@ -195,18 +194,12 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [review, setReview] = useState<Review | null>(null);
   const [groupName, setGroupName] = useState<{ id: string | null; name: string; error?: ApiError["code"] } | null>(null);
   const [selected, setSelected] = useState<string | null>(() => readSelected());
-  const [view, setView] = useState<View>("workspace");
+  const { view, show, docsMounted, setDocsMounted, kitOpen, appRequest, docsKey, setDocsKey, settingsAt, setSettingsAt, openSettings, openUsage, openTask, openTaskBoard, openDecompose, openAccounts, kitOpened, openSearch, docsSaved } = useShellViews();
   // Agent and shell names for the merge headings and the resource manager rows.
   const [nameView, setNameView] = useState<ProfilesView | null>(null);
   const [composerAsk, setComposerAsk] = useState<ComposerRequest | null>(null);
   // The tabs whose output the merge dialog shows.
   const [mergeSources, setMergeSources] = useState<MergeSource[] | null>(null);
-  // The docs app mounts on first visit and then stays, so its editor state survives a switch.
-  const [docsMounted, setDocsMounted] = useState(false);
-  // A request for the Agent kit to open a tab; a new `seq` is a new request.
-  const [kitOpen, setKitOpen] = useState<{ tab: KitTab; seq: number } | null>(null);
-  // A request for the docs view to show one of its apps (the usage popover asks for Accounts).
-  const [appRequest, setAppRequest] = useState<AppRequest | null>(null);
   // The tab in front of each worktree, which is where a prompt from the Agent kit is typed.
   const [shownTab, setShownTab] = useState<Record<string, string | null>>({});
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -307,8 +300,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   // The line counts of the listed worktrees. The object holds nothing live until the effect
   // below attaches it, so load() can hand it the list before or after that.
   const [stats] = useState(() => new WorktreeStats());
-  // Bumped when a vault opens from the sidebar, so the docs app boots again on the new folder.
-  const [docsKey, setDocsKey] = useState(0);
   // Pull requests and checks of every worktree, shared by the ship bar and the panels.
   const [prs] = useState(() => new PrStore(api));
   const [prComments] = useState(() => new PrCommentStore(api));
@@ -333,7 +324,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [openInApps, setOpenInApps] = useState<OpenInApp[]>([]);
   // A new value asks the front pane to open its quick commands popover.
   const [quickSeq, setQuickSeq] = useState(0);
-  const [settingsAt, setSettingsAt] = useState<{ section?: string; arg?: string; target?: string; seq: number }>({ seq: 0 });
   // Not over a worktree dialog: it is modal, and the palette would stack on top of it.
   const dialogOpen = creating !== null || removing !== null || adding || groupName !== null || editing !== null || renaming !== null || checkingOut !== null || bulk !== null || review !== null;
   useJumpKey(useCallback(() => setJumpOpen((o) => (dialogOpen ? false : !o)), [dialogOpen]));
@@ -1370,11 +1360,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     }
   }
 
-  // The docs app marks its status line while the open doc differs from disk; DocsApp.tsx stays as is.
-  function docsSaved(): boolean {
-    return typeof document === "undefined" || !document.querySelector(".ws-docs .doc-status[data-dirty]");
-  }
-
   function startCreate(repoId?: string, name?: string, status?: WorkStatus | null): void {
     const usable = repos?.filter((r) => !r.missing) ?? [];
     const id = repoId ?? (currentRepo && !currentRepo.missing ? currentRepo.id : usable[0]?.id);
@@ -1726,17 +1711,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     runHelpPick(pick, { openSettings: (page) => openSettings(page), openUpdates, openAbout, toast: (key) => pushToast({ text: t(key) }), api });
   }
 
-  // `toggle`: asking for the place Settings already shows closes it instead.
-  function openSettings(section?: string, arg?: string, target?: string, toggle = false): void {
-    const next = settingsIntent(settingsAt, view === "settings", { section, arg, target }, toggle);
-    if (next.close) {
-      show("workspace");
-      return;
-    }
-    setSettingsAt(next.at);
-    show("settings");
-  }
-
   // The first remote project whose host is not connected: what the palette's Reconnect acts on.
   const pendingReconnect = reconnectCandidate(remote.projects);
   function remoteProject(id: string) {
@@ -1763,11 +1737,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     void sessions?.closeWorktree(p.worktree);
   }
 
-  function show(next: View): void {
-    setView(next);
-    if (next === "docs") setDocsMounted(true);
-  }
-
   // "Try it" on the feature wall opens the page or panel.
   const tryFeatureRef = useRef<(target: { kind: string; section?: string }) => void>(() => {});
   tryFeatureRef.current = (target) => {
@@ -1775,38 +1744,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     else { setSidebarOpen(true); setSideView("activity"); show("workspace"); }
   };
   useEffect(() => onTryFeature((target) => tryFeatureRef.current(target)), []);
-
-  // Usage details & history live on the Stats & Usage settings page; the Kit app keeps its own tab.
-  function openUsage(): void {
-    openSettings("usage");
-  }
-
-  function openTask(id: string): void {
-    setAppRequest((r) => ({ app: "tasks", task: id, seq: (r?.seq ?? 0) + 1 }));
-    show("docs");
-  }
-
-  // The Tasks app on the Board tab, with the editor on a file task when one is named.
-  function openTaskBoard(boardTask?: string): void {
-    setAppRequest((r) => ({ app: "tasks", tab: "board", boardTask, seq: (r?.seq ?? 0) + 1 }));
-    show("docs");
-  }
-
-  // The Tasks app on the Board tab with the split-a-goal dialog open.
-  function openDecompose(): void {
-    setAppRequest((r) => ({ app: "tasks", tab: "board", decompose: true, seq: (r?.seq ?? 0) + 1 }));
-    show("docs");
-  }
-
-  function openAccounts(): void {
-    setAppRequest((r) => ({ app: "accounts", seq: (r?.seq ?? 0) + 1 }));
-    show("docs");
-  }
-
-  // The Kit shows a request once, then hands it back; a later mount of a host finds none waiting.
-  function kitOpened(seq: number): void {
-    setKitOpen((k) => (k && k.seq === seq ? null : k));
-  }
 
   // Types into the tab in front when it is a live agent tab. No Enter is sent, so the person reads it first.
   async function sendToAgent(text: string): Promise<boolean> {
@@ -1859,17 +1796,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
     const { tab, summary } = await sendCommentsFix(api, sessions, prComments, { ...pr, worktree: path, branch: current.branch ?? "" }, groups, choice, ack);
     if (tab) setFront((f) => ({ worktree: path, id: tab.id, seq: (f?.seq ?? 0) + 1 }));
     return { ok: tab !== null, summary };
-  }
-
-  // The docs app has the only search for now; it shows after this render, so its box is looked up then.
-  function openSearch(): void {
-    show("docs");
-    setTimeout(() => {
-      if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
-      const box = document.querySelector<HTMLInputElement>(".ws-docs .search-input");
-      box?.focus();
-      box?.select();
-    }, 0);
   }
 
   const removingRepo = removing ? repos?.find((r) => r.worktrees.some((w) => w.path === removing.worktree.path)) : undefined;
