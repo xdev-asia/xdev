@@ -11,7 +11,7 @@ import { Markdown, MarkdownContext, pathCandidates, type MarkdownEnv } from "./M
 import { atBottom, failedSteps, firstIndex, foldRows, followUpText, hasOlder, lastAssistantText, mergePage, olderPage, readPrefs, runOf, stepSize, TEXT_SIZES, writePrefs, type ConversationPrefs, type Loaded, type Row } from "./model";
 import { sendFollowUp } from "./followUp";
 import { linkChips } from "./linkChips";
-import { QuestionCard } from "./QuestionCard";
+import { PermissionBar, QuestionCard } from "./QuestionCard";
 import { hookQuestion, parseQuestionText, transcriptQuestion, type QuestionCli } from "./questions";
 import { clearQuestion, feedQuestions, noteTranscriptQuestion, useQuestion } from "./questionStore";
 import "./conversation.css";
@@ -401,7 +401,10 @@ export function ConversationView(props: ConversationViewProps): JSX.Element {
             />
           )}
         </div>
-        {question && (
+        {question && question.kind === "permission" && question.answerable && (
+          <PermissionBar key={questionKey} question={question} agentName={props.agentName} onSend={answer} onOpenTerminal={props.onOpenTerminal ?? onBack} />
+        )}
+        {question && !(question.kind === "permission" && question.answerable) && (
           <QuestionCard
             key={questionKey}
             question={question}

@@ -6340,5 +6340,7 @@
   "needsYou.kind.approval": "Approval",
   "needsYou.kind.question": "Question",
   "needsYou.kind.failed": "Failed",
-  "workspace.panel.resize": "Resize the side panel"
+  "workspace.panel.resize": "Resize the side panel",
+  "conversation.approval.allow": "Allow",
+  "conversation.approval.deny": "Deny"
 }

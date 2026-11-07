@@ -1,4 +1,4 @@
-import { Badge, Button, IconButton, Kbd, RadioGroup, Select } from "@xdev-asia/ui";
+import { ApprovalBar, Badge, Button, IconButton, Kbd, RadioGroup, Select } from "@xdev-asia/ui";
 import { useId, useState } from "react";
 import type { JSX } from "react";
 import { useI18n } from "@/i18n";
@@ -163,6 +163,51 @@ export function QuestionCard(props: QuestionCardProps): JSX.Element {
         <p className="cv-ask-error" role="alert">
           {t("conversation.question.failed")}
         </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * A permission the agent waits on, answered in one step: Allow types the menu's first option, Deny
+ * types Escape. Only for a prompt this view can answer for sure (`answerable`); the rest is a QuestionCard.
+ */
+export function PermissionBar(props: Omit<QuestionCardProps, "onDismiss">): JSX.Element {
+  const { question: q, agentName } = props;
+  const { t } = useI18n();
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const allow = q.choices.find((c) => c.label === "yes");
+  const deny = q.choices.find((c) => c.label === "no");
+
+  async function send(keys: string | undefined): Promise<void> {
+    if (keys === undefined || sending) return;
+    setSending(true);
+    setFailed(false);
+    const ok = await props.onSend(keys).catch(() => false);
+    setSending(false);
+    if (!ok) setFailed(true);
+  }
+
+  return (
+    <section className="cv-approval" data-kind={q.kind} data-source={q.source} data-testid="permission-bar">
+      <ApprovalBar
+        title={q.tool ? t("conversation.question.permission", { tool: q.tool }) : t("conversation.question.title.permission", { name: agentName })}
+        command={q.toolInput ?? undefined}
+        busy={sending}
+        onAllow={() => void send(allow?.keys)}
+        onDeny={() => void send(deny?.keys)}
+        labels={{ region: t("conversation.question.title.permission", { name: agentName }), allow: t("conversation.approval.allow"), deny: t("conversation.approval.deny") }}
+      />
+      {failed && (
+        <div className="cv-approval-failed">
+          <p className="cv-ask-error" role="alert">
+            {t("conversation.question.failed")}
+          </p>
+          <Button type="button" variant="secondary" size="sm" onClick={props.onOpenTerminal}>
+            {t("conversation.question.terminal")}
+          </Button>
+        </div>
       )}
     </section>
   );

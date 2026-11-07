@@ -1,10 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { Badge, Button, IconButton, Kbd, RadioGroup, Select } from "@xdev-asia/ui";
+import { ApprovalBar, Badge, Button, IconButton, Kbd, RadioGroup, Select } from "@xdev-asia/ui";
 import { mount, nodes, textOf, tick, type Node } from "@/kit/testHooks";
 import { translate } from "@/i18n";
 import { ASK_DETAIL } from "./fixtures/hookDetails";
 import { hookQuestion, transcriptQuestion, type Question } from "./questions";
-import { QuestionBadge, QuestionCard, type QuestionCardProps } from "./QuestionCard";
+import { PermissionBar, QuestionBadge, QuestionCard, type QuestionCardProps } from "./QuestionCard";
 import { clearQuestion, feedQuestions, noteTranscriptQuestion, resetQuestions } from "./questionStore";
 import type { PtyHook } from "@/api";
 
@@ -108,6 +108,36 @@ it("a permission shows the tool and sends 1 or Escape", async () => {
   button(all, t("conversation.question.send"))!.props.onClick();
   await button(m.all(), t("conversation.question.confirm.send"))!.props.onClick();
   expect(onSend).toHaveBeenCalledWith("\x1b");
+});
+
+it("an answerable permission is the approval bar: Allow sends 1, Deny sends Escape, a failure says so", async () => {
+  const q = hookQuestion({ toolName: "Bash", toolInput: "rm -rf build", message: null, isInterrupt: false, error: null, question: { kind: "permission", text: "", header: null, options: [], multi: false, count: 1 } }, "claude");
+  expect(q.answerable).toBe(true);
+  const onSend = vi.fn(async (_keys: string) => true);
+  const onOpenTerminal = vi.fn();
+  const m = mount(PermissionBar, () => ({ question: q, agentName: "Claude Code", onSend, onOpenTerminal }));
+  let bar = m.all().find((n) => n.type === ApprovalBar)!;
+  expect(bar.props.title).toBe(t("conversation.question.permission", { tool: "Bash" }));
+  expect(bar.props.command).toBe("rm -rf build");
+  expect(bar.props.labels).toEqual({ region: t("conversation.question.title.permission", { name: "Claude Code" }), allow: t("conversation.approval.allow"), deny: t("conversation.approval.deny") });
+  // No "always": the agent's menu has no such answer here.
+  expect(bar.props.onAlways).toBeUndefined();
+  bar.props.onAllow();
+  await tick();
+  expect(onSend).toHaveBeenLastCalledWith("1");
+  bar = m.all().find((n) => n.type === ApprovalBar)!;
+  bar.props.onDeny();
+  await tick();
+  expect(onSend).toHaveBeenLastCalledWith("");
+  expect(m.all().some((n) => n.props.role === "alert")).toBe(false);
+
+  onSend.mockResolvedValueOnce(false);
+  m.all().find((n) => n.type === ApprovalBar)!.props.onAllow();
+  await tick();
+  const all = m.all();
+  expect(textOf(all.find((n) => n.props.role === "alert")!)).toBe(t("conversation.question.failed"));
+  button(all, t("conversation.question.terminal"))!.props.onClick();
+  expect(onOpenTerminal).toHaveBeenCalled();
 });
 
 it("a transcript question types the answer and Enter, and can be hidden", () => {

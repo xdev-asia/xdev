@@ -6340,5 +6340,7 @@
   "needsYou.kind.approval": "Phê duyệt",
   "needsYou.kind.question": "Câu hỏi",
   "needsYou.kind.failed": "Lỗi",
-  "workspace.panel.resize": "Đổi độ rộng bảng bên phải"
+  "workspace.panel.resize": "Đổi độ rộng bảng bên phải",
+  "conversation.approval.allow": "Cho phép",
+  "conversation.approval.deny": "Từ chối"
 }

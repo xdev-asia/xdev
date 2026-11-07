@@ -687,6 +687,22 @@
   font-size: 12px;
 }
 
+/* A permission the agent waits on: the design system's approval bar above the composer. */
+.cv-approval {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: var(--x-space-2);
+  margin: var(--x-space-2) var(--x-space-3);
+}
+
+.cv-approval-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+}
+
 /* The question mark on a tab. */
 .cv-tab-question {
   display: inline-flex;
