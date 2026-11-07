@@ -31,3 +31,10 @@
   margin: 0;
   color: var(--danger);
 }
+
+/* Delete sits apart from the dialog's Save and Cancel. */
+.board-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

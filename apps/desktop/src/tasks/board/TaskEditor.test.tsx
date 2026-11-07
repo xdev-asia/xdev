@@ -1,4 +1,4 @@
-import { Banner, Dialog } from "@xdev-asia/ui";
+import { Banner, Button, Dialog } from "@xdev-asia/ui";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { createMockApi, type Api, type TaskFull } from "@/api";
@@ -115,4 +115,24 @@ it("a conflict shows the banner, Reload loads the new version", async () => {
   v.dialog().props.onConfirm();
   await tick();
   expect(v.onSaved).toHaveBeenCalledOnce();
+});
+
+it("the task sheet offers Delete, not as its main action; a new task has none", async () => {
+  const api = createMockApi({});
+  const [first] = (await api.boardList(REPO)).tasks;
+  const task = await api.boardGet(REPO, first.id);
+  const onDelete = vi.fn();
+  const v = view(api, { task, onDelete } as { task: TaskFull });
+  const del = v.all().find((n) => n.props["data-act"] === "delete")!;
+  expect(del.type).toBe(Button);
+  expect(del.props.children).toBe(en("board.delete"));
+  expect(del.props.type).toBe("button");
+  expect(del.props.variant).toBe("secondary");
+  // The dialog's Save stays the one primary.
+  expect(v.dialog().props.confirmLabel).toBe(en("board.save"));
+  del.props.onClick();
+  expect(onDelete).toHaveBeenCalledExactlyOnceWith(task);
+  hooks.values = [];
+  const fresh = view(api, { onDelete } as {});
+  expect(fresh.all().some((n) => n.props["data-act"] === "delete")).toBe(false);
 });

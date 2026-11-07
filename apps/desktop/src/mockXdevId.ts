@@ -3,7 +3,7 @@ import type { Api } from "./api";
 
 type XdevIdApi = Pick<
   Api,
-  "xdevIdState" | "xdevIdSignIn" | "xdevIdPaste" | "xdevIdCancel" | "xdevIdSignOut" | "xdevIdRefresh" | "xdevIdReopen" | "xdevIdManage" | "xdevIdServer" | "xdevIdServerSet" | "onXdevIdChanged"
+  "xdevIdState" | "xdevIdSignIn" | "xdevIdPaste" | "xdevIdCancel" | "xdevIdSignOut" | "xdevIdRefresh" | "xdevIdReopen" | "xdevIdManage" | "xdevIdServer" | "onXdevIdChanged"
 >;
 
 export type MockXdevId = XdevIdApi & {
@@ -15,26 +15,14 @@ export type MockXdevId = XdevIdApi & {
   __xdevIdManages(): number;
   // How often `xdevIdReopen` ran.
   __xdevIdReopens(): number;
+  // Settings → Cloud saved a different xDev server (`null`: the default).
+  __xdevIdServerChanged(serverUrl: string | null): void;
 };
 
 export const MOCK_XDEV_ID_LINK = "https://id.xdev.asia/desktop?challenge=demo&state=demo&device=Demo";
 const DEMO_USER = { name: "Demo User", email: "demo@example.com", avatar: null };
 const CALLBACK = "xdev://auth/callback?";
 const DEFAULT_SERVER = "https://id.xdev.asia";
-
-/** The origin Rust accepts: https, or http to loopback; no path, query, fragment or user info. */
-function checkedOrigin(value: string): string | null {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return null;
-  }
-  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-  const scheme = url.protocol === "https:" || (url.protocol === "http:" && loopback);
-  const bare = url.pathname === "/" && !url.search && !url.hash && !url.username && !url.password && !value.includes("?") && !value.includes("#");
-  return scheme && bare ? url.origin : null;
-}
 
 /** The xDev ID account in memory: no network, no timers; every change calls the listeners synchronously. */
 export function createMockXdevId(initial: "signedOut" | "signedIn" = "signedOut"): MockXdevId {
@@ -80,15 +68,10 @@ export function createMockXdevId(initial: "signedOut" | "signedIn" = "signedOut"
     async xdevIdServer() {
       return server;
     },
-    async xdevIdServerSet(value) {
-      const text = value.trim();
-      const origin = text === "" ? DEFAULT_SERVER : checkedOrigin(text);
-      if (origin === null) throw { code: "account_server" };
-      const changed = origin !== server.origin;
-      server = { origin, source: text === "" ? "default" : "setting", setting: text === "" ? "" : origin, invalid: false };
+    __xdevIdServerChanged(serverUrl) {
+      server = serverUrl === null ? { origin: DEFAULT_SERVER, source: "default", setting: "", invalid: false } : { origin: serverUrl, source: "setting", setting: serverUrl, invalid: false };
       // A different server ends the session and any attempt, as Rust does.
-      if (changed && state.state !== "signedOut") set(signedOut());
-      return server;
+      if (state.state !== "signedOut") set(signedOut());
     },
     async xdevIdManage() {
       manages += 1;

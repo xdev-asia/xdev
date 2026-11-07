@@ -241,7 +241,15 @@ pub fn run() {
             workspace::start_sweep(app.handle());
             // Every settings read and write goes through this store.
             if let Some(file) = commands::settings_path(app.handle()) {
-                app.manage(settings_store::SettingsStore::new(file));
+                let store = settings_store::SettingsStore::new(file);
+                // Older files are migrated and saved once, before anything reads them.
+                if let Err(e) = store.upgrade() {
+                    applog::warn(
+                        "settings",
+                        &format!("could not save the migrated settings: {e}"),
+                    );
+                }
+                app.manage(store);
             }
             // After the settings store: the server setting is read first.
             xdev_id::start(app.handle());
@@ -815,7 +823,6 @@ pub fn run() {
             xdev_id::xdev_id_reopen,
             xdev_id::xdev_id_manage,
             xdev_id::xdev_id_server,
-            xdev_id::xdev_id_server_set,
             license::license_state,
             license::license_refresh,
             license::license_activate,

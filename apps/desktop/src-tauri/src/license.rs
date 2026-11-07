@@ -901,10 +901,7 @@ pub fn cloud_settings_put(
         s.cloud = next.clone();
     })?;
     if moved {
-        let setting = next
-            .server_url
-            .clone()
-            .unwrap_or_else(|| prev.xdev_id.server.clone());
+        let setting = next.server_url.clone().unwrap_or_default();
         let _ = id.configure_server(Some(&setting), &crate::xdev_id::emitter(&app));
         hub.server_changed(next.config());
     } else if prev.cloud.pinned_roots != next.pinned_roots {

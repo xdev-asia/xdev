@@ -635,6 +635,5 @@ export type { WorktreeUsage } from "./WorktreeUsage";
 export type { WorktreeView } from "./WorktreeView";
 export type { WriteOutcome } from "./WriteOutcome";
 export type { XdevIdServer } from "./XdevIdServer";
-export type { XdevIdSettings } from "./XdevIdSettings";
 export type { XdevIdState } from "./XdevIdState";
 export type { XdevIdUser } from "./XdevIdUser";

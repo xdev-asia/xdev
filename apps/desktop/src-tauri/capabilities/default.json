@@ -467,7 +467,6 @@
     "allow-xdev-id-reopen",
     "allow-xdev-id-manage",
     "allow-xdev-id-server",
-    "allow-xdev-id-server-set",
     "allow-license-state",
     "allow-license-refresh",
     "allow-license-activate",

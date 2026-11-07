@@ -13,12 +13,12 @@ use crate::terminal_sets::{StartupPreset, TerminalSet};
 
 /// The shape `save` writes. Bump it with a step in `MIGRATIONS` when a key
 /// is renamed or removed; a new field with a default needs neither.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// `MIGRATIONS[i]` turns a version `i + 1` file into version `i + 2`; they
 /// run in order on the raw JSON before it is parsed, so a step can rename
 /// or move keys. Version 0 (no `version` key) has the shape of version 1.
-const MIGRATIONS: &[fn(&mut serde_json::Value)] = &[];
+const MIGRATIONS: &[fn(&mut serde_json::Value)] = &[one_server_setting];
 const _: () = assert!(MIGRATIONS.len() as u32 + 1 == VERSION);
 /// Emitted after every settings write, with a `SettingsChanged` payload.
 pub const CHANGED_EVENT: &str = "settings://changed";
@@ -92,9 +92,6 @@ pub struct Settings {
     /// Settings → Stats & Usage; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub usage: UsageSettings,
-    /// Settings → xDev ID; lenient the same way.
-    #[serde(default, rename = "xdevId", deserialize_with = "lenient")]
-    pub xdev_id: XdevIdSettings,
     /// Settings → Orchestration; lenient the same way.
     #[serde(default, deserialize_with = "lenient")]
     pub orchestration: OrchestrationSettings,
@@ -218,16 +215,6 @@ impl Default for LinkSettings {
             confirm_each: false,
         }
     }
-}
-
-/// Settings → xDev ID.
-#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[serde(default, rename_all = "camelCase")]
-pub struct XdevIdSettings {
-    /// The origin of an on-prem xDev ID server. Empty: the default service. Read at
-    /// startup and on save; `XDEV_ID_URL` wins over it.
-    pub server: String,
 }
 
 /// The deepest nesting of dispatched workers Settings allows.
@@ -2153,7 +2140,6 @@ pub enum SettingsSection {
     Diff,
     Agents,
     Usage,
-    XdevId,
     Orchestration,
     Shell,
     Automations,
@@ -2782,6 +2768,55 @@ fn migrate(value: &mut serde_json::Value, steps: &[fn(&mut serde_json::Value)]) 
     }
 }
 
+/// Version 1 → 2: `xdevId.server` and `cloud.serverUrl` become one setting,
+/// `cloud.serverUrl`, which xDev ID and the cloud both read.
+fn one_server_setting(value: &mut serde_json::Value) {
+    if let Some(warning) = merge_server_keys(value) {
+        applog::warn("settings", &warning);
+    }
+}
+
+/// Drops `xdevId` and moves a non-empty `xdevId.server` into
+/// `cloud.serverUrl`. When both name a server and they differ, the xDev ID
+/// one wins and the returned message says what was replaced. The official
+/// address is stored as unset; a value that is not a valid origin moves as
+/// it is, so the account page can flag it. `pinnedRoots` stay: trust comes
+/// from them, not from the address.
+fn merge_server_keys(value: &mut serde_json::Value) -> Option<String> {
+    let old = value.as_object_mut()?.remove("xdevId")?;
+    let raw = old.get("server")?.as_str()?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let as_setting = |raw: &str| -> Option<String> {
+        match xdev_id::check_origin(raw) {
+            Some(origin) if origin == xdev_license::cloud::DEFAULT_SERVER => None,
+            Some(origin) => Some(origin),
+            None => Some(raw.to_owned()),
+        }
+    };
+    let moved = as_setting(raw);
+    let current = value
+        .get("cloud")
+        .and_then(|c| c.get("serverUrl"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| (s.to_owned(), as_setting(s)));
+    let warning = match &current {
+        Some((_, normalised)) if *normalised == moved => return None,
+        Some((shown, _)) => Some(format!(
+            "xdevId.server ({raw}) and cloud.serverUrl ({shown}) differed; kept the xDev ID server as the one xDev server setting"
+        )),
+        None => None,
+    };
+    if !value.get("cloud").is_some_and(serde_json::Value::is_object) {
+        value["cloud"] = serde_json::json!({});
+    }
+    value["cloud"]["serverUrl"] = moved.map_or(serde_json::Value::Null, serde_json::Value::String);
+    warning
+}
+
 /// Once per run: every read of a newer file would say the same.
 fn warn_newer(path: &Path, version: u32) {
     static WARNED: AtomicBool = AtomicBool::new(false);
@@ -3396,6 +3431,139 @@ mod tests {
             migrate(&mut v, steps);
             assert_eq!(v["a"], 7, "from {from}");
         }
+    }
+
+    #[test]
+    fn the_old_xdev_id_server_moves_to_the_one_server_setting() {
+        let mut v = serde_json::json!({
+            "version": 1,
+            "xdevId": { "server": " https://id.corp.test/ " },
+            "git": { "branchPrefix": "none" }
+        });
+        assert_eq!(merge_server_keys(&mut v), None);
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "version": 1,
+                "cloud": { "serverUrl": "https://id.corp.test" },
+                "git": { "branchPrefix": "none" }
+            })
+        );
+    }
+
+    #[test]
+    fn two_different_servers_keep_the_xdev_id_one_and_warn() {
+        let mut v = serde_json::json!({
+            "xdevId": { "server": "https://id.corp.test" },
+            "cloud": { "serverUrl": "https://license.corp.test", "pinnedRoots": [key()] }
+        });
+        let warning = merge_server_keys(&mut v).expect("a warning");
+        assert!(warning.contains("https://id.corp.test"), "{warning}");
+        assert!(warning.contains("https://license.corp.test"), "{warning}");
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "cloud": { "serverUrl": "https://id.corp.test", "pinnedRoots": [key()] }
+            })
+        );
+    }
+
+    #[test]
+    fn the_same_server_twice_is_no_conflict() {
+        let mut v = serde_json::json!({
+            "xdevId": { "server": "https://id.corp.test/" },
+            "cloud": { "serverUrl": "https://id.corp.test", "pinnedRoots": [key()] }
+        });
+        assert_eq!(merge_server_keys(&mut v), None);
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "cloud": { "serverUrl": "https://id.corp.test", "pinnedRoots": [key()] }
+            })
+        );
+    }
+
+    #[test]
+    fn an_empty_or_default_xdev_id_server_means_the_default() {
+        // Empty: the cloud value (or the default) stays, and the old key goes.
+        for cloud in [serde_json::json!(null), serde_json::json!("https://x.test")] {
+            let mut v = serde_json::json!({
+                "xdevId": { "server": "  " },
+                "cloud": { "serverUrl": cloud.clone() }
+            });
+            assert_eq!(merge_server_keys(&mut v), None);
+            assert_eq!(v, serde_json::json!({ "cloud": { "serverUrl": cloud } }));
+        }
+        // The official address is stored as "unset", as Settings → Cloud saves it.
+        let mut v = serde_json::json!({
+            "xdevId": { "server": "https://id.xdev.asia/" },
+            "cloud": { "serverUrl": "https://x.test", "pinnedRoots": [key()] }
+        });
+        assert!(merge_server_keys(&mut v).is_some());
+        assert_eq!(v["cloud"]["serverUrl"], serde_json::Value::Null);
+        // Only the cloud key, or neither: nothing changes.
+        for before in [
+            serde_json::json!({ "cloud": { "serverUrl": "https://x.test" } }),
+            serde_json::json!({ "git": {} }),
+            serde_json::json!({ "xdevId": 5, "cloud": "broken" }),
+        ] {
+            let mut v = before.clone();
+            assert_eq!(merge_server_keys(&mut v), None);
+            let mut want = before;
+            want.as_object_mut().unwrap().remove("xdevId");
+            assert_eq!(v, want);
+        }
+    }
+
+    #[test]
+    fn an_invalid_xdev_id_server_moves_as_it_is() {
+        // Both sides treat it as the default and the account page flags it.
+        let mut v =
+            serde_json::json!({ "xdevId": { "server": "http://id.corp.test" }, "cloud": "x" });
+        merge_server_keys(&mut v);
+        assert_eq!(
+            v,
+            serde_json::json!({ "cloud": { "serverUrl": "http://id.corp.test" } })
+        );
+    }
+
+    #[test]
+    fn the_server_merge_runs_once_and_twice_changes_nothing() {
+        let file = serde_json::json!({
+            "version": 1,
+            "xdevId": { "server": "https://id.corp.test" },
+            "cloud": { "serverUrl": "https://license.corp.test", "pinnedRoots": [key()] }
+        });
+        let mut once = file.clone();
+        migrate(&mut once, MIGRATIONS);
+        let mut twice = once.clone();
+        assert_eq!(merge_server_keys(&mut twice), None);
+        assert_eq!(twice, once);
+        // A file already at this version is not migrated again.
+        let mut current = serde_json::json!({
+            "version": VERSION,
+            "cloud": { "serverUrl": "https://license.corp.test" }
+        });
+        let before = current.clone();
+        migrate(&mut current, MIGRATIONS);
+        assert_eq!(current, before);
+    }
+
+    #[test]
+    fn an_old_file_loads_with_one_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        fs::write(
+            &path,
+            r#"{ "version": 1, "xdevId": { "server": "https://id.corp.test" } }"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(
+            loaded.cloud.server_url.as_deref(),
+            Some("https://id.corp.test")
+        );
+        assert!(!serde_json::to_string(&loaded).unwrap().contains("xdevId"));
     }
 
     #[test]
@@ -4635,7 +4803,7 @@ then sum up"
     }
 
     #[test]
-    fn the_xdev_id_server_setting_defaults_to_empty_and_stays_lenient() {
+    fn an_old_xdev_id_key_of_any_shape_loads_without_harm() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(FILE_NAME);
         for text in [
@@ -4645,14 +4813,17 @@ then sum up"
             r#"{ "xdevId": { "server": 4 } }"#,
         ] {
             fs::write(&path, text).unwrap();
-            assert_eq!(load(&path).xdev_id.server, "", "{text}");
+            assert_eq!(load(&path).cloud.server_url, None, "{text}");
         }
         fs::write(
             &path,
             r#"{ "xdevId": { "server": "https://id.corp.test" }, "usage": 1 }"#,
         )
         .unwrap();
-        assert_eq!(load(&path).xdev_id.server, "https://id.corp.test");
+        assert_eq!(
+            load(&path).cloud.server_url.as_deref(),
+            Some("https://id.corp.test")
+        );
     }
 
     #[test]
@@ -5455,8 +5626,6 @@ mod hosts_settings_tests {
         let s = loaded(r#"{ "version": 1, "speech": { "mode": "hold" } }"#);
         assert!(s.hosts.0.is_empty());
         assert_eq!(s.speech.mode, SpeechMode::Hold);
-        assert_eq!(VERSION, 1);
-        assert!(MIGRATIONS.is_empty());
     }
 
     #[test]

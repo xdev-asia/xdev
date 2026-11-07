@@ -10,14 +10,13 @@ use std::time::{Duration, Instant};
 use ::xdev_id::{
     CallError, E_CODE, E_EXPIRED, E_KEYCHAIN, E_LINK, E_SERVER, E_STATE, E_TIMEOUT, E_UNAVAILABLE,
     Keychain, REFRESH_EVERY, Redeem, Secret, Session, TokenStore, Transport, UreqTransport,
-    XdevIdServer, XdevIdState, check_origin, resolve_server,
+    XdevIdServer, XdevIdState, resolve_server,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::commands::CmdError;
-use crate::settings::SettingsSection;
 
 pub const CHANGED_EVENT: &str = "xdev-id://changed";
 
@@ -70,7 +69,7 @@ impl XdevIdHub {
     }
 
     /// The app's hub: the OS keychain, the network, `XDEV_ID_URL` if it is safe. The
-    /// `xdevId.server` setting is applied by `configure_server` once settings.json is known.
+    /// xDev server setting (`cloud.serverUrl`) is applied by `configure_server` once settings.json is known.
     pub fn production() -> XdevIdHub {
         XdevIdHub::new(
             Arc::new(Keychain),
@@ -97,16 +96,7 @@ impl XdevIdHub {
             .clone()
     }
 
-    /// What `settings.json` may hold: empty (use the default) or a valid origin, normalised.
-    pub fn checked_setting(value: &str) -> Result<String, CmdError> {
-        let value = value.trim();
-        if value.is_empty() {
-            return Ok(String::new());
-        }
-        check_origin(value).ok_or_else(|| fail(E_SERVER))
-    }
-
-    /// Applies the `xdevId.server` setting under env > setting > default. When the server
+    /// Applies the xDev server setting (`cloud.serverUrl`) under env > setting > default. When the server
     /// in use changes: any attempt is cancelled, the old token is revoked at the OLD
     /// server (best effort), the keychain is cleared, and only then does the new origin
     /// take over, so a token never reaches a server that did not issue it.
@@ -335,22 +325,6 @@ pub fn xdev_id_server(hub: State<'_, XdevIdHub>) -> XdevIdServer {
     hub.server()
 }
 
-/// Saves `xdevId.server` (empty: the default) and switches to it. A different server
-/// signs the person out at the old one first.
-#[tauri::command(async)]
-pub fn xdev_id_server_set(
-    app: AppHandle,
-    hub: State<'_, XdevIdHub>,
-    value: String,
-) -> Result<XdevIdServer, CmdError> {
-    let value = XdevIdHub::checked_setting(&value)?;
-    let saved = value.clone();
-    crate::settings_store::write(&app, &[SettingsSection::XdevId], move |s| {
-        s.xdev_id.server = saved;
-    })?;
-    hub.configure_server(Some(&value), &emitter(&app))
-}
-
 #[tauri::command(async)]
 pub fn xdev_id_state(hub: State<'_, XdevIdHub>) -> XdevIdState {
     hub.state()
@@ -476,9 +450,11 @@ pub fn start(app: &AppHandle) {
         let hub = app.state::<XdevIdHub>();
         let notify = emitter(&app);
         // The server first, so a token saved for another origin is never sent anywhere.
-        // Settings → Cloud wins over the older `xdevId.server`.
-        let settings = crate::settings_store::read(&app);
-        let setting = settings.cloud.server_url.unwrap_or(settings.xdev_id.server);
+        // The one xDev server setting, `cloud.serverUrl`; unset is the default service.
+        let setting = crate::settings_store::read(&app)
+            .cloud
+            .server_url
+            .unwrap_or_default();
         let _ = hub.configure_server(Some(&setting), &notify);
         if hub.load(&notify).is_err() {
             eprintln!("xdev id: the system keychain is not available");
@@ -843,27 +819,5 @@ mod tests {
         assert_eq!(hub.state(), XdevIdState::SignedOut { notice: None });
         assert!(!hub.deep_link(&link_for([2; 32]), Instant::now(), &silent));
         assert!(http.requests().is_empty());
-    }
-
-    #[test]
-    fn the_setting_is_checked_before_it_is_saved() {
-        assert_eq!(XdevIdHub::checked_setting("  ").unwrap(), "");
-        assert_eq!(
-            XdevIdHub::checked_setting(" https://id.corp.test/ ").unwrap(),
-            "https://id.corp.test"
-        );
-        for bad in [
-            "http://id.corp.test",
-            "https://x/p",
-            "ftp://x",
-            "https://u@x",
-            "nope",
-        ] {
-            assert_eq!(
-                XdevIdHub::checked_setting(bad).unwrap_err().code,
-                E_SERVER,
-                "{bad}"
-            );
-        }
     }
 }
