@@ -143,6 +143,8 @@ export const SETTING_ENTRIES: readonly SettingEntry[] = [
   e("terminal.scrollSensitivity", "settings.terminal.interaction.scroll", ["scroll", "speed", "wheel", "cuộn", "cuon", "tốc độ", "toc do"]),
   e("terminal.fastScrollSensitivity", "settings.terminal.interaction.fastScroll", ["scroll", "fast", "alt", "speed", "cuộn", "cuon", "nhanh"]),
   e("terminal.tuiScrollSensitivity", "settings.terminal.interaction.tuiScroll", ["tui", "vim", "less", "wheel", "mouse", "cuộn", "cuon"], "settings.terminal.interaction.tuiScrollHint"),
+  e("terminal.copyTrimsGutter", "settings.terminal.clipboard.trimGutter", ["copy", "gutter", "border", "trim", "sao chép", "sao chep", "viền", "vien"], "settings.terminal.clipboard.trimGutterHint"),
+  only(["mac"], e("terminal.jisYen", "settings.terminal.keyboard.jisYen", ["jis", "yen", "backslash", "japanese", "¥", "nhật", "nhat"], "settings.terminal.keyboard.jisYenHint")),
   e("terminal.scrollReset", "settings.terminal.interaction.scrollReset", ["reset", "scroll", "đặt lại", "dat lai"]),
   only(["linux"], e("terminal.middleClickPaste", "settings.terminal.interaction.middleClickPaste", ["middle", "click", "paste", "selection", "primary", "x11", "linux", "chuột giữa", "chuot giua", "dán", "dan", "vùng chọn", "vung chon"], "settings.terminal.interaction.middleClickPasteHint")),
   e("terminal.focusFollowsMouse", "settings.terminal.interaction.focusFollowsMouse", ["focus", "mouse", "hover", "pointer", "tiêu điểm", "tieu diem", "chuột", "chuot"], "settings.terminal.interaction.focusFollowsMouseHint"),

@@ -6334,5 +6334,9 @@
   "vault.steps.step": "Step {current} of {total}",
   "settings.terminal.interaction.tuiScroll": "TUI scroll speed",
   "settings.terminal.interaction.tuiScrollHint": "Wheel steps sent to full-screen programs such as vim or less. 1 keeps the default.",
-  "settings.terminal.interaction.scrollReset": "Reset"
+  "settings.terminal.interaction.scrollReset": "Reset",
+  "settings.terminal.clipboard.trimGutter": "Trim gutter on copy",
+  "settings.terminal.clipboard.trimGutterHint": "Copy drops box borders and trailing spaces from the selection.",
+  "settings.terminal.keyboard.jisYen": "JIS Yen (¥) to Backslash (\\)",
+  "settings.terminal.keyboard.jisYenHint": "The ¥ key of a Japanese keyboard types a backslash in the terminal."
 }

@@ -98,6 +98,7 @@ it("renders the stored values", async () => {
     en("settings.terminal.copyOnSelect"),
     en("settings.terminal.rightClickPaste"),
     en("settings.terminal.osc52Clipboard"),
+    en("settings.terminal.clipboard.trimGutter"),
   ]);
   expect(p.field("preview").props.style).toMatchObject({ fontFamily: "Fira Code", fontSize: 16 });
 });
@@ -351,6 +352,15 @@ it("word separators: committed on blur, Reset shown only when not default and pu
   expect(put).toHaveBeenCalledTimes(2);
   expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, wordSeparators: DEFAULT_WORD_SEPARATORS });
   expect(p.all().some((n) => n.props["data-field"] === "words-reset")).toBe(false);
+});
+
+it("trim gutter on copy is on by default and a click puts it off", async () => {
+  const p = await page();
+  const put = vi.spyOn(p.api, "terminalSettingsPut");
+  expect(p.sw("copyTrimsGutter").props["aria-checked"]).toBe(true);
+  p.sw("copyTrimsGutter").props.onClick();
+  await tick();
+  expect(put).toHaveBeenLastCalledWith({ ...TERMINAL_DEFAULTS, copyTrimsGutter: false });
 });
 
 it("TUI scroll speed commits whole steps and clamps to 10", async () => {

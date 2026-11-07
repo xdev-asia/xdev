@@ -15,7 +15,12 @@ import type { SettingsSectionProps } from "./sections";
 export const FONT_WEIGHTS: FontWeight[] = ["normal", "medium", "bold"];
 export const CURSOR_STYLES: CursorStyle[] = ["block", "bar", "underline"];
 // The switches of the Clipboard group, in the order the page lists them.
-export const CLIPBOARD_SWITCHES = ["copyOnSelect", "rightClickPaste", "osc52Clipboard"] as const;
+export const CLIPBOARD_SWITCHES = ["copyOnSelect", "rightClickPaste", "osc52Clipboard", "copyTrimsGutter"] as const;
+// Switches whose label is not `settings.terminal.<field>`: their label key and, when there is one, hint key.
+const CLIPBOARD_TEXT: Partial<Record<(typeof CLIPBOARD_SWITCHES)[number], { label: string; hint: string }>> = {
+  osc52Clipboard: { label: "settings.terminal.osc52Clipboard", hint: "settings.terminal.osc52ClipboardHint" },
+  copyTrimsGutter: { label: "settings.terminal.clipboard.trimGutter", hint: "settings.terminal.clipboard.trimGutterHint" },
+};
 const FONT_IDS = ["terminal.fontFamily", "terminal.fontSize", "terminal.fontWeight", "terminal.lineHeight"];
 const CURSOR_IDS = ["terminal.cursorStyle", "terminal.cursorBlink"];
 export const ON_QUIT: OnQuit[] = ["keep", "end", "ask"];
@@ -251,15 +256,15 @@ export function TerminalPage(props: SettingsSectionProps): JSX.Element {
         {CLIPBOARD_SWITCHES.map((k) => settingShown(filter, `terminal.${k}`) && (
           <li key={k} className="settings-item" data-switch={k} data-setting-id={`terminal.${k}`}>
             <div className="settings-item-text">
-              <strong>{t(`settings.terminal.${k}`)}</strong>
-              {k === "osc52Clipboard" && <span className="settings-path">{t("settings.terminal.osc52ClipboardHint")}</span>}
+              <strong>{t(CLIPBOARD_TEXT[k]?.label ?? `settings.terminal.${k}`)}</strong>
+              {CLIPBOARD_TEXT[k] && <span className="settings-path">{t(CLIPBOARD_TEXT[k].hint)}</span>}
             </div>
             <button
               type="button"
               role="switch"
               className="agent-switch"
               aria-checked={current[k]}
-              aria-label={t(`settings.terminal.${k}`)}
+              aria-label={t(CLIPBOARD_TEXT[k]?.label ?? `settings.terminal.${k}`)}
               disabled={busy}
               onClick={() => void patch({ [k]: !current[k] })}
             />

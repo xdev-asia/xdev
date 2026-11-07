@@ -6334,5 +6334,9 @@
   "vault.steps.step": "Bước {current} trên {total}",
   "settings.terminal.interaction.tuiScroll": "Tốc độ cuộn trong ứng dụng toàn màn hình",
   "settings.terminal.interaction.tuiScrollHint": "Số bước cuộn gửi cho chương trình toàn màn hình như vim hoặc less. 1 là mặc định.",
-  "settings.terminal.interaction.scrollReset": "Đặt lại"
+  "settings.terminal.interaction.scrollReset": "Đặt lại",
+  "settings.terminal.clipboard.trimGutter": "Bỏ viền khi sao chép",
+  "settings.terminal.clipboard.trimGutterHint": "Khi sao chép, bỏ viền khung và khoảng trắng cuối dòng.",
+  "settings.terminal.keyboard.jisYen": "Phím Yên JIS (¥) thành dấu gạch ngược (\\)",
+  "settings.terminal.keyboard.jisYenHint": "Phím ¥ của bàn phím tiếng Nhật gõ dấu gạch ngược trong terminal."
 }
