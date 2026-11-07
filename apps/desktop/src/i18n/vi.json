@@ -6296,5 +6296,17 @@
   "settings.v2.save.save": "Lưu thay đổi",
   "settings.v2.save.discard": "Bỏ thay đổi",
   "settings.v2.save.saving": "Đang lưu",
-  "settings.v2.save.leave": "Rời trang này? Thay đổi của bạn chưa được lưu."
+  "settings.v2.save.leave": "Rời trang này? Thay đổi của bạn chưa được lưu.",
+  "squads.lane.plan": "Lên kế hoạch",
+  "squads.lane.working": "Đang làm",
+  "squads.lane.review": "Chờ review",
+  "squads.lane.done": "Xong",
+  "squads.progress": "Tiến độ",
+  "squads.card.need": "Cần bạn",
+  "squads.card.idle": "Đang chờ",
+  "squads.card.running": "Đang làm",
+  "squads.card.waiting": "Đang chờ bạn",
+  "squads.card.error": "Lỗi",
+  "squads.toLead": "Tin nhắn cho trưởng nhóm",
+  "squads.sendLead": "Gửi cho trưởng nhóm"
 }

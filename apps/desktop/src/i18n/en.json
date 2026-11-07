@@ -6296,5 +6296,17 @@
   "settings.v2.save.save": "Save changes",
   "settings.v2.save.discard": "Discard",
   "settings.v2.save.saving": "Saving",
-  "settings.v2.save.leave": "Leave this page? Your changes are not saved."
+  "settings.v2.save.leave": "Leave this page? Your changes are not saved.",
+  "squads.lane.plan": "Planning",
+  "squads.lane.working": "Working",
+  "squads.lane.review": "Waiting for review",
+  "squads.lane.done": "Done",
+  "squads.progress": "Progress",
+  "squads.card.need": "Needs you",
+  "squads.card.idle": "Idle",
+  "squads.card.running": "Working",
+  "squads.card.waiting": "Waiting",
+  "squads.card.error": "Error",
+  "squads.toLead": "Message to the lead",
+  "squads.sendLead": "Send to the lead"
 }

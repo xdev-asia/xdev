@@ -1,4 +1,4 @@
-import { Button, Field, Select } from "@xdev-asia/ui";
+import { BoardCard, BoardColumn, Button, EmptyState, Field, Meter, Select, Skeleton, type BoardCardStatus } from "@xdev-asia/ui";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import {
@@ -10,6 +10,7 @@ import {
   type Quota,
   type Role,
   type SeatState,
+  type SeatStatus,
   type SquadEvent,
   type SquadItem,
   type SquadStatus,
@@ -34,6 +35,10 @@ const EVENT_KINDS = new Set([
   "start", "step", "turn", "reply", "escalation", "answer", "steer", "resume",
   "stop", "needs_you", "skip", "test", "review", "done", "error", "recovered", "seat",
 ]);
+type Lane = "plan" | "working" | "review" | "done";
+const LANES: readonly Lane[] = ["plan", "working", "review", "done"];
+const LANE_OF: Record<SeatStatus, Lane> = { idle: "plan", vacant: "plan", working: "working", needs_you: "review", done: "done", skipped: "done" };
+const CARD_STATUS: Partial<Record<SeatStatus, BoardCardStatus>> = { idle: "idle", working: "running", needs_you: "waiting" };
 const RING_R = 16;
 const RING_C = 2 * Math.PI * RING_R;
 
@@ -126,6 +131,7 @@ export function SquadsView({
   const [confirming, setConfirming] = useState(false);
   const [allEvents, setAllEvents] = useState<SquadEvent[] | null>(null);
   const [revision, setRevision] = useState(0);
+  const [leadNote, setLeadNote] = useState("");
 
   useEffect(() => {
     let disposed = false;
@@ -330,37 +336,52 @@ export function SquadsView({
     );
   }
 
-  function seatButton(v: View, role: Role) {
-    const s = seatState(v, role);
-    const account = v.squad.seats.find((x) => x.role === role)?.account ?? null;
-    const p = provider(account);
-    const percent = contextPercent(s);
-    const line =
-      s.state === "needs_you" || s.state === "vacant" || s.state === "skipped"
-        ? t(`squads.seat.${s.state}`)
-        : [p === null ? account : t(`accounts.provider.${p}`), percent === null ? null : `${percent}%`].filter(Boolean).join(" · ");
+  // The seats sit in four lanes by what they are doing; a seat that waits for the person is tinted.
+  function lanes(v: View) {
+    const states = ROLES.map((role) => ({ role, state: seatState(v, role) }));
+    const lane = (key: Lane) => states.filter((x) => LANE_OF[x.state.state] === key);
+    const label = (key: Lane) => t(`squads.lane.${key}`);
+    const labels = {
+      need: t("squads.card.need"),
+      status: { idle: t("squads.card.idle"), running: t("squads.card.running"), waiting: t("squads.card.waiting"), error: t("squads.card.error") },
+    };
     return (
-      <button
-        type="button"
-        className="squad-seat"
-        data-role={role}
-        data-state={s.state}
-        aria-pressed={sheet === role}
-        onClick={() => {
-          setSheet(role);
-          setSteer("");
-          setSeatAccount(null);
-        }}
-      >
-        <Ring percent={percent} monogram={p === "codex" ? "X" : p === "claude" ? "C" : ""} />
-        <span className="squad-seat-text">
-          <span className="squad-seat-role">
-            <span className="squad-dot" data-state={s.state} />
-            {t(`squads.role.${role}`)}
-          </span>
-          <span className="squad-seat-line">{line}</span>
-        </span>
-      </button>
+      <div className="squad-lanes" aria-label={t("squads.seats")}>
+        {LANES.map((key) => (
+          <BoardColumn key={key} title={label(key)} count={lane(key).length} data-lane={key}>
+            {lane(key).map(({ role, state }) => {
+              const account = v.squad.seats.find((x) => x.role === role)?.account ?? null;
+              const p = provider(account);
+              const percent = contextPercent(state);
+              const line =
+                state.state === "needs_you" || state.state === "vacant" || state.state === "skipped"
+                  ? t(`squads.seat.${state.state}`)
+                  : [p === null ? account : t(`accounts.provider.${p}`), percent === null ? null : `${percent}%`].filter(Boolean).join(" · ");
+              const status: BoardCardStatus | undefined = CARD_STATUS[state.state];
+              return (
+                <BoardCard
+                  key={role}
+                  className="squad-seat"
+                  data-role={role}
+                  data-state={state.state}
+                  title={t(`squads.role.${role}`)}
+                  meta={line}
+                  status={status}
+                  tone={state.state === "needs_you" ? "need" : undefined}
+                  selected={sheet === role}
+                  labels={labels}
+                  actions={<Ring percent={percent} monogram={p === "codex" ? "X" : p === "claude" ? "C" : ""} />}
+                  onOpen={() => {
+                    setSheet(role);
+                    setSteer("");
+                    setSeatAccount(null);
+                  }}
+                />
+              );
+            })}
+          </BoardColumn>
+        ))}
+      </div>
     );
   }
 
@@ -492,6 +513,8 @@ export function SquadsView({
     const open = escalations.filter((e) => e.answered === null).length;
     const started = v.run ? relativeTime(now, v.run.started) : null;
     const events = allEvents ?? v.events;
+    const staffed = seatsNow.filter((x) => x.state !== "vacant");
+    const progress = staffed.length === 0 ? 0 : (staffed.filter((x) => x.state === "done" || x.state === "skipped").length / staffed.length) * 100;
     const canRun = s === "idle" || s === "done" || s === "stopped";
     return (
       <section className="squad-page" aria-label={v.squad.name}>
@@ -515,7 +538,12 @@ export function SquadsView({
             </span>
           </div>
 
-          {v.run && <p className="squad-goal">{v.run.goal}</p>}
+          {v.run && (
+            <div className="squad-card squad-goal-card">
+              <p className="squad-goal">{v.run.goal}</p>
+              <Meter value={progress} label={t("squads.progress")} />
+            </div>
+          )}
           <div className="task-row squad-controls">
             {canRun && (
               <form
@@ -537,7 +565,7 @@ export function SquadsView({
               </Button>
             )}
             {(s === "running" || s === "waiting") && (
-              <Button type="button" style={COMPACT} className="squad-stop" onClick={() => setConfirming(true)}>
+              <Button type="button" variant="ghost" style={COMPACT} className="squad-stop" onClick={() => setConfirming(true)}>
                 {t("squads.stop")}
               </Button>
             )}
@@ -573,12 +601,7 @@ export function SquadsView({
               <h3 className="squad-card-title">{t("squads.seats")}</h3>
               <span className="squad-tag">{t("squads.hierarchy")}</span>
             </div>
-            <div className="squad-tree" aria-label={t("squads.seats")}>
-              <div className="squad-tree-lead">{seatButton(v, "lead")}</div>
-              <div className="squad-tree-implement">{seatButton(v, "implement")}</div>
-              <div className="squad-tree-review">{seatButton(v, "review")}</div>
-              <div className="squad-tree-tests">{seatButton(v, "tests")}</div>
-            </div>
+            {lanes(v)}
             <p className="doc-subtitle">{t("squads.ringHint")}</p>
           </div>
 
@@ -609,6 +632,18 @@ export function SquadsView({
             ) : (
               <ol className="squad-list squad-events">{[...events].reverse().map((e, i) => eventLine(e, i, now))}</ol>
             )}
+            <form
+              className="task-form squad-lead-form"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (await quick(() => api.steerSquad(v.squad.id, "lead", leadNote))) setLeadNote("");
+              }}
+            >
+              <Field label={t("squads.toLead")} value={leadNote} placeholder={t("squads.steerHint")} onChange={(e) => setLeadNote(e.target.value)} />
+              <Button variant="primary" type="submit" style={COMPACT} disabled={leadNote.trim() === "" || v.run === null || seatState(v, "lead").state === "vacant"}>
+                {t("squads.sendLead")}
+              </Button>
+            </form>
           </section>
           </div>
           <div className="task-row">
@@ -653,9 +688,9 @@ export function SquadsView({
       {problem && note(problem)}
       {creating && form()}
       {items === undefined ? (
-        !problem && <p className="placeholder">{t("squads.loading")}</p>
+        !problem && <div className="placeholder" role="status" aria-label={t("squads.loading")}><Skeleton shape="block" /></div>
       ) : items.length === 0 ? (
-        !creating && <p className="placeholder">{t("squads.empty")}</p>
+        !creating && <EmptyState size="center" icon="squads" title={t("squads.empty")} />
       ) : (
         <div className="tasks-body">
           <ul className="task-list" aria-label={t("squads.title")}>
@@ -673,7 +708,7 @@ export function SquadsView({
               </li>
             ))}
           </ul>
-          {shown ? page(shown) : <p className="placeholder">{t("squads.loading")}</p>}
+          {shown ? page(shown) : <div className="placeholder" role="status" aria-label={t("squads.loading")}><Skeleton shape="block" /></div>}
         </div>
       )}
       <ConfirmDialog
