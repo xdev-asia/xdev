@@ -314,6 +314,7 @@ export function Terminal(props: {
           modifyOtherKeys: modes.modifyOtherKeys(),
           alternateScreen: term.buffer.active.type === "alternate",
           agent: isAgent.current,
+          jisYenToBackslash: getTerminalSettings().macJisYenToBackslash,
         });
         if (resolved === null) return true;
         if (resolved.type === "scroll") {
