@@ -20,7 +20,7 @@ import { Sessions } from "./sessions";
 import { addTab, leaves, paneOf, removeTab, resize, selectTab, single, splitPane, toggleExpand, type PaneLayout, type PaneNode } from "./paneTree";
 import { PaneView } from "./PaneView";
 import { RecentTabSwitcher } from "./RecentTabSwitcher";
-import { TabStrip } from "./TabStrip";
+import { TabMarks, TabStrip } from "./TabStrip";
 import { TabTitleDialog } from "./TabTitleDialog";
 import { PREVIEW_DEBOUNCE_MS, WorktreeTabs } from "./WorktreeTabs";
 
@@ -650,7 +650,7 @@ it("double click on a tab renames it inline", () => {
 const rowOf = (view: View, id: string) =>
   view.all().find((n) => n.props.className === "ws-tab" && nodes(n.props.children).some((c) => c.props["data-tab"] === id))!;
 
-it("a pinned tab shows the pin glyph and has no close button", () => {
+it("a pinned tab is marked pinned and has no close button; the pin glyph waits in its card", () => {
   const api = createMockApi({});
   const live = (sessions = new Sessions(api));
   const one = live.open(A, "shell");
@@ -659,8 +659,10 @@ it("a pinned tab shows the pin glyph and has no close button", () => {
   const view = harness(api, live);
   const pinned = nodes(rowOf(view, one.id).props.children);
   expect(rowOf(view, one.id).props["data-pinned"]).toBe(true);
-  expect(pinned.some((n) => n.props.className === "ws-tab-pin" && n.props["aria-label"] === en("tabMenu.pinned"))).toBe(true);
+  expect(pinned.some((n) => n.props.className === "ws-tab-pin")).toBe(false);
   expect(pinned.some((n) => n.props.className === "ws-tab-close")).toBe(false);
+  const card = renderToStaticMarkup(<TabMarks tab={live.tabs(A).find((t) => t.id === one.id)!} cacheLeft={null} note={false} />);
+  expect(card).toContain(`class="ws-tab-pin" role="img" aria-label="${en("tabMenu.pinned")}"`);
   // The other tab is unchanged.
   const plain = nodes(rowOf(view, two.id).props.children);
   expect(plain.some((n) => n.props.className === "ws-tab-pin")).toBe(false);
@@ -810,13 +812,12 @@ it("skip_tab_shows_badge", async () => {
   await tick();
   await run(view.terminals()[1]);
   expect(live.tabs(A).find((t) => t.id === tab.id)!.permissions).toBe("skip");
-  const badge = (id: string) =>
-    nodes(view.find((n) => n.props.role === "tab" && n.props["data-tab"] === id)!.props.children).find((n) => n.props.className === "ws-tab-skip");
-  expect(badge(tab.id)).toBeDefined();
-  expect(badge(shell.id)).toBeUndefined();
-  const html = view.html();
-  expect(html).toContain(`>${en("workspace.tabs.skip")}<`);
-  expect(html).toContain('class="ws-tab-skip-dot"');
+  // The strip keeps two marks; the badge is in the tab's card.
+  expect(view.html()).not.toContain("ws-tab-skip");
+  const card = (id: string) => renderToStaticMarkup(<TabMarks tab={live.tabs(A).find((t) => t.id === id)!} cacheLeft={null} note={false} />);
+  expect(card(tab.id)).toContain(`>${en("workspace.tabs.skip")}<`);
+  expect(card(tab.id)).toContain('class="ws-tab-skip-dot"');
+  expect(card(shell.id)).not.toContain("ws-tab-skip");
 });
 
 it("approval_dialog_warns_on_skip", async () => {

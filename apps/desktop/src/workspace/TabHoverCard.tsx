@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { Api } from "@/api";
 
@@ -11,8 +11,8 @@ export interface TabCardData {
 }
 
 /** The card text: title, agent, status and working directory of a tab. `t` translates the row labels. */
-export function TabHoverCard(props: { id: string; data: TabCardData; at: { x: number; y: number }; labels: { agent: string; status: string; cwd: string }; output?: string[] }): JSX.Element {
-  const { id, data, at, labels, output } = props;
+export function TabHoverCard(props: { id: string; data: TabCardData; at: { x: number; y: number }; labels: { agent: string; status: string; cwd: string }; output?: string[]; children?: ReactNode }): JSX.Element {
+  const { id, data, at, labels, output, children } = props;
   const width = typeof window === "undefined" ? 320 : window.innerWidth;
   const left = Math.max(8, Math.min(at.x, width - 8 - Math.min(320, width - 16)));
   return (
@@ -26,6 +26,7 @@ export function TabHoverCard(props: { id: string; data: TabCardData; at: { x: nu
         <dt>{labels.cwd}</dt>
         <dd className="ws-mono">{data.cwd}</dd>
       </dl>
+      {children}
       {output && output.length > 0 && (
         <div className="ws-tab-card-out" data-tab-output>
           {output.map((line, i) => (

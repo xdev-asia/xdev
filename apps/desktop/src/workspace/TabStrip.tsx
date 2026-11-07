@@ -114,6 +114,38 @@ function CacheBadge({ left }: { left: number }): JSX.Element {
   );
 }
 
+/** What is left of a tab's prompt cache at `now`, or null without a timer for it (or with the switch off). */
+export function cacheLeftOf(cache: { timers: ReadonlyMap<string, number>; ttlMs: number } | undefined, id: string, now: number): number | null {
+  const at = cache?.timers.get(id);
+  return cache && at !== undefined ? cacheLeftMs(at, now, cache.ttlMs) : null;
+}
+
+/**
+ * The marks of a terminal tab beyond its agent glyph and status: pinned, runs without asking, a question
+ * that holds, the prompt cache and a sticky note. The hover card lists them, so the strip keeps two marks.
+ */
+export function TabMarks({ tab, cacheLeft, note }: { tab: Tab; cacheLeft: number | null; note: boolean }): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <div className="ws-tab-card-marks">
+      {tab.pinned && (
+        <span className="ws-tab-pin" role="img" aria-label={t("tabMenu.pinned")} title={t("tabMenu.pinned")}>
+          <Icon name="pin" size={10} />
+        </span>
+      )}
+      {tab.permissions === "skip" && (
+        <span className="ws-tab-skip" title={t("workspace.tabs.skipHint")}>
+          <span className="ws-tab-skip-dot" aria-hidden="true" />
+          {t("workspace.tabs.skip")}
+        </span>
+      )}
+      {tab.agent && <QuestionBadge tab={tab} />}
+      {cacheLeft !== null && <CacheBadge left={cacheLeft} />}
+      {note && <span className="ws-tab-note" role="img" aria-label={t("notes.tab.dot")} title={t("notes.tab.dot")} />}
+    </div>
+  );
+}
+
 /**
  * The tab strip of one pane: its tabs, the `+` menu (new tab, split) and the tab context menu.
  * It only draws; what each action does is the caller's.
@@ -462,24 +494,11 @@ export function TabStrip(props: {
                 >
                   {tab ? (
                     <>
+                      {/* Two marks at most: the agent glyph and the status. The rest is in the hover card. */}
                       <AgentIcon profile={tab.profileId} size={16} />
-                      {tab.pinned && (
-                        <span className="ws-tab-pin" role="img" aria-label={t("tabMenu.pinned")} title={t("tabMenu.pinned")}>
-                          <Icon name="pin" size={10} />
-                        </span>
-                      )}
                       <span className="ws-tab-name">{shownName(tab)}</span>
-                      {tab.permissions === "skip" && (
-                        <span className="ws-tab-skip" title={t("workspace.tabs.skipHint")}>
-                          <span className="ws-tab-skip-dot" aria-hidden="true" />
-                          {t("workspace.tabs.skip")}
-                        </span>
-                      )}
                       {/* Plain shells are not agents: no status mark. */}
                       {TabIndicator({ status: tab.agent ? tab.status : null, label: statusLabel(tab.status), progress: tab.progress, progressLabel: t("workspace.tabs.progress", { status: statusLabel(tab.status), percent: progressPercent(tab.progress) ?? 0 }) })}
-                      {tab.agent && <QuestionBadge tab={tab} />}
-                      {cache && cache.timers.has(tab.id) && <CacheBadge left={cacheLeftMs(cache.timers.get(tab.id)!, stripNow, cache.ttlMs)} />}
-                      {props.noteTabs?.has(tab.id) && <span className="ws-tab-note" role="img" aria-label={t("notes.tab.dot")} title={t("notes.tab.dot")} />}
                     </>
                   ) : (
                     <>
@@ -596,7 +615,9 @@ export function TabStrip(props: {
             labels={{ agent: t("workspace.tabs.card.agent"), status: t("workspace.tabs.card.status"), cwd: t("workspace.tabs.card.cwd") }}
             data={{ title: shownName(hoverTab), agent: name(hoverTab), status: statusLabel(hoverTab.status), cwd: hoverTab.worktree }}
             output={hoverOutput}
-          />
+          >
+            <TabMarks tab={hoverTab} cacheLeft={cacheLeftOf(cache, hoverTab.id, stripNow)} note={!!props.noteTabs?.has(hoverTab.id)} />
+          </TabHoverCard>
         </CardPortal>
       )}
     </div>

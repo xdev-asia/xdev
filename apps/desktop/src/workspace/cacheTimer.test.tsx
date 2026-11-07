@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { translate } from "@/i18n";
 import { advanceTimers, cacheLeftMs, formatCacheLeft, NO_TIMERS, type TimerState } from "./cacheTimer";
 import type { Tab } from "./sessions";
-import { TabStrip } from "./TabStrip";
+import { TabMarks, TabStrip, cacheLeftOf } from "./TabStrip";
 
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
 
@@ -87,16 +87,20 @@ function strip(tabs: Tab[], cache?: { timers: ReadonlyMap<string, number>; ttlMs
   );
 }
 
-it("a settled tab shows 5:00, then 0:00 becomes the cold mark", () => {
+const marks = (t: Tab, cache?: { timers: ReadonlyMap<string, number>; ttlMs: number }) =>
+  renderToStaticMarkup(createElement(TabMarks, { tab: t, cacheLeft: cacheLeftOf(cache, t.id, Date.now()), note: false }));
+
+it("a settled tab's card shows 5:00, then 0:00 becomes the cold mark; the strip keeps two marks", () => {
   const tabs = [tab("a", "done")];
   const timers = new Map([["a", Date.now()]]);
   const cache = { timers, ttlMs: 5 * MIN };
-  expect(strip(tabs, cache)).toContain(">5:00<");
-  expect(strip(tabs, cache)).toContain("ws-tab-cache");
+  expect(strip(tabs, cache)).not.toContain("ws-tab-cache");
+  expect(marks(tabs[0], cache)).toContain(">5:00<");
+  expect(marks(tabs[0], cache)).toContain("ws-tab-cache");
   vi.advanceTimersByTime(MIN + 30_000);
-  expect(strip(tabs, cache)).toContain(">3:30<");
+  expect(marks(tabs[0], cache)).toContain(">3:30<");
   vi.advanceTimersByTime(3 * MIN + 30_000);
-  const cold = strip(tabs, cache);
+  const cold = marks(tabs[0], cache);
   expect(cold).toContain("ws-tab-cache-cold");
   expect(cold).toContain(en("usage.cacheTimer.cold"));
   expect(cold).toContain(en("usage.cacheTimer.coldTitle"));
@@ -105,6 +109,8 @@ it("a settled tab shows 5:00, then 0:00 becomes the cold mark", () => {
 
 it("with the switch off, or no timer for the tab, nothing is drawn", () => {
   const tabs = [tab("a", "done")];
-  expect(strip(tabs)).not.toContain("ws-tab-cache");
-  expect(strip(tabs, { timers: new Map(), ttlMs: 5 * MIN })).not.toContain("ws-tab-cache");
+  expect(cacheLeftOf(undefined, "a", Date.now())).toBeNull();
+  expect(cacheLeftOf({ timers: new Map(), ttlMs: 5 * MIN }, "a", Date.now())).toBeNull();
+  expect(marks(tabs[0])).not.toContain("ws-tab-cache");
+  expect(marks(tabs[0], { timers: new Map(), ttlMs: 5 * MIN })).not.toContain("ws-tab-cache");
 });

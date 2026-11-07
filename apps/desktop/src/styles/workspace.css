@@ -4185,6 +4185,19 @@ button.ws-tree-row[data-flash="true"] {
   overflow-wrap: anywhere;
 }
 
+/* The tab's other marks (pinned, skip, question, cache, note), out of the strip. */
+.ws-tab-card-marks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x-space-2);
+  margin-top: var(--x-space-1);
+}
+
+.ws-tab-card-marks:empty {
+  display: none;
+}
+
 /* Drag to reorder: a 2px edge shows where the tab lands. */
 .ws-tab[data-dragging="true"] {
   opacity: 0.5;
