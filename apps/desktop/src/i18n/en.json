@@ -6232,5 +6232,10 @@
   "settings.hosts.error.bad_path": "Use an absolute path, or a path starting with ~/, with letters, digits and . _ / + -.",
   "settings.hosts.error.bad_env": "Use names with letters, digits and underscores, not starting with a digit, and at most 64 variables.",
   "settings.hosts.error.bad_arg": "Use a whole number from 1 to 3650.",
-  "settings.hosts.error.not_found": "That SSH host no longer exists."
+  "settings.hosts.error.not_found": "That SSH host no longer exists.",
+  "sessions.host.label": "Host",
+  "sessions.host.local": "This device",
+  "sessions.host.synced": "Last synced {when}",
+  "sessions.host.never": "Not synced yet",
+  "sessions.host.offline": "The host is offline. Showing the last synced sessions."
 }

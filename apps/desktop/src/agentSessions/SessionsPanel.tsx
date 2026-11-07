@@ -34,6 +34,8 @@ export interface SessionsPanelProps {
   onSort(sort: SessionSort): void;
   onAgent(agent: Agent | null): void;
   onHome(homeId: string | null): void;
+  /** Follow an SSH host, or (null) this device; without it there is no host picker. */
+  onHost?(host: string | null): void;
   onMore(): void;
   /** Resume a row, or (`tab` set) bring its open tab forward. */
   onPrimary(row: SessionRow, tab: string | null): void;
@@ -351,6 +353,27 @@ export function SessionsPanel(props: SessionsPanelProps): JSX.Element {
             </button>
           ))}
         </div>
+        {props.onHost && state.hosts && state.hosts.length > 0 && (
+          <div className="as-host">
+            <select className="as-select" aria-label={t("sessions.host.label")} value={query.host ?? ""} onChange={(e) => props.onHost?.(e.target.value === "" ? null : e.target.value)}>
+              <option value="">{t("sessions.host.local")}</option>
+              {state.hosts.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.label}
+                </option>
+              ))}
+            </select>
+            {query.host && (
+              <span className="as-host-status" role="status">
+                {state.hostStatus?.error?.code === "remote_offline"
+                  ? t("sessions.host.offline")
+                  : state.hostStatus?.lastSyncMs
+                    ? t("sessions.host.synced", { when: ago(state.hostStatus.lastSyncMs, now, t) })
+                    : t("sessions.host.never")}
+              </span>
+            )}
+          </div>
+        )}
         <div className="as-filters">
           <select className="as-select" aria-label={t("agentSessions.sort.label")} value={searching || query.sort !== "relevance" ? query.sort : "lastDesc"} onChange={(e) => props.onSort(e.target.value as SessionSort)}>
             {searching && <option value="relevance">{t("agentSessions.sort.relevance")}</option>}

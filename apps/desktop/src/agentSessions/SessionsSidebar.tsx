@@ -129,10 +129,12 @@ export function SessionsSidebar(props: {
         focusSeq={props.focusSeq}
         reveal={props.reveal}
         onSearch={(text) => store.search(text)}
-        onScope={(kind) => void store.setQuery({ scope: scopeFor(kind, path, repo) })}
+        // A folder scope is of this device, so it leaves the followed host.
+        onScope={(kind) => void store.setQuery(kind === "all" ? { scope: scopeFor(kind, path, repo) } : { scope: scopeFor(kind, path, repo), host: undefined })}
         onSort={(sort) => void store.setQuery({ sort })}
         onAgent={(agent) => void store.setQuery({ agent })}
         onHome={(homeId) => void store.setQuery({ homeId })}
+        onHost={(host) => void store.setHost(host)}
         onMore={() => void store.loadMore()}
         onPrimary={(row, tab) => (tab ? props.onFocusTab(tab) : resume(row))}
         onCopyId={(row) => void navigator.clipboard?.writeText(row.session.id).catch(() => {})}

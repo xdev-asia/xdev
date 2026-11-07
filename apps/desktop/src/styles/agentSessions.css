@@ -511,3 +511,18 @@
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+
+.as-host {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.as-host-status {
+  color: var(--text-2);
+  font-size: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

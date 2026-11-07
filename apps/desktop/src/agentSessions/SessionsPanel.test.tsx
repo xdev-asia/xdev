@@ -211,4 +211,35 @@ describe("SessionsPanel", () => {
     expect(main).toHaveLength(2);
     expect(html(props(rows))).not.toContain(translate("en", "agentSessions.drop"));
   });
+
+  it("the host picker is hidden without SSH hosts and shown with one", () => {
+    const onHost = vi.fn();
+    expect(html(props([], { onHost }))).not.toContain(translate("en", "sessions.host.label"));
+    const hosts = [{ id: "h1", alias: "box", label: "Build box", overrides: 0 }];
+    const markup = html(props([], { onHost }, { hosts }));
+    expect(markup).toContain(`aria-label="${translate("en", "sessions.host.label")}"`);
+    expect(markup).toContain("Build box");
+    expect(markup).toContain(translate("en", "sessions.host.local"));
+    // A panel given no handler has no picker either.
+    expect(html(props([], {}, { hosts }))).not.toContain(translate("en", "sessions.host.label"));
+  });
+
+  it("a host header says when it last synced, or that it never did", () => {
+    const hosts = [{ id: "h1", alias: "box", label: "box", overrides: 0 }];
+    const query = { ...DEFAULT_QUERY, host: "h1" };
+    const synced = html(props([], { onHost: vi.fn() }, { hosts, query, hostStatus: { files: 1, bytes: 1, capped: false, lastSyncMs: NOW - 5 * 60_000 } }));
+    expect(synced).toContain(translate("en", "sessions.host.synced", { when: translate("en", "ago.minutes", { count: 5 }) }));
+    const never = html(props([], { onHost: vi.fn() }, { hosts, query, hostStatus: null }));
+    expect(never).toContain(translate("en", "sessions.host.never"));
+    // This device has no host header.
+    expect(html(props([], { onHost: vi.fn() }, { hosts }))).not.toContain("as-host-status");
+  });
+
+  it("an offline host says so and keeps the rows", () => {
+    const hosts = [{ id: "h1", alias: "box", label: "box", overrides: 0 }];
+    const status = { files: 1, bytes: 1, capped: false, lastSyncMs: NOW - 60_000, error: { code: "remote_offline" } };
+    const markup = html(props([row("a", "Fix login", NOW)], { onHost: vi.fn() }, { hosts, query: { ...DEFAULT_QUERY, host: "h1" }, hostStatus: status }));
+    expect(markup).toContain(translate("en", "sessions.host.offline"));
+    expect(markup).toContain("Fix login");
+  });
 });
