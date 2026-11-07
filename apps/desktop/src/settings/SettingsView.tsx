@@ -10,7 +10,7 @@ import { RevealSetting, SettingsSearch } from "./SettingsSearch";
 import { runSearch } from "./searchModel";
 
 /** Settings: the search and the list of sections on the left, the chosen one on the right. */
-export function SettingsView(props: { api: Api; onChanged(): void; initial?: string; arg?: string; target?: string; openView?(view: string): void }): JSX.Element {
+export function SettingsView(props: { api: Api; onChanged(): void; initial?: string; arg?: string; target?: string; openView?(view: string): void; openTerminal?(profile: string, title: string): string | null }): JSX.Element {
   const { t } = useI18n();
   const [active, setActive] = useState(() => (SECTIONS.some((s) => s.id === props.initial) ? props.initial! : SECTIONS[0].id));
   const [query, setQuery] = useState("");
@@ -59,7 +59,7 @@ export function SettingsView(props: { api: Api; onChanged(): void; initial?: str
       {section ? (
         <section className="settings-body" aria-label={t(section.labelKey)}>
           <SurfaceBoundary id="page.settings" surface={`Settings: ${section.id}`} resetKey={section.id} titleKey="boundary.page.title">
-            <section.Component key={section.id} api={props.api} onChanged={props.onChanged} arg={arg} filter={filter} openSection={openSection} openView={props.openView} />
+            <section.Component key={section.id} api={props.api} onChanged={props.onChanged} arg={arg} filter={filter} openSection={openSection} openView={props.openView} openTerminal={props.openTerminal} />
           </SurfaceBoundary>
           {props.target && !found.active && <RevealSetting id={props.target} />}
         </section>

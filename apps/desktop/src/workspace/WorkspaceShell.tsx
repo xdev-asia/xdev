@@ -2527,6 +2527,14 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
               arg={settingsAt.arg}
               target={settingsAt.target}
               openView={(v) => show(v as View)}
+              openTerminal={(profile, title) => {
+                if (!sessions || !current) return null;
+                const tab = sessions.open(current.path, profile);
+                sessions.rename(tab.id, title);
+                show("workspace");
+                focusTerminal(current.path);
+                return tab.id;
+              }}
               onChanged={() => {
                 void load();
                 void loadStatusSettings(api);

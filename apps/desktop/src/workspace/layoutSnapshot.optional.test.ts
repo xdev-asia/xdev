@@ -44,3 +44,13 @@ it("a damaged preset or canvas is dropped and the tree still loads", () => {
   expect(back && "preset" in back).toBe(false);
   expect(back && "canvas" in back).toBe(false);
 });
+
+it("an install tab is left out of the snapshot, so a restart never runs the install again", () => {
+  const ids = ["a", "b"];
+  const root = presetTree("columns", ids, ids[0]);
+  const layout: PaneLayout = { root, focused: leaves({ root, focused: "", expanded: null })[0].id, expanded: null };
+  const tabs: Record<string, { profileId: string }> = { a: { profileId: "xdev:install:gemini" }, b: { profileId: "shell" } };
+  const snap = toSnapshot(layout, (id) => ({ id, ...tabs[id], status: "idle", worktree: "/w", account: null, accountSource: null, permissions: "ask", agent: false, cli: null, client: { seq: 0 }, title: "t", renamed: false, pinned: false, color: null }) as never);
+  expect(JSON.stringify(snap)).not.toContain("xdev:install");
+  expect(JSON.stringify(snap)).toContain("shell");
+});

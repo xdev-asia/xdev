@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMockApi } from "./api";
+import { createMockApi, installProfile } from "./api";
 
 const decode = (chunks: Uint8Array[]) => chunks.map((c) => new TextDecoder().decode(c)).join("");
 
@@ -47,6 +47,17 @@ describe("mock terminal service", () => {
     api.__ptydSet({ state: "running" });
     api.__ptydHold({ id: "t1", output: "tail", lost: 100 });
     expect(await api.ptyAttach("t1", 0, () => {})).toMatchObject({ seq: 100, truncated: true });
+  });
+
+  it("an install profile prints one line and exits 0", async () => {
+    const api = createMockApi({});
+    const chunks: Uint8Array[] = [];
+    const exit = new Promise<{ id: string; code: number | null }>((resolve) => void api.onPtyExit(resolve));
+    const info = await api.ptySpawn("t1", "/w", installProfile("gemini"), null, 80, 24, (b) => chunks.push(b));
+    expect(info).toMatchObject({ agent: false, profile: "xdev:install:gemini" });
+    expect(decode(chunks)).toBe("npm install -g @example/gemini\r\n");
+    expect(await exit).toEqual({ id: "t1", code: 0 });
+    await expect(api.ptySpawn("t2", "/w", installProfile("claude"), null, 80, 24, () => {})).rejects.toMatchObject({ code: "install_none" });
   });
 
   it("lists, ends and restarts", async () => {

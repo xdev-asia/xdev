@@ -5,6 +5,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Banner, Button, IconButton, RadioGroup, StatusDot, Switch, Tag } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { AgentsPage } from "./AgentsPage";
+import { watchInstall } from "@/agents/installWatch";
 import { ProfileEditor } from "./ProfileEditor";
 import { AGENTS_SETTINGS_DEFAULTS } from "@/mockSettings";
 import { getToasts, resetToastsForTests } from "@/workspace/toastStore";
@@ -27,6 +28,7 @@ vi.mock("react", async (original) => {
   };
 });
 vi.mock("@/i18n", async (original) => ({ ...await original<typeof import("@/i18n")>(), useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }) }));
+vi.mock("@/agents/installWatch", () => ({ watchInstall: vi.fn(async () => () => {}) }));
 vi.mock("@/agents/profileStore", async (original) => ({ ...await original<typeof import("@/agents/profileStore")>(), useProfiles: () => store }));
 
 type Node = ReactElement<Record<string, any>>;
@@ -41,13 +43,13 @@ const en = (key: string, vars?: Record<string, string | number>) => translate("e
 
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; store.update.mockReset(); });
 
-async function page(setup?: (api: ReturnType<typeof createMockApi>) => Promise<unknown> | void) {
+async function page(setup?: (api: ReturnType<typeof createMockApi>) => Promise<unknown> | void, extra: Partial<Parameters<typeof AgentsPage>[0]> = {}) {
   const api = createMockApi({});
   await setup?.(api);
   const draw = () => {
     hooks.cursor = 0;
     hooks.active = true;
-    try { return AgentsPage({ api, onChanged: vi.fn() }); } finally { hooks.active = false; }
+    try { return AgentsPage({ api, onChanged: vi.fn(), ...extra }); } finally { hooks.active = false; }
   };
   draw();
   hooks.effects.splice(0).forEach((e) => e());
@@ -750,4 +752,75 @@ it("the_version_check_of_a_wsl_profile_is_unchecked", async () => {
   const claude = (await api.profiles()).profiles.find((v) => v.profile.id === "claude")!.profile;
   await api.profilePut({ ...claude, wsl: "Ubuntu" });
   await expect(api.agentProbe("claude")).rejects.toMatchObject({ code: "wsl_unchecked" });
+});
+
+// --- install ---
+
+const installDialog = (all: () => Node[]) => all().find((n) => n.type === ConfirmDialog && n.props.titleId === "agent-install-title")!;
+
+it("a_missing_agent_with_an_install_command_shows_install_and_docs", async () => {
+  const p = await page();
+  const fields = nodes(p.row("gemini"));
+  const install = fields.find((n) => n.props["data-field"] === "install")!;
+  expect(install.type).toBe(Button);
+  expect(install.props.variant).toBe("secondary");
+  expect(install.props.children).toBe(en("settings.agents.install.action"));
+  expect(fields.find((n) => n.props["data-field"] === "docs")!.props.label).toBe(en("settings.agents.catalog.docs"));
+});
+
+it("a_missing_agent_without_a_command_keeps_the_docs_install_link", async () => {
+  const p = await page();
+  const fields = nodes(p.row("devin"));
+  expect(fields.some((n) => n.props["data-field"] === "install")).toBe(false);
+  expect(fields.find((n) => n.props["data-field"] === "docs")!.props.label).toBe(en("settings.agents.catalog.install"));
+});
+
+it("installed_and_custom_rows_never_show_install", async () => {
+  const p = await page(async (api) => {
+    api.__installed = ["gemini"];
+    const claude = (await api.profiles()).profiles[0].profile;
+    await api.profilePut({ ...claude, id: "mine", name: "mine", cli: null, program: "x" });
+  });
+  for (const id of ["gemini", "mine"]) expect(nodes(p.row(id)).some((n) => n.props["data-field"] === "install")).toBe(false);
+});
+
+it("install_asks_first_and_shows_the_command", async () => {
+  const p = await page();
+  expect(installDialog(p.all).props.open).toBe(false);
+  nodes(p.row("gemini")).find((n) => n.props["data-field"] === "install")!.props.onClick();
+  const d = installDialog(p.all);
+  expect(d.props.open).toBe(true);
+  expect(d.props.title).toBe(en("settings.agents.install.title", { name: "Gemini CLI" }));
+  expect(d.props.confirmLabel).toBe(en("settings.agents.install.confirm"));
+  expect(nodes(d).some((n) => n.props.children === "npm install -g @example/gemini")).toBe(true);
+  d.props.onCancel();
+  expect(installDialog(p.all).props.open).toBe(false);
+});
+
+it("confirm_opens_a_terminal_with_the_install_profile", async () => {
+  const openTerminal = vi.fn(() => "tab1");
+  const p = await page(undefined, { openTerminal });
+  nodes(p.row("gemini")).find((n) => n.props["data-field"] === "install")!.props.onClick();
+  installDialog(p.all).props.onConfirm();
+  expect(openTerminal).toHaveBeenCalledWith("xdev:install:gemini", en("settings.agents.install.tab", { name: "Gemini CLI" }));
+  expect(installDialog(p.all).props.open).toBe(false);
+  expect(watchInstall).toHaveBeenCalledWith(p.api, "tab1", "Gemini CLI", "gemini", store.update);
+  expect(p.all().some((n) => n.props.role === "alert")).toBe(false);
+});
+
+it("no_open_worktree_shows_the_inline_error", async () => {
+  for (const extra of [{ openTerminal: () => null }, {}]) {
+    hooks.values = [];
+    const p = await page(undefined, extra);
+    nodes(p.row("gemini")).find((n) => n.props["data-field"] === "install")!.props.onClick();
+    installDialog(p.all).props.onConfirm();
+    const alert = p.all().find((n) => n.props.role === "alert")!;
+    expect(alert.props.children).toBe(en("settings.agents.install.noWorktree"));
+  }
+});
+
+it("install_strings_exist_in_both_languages", () => {
+  const keys = ["install.action", "install.title", "install.body", "install.confirm", "install.tab", "install.noWorktree", "install.done", "install.notFound", "install.failed"].map((k) => `settings.agents.${k}`);
+  keys.push("error.install_none", "error.npm_missing", "error.install_remote");
+  for (const key of keys) for (const locale of ["en", "vi"] as const) expect(translate(locale, key), `${locale} ${key}`).not.toBe(key);
 });
