@@ -54,7 +54,7 @@ vi.mock("@/i18n", async (original) => ({
   ...(await original<typeof import("@/i18n")>()),
   useI18n: () => ({ locale: "en", setLocale() {}, t: (key: string, vars?: Record<string, string | number>) => translate("en", key, vars) }),
 }));
-vi.mock("@/keys/keymap", () => ({ useKeymap: () => undefined }));
+vi.mock("@/keys/keymap", () => ({ useKeymap: () => undefined, chordLabel: () => "Ctrl+K" }));
 vi.mock("@/ui/hiddenApps", () => ({ useHiddenApps: () => [], useAppOrder: () => [] }));
 
 type Node = ReactElement<Record<string, any>>;
@@ -201,6 +201,13 @@ it("reports the open doc and none before one is open", async () => {
   const h = await host();
   expect(h.status.at(-1)).toMatchObject({ doc: null });
   h.of(Sidebar)[0].props.onOpen("a.md");
+  await h.settle();
+  expect(h.status.at(-1)).toMatchObject({ doc: "a.md" });
+});
+
+it("a request that names a doc opens it", async () => {
+  const h = await host();
+  h.props.request = { seq: 1, section: "docs", open: "a.md" };
   await h.settle();
   expect(h.status.at(-1)).toMatchObject({ doc: "a.md" });
 });

@@ -11,9 +11,9 @@ export function isJumpKey(e: KeyboardEvent, mac: boolean = IS_MAC): boolean {
 }
 
 /**
- * Calls `onToggle` on the jump key: the `palette.jump` binding of the keymap, taken in the capture
- * phase and stopped, so a focused terminal never receives the line feed.
+ * Calls `onToggle` on the palette keys: `palette.jump` (Mod+J) and `search.open` (Mod+K), taken in
+ * the capture phase and stopped, so a focused terminal or the docs view never receives them.
  */
 export function useJumpKey(onToggle: () => void): void {
-  useKeymap({ "palette.jump": () => onToggle() });
+  useKeymap({ "palette.jump": () => onToggle(), "search.open": () => onToggle() });
 }

@@ -545,13 +545,21 @@ function started() {
   return hooks.keyHandler!;
 }
 
-it("Ctrl+K clears the terminal and sends nothing to the program", () => {
+it("Ctrl+Shift+K clears the terminal and sends nothing to the program", () => {
+  vi.stubGlobal("navigator", { userAgent: "Windows" });
+  const handler = started();
+  const e = key({ ctrlKey: true, shiftKey: true, code: "KeyK" });
+  expect(handler(e)).toBe(false);
+  expect(hooks.calls).toEqual(["clear"]);
+  expect(e.preventDefault).toHaveBeenCalled();
+});
+
+it("Ctrl+K is the app's palette key: the terminal does not clear and does not send it to the program", () => {
   vi.stubGlobal("navigator", { userAgent: "Windows" });
   const handler = started();
   const e = key({ ctrlKey: true, code: "KeyK" });
   expect(handler(e)).toBe(false);
-  expect(hooks.calls).toEqual(["clear"]);
-  expect(e.preventDefault).toHaveBeenCalled();
+  expect(hooks.calls).toEqual([]);
 });
 
 it("OSC 133 marks the prompts and the exit code; Ctrl+Alt+Up and Down jump between prompts", () => {

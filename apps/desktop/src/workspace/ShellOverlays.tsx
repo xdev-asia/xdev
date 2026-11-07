@@ -105,7 +105,7 @@ export function ShellOverlays(p: {
   const { confirmTrust, setTrusting, setupAfterCreate, trusting } = p.setup;
   const { pendingReconnect, reconnectRemote } = p.remoteActs;
   const { answerSwitch, setSwitching, switching } = p.acct;
-  const { openDecompose, openSearch, openSettings, openTask, openTaskBoard, show, view } = p.views;
+  const { openDecompose, openDoc, openSearch, openSettings, openTask, openTaskBoard, show, view } = p.views;
   const { changesReady, runOnChanges } = p.panels;
   const { quitting } = p.layout;
   const { about, boardOpen, checkingOut, composerAsk, confirmEndAll, jumpOpen, machine, mergeSources, parentFor, quickOpen, renaming, setAbout, setBoardOpen, setCheckingOut, setConfirmEndAll, setJumpOpen, setMergeSources, setParentFor, setQuickOpen, setRenaming } = p.dialogs;
@@ -208,6 +208,7 @@ export function ShellOverlays(p: {
           },
           remoteReconnect: pendingReconnect ? () => void reconnectRemote(pendingReconnect.id) : undefined,
           searchDocs: openSearch,
+          openDoc,
           toggleSidebar: () => setSidebarOpen((o) => !o),
           showDocs: () => show("docs"),
           stageAllChanges: changesReady ? () => runOnChanges((h) => h.stageAll()) : undefined,

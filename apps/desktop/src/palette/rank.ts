@@ -1,11 +1,11 @@
 import { matchItem, tokens, type Hits } from "./match";
 import { validWorktreeName, type PaletteItem } from "./items";
 
-export type Filter = "all" | "tab" | "worktree" | "file" | "task" | "other";
-export const FILTERS: Filter[] = ["all", "tab", "worktree", "file", "task", "other"];
+export type Filter = "all" | "tab" | "worktree" | "file" | "task" | "doc" | "other";
+export const FILTERS: Filter[] = ["all", "tab", "worktree", "file", "task", "doc", "other"];
 
 export type Row =
-  | { type: "header"; label: "recentTabs" | "recentWorktrees" | "tabs" | "worktrees" | "files" | "tasks" | "other" }
+  | { type: "header"; label: "recentTabs" | "recentWorktrees" | "tabs" | "worktrees" | "files" | "tasks" | "docs" | "other" }
   | { type: "item"; item: PaletteItem; hits: Hits; digit: number | null }
   | { type: "more"; section: Filter; count: number }
   | { type: "create"; name: string };
@@ -30,15 +30,15 @@ export const MORE = 20;
 const NONE: Hits = { title: [], detail: [] };
 const HOUR = 3_600_000;
 
-type Section = "tab" | "worktree" | "file" | "task" | "other";
-const SECTIONS: Section[] = ["tab", "worktree", "file", "task", "other"];
+type Section = "tab" | "worktree" | "file" | "task" | "doc" | "other";
+const SECTIONS: Section[] = ["tab", "worktree", "file", "task", "doc", "other"];
 const sectionOf = (item: PaletteItem): Section =>
   item.kind === "tab" || item.kind === "chat"
     ? "tab"
-    : item.kind === "worktree" || item.kind === "file" || item.kind === "task"
+    : item.kind === "worktree" || item.kind === "file" || item.kind === "task" || item.kind === "doc"
       ? item.kind
       : "other";
-const LABEL = { tab: "tabs", worktree: "worktrees", file: "files", task: "tasks", other: "other" } as const;
+const LABEL = { tab: "tabs", worktree: "worktrees", file: "files", task: "tasks", doc: "docs", other: "other" } as const;
 
 function urgency(item: PaletteItem): number {
   switch (item.status) {
@@ -103,10 +103,15 @@ function typedRows(input: RankInput, toks: string[]): Row[] {
     const found: { item: PaletteItem; hits: Hits; score: number }[] = [];
     for (const item of input.items) {
       if (sectionOf(item) !== section) continue;
+      // A doc hit was matched by the docs index (it can match on the text, not the title): kept in the index's order.
+      if (section === "doc") {
+        found.push({ item, hits: NONE, score: 0 });
+        continue;
+      }
       const m = matchItem(item, toks);
       if (m) found.push({ item, hits: m.hits, score: m.score });
     }
-    found.sort(
+    if (section !== "doc") found.sort(
       (a, b) =>
         b.score - a.score ||
         // On an equal score live tabs come before chats, and chats sort newest first.

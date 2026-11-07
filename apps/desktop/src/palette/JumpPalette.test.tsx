@@ -153,7 +153,7 @@ it("escape closes through the palette", () => {
 
 it("tab and shift+tab cycle the kind scope", () => {
   const p = setup();
-  expect(p.pal().scopes.map((s) => s.value)).toEqual(["all", "tab", "worktree", "file", "task", "other"]);
+  expect(p.pal().scopes.map((s) => s.value)).toEqual(["all", "tab", "worktree", "file", "task", "doc", "other"]);
   const tab = p.key({ key: "Tab" });
   expect(tab.preventDefault).toHaveBeenCalled();
   expect(p.pal().scope).toBe("tab");

@@ -28,7 +28,7 @@ const ALL: Record<ActionId, true> = {
   "tab.reopenClosed": true, "tab.nextSameKind": true, "tab.prevSameKind": true, "tab.moveLeft": true, "tab.moveRight": true, "file.closeAll": true, "tab.closeAll": true, "tab.toggleChat": true,
   "browser.new": true,
   "settings.open": true, "settings.shortcuts": true,
-  "docs.search": true, "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true, "file.splitRight": true, "file.splitDown": true,
+  "docs.new": true, "docs.save": true, "file.save": true, "file.markdownPreview": true, "file.splitRight": true, "file.splitDown": true,
   "quickCommands.open": true, "quickOpen.open": true,
   "composer.open": true,
   "floating.toggle": true,
@@ -150,7 +150,9 @@ it("the KB-3 keys and the macOS terminal copy and paste", () => {
   expect(on("terminal.paste", "mac")).toEqual(["Cmd+V"]);
   expect(on("panel.ports", "mac")).toEqual(["Shift+Cmd+I"]);
   expect(on("panel.ports", "win")).toEqual([]);
-  expect(on("terminal.clear", "win")).toEqual(["Ctrl+K"]);
+  expect(on("terminal.clear", "win")).toEqual(["Ctrl+Shift+K"]);
+  expect(on("search.open", "win")).toEqual(["Ctrl+K"]);
+  expect(SHORTCUTS.some((d) => (d.id as string) === "docs.search")).toBe(false);
   expect(on("settings.open", "win")).toEqual(["Ctrl+,"]);
   expect(on("quickCommands.open", "win")).toEqual(["Ctrl+Shift+;"]);
 });

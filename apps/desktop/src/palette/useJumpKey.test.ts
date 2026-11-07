@@ -41,6 +41,15 @@ it("ctrl+j is taken in the capture phase", () => {
   expect(stopPropagation).toHaveBeenCalled();
 });
 
+it("ctrl+k toggles the palette too, with nothing for a terminal to receive", () => {
+  const { onToggle, press } = setup();
+  const { event } = press({ ctrlKey: true, key: "k", code: "KeyK" });
+  expect(onToggle).toHaveBeenCalledTimes(1);
+  expect(event.defaultPrevented).toBe(true);
+  press({ ctrlKey: true, shiftKey: true, key: "K", code: "KeyK" });
+  expect(onToggle).toHaveBeenCalledTimes(1);
+});
+
 const ev = (init: Record<string, unknown>) => ({ shiftKey: false, altKey: false, metaKey: false, ctrlKey: false, repeat: false, key: "j", code: "KeyJ", ...init }) as unknown as KeyboardEvent;
 
 it("macOS takes Cmd+J and not Ctrl+J", () => {
@@ -72,7 +81,7 @@ it("shift, alt and repeat are ignored", () => {
 it("plain j is ignored", () => {
   const { onToggle, press } = setup();
   const { event } = press({});
-  press({ ctrlKey: true, key: "k" });
+  press({ key: "k", code: "KeyK" });
   expect(onToggle).not.toHaveBeenCalled();
   expect(event.defaultPrevented).toBe(false);
 });

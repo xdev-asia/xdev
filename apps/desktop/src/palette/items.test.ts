@@ -75,7 +75,8 @@ it("actions without a handler are left out", () => {
   expect(items.map((i) => i.id)).toEqual(["act:newWorktree", "act:searchDocs"]);
   expect(items[0]).toMatchObject({ kind: "action", title: t("palette.action.newWorktree") });
   expect(items[0].keywords).toContain("create");
-  expect(items[1].hint).toMatch(/K$/);
+  // Mod+K opens the palette now; this action focuses the docs field and has no key of its own.
+  expect(items[1].hint).toBeUndefined();
   items[0].run();
   expect(newWorktree).toHaveBeenCalled();
 });

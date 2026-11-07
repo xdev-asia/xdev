@@ -727,7 +727,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       show("workspace");
       openSessionsPanel(null);
     },
-    "search.open": () => openSearch(isNarrow(), () => setNavOpen(true)),
     "quickOpen.open": () => {
       if (!current) {
         pushToast({ text: t("quickOpen.noWorktree") });

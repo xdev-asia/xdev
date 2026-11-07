@@ -144,7 +144,17 @@ it("scope drops other repos' rows but keeps settings and actions", () => {
 });
 
 it("FILTERS order", () => {
-  expect(FILTERS).toEqual(["all", "tab", "worktree", "file", "task", "other"]);
+  expect(FILTERS).toEqual(["all", "tab", "worktree", "file", "task", "doc", "other"]);
+});
+
+it("the Docs filter lists the docs index's hits in its order, under a Docs header, without re-matching", () => {
+  const doc = (path: string, title: string): PaletteItem => ({ id: `doc:${path}`, kind: "doc", title, detail: path, run: noop });
+  const items = [doc("b.md", "Zeta"), doc("a.md", "Alpha"), act("x", "Alpha action")];
+  const rows = rank({ ...base, items, query: "text only in the body", filter: "doc" });
+  expect(ids(rows)).toEqual(["doc:b.md", "doc:a.md"]);
+  expect(labels(rows)).toEqual(["docs"]);
+  // Docs are not in the All view, where a query matches by title.
+  expect(ids(rank({ ...base, items: [act("x", "Alpha action")], query: "alpha" }))).toEqual(["act:x"]);
 });
 
 it("file items rank under a files header once the query has two characters", () => {

@@ -19,7 +19,9 @@ export interface JumpPaletteProps {
   /** The projects the Filter button offers; none hides the button. */
   scopes?: { path: string; name: string }[];
   /** Items that depend on the query, such as the files it matches; added to `items`. */
-  queryItems?: (query: string) => PaletteItem[];
+  queryItems?: (query: string, filter: Filter) => PaletteItem[];
+  /** The query and the filter as they change while open, for items that are searched elsewhere (the Docs filter). */
+  onSearch?(query: string, filter: Filter): void;
   now?: number;
 }
 
@@ -28,6 +30,7 @@ const ICONS: Record<PaletteKind, IconName> = {
   chat: "chat",
   task: "check-circle",
   file: "file",
+  doc: "docs",
   worktree: "branch",
   setting: "sliders",
   action: "zap",
@@ -77,8 +80,13 @@ export function JumpPalette(props: JumpPaletteProps): JSX.Element {
     return () => before?.focus?.();
   }, [open]);
 
-  const { queryItems } = props;
-  const found = queryItems?.(query) ?? [];
+  const { queryItems, onSearch } = props;
+  useEffect(() => {
+    onSearch?.(open ? query : "", filter);
+    // `onSearch` changes each render; only the query, the filter and open-ness are a new search.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, query, filter]);
+  const found = queryItems?.(query, filter) ?? [];
   const all = found.length ? [...items, ...found] : items;
   const rows = rank({ items: all, query, filter, current, recent: (id) => recent.at(id), extra, canCreate, now: props.now ?? Date.now(), scope });
   const picks = rows.filter(selectable);

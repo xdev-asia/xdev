@@ -286,19 +286,6 @@ it("tasks crumb shows the place name", async () => {
   expect(crumbs()).toEqual(["xdev", "main"]);
 });
 
-it("search.open opens the drawer first at narrow width, and not at desktop width", async () => {
-  const view = await harness();
-  const drawer = () => view.all().find(n => n.type === ShellFrame)!.props.navOpen;
-  vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
-  keymap.handlers["search.open"]();
-  expect(drawer()).toBe(false);
-  vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
-  keymap.handlers["search.open"]();
-  expect(drawer()).toBe(true);
-  expect(view.all().some(n => n.type === DocsHost)).toBe(true);
-  vi.unstubAllGlobals();
-});
-
 it("blocks a folder switch while the doc is not saved", async () => {
   const view = await harness();
   view.nav(en("workspace.nav.docs")).props.onClick();
@@ -1532,9 +1519,6 @@ it("settings and search keys open their views", async () => {
   keymap.handlers["settings.shortcuts"]();
   view.draw();
   expect(view.of(SettingsView)[0].props.initial).toBe("keys");
-  keymap.handlers["search.open"]();
-  view.draw();
-  expect(view.of(DocsHost)).toHaveLength(1);
 });
 
 it("the narrow bottom bar reaches Tasks, Accounts, Settings and back to the sessions", async () => {

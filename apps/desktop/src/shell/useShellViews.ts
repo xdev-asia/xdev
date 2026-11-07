@@ -11,7 +11,8 @@ export type SettingsAt = { section?: string; arg?: string; target?: string; seq:
 export type TasksRequest = { seq: number; /** An agent task to show on the Runs tab. */ task?: string; tab?: BoardTab; /** A file task to open in the editor. */ boardTask?: string; /** Open the split-a-goal dialog. */ decompose?: boolean };
 
 /** A request for the Docs place to show one of its sections. */
-export type DocsRequest = { seq: number; section: DocsSection };
+/** `open` is a doc path (in the docs folder) to open in the Docs section. */
+export type DocsRequest = { seq: number; section: DocsSection; open?: string };
 
 /** Which place the shell shows (workspace, docs, tasks, squads, kit, accounts, automations, settings) and the requests the places read. */
 export function useShellViews() {
@@ -75,6 +76,12 @@ export function useShellViews() {
     show("docs");
   }
 
+  // The Docs place with one doc open, as picked from the palette's Docs filter.
+  function openDoc(path: string): void {
+    setDocsRequest((r) => ({ section: "docs", open: path, seq: (r?.seq ?? 0) + 1 }));
+    show("docs");
+  }
+
   // The docs search is a field in the Docs side list; it shows after this render, so it is looked up then.
   // Narrow: the side list is a drawer, so it opens first.
   function openSearch(narrow = false, openNav?: () => void): void {
@@ -90,6 +97,6 @@ export function useShellViews() {
 
   return {
     view, show, mounted, tasksRequest, docsRequest, openDocsSection, docsKey, setDocsKey, settingsAt, setSettingsAt,
-    openSettings, openUsage, openTask, openTaskBoard, openDecompose, openAccounts, openSearch,
+    openSettings, openUsage, openTask, openTaskBoard, openDecompose, openAccounts, openSearch, openDoc,
   };
 }

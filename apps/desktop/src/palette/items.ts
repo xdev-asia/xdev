@@ -5,7 +5,7 @@ import { SECTIONS } from "@/settings/sections";
 import type { Tab } from "@/workspace/sessions";
 import type { TabStatus } from "@/workspace/status";
 
-export type PaletteKind = "tab" | "chat" | "worktree" | "task" | "file" | "setting" | "action";
+export type PaletteKind = "tab" | "chat" | "worktree" | "task" | "file" | "doc" | "setting" | "action";
 /** What an agent wants from the person; supplied by the status feature when it exists. */
 export type Attention = "needs-you" | "done";
 export type ItemStatus = TabStatus | Attention;
@@ -36,6 +36,11 @@ type T = (key: string, vars?: Record<string, string | number>) => string;
 
 /** The shortest query that lists files: one letter would match most of a repo. */
 export const FILE_MIN_QUERY = 2;
+
+/** Docs found by the docs index; the index ranked them, so the palette keeps their order. */
+export function docItems(hits: readonly { path: string; title: string; snippet: string }[], onPick: (path: string) => void): PaletteItem[] {
+  return hits.map((h) => ({ id: `doc:${h.path}`, kind: "doc" as const, title: h.title || h.path, detail: h.path, run: () => onPick(h.path) }));
+}
 
 /** Files of the current worktree: the name, then the folder it is in. */
 export function fileItems(rels: readonly string[], worktree: string, repo: string | undefined, onPick: (rel: string) => void): PaletteItem[] {
@@ -175,7 +180,6 @@ export type ActionName =
 const ORDER: ActionName[] = ["newWorktree", "newAgentTab", "newShellTab", "newBrowserTab", "addRepo", "openSettings", "searchDocs", "toggleSidebar", "toggleFloating", "showDocs", "captureScreen", "annotateClipboard", "resumeSession", "stageAll", "discardAll", "pinTab", "unpinTab", "moveTabRight", "clearTerminal", "resetTerminal", "copyTerminalContext", "newTask", "openTaskBoard", "decomposeGoal", "runTargets", "openServerShell", "getPro", "activatePro", "refreshLicense", "remoteAdd", "remoteReconnect", "replayTour"];
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 const HINTS: Partial<Record<ActionName, string>> = {
-  searchDocs: MAC ? "⌘ K" : "Ctrl K",
   // The same chords the keymap binds.
   newAgentTab: chordLabel("agent.new") ?? undefined,
   newShellTab: chordLabel("tab.new") ?? undefined,
