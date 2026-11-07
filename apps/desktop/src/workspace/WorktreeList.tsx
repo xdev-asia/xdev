@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Badge, Button, Icon } from "@xdev-asia/ui";
+import { AgentChip, Badge, Button, DiffStat, Icon } from "@xdev-asia/ui";
 import type { JSX } from "react";
 import type { ApiError, Check, FolderEntry, KeptView, OpenInApp, OpenTarget, PrView, PtyProfile, RepoGroup, RepoView, SidebarItem, SidebarPrefs, WorkStatus, WorktreeStat, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
@@ -218,10 +218,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
     const unread = props.unread?.[wt.path] === true;
     const statusLabel = status ? t(`workspace.status.${status}`) : "";
     const statNode = counts && parts.has("diffStat") && (
-      <span className="ws-stat" title={t("workspace.row.stat", counts)}>
-        <span className="ws-stat-add">{`+${counts.added}`}</span>{" "}
-        <span className="ws-stat-del">{`−${counts.removed}`}</span>
-      </span>
+      <DiffStat added={counts.added} removed={counts.removed} labels={{ diffStat: (added, removed) => t("workspace.row.stat", { files: counts.files, added, removed }) }} />
     );
     const prNode = pr && parts.has("pr") && (
       <span
@@ -325,9 +322,7 @@ export function WorktreeList(props: WorktreeListProps): JSX.Element {
               )}
               {showItem && props.onCopyLink && <WorkItemChip item={showItem} onCopy={props.onCopyLink} />}
               {showAgents.map((p) => (
-                <span key={p} className="ws-chip" data-profile={p} title={profileName(view, p, t)}>
-                  {profileLetter(view, p)}
-                </span>
+                <AgentChip key={p} profile={p === "claude" || p === "codex" ? p : "custom"} letter={profileLetter(view, p)} title={profileName(view, p, t)} />
               ))}
               <span className="ws-wt-spacer" />
               {portsNode}

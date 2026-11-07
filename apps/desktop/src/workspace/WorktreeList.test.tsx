@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { RepoView, SidebarItem, SidebarPrefs, WorktreeView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
-import { Badge } from "@xdev-asia/ui";
+import { AgentChip, Badge, DiffStat } from "@xdev-asia/ui";
 import { translate } from "@/i18n";
 import { ago } from "./ago";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
@@ -32,6 +32,8 @@ function nodes(value: unknown): Node[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
   if (!value || typeof value !== "object" || !("props" in value)) return [];
   const node = value as Node;
+  // The design system's chip and line counts hold no state: draw them so their markup is walked too.
+  if (node.type === AgentChip || node.type === DiffStat) return nodes((node.type as (p: unknown) => unknown)(node.props));
   return [node, ...nodes(node.props.children)];
 }
 const en = (key: string, vars?: Record<string, string | number>) => translate("en", key, vars);
@@ -318,9 +320,8 @@ it("row shows time, branch, agent chips and line counts", () => {
   expect(part(view, oak, "ws-chip").map(n => n.props["data-profile"])).toEqual(["claude", "codex"]);
   expect(part(view, oak, "ws-chip").map(n => n.props.title)).toEqual([en("terminal.profile.claude"), en("terminal.profile.codex")]);
   const counts = part(view, oak, "ws-stat")[0];
-  expect(nodes(counts.props.children).filter(n => typeof n.props.children === "string").map(n => n.props.children).join(" ")).toBe("+5 −1");
-  expect(counts.props.title).toBe(en("workspace.row.stat", { files: 3, added: 5, removed: 1 }));
-  expect(view.html()).toContain("+5</span> <span");
+  expect(counts.props["aria-label"]).toBe(en("workspace.row.stat", { files: 3, added: 5, removed: 1 }));
+  expect(view.html()).toMatch(/ws-stat-add">\+(<!-- -->)?5<\/span> <span class="ws-stat-del">−(<!-- -->)?1</);
 
   // Nothing read, nothing run, no chip and no counts: the row keeps just its name and branch.
   for (const path of ["/demo/wt/xdev-elm", "/demo/xdev", "/code/notes"]) {
