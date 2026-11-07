@@ -78,6 +78,7 @@ pub const BUY_TIMING: Timing = Timing {
 type Emit = Arc<dyn Fn(&LicenseState) + Send + Sync>;
 
 /// A step that failed: the service said no, or something local did.
+#[derive(Debug)]
 enum Flow {
     Api(ApiError),
     Code(&'static str),
@@ -102,10 +103,14 @@ impl From<ApiError> for Flow {
     }
 }
 
+/// (origin, user id, device id).
+type DeviceMemo = (String, String, String);
+
 struct Inner {
     state: LicenseState,
-    /// The device id the service gave this computer, with the origin it came from.
-    device: Option<(String, String)>,
+    /// The device id the service gave this computer, with the origin and the user it was
+    /// registered for.
+    device: Option<DeviceMemo>,
     /// A notice kept on Free until the next change of plan.
     sticky: Option<&'static str>,
     /// Bumped by every purchase and every cancel.
@@ -342,8 +347,9 @@ impl LicenseHub {
     /// The id the service knows this computer by: remembered, else found by its key, else
     /// registered.
     fn device_id(&self, c: &Credentials, key: &DeviceKey) -> Result<String, Flow> {
-        if let Some((base, id)) = &self.lock().device
+        if let Some((base, uid, id)) = &self.lock().device
             && *base == c.base
+            && *uid == c.uid
         {
             return Ok(id.clone());
         }
@@ -373,7 +379,7 @@ impl LicenseHub {
                 .id
             }
         };
-        self.lock().device = Some((c.base.clone(), id.clone()));
+        self.lock().device = Some((c.base.clone(), c.uid.clone(), id.clone()));
         Ok(id)
     }
 
@@ -896,14 +902,17 @@ mod tests {
 
     const NOW: i64 = 1_800_000_000;
 
-    struct Fixed(Arc<AtomicBool>);
+    struct Fixed {
+        signed_in: Arc<AtomicBool>,
+        uid: Arc<Mutex<String>>,
+    }
 
     impl Identity for Fixed {
         fn credentials(&self) -> Option<Credentials> {
-            self.0.load(Ordering::SeqCst).then(|| Credentials {
+            self.signed_in.load(Ordering::SeqCst).then(|| Credentials {
                 bearer: Secret::new(MOCK_BEARER.to_owned()),
                 base: MOCK_BASE.to_owned(),
-                uid: MOCK_UID.to_owned(),
+                uid: self.uid.lock().unwrap().clone(),
             })
         }
     }
@@ -912,11 +921,26 @@ mod tests {
     struct Counting {
         inner: Arc<MockEntitlementServer>,
         sent: AtomicUsize,
+        urls: Mutex<Vec<String>>,
+    }
+
+    impl Counting {
+        /// How many requests went to `{base}{path}`.
+        fn hits(&self, path: &str) -> usize {
+            let url = format!("{MOCK_BASE}{path}");
+            self.urls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|u| **u == url)
+                .count()
+        }
     }
 
     impl Transport for Counting {
         fn send(&self, req: &Request) -> Result<Response, Offline> {
             self.sent.fetch_add(1, Ordering::SeqCst);
+            self.urls.lock().unwrap().push(req.url.clone());
             self.inner.send(req)
         }
     }
@@ -949,15 +973,20 @@ mod tests {
         let net = Arc::new(Counting {
             inner: server.clone(),
             sent: AtomicUsize::new(0),
+            urls: Mutex::new(Vec::new()),
         });
         let events = Arc::new(Mutex::new(Vec::new()));
         let signed = Arc::new(AtomicBool::new(signed_in));
+        let uid = Arc::new(Mutex::new(MOCK_UID.to_owned()));
         let sink = events.clone();
         let clock = server.clone();
         let hub = Arc::new(LicenseHub::new(
             net.clone(),
             keys.clone(),
-            Arc::new(Fixed(signed.clone())),
+            Arc::new(Fixed {
+                signed_in: signed.clone(),
+                uid,
+            }),
             Arc::new(move |s| sink.lock().unwrap().push(s.clone())),
             dir.path().join(FILE_NAME),
             NOW - 86_400,
@@ -1226,6 +1255,28 @@ mod tests {
         assert_eq!(build_date_of(Some("soon")), 0);
         assert_eq!(build_date_of(Some("-5")), 0);
         assert_eq!(build_date_of(None), 0);
+    }
+
+    #[test]
+    fn the_device_id_is_remembered_per_account_on_a_server() {
+        let r = rig(MockMode::Pro);
+        let key = r.hub.key_or_new().unwrap();
+        let creds = |uid: &str| Credentials {
+            bearer: Secret::new(MOCK_BEARER.to_owned()),
+            base: MOCK_BASE.to_owned(),
+            uid: uid.to_owned(),
+        };
+        let a = creds(MOCK_UID);
+        r.hub.refresh().unwrap();
+        let listed = r.net.hits("/v1/devices");
+        r.hub.device_id(&a, &key).unwrap();
+        assert_eq!(r.net.hits("/v1/devices"), listed, "same account: cached");
+        // Another account on the same server must look the device up again.
+        r.hub.device_id(&creds("someone-else"), &key).unwrap();
+        assert_eq!(r.net.hits("/v1/devices"), listed + 1);
+        // And going back is a lookup too: only the last account is remembered.
+        r.hub.device_id(&a, &key).unwrap();
+        assert_eq!(r.net.hits("/v1/devices"), listed + 2);
     }
 
     #[test]
