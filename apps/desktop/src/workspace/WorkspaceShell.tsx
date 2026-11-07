@@ -135,6 +135,8 @@ import { useShellLabels } from "@/shell/shellLabels";
 import { useShellAccountSwitch } from "@/shell/useShellAccountSwitch";
 import { useShellCardPorts } from "@/shell/useShellCardPorts";
 import { useShellLayoutRestore } from "@/shell/useShellLayoutRestore";
+import { useShellNotifications } from "@/shell/useShellNotifications";
+import { useShellServices } from "@/shell/useShellServices";
 import { useShellPanels } from "@/shell/useShellPanels";
 import { useShellViews } from "@/shell/useShellViews";
 import { annotateClipboard } from "@/capture/annotateBridge";
@@ -267,11 +269,8 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [reveal, setReveal] = useState<(Reveal & { worktree: string }) | null>(null);
   // The commit the commit tab shows, and the worktree it belongs to.
   const [commitAsk, setCommitAsk] = useState<(CommitAsk & { worktree: string }) | null>(null);
-  // The window has the person: focused and not minimised. Only then is a pane on screen seen.
-  const [focused, setFocused] = useState(windowFocused);
   // The terminal panes on screen in each worktree, as its tab strip reports them.
   const [panes, setPanes] = useState<Record<string, string[]>>({});
-  const [bellOpen, setBellOpen] = useState(false);
   const statusSettings = useStatusSettings();
   const automationsSettings = useAutomationsSettings();
   // What the long-lived listeners read: the latest render's list, words and jump, much like a ref.
@@ -480,133 +479,9 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   }, [prs, currentPath]);
   const markedChanges = current && changeList?.worktree === current.path ? changeList.list : NO_CHANGES;
 
-  // Focus and visibility decide what is seen; a minimised or background window sees nothing.
-  useEffect(() => {
-    const update = () => setFocused(windowFocused());
-    window.addEventListener("focus", update);
-    window.addEventListener("blur", update);
-    if (typeof document !== "undefined") document.addEventListener("visibilitychange", update);
-    return () => {
-      window.removeEventListener("focus", update);
-      window.removeEventListener("blur", update);
-      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", update);
-    };
-  }, []);
+  useShellServices({ api, sessions, view, current, panes, statusSettings, feed, live });
 
-  // The panes the person looks at: the selected worktree's front pair, with the workspace up, the window
-  // focused and some trusted input in the last 180 s.
-  const present = usePresence();
-  const seenKey = focused && present && view === "workspace" && current ? (panes[current.path] ?? []).join(" ") : "";
-  useEffect(() => {
-    sessions?.setSeen(seenKey ? seenKey.split(" ") : []);
-  }, [sessions, seenKey]);
-
-  // Settings stores its own switches; they are read again on leaving it, on coming back to the window
-  // and before every notification, so a change there applies without a restart.
-  useEffect(() => {
-    void loadStatusSettings(api);
-  }, [api, view, focused]);
-
-  // With hooks off the marker drops every hook event, so open panes go back to timing.
-  useEffect(() => {
-    sessions?.setHooks(statusSettings.hooks);
-  }, [sessions, statusSettings.hooks]);
-
-  // The Activity feed records every status change of the agent tabs.
-  useEffect(() => {
-    if (!sessions) return;
-    return feed.follow(sessions);
-  }, [feed, sessions]);
-
-  // Whether an agent works, for the keep-awake mode "while agents work".
-  useEffect(() => {
-    if (!sessions) return;
-    return startKeepAwakeReport(api, sessions);
-  }, [api, sessions]);
-
-  // The time agents work, for the counters on Settings → Stats & Usage.
-  useEffect(() => {
-    if (!sessions) return;
-    return startBusyReport(api, sessions);
-  }, [api, sessions]);
-
-  // The agent tabs for the macOS status strip at the notch; the backend picks what it shows.
-  useEffect(() => {
-    if (!sessions) return;
-    return startNotchReport(api, sessions, (key, vars) => live.t(key, vars));
-  }, [api, sessions]);
-
-  // A pane nobody looks at that wants the person: OS notification, sound, and the jump back on a click.
-  useEffect(() => {
-    if (!sessions) return;
-    const notifier = createNotifier({
-      api,
-      settings: () => loadStatusSettings(api),
-      play: (settings, now) => playStatusSound(api, settings, now),
-      now: () => Date.now(),
-      t: (key, vars) => live.t(key, vars),
-    });
-    live.notifier = notifier;
-    const offAttention = sessions.onAttention((tab, status, detail) => void announce(notifier, tab, status, detail));
-    let closed = false;
-    let offClick: (() => void) | null = null;
-    api
-      .onStatusNotificationClick((id) => {
-        notifier.cancelFocusJump();
-        live.jump(id);
-      })
-      .then((off) => {
-        if (closed) off();
-        else offClick = off;
-      })
-      .catch(() => {});
-    // A click on a toast does not always reach the app (on Windows only while it is on screen), but
-    // the window does get the focus: one soon after a notification goes to its pane, unless the
-    // person clicked in the app first.
-    const onFocus = () => {
-      const id = notifier.takeFocusJump(Date.now());
-      if (id) live.jump(id);
-    };
-    const onPointer = () => notifier.cancelFocusJump();
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("pointerdown", onPointer, true);
-    return () => {
-      closed = true;
-      offClick?.();
-      offAttention();
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("pointerdown", onPointer, true);
-      notifier.dispose();
-      if (live.notifier === notifier) live.notifier = null;
-    };
-  }, [api, sessions]);
-
-  // The bell lists the unread tabs and the taskbar badge counts the unread worktrees, both only for the
-  // events that are switched on (and none with the master switch off).
-  const counted = (tab: Tab) => admits(tab.unreadReason, statusSettings);
-  const unreadTabs = (sessions?.unreadTabs() ?? []).filter(counted);
-  const unreadCount = statusSettings.enabled ? (sessions?.unreadWorktrees(counted).length ?? 0) : 0;
-  useEffect(() => {
-    live.notifier?.badge(unreadCount);
-  }, [sessions, unreadCount, statusSettings.badge]);
-  // A notified tab that is read has its OS notification taken down.
-  const unreadKey = unreadTabs.map((tab) => tab.id).join(",");
-  useEffect(() => {
-    live.notifier?.unread(unreadKey ? unreadKey.split(",") : []);
-  }, [sessions, unreadKey]);
-  const bellRows: BellRow[] = unreadTabs.map((tab) => ({
-    tab,
-    worktree: worktreeName(all, tab.worktree),
-    name: tab.title ?? profileName(null, tab.profileId, t),
-  }));
-
-  // The notification text: the worktree, then the tab by its profile's name or the one given by
-  // hand. Never the terminal's own title, which can carry what was typed.
-  async function announce(notifier: Notifier, tab: Tab, status: Attention, detail: HookDetail | null): Promise<void> {
-    const worktree = worktreeName(live.repos?.flatMap((r) => r.worktrees) ?? [], tab.worktree);
-    const name = tab.renamed && tab.title ? tab.title : profileName(await api.profiles().catch(() => null), tab.profileId, live.t);
-    await notifier.attention(tab, status, { worktree, tab: name }, detail);
-  }
+  const { bellOpen, setBellOpen, toggleBell, unreadCount, bellRows } = useShellNotifications({ api, sessions, statusSettings, all, t, live });
 
   // Brings a tab's worktree up, puts the tab in front and gives its terminal the keys.
   /** Shows the sessions view of the sidebar; `reveal` marks one session, else the search box takes focus. */
@@ -748,15 +623,6 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   useEffect(() => startAutosave(api, fileTabs, t), [api, t]);
   const fsWatch = useWorktreeWatch(api, current?.path ?? null, { api, store: fileTabs, t });
 
-  function toggleBell(): void {
-    const next = !bellOpen;
-    setBellOpen(next);
-    if (!next) return;
-    setTimeout(() => {
-      if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
-      document.querySelector<HTMLElement>(".ws-bell-pop [role=menuitem], .ws-bell-pop")?.focus();
-    }, 0);
-  }
 
   function openFile(worktree: string, file: string): void {
     setReveal((r) => ({ worktree, file, seq: (r?.seq ?? 0) + 1 }));
