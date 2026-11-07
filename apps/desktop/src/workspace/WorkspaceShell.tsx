@@ -111,6 +111,7 @@ import { failedLinks } from "./linkReport";
 import { decideSetup, hasPending, pendingLists, type PendingLists } from "./setupFlow";
 import { SetupGate } from "./setupGate";
 import { ShellOverlays } from "./ShellOverlays";
+import { ShellSidebar } from "./ShellSidebar";
 import { startCliReport } from "./cliReport";
 import { startCliEvents } from "./cliEvents";
 import { startCliTerminal } from "./cliTerminal";
@@ -929,181 +930,15 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         </>
       }
       sidebar={
-        <div id="ws-sidebar" className="ws-sidebar" hidden={!sidebarOpen}>
-          <div className="ws-nav" role="group" aria-label={t("workspace.nav.label")} hidden={view !== "docs"}>
-            {view === "docs" && (
-              <VaultNav
-                api={api}
-                canOpen={docsSaved}
-                onOpened={() => {
-                  setDocsMounted(true);
-                  setDocsKey((k) => k + 1);
-                }}
-              />
-            )}
-          </div>
-          <div className="ws-side-tabs" role="group" aria-label={t("agentSessions.tabs.label")}>
-            {(["worktrees", "sessions", "activity"] as const).map((v) => (
-              <button key={v} type="button" className="ws-side-tab" aria-pressed={sideView === v} onClick={() => setSideView(v)}>
-                {t(`agentSessions.tab.${v}`)}
-              </button>
-            ))}
-          </div>
-          {sessions && history && (
-            <div className="ws-side-view" hidden={sideView !== "sessions"}>
-              <SurfaceBoundary id="sidebar.sessions" surface="Sessions sidebar">
-                <SessionsSidebar
-                  store={history}
-                  sessions={sessions}
-                  current={current ? { path: current.path, repo: repos?.find((r) => r.worktrees.some((w) => w.path === current.path))?.path ?? null } : null}
-                  visible={sideView === "sessions" && sidebarOpen}
-                  focusSeq={sessionsAsk.focus ? sessionsAsk.seq : undefined}
-                  reveal={sessionsAsk.reveal}
-                  onOpened={(tab) => jumpTo(tab.id)}
-                  onFocusTab={jumpTo}
-                  onGoTo={(path) => {
-                    const wt = all.find((w) => w.path === path);
-                    if (!wt) return;
-                    select(wt);
-                    show("workspace");
-                  }}
-                />
-              </SurfaceBoundary>
-            </div>
-          )}
-          {sessions && (
-            <div className="ws-side-view" hidden={sideView !== "activity"}>
-              <ActivityPanel
-                sessions={sessions}
-                feed={feed}
-                names={Object.fromEntries(all.map((w) => [w.path, { name: worktreeName(all, w.path), branch: w.branch ?? null }]))}
-                ask={activityAsk}
-                onJump={jumpTo}
-              />
-            </div>
-          )}
-          <div className="ws-side-view" hidden={sideView !== "worktrees"}>
-          {picked.paths.size >= 2 && (
-            <BulkBar
-              count={picked.paths.size}
-              allPinned={all.filter((w) => picked.paths.has(w.path)).every((w) => w.pinned)}
-              onArchive={() => void openBulk("archive")}
-              onDelete={() => void openBulk("delete")}
-              onPin={() => {
-                const pin = !all.filter((w) => picked.paths.has(w.path)).every((w) => w.pinned);
-                void bulkEach((path) => api.worktreePin(path, pin));
-              }}
-              canSleep={bulkSleepable(picked.paths, sleepableMap)}
-              onSleep={() => void Promise.all([...picked.paths].map((p) => sessions?.sleepWorktree(p, sessionFallback(api))))}
-              onStatus={(status: WorkStatus) => void bulkEach((path) => api.worktreeDetails(path, { status }))}
-              onClear={() => setPicked(clearPicked())}
-              onMerge={() => {
-                if (!sessions) return;
-                const chosen = all.filter((w) => picked.paths.has(w.path));
-                setMergeSources(
-                  chosen.flatMap((w) => sessions.tabs(w.path)).map((tab) => ({ id: tab.id, title: tab.title ?? profileName(nameView, tab.profileId, t), agent: profileName(nameView, tab.profileId, t) })),
-                );
-              }}
-              onSendPrompt={() => setComposerAsk((r) => ({ worktrees: [...picked.paths], seq: (r?.seq ?? 0) + 1 }))}
-            />
-          )}
-          <SurfaceBoundary id="sidebar.worktrees" surface="Workspace list" titleKey="boundary.worktrees.title">
-            <WorktreeList
-              onOpenPr={() => openPrTab()}
-              onOrder={(paths) => setOrder((o) => (o.join(",") === paths.join(",") ? o : paths))}
-              picked={picked.paths}
-              onPick={(wt, mods) => setPicked((sel) => pickClick(sel, wt.path, selectable, mods))}
-              onSelectAll={() => setPicked(selectAll(selectable))}
-              onClearPicked={() => setPicked(clearPicked())}
-              onReviewBranches={(repoId) => setReview({ repoId, busy: false })}
-              items={items}
-              prefs={prefs}
-              onPrefs={changePrefs}
-              onReorder={(ids) => void sidebarCall(() => api.sidebarOrder(ids))}
-              onGroupMove={(member, group, index) => void sidebarCall(() => api.groupMove(member, group, index))}
-              onNewGroup={() => setGroupName({ id: null, name: "" })}
-              onRenameGroup={(g: RepoGroup) => setGroupName({ id: g.id, name: g.name })}
-              onRemoveGroup={(g: RepoGroup) => void sidebarCall(() => api.groupRemove(g.id))}
-              onAddFolder={() => void addFolder()}
-              onOpenFolder={(f) => void openFolder(f)}
-              onForgetFolder={(f) => void sidebarCall(() => api.folderForget(f.id))}
-              onRestore={(repoId, branch) => void sidebarCall(() => api.worktreeRestore(repoId, branch))}
-              onArchive={(wt) => void archive(wt)}
-              onOpenBoard={() => setBoardOpen(true)}
-              onEditDetails={(wt) => setEditing({ worktree: wt, busy: false })}
-              onSetParent={(wt) => setParentFor({ worktree: wt, candidates: parentCandidates(wt, repos?.find((r) => r.worktrees.some((w) => w.path === wt.path))?.worktrees ?? []) })}
-              onRemoveParent={(wt) => void setDetails(wt, { parent: null }, t("lineage.error"))}
-              onDeleteNested={(wt) => startRemove(wt, { nested: true })}
-              onMoveStatus={(wt, status) => {
-                if (status !== wt.status) void setDetails(wt, { status }, t("lineage.error"));
-              }}
-              onRenameBranch={(wt) => setRenaming(wt)}
-              onCheckoutBranch={(wt) => setCheckingOut(wt)}
-              onCopyLink={(url) => {
-                void copy(url);
-                pushToast({ text: t("workItem.copied") });
-              }}
-              selected={current?.path ?? null}
-              dots={dots}
-              stats={stats.all()}
-              ports={livePorts}
-              onOpenPort={(port) => void api.portsOpen(port.id).catch((e: unknown) => pushToast({ text: t(`error.${toApiError(e).code}`) }))}
-              onCopyPort={(port) => {
-                void copy(endpoint(port));
-                pushToast({ text: t("ports.copied", { address: endpoint(port) }) });
-              }}
-              onStopPort={stopPort}
-              activity={activity}
-              profiles={profiles}
-              prs={prMap}
-              now={Date.now()}
-              notice={notice}
-              onSelect={(wt) => {
-                setPicked(clearPicked());
-                select(wt);
-                show("workspace");
-              }}
-              onCreate={startCreate}
-              pending={pending.list()}
-              onCancelCreate={(id) => pending.cancel(id)}
-              onRetryCreate={(id) => pending.retry(id)}
-              onDismissCreate={(id) => pending.dismiss(id)}
-              onPin={(wt) => void pin(wt)}
-              onRemove={startRemove}
-              onAddRepo={addRepo}
-              onAdopt={(wt) => void adopt(wt)}
-              unread={unreadMap}
-              asleep={asleepMap}
-              sleepable={sleepableMap}
-              onSleep={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api))}
-              onSleepNested={(wt) => void sessions?.sleepWorktree(wt.path, sessionFallback(api), all.filter((c) => c.parent === wt.path).map((c) => c.path))}
-              onWake={(wt) => [wt.path, ...all.filter((c) => c.parent === wt.path).map((c) => c.path)].forEach((p) => sessions?.wakeWorktree(p))}
-              onMarkUnread={(wt) => sessions?.markUnread(wt.path)}
-              onMarkRead={(wt) => sessions?.markRead(wt.path)}
-              openInApps={openInApps}
-              onOpenIn={(path, target) => void openIn(path, target)}
-              onCopy={(text) => void copy(text)}
-              onNewTerminal={(wt) => void newTerminalIn(wt)}
-              onRepoSettings={(repo) => openSettings("repos", repo.id)}
-              onRemoveRepo={(repo) => setForgetting({ repo })}
-            />
-          </SurfaceBoundary>
-          <RemoteGroup
-            rows={remoteRows(remote.projects)}
-            selected={current?.path ?? null}
-            onSelect={(row) => {
-              const wt = all.find((w) => w.path === row.worktree);
-              if (!wt) return;
-              setPicked(clearPicked());
-              select(wt);
-              show("workspace");
-            }}
-            onReconnect={(row) => void reconnectRemote(row.id)}
-            onDisconnect={(row) => void disconnectRemote(row.id)}
-            onRemove={(row) => void removeRemote(row.id)}
-          />
-          </div>
-        </div>
+        <ShellSidebar
+          repo={repo} rm={rm} remoteActs={remoteActs} views={views} panels={panels} cr={cr} dialogs={dialogs}
+          api={api} t={t} sessions={sessions} history={history} repos={repos} all={all} current={current} items={items} prefs={prefs}
+          picked={picked} setPicked={setPicked} selectable={selectable} setOrder={setOrder} sideView={sideView} setSideView={setSideView}
+          sidebarOpen={sidebarOpen} sessionsAsk={sessionsAsk} activityAsk={activityAsk} feed={feed} stats={stats} dots={dots} activity={activity}
+          profiles={profiles} unreadMap={unreadMap} asleepMap={asleepMap} sleepableMap={sleepableMap} prMap={prMap} nameView={nameView}
+          livePorts={livePorts} stopPort={stopPort} notice={notice} openInApps={openInApps} remote={remote} jumpTo={jumpTo} select={select}
+          copy={copy} openIn={openIn} newTerminalIn={newTerminalIn}
+        />
       }
       // The docs app keeps its own status bar, so this one shows with the workspace only.
       footer={

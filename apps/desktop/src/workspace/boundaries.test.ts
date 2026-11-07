@@ -7,7 +7,8 @@ const read = (rel: string) => readFileSync(join(src, rel), "utf8");
 
 // Every boundary id of the plan and the file that must carry it: a cheap guard against a lost wrap.
 const WRAPS: [string, string[]][] = [
-  ["workspace/WorkspaceShell.tsx", ["sidebar.worktrees", "sidebar.sessions", "workspace.tabs", "panel.${name}".replace("${name}", "files"), "panel.search", "panel.changes", "panel.checks", "panel.issues", "page.docs"]],
+  ["workspace/WorkspaceShell.tsx", ["workspace.tabs", "panel.${name}".replace("${name}", "files"), "panel.search", "panel.changes", "panel.checks", "panel.issues", "page.docs"]],
+  ["workspace/ShellSidebar.tsx", ["sidebar.worktrees", "sidebar.sessions"]],
   ["workspace/WorktreeTabs.tsx", ["terminal.", "editor.file", 'id="review"']],
   ["settings/SettingsView.tsx", ["page.settings"]],
   ["components/ErrorBoundary.tsx", ["app.root"]],
