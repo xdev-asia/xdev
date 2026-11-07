@@ -291,6 +291,22 @@ describe("mock shipping", () => {
     expect(await api.worktreeMr(FIRST)).toEqual(mr);
   });
 
+  it("reviews a seeded merge request: comments, jobs, merge", async () => {
+    const summary = { iid: 7, title: "Add x", url: "https://gitlab.example/-/merge_requests/7", state: "open", draft: false } as never;
+    const detail = { summary, body: "text", headSha: "abc1234", pipeline: { id: 9, bucket: "pass", url: "u" } } as never;
+    const api = createMockWorkspace({ ...DEMO_WORKSPACE, mrDetails: { [FIRST]: detail }, mrJobs: { [FIRST]: [{ name: "lint", bucket: "pass", workflow: "", link: "" } as never] } });
+    expect((await api.worktreeMrDetail(FIRST, 7)).headSha).toBe("abc1234");
+    await expect(api.worktreeMrDetail(FIRST, 8)).rejects.toMatchObject({ code: "mr_not_found" });
+    expect(await api.worktreeMrJobs(FIRST, 9)).toHaveLength(1);
+    await expect(api.worktreeMrNotePost(FIRST, 7, "  ")).rejects.toMatchObject({ code: "empty_comment" });
+    await api.worktreeMrNotePost(FIRST, 7, "hello");
+    expect((await api.worktreeMrNotes(FIRST, 7)).notes.map((n) => n.body)).toEqual(["hello"]);
+    expect(await api.worktreeMrMergeInfo(FIRST, 7)).toMatchObject({ defaultMethod: "merge", headOid: "abc1234" });
+    await expect(api.worktreeMrMerge(FIRST, 7, "merge", "ffff")).rejects.toMatchObject({ code: "pr_head_moved" });
+    await api.worktreeMrMerge(FIRST, 7, "merge", "abc1234");
+    expect((await api.worktreeMrDetail(FIRST, 7)).summary.state).toBe("merged");
+  });
+
   it("counts the range against the upstream when the git settings say so", async () => {
     const api = createMockWorkspace({ ...DEMO_WORKSPACE, git: { compareAgainstUpstream: true } });
     await api.worktreeCommit(FIRST, files, "first");

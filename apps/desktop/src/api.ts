@@ -203,6 +203,10 @@ import type {
   IssuesPreset,
   PrSummary,
   MrSummary,
+  MrDetail,
+  MrPipeline,
+  MrNote,
+  MrNotes,
   MrState,
   PrBranch,
   PrFilter,
@@ -618,6 +622,10 @@ export type {
   IssuesPreset,
   PrSummary,
   MrSummary,
+  MrDetail,
+  MrPipeline,
+  MrNote,
+  MrNotes,
   MrState,
   PrBranch,
   PrFilter,
@@ -1541,6 +1549,14 @@ export interface Api {
   // `glab_missing`, `glab_auth`, `not_gitlab` or `glab_failed` (detail: glab's own text).
   worktreeMr(path: string): Promise<MrSummary | null>;
   worktreeMrCreate(path: string, draft: PrDraft): Promise<MrSummary>;
+  worktreeMrDetail(path: string, iid: number): Promise<MrDetail>;
+  worktreeMrJobs(path: string, pipelineId: number): Promise<Check[]>;
+  worktreeMrNotes(path: string, iid: number): Promise<MrNotes>;
+  // Rejects `empty_comment` and `comment_too_large` before glab runs.
+  worktreeMrNotePost(path: string, iid: number, body: string): Promise<void>;
+  worktreeMrMergeInfo(path: string, iid: number): Promise<PrMergeInfo>;
+  // Rejects `pr_head_moved` and `merge_blocked`.
+  worktreeMrMerge(path: string, iid: number, method: MergeMethod, headSha: string): Promise<void>;
   worktreePrChecks(path: string, number: number): Promise<Check[]>;
   // Every review comment of the PR, oldest first, read with one GraphQL call.
   worktreePrComments(path: string, number: number): Promise<PrComments>;
@@ -2937,6 +2953,12 @@ const tauriApi: Api = {
   worktreePrCreate: (path, draft) => call("worktree_pr_create", { path, draft }),
   worktreeMr: (path) => call("worktree_mr", { path }),
   worktreeMrCreate: (path, draft) => call("worktree_mr_create", { path, draft }),
+  worktreeMrDetail: (path, iid) => call("worktree_mr_detail", { path, iid }),
+  worktreeMrJobs: (path, pipelineId) => call("worktree_mr_jobs", { path, pipelineId }),
+  worktreeMrNotes: (path, iid) => call("worktree_mr_notes", { path, iid }),
+  worktreeMrNotePost: (path, iid, body) => call("worktree_mr_note_post", { path, iid, body }),
+  worktreeMrMergeInfo: (path, iid) => call("worktree_mr_merge_info", { path, iid }),
+  worktreeMrMerge: (path, iid, method, headSha) => call("worktree_mr_merge", { path, iid, method, headSha }),
   ghLogins: () => call("gh_logins"),
   worktreePrChecks: (path, number) => call("worktree_pr_checks", { path, number }),
   worktreePrComments: (path, number) => call("worktree_pr_comments", { path, number }),
