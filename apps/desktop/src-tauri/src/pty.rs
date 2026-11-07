@@ -55,6 +55,10 @@ impl From<PtyError> for CmdError {
 /// `repo_hooks`, in the default shell.
 pub const SETUP_PROFILE: &str = "xdev:setup";
 
+/// The reserved profile id prefix of an install tab: `xdev:install:<cli id>`.
+/// The command is built here from the catalog, never sent by the webview.
+pub const INSTALL_PREFIX: &str = "xdev:install:";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -1267,6 +1271,78 @@ pub(crate) fn setup_launch(data_dir: &Path, cwd: &Path) -> Result<Launch, CmdErr
     })
 }
 
+/// The launch that installs the built-in agent named by the install profile
+/// `id` (`xdev:install:<cli id>`) with `npm install -g`, in a terminal.
+/// `install_none` when the id or its row has no command, `npm_missing` when
+/// `find_npm` finds no npm. The gate sees it as a command the person
+/// confirmed in the install dialog.
+pub(crate) fn install_launch(
+    data_dir: &Path,
+    cwd: &Path,
+    id: &str,
+    find_npm: &dyn Fn() -> Option<PathBuf>,
+) -> Result<Launch, CmdError> {
+    let none = || CmdError {
+        code: "install_none",
+        detail: Some(id.to_owned()),
+    };
+    let cli = id
+        .strip_prefix(INSTALL_PREFIX)
+        .and_then(Cli::of_id)
+        .ok_or_else(none)?;
+    let args = xdev_agent::install_args(cli).ok_or_else(none)?;
+    let program = find_npm().ok_or(CmdError {
+        code: "npm_missing",
+        detail: None,
+    })?;
+    let gate = Audited::new(Policy::load(data_dir)?, data_dir);
+    let action = Action::RunCommand {
+        program: program.to_string_lossy().into_owned(),
+        args: args.clone(),
+        cwd: cwd.to_owned(),
+    };
+    if let Verdict::Deny { reason } = gate.check_confirmed(&action, true) {
+        return Err(CmdError {
+            code: "denied",
+            detail: Some(reason),
+        });
+    }
+    Ok(Launch {
+        profile: id.to_owned(),
+        program,
+        args,
+        env: Vec::new(),
+        agent: false,
+        permissions: Permissions::Ask,
+        account: None,
+        account_source: None,
+        startup: Vec::new(),
+        cli: None,
+        hooks: false,
+        hook_events: Vec::new(),
+        prompt_after: None,
+        prompt_argv: Vec::new(),
+        wsl: None,
+    })
+}
+
+/// `install_launch`, refused with `install_remote` when the launch is remote.
+fn install_for(
+    remote: bool,
+    data_dir: &Path,
+    cwd: &Path,
+    id: &str,
+    find_npm: &dyn Fn() -> Option<PathBuf>,
+) -> Result<Launch, CmdError> {
+    if remote {
+        return Err(CmdError {
+            code: "install_remote",
+            detail: None,
+        });
+    }
+    install_launch(data_dir, cwd, id, find_npm)
+}
+
 /// The host a launch runs on, with the env names its profile declares.
 fn remote_launch_spec(
     app: &AppHandle,
@@ -1323,6 +1399,10 @@ pub fn pty_spawn(
     };
     let mut launch = if profile_id == SETUP_PROFILE {
         setup_launch(data, &cwd)?
+    } else if profile_id.starts_with(INSTALL_PREFIX) {
+        install_for(remote.is_some(), data, &cwd, &profile_id, &|| {
+            find_program("npm")
+        })?
     } else {
         let hooks = launch_hooks(remote.is_some(), hooks_now(&app));
         launch_with_prompt(
@@ -3041,6 +3121,46 @@ b",
         assert_eq!(code(&f.repo), "hook_none");
         std::fs::write(f.repo.join("xdev.toml"), "[scripts]\nsetup = \"make\"\n").unwrap();
         assert_eq!(code(&f.repo), "hook_untrusted");
+    }
+
+    #[test]
+    fn install_launch_refuses_unknown_and_rows_without_a_command() {
+        let f = setup_fixture("");
+        let npm = || Some(PathBuf::from("npm"));
+        let code = |id: &str| install_launch(&f.data, &f.repo, id, &npm).unwrap_err().code;
+        assert_eq!(code("xdev:install:nope"), "install_none");
+        assert_eq!(code("xdev:install:devin"), "install_none");
+        assert_eq!(code("gemini"), "install_none");
+    }
+
+    #[test]
+    fn install_launch_needs_npm() {
+        let f = setup_fixture("");
+        let err = install_launch(&f.data, &f.repo, "xdev:install:gemini", &|| None).unwrap_err();
+        assert_eq!(err.code, "npm_missing");
+    }
+
+    #[test]
+    fn install_launch_runs_npm_with_the_catalog_args() {
+        let f = setup_fixture("");
+        let npm = || Some(PathBuf::from("/fake/npm"));
+        let l = install_launch(&f.data, &f.repo, "xdev:install:gemini", &npm).unwrap();
+        assert_eq!(l.program, PathBuf::from("/fake/npm"));
+        assert_eq!(Some(l.args.clone()), xdev_agent::install_args(Cli::Gemini));
+        assert_eq!(l.profile, "xdev:install:gemini");
+        assert!(!l.agent);
+        assert!(l.cli.is_none());
+        assert!(l.startup.is_empty());
+        assert!(l.wsl.is_none());
+    }
+
+    #[test]
+    fn install_is_refused_on_a_remote_worktree() {
+        let f = setup_fixture("");
+        let npm = || Some(PathBuf::from("npm"));
+        let err = install_for(true, &f.data, &f.repo, "xdev:install:gemini", &npm).unwrap_err();
+        assert_eq!(err.code, "install_remote");
+        assert!(install_for(false, &f.data, &f.repo, "xdev:install:gemini", &npm).is_ok());
     }
 
     #[test]
