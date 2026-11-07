@@ -212,7 +212,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [picked, setPicked] = useState<Selection>(clearPicked);
   const [selected, setSelected] = useState<string | null>(() => readSelected());
   const views = useShellViews();
-  const { view, show, docsMounted, setDocsMounted, kitOpen, appRequest, docsKey, setDocsKey, settingsAt, setSettingsAt, openSettings, openUsage, openTask, openTaskBoard, openDecompose, openAccounts, kitOpened, openSearch, docsSaved } = views;
+  const { view, show, mounted: placesMounted, docsKey, setDocsKey, settingsAt, setSettingsAt, openSettings, openUsage, openTask, openTaskBoard, openDecompose, openAccounts, openSearch } = views;
   // Agent and shell names for the merge headings and the resource manager rows.
   const [nameView, setNameView] = useState<ProfilesView | null>(null);
   const dialogs = useShellDialogs(api);
@@ -1057,7 +1057,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         />
 
         <div className="ws-docs" hidden={view !== "docs"}>
-          {docsMounted && <SurfaceBoundary id="page.docs" surface="Docs" resetKey={docsKey} titleKey="boundary.page.title"><DocsApp key={docsKey} appRequest={appRequest} board={{ repos, defaultRepo: repoOf(repos, current), sessions, current: current ? { path: current.path, branch: current.branch } : null, onStart: startBoardAgent, onOpenTab: (l) => void jumpTo(l.tabId) }} kit={{ worktree: current?.path ?? null, open: kitOpen, onOpened: kitOpened, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} /></SurfaceBoundary>}
+          {placesMounted.has("docs") && <SurfaceBoundary id="page.docs" surface="Docs" resetKey={docsKey} titleKey="boundary.page.title"><DocsApp key={docsKey} appRequest={null} board={{ repos, defaultRepo: repoOf(repos, current), sessions, current: current ? { path: current.path, branch: current.branch } : null, onStart: startBoardAgent, onOpenTab: (l) => void jumpTo(l.tabId) }} kit={{ worktree: current?.path ?? null, open: null, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} /></SurfaceBoundary>}
         </div>
 
         <div className="ws-automations" hidden={view !== "automations"}>

@@ -34,6 +34,11 @@ import type { TabStatus } from "./status";
 
 type T = ReturnType<typeof useI18n>["t"];
 
+// The docs app marks its status line while the open doc differs from disk; replaced by a handle in the docs host.
+function docsSaved(): boolean {
+  return typeof document === "undefined" || !document.querySelector(".ws-docs .doc-status[data-dirty]");
+}
+
 /** The left sidebar: the docs vault nav, and the worktrees, sessions and activity views. Holds no state: the shell's hooks own it. */
 export function ShellSidebar(p: {
   repo: ReturnType<typeof useShellRepoActions>;
@@ -85,7 +90,7 @@ export function ShellSidebar(p: {
   const { addFolder, addRepo, adopt, changePrefs, openFolder, pin, setDetails, setEditing, setForgetting, setGroupName, sidebarCall } = p.repo;
   const { archive, bulkEach, openBulk, setReview, startRemove } = p.rm;
   const { disconnectRemote, reconnectRemote, removeRemote } = p.remoteActs;
-  const { docsSaved, openSettings, setDocsKey, setDocsMounted, show, view } = p.views;
+  const { openSettings, setDocsKey, show, view } = p.views;
   const { openPrTab } = p.panels;
   const { pending, startCreate } = p.cr;
   const { setBoardOpen, setCheckingOut, setComposerAsk, setMergeSources, setParentFor, setRenaming } = p.dialogs;
@@ -99,7 +104,6 @@ export function ShellSidebar(p: {
                 api={api}
                 canOpen={docsSaved}
                 onOpened={() => {
-                  setDocsMounted(true);
                   setDocsKey((k) => k + 1);
                 }}
               />

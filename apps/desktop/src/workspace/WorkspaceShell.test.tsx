@@ -103,7 +103,7 @@ function nodes(value: unknown): Node[] {
       ...nodes([p.titlebar, p.brand, p.crumbs, p.actions, p.sidebar, p.children, p.footer, p.overlays]),
       rail("workspace", p.labels.workspace),
       rail("docs", p.labels.docs),
-      ...(p.automations ? [rail("automations", p.labels.automations)] : []),
+      ...(p.places.includes("automations") ? [rail("automations", p.labels.automations)] : []),
     ];
   }
   return [node, ...nodes(node.props.children)];
@@ -168,7 +168,7 @@ it("header has repo, branch, search, bell and settings", async () => {
   const view = await harness();
   const box = { focus: vi.fn(), select: vi.fn() };
   const query = vi.fn(() => box);
-  vi.stubGlobal("document", { querySelector: query });
+  vi.stubGlobal("document", { getElementById: query });
   const frame = view.all().find(n => n.type === ShellFrame)!;
   const inHeader = nodes([frame.props.crumbs, frame.props.actions]);
   const crumbs = inHeader.filter(n => String(n.props.className ?? "").includes("ws-crumb") && !String(n.props.className).includes("sep")).map(text);
@@ -186,7 +186,7 @@ it("header has repo, branch, search, bell and settings", async () => {
   expect(view.of(DocsApp)).toHaveLength(1);
   vi.runAllTimers();
   vi.useRealTimers();
-  expect(query).toHaveBeenCalledWith(".ws-docs .search-input");
+  expect(query).toHaveBeenCalledWith("docs-search");
   expect(box.focus).toHaveBeenCalledTimes(1);
 });
 
@@ -1473,11 +1473,10 @@ it("the narrow bottom bar reaches Tasks, Accounts, Settings and back to the sess
   expect(bar().props.view).toBe("workspace");
   bar().props.onPick("tasks");
   view.draw();
-  expect(view.of(DocsApp)[0].props.appRequest).toMatchObject({ app: "tasks", tab: "board" });
-  expect(bar().props.view).toBe("docs");
+  expect(bar().props.view).toBe("tasks");
   bar().props.onPick("accounts");
   view.draw();
-  expect(view.of(DocsApp)[0].props.appRequest).toMatchObject({ app: "accounts" });
+  expect(bar().props.view).toBe("accounts");
   bar().props.onPick("settings");
   view.draw();
   expect(area("ws-settings").props.hidden).toBe(false);
@@ -1487,26 +1486,26 @@ it("the narrow bottom bar reaches Tasks, Accounts, Settings and back to the sess
   expect(bar().props.view).toBe("workspace");
 });
 
-it("Manage accounts in the usage popover shows the docs view on the Accounts app", async () => {
+it("Manage accounts in the usage popover shows the Accounts place", async () => {
   const view = await harness();
+  const place = () => view.all().find(n => n.type === ShellFrame)!.props.view;
   expect(view.of(LiveWorkspaceFooter)[0].props.onManageAccounts).toBeTypeOf("function");
-  expect(view.of(DocsApp)).toHaveLength(0);
   view.of(LiveWorkspaceFooter)[0].props.onManageAccounts();
   view.draw();
-  expect(view.of(DocsApp)[0].props.appRequest).toEqual({ app: "accounts", seq: 1 });
-  expect(view.all().find(n => n.props.className === "ws-docs")!.props.hidden).toBe(false);
-  // Asking again is a new request, so Accounts shows again after the person moved elsewhere.
+  expect(place()).toBe("accounts");
+  // Asking again shows Accounts again after the person moved elsewhere.
+  view.nav(en("workspace.nav.workspace")).props.onClick();
+  expect(place()).toBe("workspace");
   view.of(LiveWorkspaceFooter)[0].props.onManageAccounts();
   view.draw();
-  expect(view.of(DocsApp)[0].props.appRequest).toEqual({ app: "accounts", seq: 2 });
+  expect(place()).toBe("accounts");
 });
 
-it("picking a task in the palette shows the docs view on Tasks, focused on that task", async () => {
+it("picking a task in the palette shows the Tasks place", async () => {
   const view = await harness();
   view.of(PaletteHost)[0].props.actions.openTask("t1");
   view.draw();
-  expect(view.of(DocsApp)[0].props.appRequest).toEqual({ app: "tasks", task: "t1", seq: 1 });
-  expect(view.all().find(n => n.props.className === "ws-docs")!.props.hidden).toBe(false);
+  expect(view.all().find(n => n.type === ShellFrame)!.props.view).toBe("tasks");
   expect(view.of(PaletteHost)[0].props.tasks).toBeTypeOf("function");
 });
 
