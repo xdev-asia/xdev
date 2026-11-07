@@ -119,7 +119,7 @@ describe("tabs", () => {
   });
 
   it("closing a browser tab closes it in the browser store", () => {
-    const id = addFloatingTab("browser");
+    const id = addFloatingTab("browser") as string;
     closeFloatingTab(id);
     expect(closeBrowserTab).toHaveBeenCalledWith(id);
   });

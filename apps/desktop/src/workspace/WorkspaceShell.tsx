@@ -28,6 +28,7 @@ import { startAutosave } from "@/files/autosave";
 import { useWorktreeWatch } from "./useWorktreeWatch";
 import { ComposerHost, type ComposerRequest } from "@/composer/ComposerHost";
 import { FloatingHost } from "@/floating/FloatingHost";
+import { withFloatingSave } from "@/floating/floatingPersist";
 import { DictationHost } from "@/dictation/DictationHost";
 import { FloatingItem } from "@/floating/FloatingItem";
 import { repoOf, TaskEditorHost } from "@/tasks/board/TaskEditorHost";
@@ -497,7 +498,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
       if (stopped) return;
       stop = installCloseGuard(
         win,
-        () => saver.current,
+        () => withFloatingSave(saver.current),
         () =>
           guardClose(api, { title: live.t("shell.tray.tooltip"), body: live.t("shell.tray.notice") }, () =>
             askQuit(

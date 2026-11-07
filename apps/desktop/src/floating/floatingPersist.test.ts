@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "@/api";
 import { createMockApi } from "@/mockApi";
 
-const restoreBrowserTab = vi.fn((_w: string, url: string) => `browser:${url}`);
+const restoreBrowserTab = vi.fn((_w: string, url: string, _title?: string | null) => `browser:${url}`);
 const browserListeners = new Set<() => void>();
 vi.mock("@/browser/browserTabs", () => ({
   openBrowserTab: () => "browser:new",
@@ -231,7 +231,7 @@ describe("startFloatingSave", () => {
     setNoteBody(id, "typed");
     await saver.flush();
     expect(floatingSave).toHaveBeenCalledTimes(1);
-    expect(floatingSave.mock.calls[0][0]).toMatchObject({ version: 1, tabs: [{ kind: "note", body: "typed" }] });
+    expect((floatingSave.mock.calls[0] as unknown[])[0]).toMatchObject({ version: 1, tabs: [{ kind: "note", body: "typed" }] });
     await vi.advanceTimersByTimeAsync(5000);
     expect(floatingSave).toHaveBeenCalledTimes(1);
     await saver.flush();
