@@ -1,0 +1,33 @@
+{
+  "id": 901,
+  "iid": 12,
+  "project_id": 7,
+  "title": "Fix footer meter",
+  "description": "Fixes the **footer** meter.\n\n<script>alert(1)</script>",
+  "state": "opened",
+  "draft": false,
+  "work_in_progress": false,
+  "created_at": "2026-10-01T09:00:00.000Z",
+  "updated_at": "2026-10-01T10:00:00.000Z",
+  "source_branch": "fix-footer",
+  "target_branch": "main",
+  "author": { "id": 3, "username": "ann", "name": "Ann Lee", "state": "active" },
+  "sha": "abc1234def5678abc1234def5678abc1234def56",
+  "merge_status": "can_be_merged",
+  "detailed_merge_status": "mergeable",
+  "has_conflicts": false,
+  "web_url": "https://gitlab.com/acme/app/-/merge_requests/12",
+  "source_project_id": 7,
+  "target_project_id": 7,
+  "squash": false,
+  "head_pipeline": {
+    "id": 99,
+    "iid": 4,
+    "project_id": 7,
+    "sha": "abc1234def5678abc1234def5678abc1234def56",
+    "ref": "fix-footer",
+    "status": "failed",
+    "source": "merge_request_event",
+    "web_url": "https://gitlab.com/acme/app/-/pipelines/99"
+  }
+}

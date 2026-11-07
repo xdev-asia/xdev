@@ -1,0 +1,8 @@
+{
+  "id": 7,
+  "name": "app",
+  "path_with_namespace": "acme/app",
+  "merge_method": "merge",
+  "squash_option": "default_on",
+  "default_branch": "main"
+}

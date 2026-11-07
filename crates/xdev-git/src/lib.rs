@@ -15,6 +15,7 @@ mod gh_pr_edit;
 mod gh_pr_viewed;
 mod gh_review;
 mod gitlab;
+mod gitlab_review;
 mod history;
 mod host_url;
 mod log;
@@ -62,6 +63,10 @@ pub use gh_review::{
 pub use gitlab::{
     GlabExec, MR_BODY_LIMIT, MrState, MrSummary, SystemGlab, glab_mr_create, glab_mr_for_branch,
     glab_mr_list, glab_mr_view, is_gitlab_remote,
+};
+pub use gitlab_review::{
+    MrDetail, MrNote, MrNotes, MrPipeline, glab_mr_detail, glab_mr_merge, glab_mr_merge_info,
+    glab_mr_note_add, glab_mr_notes, glab_pipeline_jobs,
 };
 pub use history::Commit;
 pub use host_url::{HostKind, HostRepo, commit_url, file_url, parse_host_remote};

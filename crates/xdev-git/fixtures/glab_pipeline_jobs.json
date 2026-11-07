@@ -1,0 +1,6 @@
+[
+  { "id": 701, "name": "lint", "stage": "test", "status": "success", "allow_failure": false, "web_url": "https://gitlab.com/acme/app/-/jobs/701" },
+  { "id": 702, "name": "unit", "stage": "test", "status": "failed", "allow_failure": false, "web_url": "https://gitlab.com/acme/app/-/jobs/702" },
+  { "id": 703, "name": "flaky", "stage": "test", "status": "failed", "allow_failure": true, "web_url": "https://gitlab.com/acme/app/-/jobs/703" },
+  { "id": 704, "name": "deploy", "stage": "deploy", "status": "manual", "allow_failure": true, "web_url": null }
+]
