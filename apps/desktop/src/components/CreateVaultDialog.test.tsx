@@ -5,7 +5,7 @@ import en from "@/i18n/en.json";
 import viDict from "@/i18n/vi.json";
 import { translate } from "@/i18n";
 import { CreateVaultDialog } from "./CreateVaultDialog";
-import { VaultEmpty } from "./NoVaultView";
+import { VaultEmpty } from "@/docs/VaultEmpty";
 
 // Called as plain functions, so the hooks are stubbed out.
 vi.mock("react", async (original) => ({ ...(await original<typeof import("react")>()), useRef: () => ({ current: null }), useEffect: () => {} }));

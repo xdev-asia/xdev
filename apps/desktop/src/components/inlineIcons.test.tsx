@@ -9,10 +9,9 @@ import { QuickCommandsButton } from "@/quickCommands/QuickCommandsButton";
 import { HeaderSearch } from "@/workspace/HeaderSearch";
 import { Toasts } from "@/workspace/Toasts";
 import { pushToast, resetToastsForTests } from "@/workspace/toastStore";
-import { ActivityBar } from "./ActivityBar";
 import { ICON, Icon } from "./ChangesPanel";
 import { FreshnessBanner } from "./FreshnessBanner";
-import { VaultEmpty } from "./NoVaultView";
+import { VaultEmpty } from "@/docs/VaultEmpty";
 
 vi.mock("@/keys/bindingsStore", async (original) => ({ ...await original<typeof import("@/keys/bindingsStore")>(), useBindings: () => ({}) }));
 
@@ -28,17 +27,6 @@ const decorative = (tag: string): void => {
 afterEach(resetToastsForTests);
 
 describe("shared icons in the shell", () => {
-  it("activity bar draws one 22 px icon per app", () => {
-    const html = render(<ActivityBar active="docs" changeCount={null} onSelect={() => {}} />);
-    expect(svgs(html)).toHaveLength(8);
-    for (const tag of svgs(html)) {
-      decorative(tag);
-      expect(tag).toContain('width="22"');
-    }
-    expect(html).toContain('d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"');
-    expect(html).toContain('d="m7 9 3 3-3 3M13 15h4"');
-  });
-
   it("nav buttons draw the two chevrons", () => {
     const html = render(<NavButtons canBack canForward onBack={() => {}} onForward={() => {}} />);
     expect(svgs(html)).toHaveLength(2);
@@ -92,13 +80,12 @@ describe("shared icons in the shell", () => {
 
   it("none of the migrated files draws an svg by hand", () => {
     const files = [
-      "components/ActivityBar.tsx",
       "nav/NavButtons.tsx",
       "workspace/Toasts.tsx",
       "workspace/HeaderSearch.tsx",
       "quickCommands/QuickCommandsButton.tsx",
       "workspace/FileTree.tsx",
-      "components/NoVaultView.tsx",
+      "docs/VaultEmpty.tsx",
       "components/FreshnessBanner.tsx",
       "components/ChangesPanel.tsx",
     ];

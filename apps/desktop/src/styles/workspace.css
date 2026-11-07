@@ -96,11 +96,6 @@
   background: var(--bg-1);
 }
 
-.ws-rail .activitybar {
-  height: auto;
-  border-right: 0;
-}
-
 .ws-appshell {
   flex: 1;
   min-width: 0;
@@ -1901,14 +1896,6 @@ button.ws-tree-row[data-flash="true"] {
 .ws-docs > :not(dialog) {
   flex: 1 1 0;
   min-height: 0;
-}
-
-/* The shell header already shows the logo, the name and the language, so the docs bar keeps
-   only its folder controls. */
-.ws-docs .topbar-logo,
-.ws-docs .topbar-brand,
-.ws-docs .topbar-actions .lang-select {
-  display: none;
 }
 
 /* The docs side list: folders, search, the section switch, then the list. */

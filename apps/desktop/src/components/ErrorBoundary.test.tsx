@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { DocsApp } from "@/DocsApp";
+import { DocsHost } from "@/docs/DocsHost";
 import en from "@/i18n/en.json";
 import { translate } from "@/i18n";
 import { CrashView, ErrorBoundary } from "./ErrorBoundary";
@@ -42,9 +42,9 @@ describe("ErrorBoundary report", () => {
   });
 });
 
-describe("DocsApp boot", () => {
+describe("DocsHost boot", () => {
   it("says the folder is opening instead of showing an empty page", () => {
-    const html = renderToStaticMarkup(<DocsApp />);
+    const html = renderToStaticMarkup(<DocsHost navSlot={null} request={null} onStatus={() => {}} />);
     expect(html).toContain('role="status"');
     expect(html).toContain(en["vault.opening"]);
   });

@@ -393,8 +393,8 @@ it("a view that mounts with no request opens no tab and hands nothing back", asy
   expect(handled).not.toHaveBeenCalled();
 });
 
-it("neither host keys the Agent kit by the request, so a request never remounts it", () => {
-  for (const file of ["../DocsApp.tsx", "../components/NoVaultView.tsx"]) {
+it("the Kit place does not key the Agent kit by the request, so a request never remounts it", () => {
+  for (const file of ["../workspace/PlaceStage.tsx"]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     const element = source.match(/<AgentKitView[\s\S]*?\/>/)![0];
     expect(element).not.toMatch(/\bkey=/);
@@ -402,11 +402,11 @@ it("neither host keys the Agent kit by the request, so a request never remounts 
   }
 });
 
-it("DocsApp and NoVaultView open the Kit only for a request that is still waiting", () => {
-  for (const file of ["../DocsApp.tsx", "../components/NoVaultView.tsx"]) {
+it("the Kit place opens the Kit only for a request that is still waiting", () => {
+  for (const file of ["../workspace/PlaceStage.tsx"]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     expect(source).not.toMatch(/kitSeq\s*>\s*0/);
-    expect(source).toMatch(/props\.kit\?\.open/);
+    expect(source).toMatch(/request=\{kit\.open\}/);
   }
 });
 

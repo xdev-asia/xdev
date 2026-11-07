@@ -22,8 +22,8 @@ describe("BrandMark", () => {
     for (const d of asset.matchAll(/ d="([^"]+)"/g)) expect(markup).toContain(`d="${d[1]}"`);
   });
 
-  it("is the only logo the shell, docs app and vault view use", () => {
-    for (const file of ["../workspace/WorkspaceShell.tsx", "../DocsApp.tsx", "./NoVaultView.tsx"]) {
+  it("is the only logo the shell and the vault view use", () => {
+    for (const file of ["../workspace/WorkspaceShell.tsx", "../docs/VaultEmpty.tsx"]) {
       const source = readFileSync(new URL(file, import.meta.url), "utf8");
       expect(source, file).not.toMatch(/<img[^>]*logo/);
       expect(source, file).not.toContain("xdev-icon-512.png");
