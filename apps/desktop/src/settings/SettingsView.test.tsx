@@ -258,3 +258,15 @@ it("a search hides the group with no hit", () => {
   expect(groups.length).toBeLessThan(GROUPS.length);
   expect(groups.length).toBeGreaterThan(0);
 });
+
+it("openTerminal reaches the section", () => {
+  const api = createMockApi({});
+  const openTerminal = vi.fn(() => "t1");
+  hooks.cursor = 0;
+  hooks.active = true;
+  let drawn: Node[];
+  try { drawn = nodes(SettingsView({ api, onChanged: vi.fn(), initial: "agents", openTerminal })); } finally { hooks.active = false; }
+  const body = drawn.find((n) => n.props.className === "settings-body")!;
+  const section = nodes(body.props.children).find((n) => n.type === AgentsPage)!;
+  expect(section.props.openTerminal).toBe(openTerminal);
+});
