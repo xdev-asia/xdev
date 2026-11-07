@@ -109,7 +109,7 @@ pub(crate) fn wrap(mut launch: Launch, spec: &RemoteSpec, tab_id: &str) -> Launc
         let env = merge_env(&spec.host_env, env_subset(&launch.env, &spec.declared));
         remote_agent_cmd(&spec.path, &argv, &env, keep)
     } else {
-        remote_shell_cmd(&spec.path, keep, spec.shell.as_deref())
+        remote_shell_cmd(&spec.path, keep, spec.shell.as_deref(), &[])
     };
     launch.program = xdev_agent::system_ssh();
     launch.args = tty_argv(&spec.host, spec.mux.as_deref(), &cmd);
