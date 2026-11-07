@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use xdev_id::{Method, Request, Response, Secret, Transport};
 
 use crate::keystore::{DEVICE_PROOF, DeviceKey, ENT_PROOF, proof_message};
-use crate::{E_NO_SEAT, E_REVOKED, E_TRANSFER_LIMIT, E_UNAVAILABLE, b64};
+use crate::{E_DEVICE_CONFLICT, E_NO_SEAT, E_REVOKED, E_TRANSFER_LIMIT, E_UNAVAILABLE, b64};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ApiError {
@@ -22,21 +22,36 @@ pub enum ApiError {
     /// 403 `device_revoked`: the account removed this device.
     #[error("license_device_revoked")]
     Revoked,
-    /// 409 `no_free_seat` (lane D: `no_seat`): every Pro seat is on other devices.
+    /// 409 `no_free_seat`: every Pro seat is on other devices.
     #[error("license_no_seat")]
     NoSeat,
-    /// 429 `transfer_limit`.
+    /// 429 `transfer_limit`, with the yearly `limit` when the service names it. The same on
+    /// `DELETE /v1/activations/:id` and `DELETE /v1/devices/:id`.
     #[error("license_transfer_limit")]
-    TransferLimit,
+    TransferLimit(Option<u32>),
     /// 404 `no_grant`: the account has no active Pro grant.
     #[error("no_grant")]
     NoGrant,
+    /// 404 `device_unknown`: the service has no such device for this user (C1). The caller
+    /// drops its device id and registers again; the account did not revoke anything.
+    #[error("device_unknown")]
+    DeviceUnknown,
     /// 404 `not_found`: no such device, or no activation to end.
     #[error("not_found")]
     NotFound,
-    /// 409 `device_limit` or `device_conflict` at registration.
+    /// 409 `device_limit` at registration.
     #[error("device_rejected")]
     DeviceRejected,
+    /// 409 `device_conflict` at registration.
+    #[error("license_device_conflict")]
+    DeviceConflict,
+    /// 400 `bad_nonce`: the nonce was used or has expired. The proof calls ask for a fresh
+    /// one and try once more; the caller sees this only when that fails too.
+    #[error("bad_nonce")]
+    BadNonce,
+    /// 409 `conflict`: an activation raced another one. `activate` repeats it once.
+    #[error("conflict")]
+    Conflict,
 }
 
 /// Lane D's name.
@@ -49,12 +64,16 @@ impl ApiError {
         match self {
             ApiError::Revoked => E_REVOKED,
             ApiError::NoSeat => E_NO_SEAT,
-            ApiError::TransferLimit => E_TRANSFER_LIMIT,
+            ApiError::TransferLimit(_) => E_TRANSFER_LIMIT,
+            ApiError::DeviceConflict => E_DEVICE_CONFLICT,
             ApiError::Unauthorized
             | ApiError::Unavailable
             | ApiError::NoGrant
             | ApiError::NotFound
-            | ApiError::DeviceRejected => E_UNAVAILABLE,
+            | ApiError::DeviceUnknown
+            | ApiError::DeviceRejected
+            | ApiError::BadNonce
+            | ApiError::Conflict => E_UNAVAILABLE,
         }
     }
 }
@@ -149,10 +168,18 @@ fn fail(res: &Response) -> ApiError {
     match (res.status, name.as_deref()) {
         (401, _) => ApiError::Unauthorized,
         (403, Some("device_revoked")) => ApiError::Revoked,
-        (409, Some("no_seat" | "no_free_seat" | "seats_full")) => ApiError::NoSeat,
-        (409, Some("device_limit" | "device_conflict")) => ApiError::DeviceRejected,
-        (429, Some("transfer_limit")) => ApiError::TransferLimit,
+        (400, Some("bad_nonce")) => ApiError::BadNonce,
+        (409, Some("no_free_seat")) => ApiError::NoSeat,
+        (409, Some("conflict")) => ApiError::Conflict,
+        (409, Some("device_limit")) => ApiError::DeviceRejected,
+        (409, Some("device_conflict")) => ApiError::DeviceConflict,
+        (429, Some("transfer_limit")) => ApiError::TransferLimit(
+            json_of(res)
+                .and_then(|v| v.get("limit")?.as_u64())
+                .and_then(|n| u32::try_from(n).ok()),
+        ),
         (404, Some("no_grant")) => ApiError::NoGrant,
+        (404, Some("device_unknown")) => ApiError::DeviceUnknown,
         (404, Some("not_found")) => ApiError::NotFound,
         _ => ApiError::Unavailable,
     }
@@ -220,6 +247,51 @@ pub fn register(
     }
 }
 
+/// `POST /v1/devices/challenge` then `POST /v1/devices`.
+pub fn register_fresh(
+    http: &dyn Transport,
+    base: &str,
+    bearer: &Secret,
+    uid: &str,
+    key: &DeviceKey,
+    name: &str,
+    platform: &str,
+) -> Result<Registered, ApiError> {
+    let go = || {
+        let nonce = challenge(http, base, bearer)?;
+        register(http, base, bearer, uid, &nonce, key, name, platform)
+    };
+    once_more(go, ApiError::BadNonce)
+}
+
+/// `POST /v1/devices/challenge` then `POST /v1/entitlement`.
+pub fn entitlement_fresh(
+    http: &dyn Transport,
+    base: &str,
+    bearer: &Secret,
+    uid: &str,
+    device_id: &str,
+    key: &DeviceKey,
+    build: &BuildInfo,
+) -> Result<TokenReply, ApiError> {
+    let go = || {
+        let nonce = challenge(http, base, bearer)?;
+        entitlement(http, base, bearer, uid, &nonce, device_id, key, build)
+    };
+    once_more(go, ApiError::BadNonce)
+}
+
+/// Runs `go`, and runs it once more when it failed with `again`.
+fn once_more<T>(
+    mut go: impl FnMut() -> Result<T, ApiError>,
+    again: ApiError,
+) -> Result<T, ApiError> {
+    match go() {
+        Err(e) if e == again => go(),
+        other => other,
+    }
+}
+
 /// `POST /v1/entitlement`: a fresh token for this device.
 #[allow(clippy::too_many_arguments)]
 pub fn entitlement(
@@ -279,19 +351,25 @@ pub fn activate(
     bearer: &Secret,
     device_id: &str,
 ) -> Result<String, ApiError> {
-    let res = call(
-        http,
-        Method::Post,
-        format!("{base}/v1/activations"),
-        bearer,
-        Some(json!({ "device_id": device_id })),
-    )?;
-    if res.status != 200 && res.status != 201 {
-        return Err(fail(&res));
-    }
-    json_of(&res)
-        .and_then(|v| text(&v, "grant_id"))
-        .ok_or(ApiError::Unavailable)
+    // A 409 `conflict` is an activation that raced another one; once more settles it.
+    once_more(
+        || {
+            let res = call(
+                http,
+                Method::Post,
+                format!("{base}/v1/activations"),
+                bearer,
+                Some(json!({ "device_id": device_id })),
+            )?;
+            if res.status != 200 && res.status != 201 {
+                return Err(fail(&res));
+            }
+            json_of(&res)
+                .and_then(|v| text(&v, "grant_id"))
+                .ok_or(ApiError::Unavailable)
+        },
+        ApiError::Conflict,
+    )
 }
 
 /// `DELETE /v1/activations/:device_id`: frees the device's Pro seat (counts as a transfer).
@@ -420,6 +498,13 @@ mod tests {
         DeviceKey::from_seeds([3u8; 32], [4u8; 32])
     }
 
+    fn build() -> BuildInfo {
+        BuildInfo {
+            version: "1.0.0".into(),
+            date: 1,
+        }
+    }
+
     fn nonce() -> String {
         "N".repeat(43)
     }
@@ -490,6 +575,35 @@ mod tests {
     }
 
     #[test]
+    fn entitlement_404_device_unknown_is_not_revoked() {
+        let t = FakeTransport::new(vec![Ok(Response::json(
+            404,
+            r#"{"error":"device_unknown"}"#,
+        ))]);
+        let err = entitlement(
+            &t,
+            BASE,
+            &bearer(),
+            UID,
+            &nonce(),
+            "dev-1",
+            &key(),
+            &build(),
+        )
+        .unwrap_err();
+        assert_eq!(err, ApiError::DeviceUnknown);
+        assert_eq!(err.code(), E_UNAVAILABLE);
+        let t = FakeTransport::new(vec![Ok(Response::json(
+            404,
+            r#"{"error":"device_unknown"}"#,
+        ))]);
+        assert_eq!(
+            activate(&t, BASE, &bearer(), "dev-1").unwrap_err(),
+            ApiError::DeviceUnknown
+        );
+    }
+
+    #[test]
     fn entitlement_403_maps_to_revoked() {
         let t = FakeTransport::new(vec![Ok(Response::json(
             403,
@@ -508,7 +622,7 @@ mod tests {
     fn activate_409_maps_to_no_seat() {
         let t = FakeTransport::new(vec![
             Ok(Response::json(409, r#"{"error":"no_free_seat"}"#)),
-            Ok(Response::json(409, r#"{"error":"no_seat"}"#)),
+            Ok(Response::json(409, r#"{"error":"no_free_seat"}"#)),
             Ok(Response::json(404, r#"{"error":"no_grant"}"#)),
             Ok(Response::json(201, r#"{"grant_id":"g-1"}"#)),
         ]);
@@ -518,6 +632,125 @@ mod tests {
         assert_eq!(activate(&t, BASE, &b, "d").unwrap_err(), ApiError::NoGrant);
         assert_eq!(activate(&t, BASE, &b, "d").unwrap(), "g-1");
         assert_eq!(body_of(&t.requests()[0])["device_id"], "d");
+    }
+
+    fn ok_json(status: u16, body: &str) -> Result<Response, Offline> {
+        Ok(Response::json(status, body))
+    }
+
+    fn fp_reply(k: &DeviceKey) -> String {
+        format!(r#"{{"id":"dev-1","fingerprint":"{}"}}"#, k.fingerprint())
+    }
+
+    fn nonce_reply() -> String {
+        format!(r#"{{"nonce":"{}"}}"#, nonce())
+    }
+
+    #[test]
+    fn entitlement_retries_once_on_bad_nonce_with_a_fresh_nonce() {
+        let t = FakeTransport::new(vec![
+            ok_json(200, &nonce_reply()),
+            ok_json(400, r#"{"error":"bad_nonce"}"#),
+            ok_json(200, &format!(r#"{{"nonce":"{}"}}"#, "M".repeat(43))),
+            ok_json(200, r#"{"token":"a.b.c","certs":[],"refresh_after":5}"#),
+        ]);
+        let r = entitlement_fresh(&t, BASE, &bearer(), UID, "dev-1", &key(), &build()).unwrap();
+        assert_eq!(r.refresh_after, 5);
+        let reqs = t.requests();
+        assert_eq!(reqs.len(), 4);
+        assert_eq!(body_of(&reqs[1])["nonce"], nonce());
+        assert_eq!(body_of(&reqs[3])["nonce"], "M".repeat(43));
+    }
+
+    #[test]
+    fn entitlement_gives_up_after_one_retry() {
+        let t = FakeTransport::new(vec![
+            ok_json(200, &nonce_reply()),
+            ok_json(400, r#"{"error":"bad_nonce"}"#),
+            ok_json(200, &nonce_reply()),
+            ok_json(400, r#"{"error":"bad_nonce"}"#),
+        ]);
+        let err =
+            entitlement_fresh(&t, BASE, &bearer(), UID, "dev-1", &key(), &build()).unwrap_err();
+        assert_eq!(err, ApiError::BadNonce);
+        assert_eq!(err.code(), E_UNAVAILABLE);
+        assert_eq!(t.requests().len(), 4);
+    }
+
+    #[test]
+    fn register_retries_once_on_bad_nonce() {
+        let k = key();
+        let t = FakeTransport::new(vec![
+            ok_json(200, &nonce_reply()),
+            ok_json(400, r#"{"error":"bad_nonce"}"#),
+            ok_json(200, &nonce_reply()),
+            ok_json(200, &fp_reply(&k)),
+        ]);
+        let r = register_fresh(&t, BASE, &bearer(), UID, &k, "Laptop", "windows").unwrap();
+        assert_eq!(r.id, "dev-1");
+        assert_eq!(t.requests().len(), 4);
+    }
+
+    #[test]
+    fn activate_retries_once_on_a_409_conflict() {
+        let t = FakeTransport::new(vec![
+            ok_json(409, r#"{"error":"conflict"}"#),
+            ok_json(201, r#"{"grant_id":"g-1"}"#),
+        ]);
+        assert_eq!(activate(&t, BASE, &bearer(), "d").unwrap(), "g-1");
+        assert_eq!(t.requests().len(), 2);
+        let t = FakeTransport::new(vec![
+            ok_json(409, r#"{"error":"conflict"}"#),
+            ok_json(409, r#"{"error":"conflict"}"#),
+        ]);
+        assert_eq!(
+            activate(&t, BASE, &bearer(), "d").unwrap_err(),
+            ApiError::Conflict
+        );
+        assert_eq!(t.requests().len(), 2);
+    }
+
+    #[test]
+    fn device_conflict_has_its_own_error() {
+        let t = FakeTransport::new(vec![
+            ok_json(200, &nonce_reply()),
+            ok_json(409, r#"{"error":"device_conflict"}"#),
+        ]);
+        let err = register_fresh(&t, BASE, &bearer(), UID, &key(), "n", "p").unwrap_err();
+        assert_eq!(err, ApiError::DeviceConflict);
+        assert_eq!(err.code(), E_DEVICE_CONFLICT);
+        // device_limit is not a conflict.
+        let t = FakeTransport::new(vec![
+            ok_json(200, &nonce_reply()),
+            ok_json(409, r#"{"error":"device_limit"}"#),
+        ]);
+        assert_eq!(
+            register_fresh(&t, BASE, &bearer(), UID, &key(), "n", "p").unwrap_err(),
+            ApiError::DeviceRejected
+        );
+    }
+
+    #[test]
+    fn the_old_seat_aliases_are_not_understood() {
+        for name in ["no_seat", "seats_full"] {
+            let t = FakeTransport::new(vec![ok_json(409, &format!(r#"{{"error":"{name}"}}"#))]);
+            assert_eq!(
+                activate(&t, BASE, &bearer(), "d").unwrap_err(),
+                ApiError::Unavailable
+            );
+        }
+    }
+
+    #[test]
+    fn remove_device_maps_transfer_limit_like_deactivate() {
+        let body = r#"{"error":"transfer_limit","limit":3}"#;
+        let t = FakeTransport::new(vec![ok_json(429, body), ok_json(429, body)]);
+        let b = bearer();
+        let removed = remove_device(&t, BASE, &b, "dev-1").unwrap_err();
+        let deactivated = deactivate(&t, BASE, &b, "dev-1").unwrap_err();
+        assert_eq!(removed, deactivated);
+        assert_eq!(removed, ApiError::TransferLimit(Some(3)));
+        assert_eq!(removed.code(), E_TRANSFER_LIMIT);
     }
 
     #[test]

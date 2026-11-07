@@ -33,6 +33,8 @@ pub const E_REVOKED: &str = "license_device_revoked";
 pub const E_NO_SEAT: &str = "license_no_seat";
 /// The yearly limit of Pro transfers is used up.
 pub const E_TRANSFER_LIMIT: &str = "license_transfer_limit";
+/// The service refused to register this device because it conflicts with another one.
+pub const E_DEVICE_CONFLICT: &str = "license_device_conflict";
 /// The token is not signed under a pinned root.
 pub const E_SERVER_KEY: &str = "license_server_key";
 /// Addition: the notice when a token belongs to another device.
