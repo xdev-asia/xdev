@@ -914,6 +914,17 @@ fn local_only_commands_are_guarded() {
             &["worktree_mr", "worktree_mr_create"][..],
         ),
         (
+            include_str!("../mr_review.rs"),
+            &[
+                "worktree_mr_detail",
+                "worktree_mr_jobs",
+                "worktree_mr_notes",
+                "worktree_mr_note_post",
+                "worktree_mr_merge_info",
+                "worktree_mr_merge",
+            ][..],
+        ),
+        (
             include_str!("../history.rs"),
             &[
                 "worktree_log",
