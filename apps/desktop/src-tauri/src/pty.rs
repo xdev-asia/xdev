@@ -2432,7 +2432,10 @@ mod tests {
     fn claim_new_counts_filled_terminals() {
         let ptys = Ptys::default();
         ptys.set_max_running(1);
-        ptys.claim_new("a").unwrap().fill(Box::new(FakePty)).unwrap();
+        ptys.claim_new("a")
+            .unwrap()
+            .fill(Box::new(FakePty))
+            .unwrap();
         assert_eq!(
             ptys.claim_new("b").err().unwrap().code,
             "too_many_terminals"
