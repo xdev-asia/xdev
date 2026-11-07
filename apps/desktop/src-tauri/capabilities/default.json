@@ -38,6 +38,7 @@
     "allow-set-git-settings",
     "allow-terminal-settings-get",
     "allow-terminal-settings-put",
+    "allow-terminal-host-info",
     "allow-key-settings-get",
     "allow-key-settings-put",
     "allow-ui-settings-get",

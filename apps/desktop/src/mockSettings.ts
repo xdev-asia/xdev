@@ -16,6 +16,7 @@ type SettingsApi = Pick<
   | "onSettingsChanged"
   | "terminalSettings"
   | "terminalSettingsPut"
+  | "terminalHostInfo"
   | "keySettingsGet"
   | "keySettingsPut"
   | "uiSettingsGet"
@@ -184,6 +185,9 @@ export function createMockSettings(hub: SettingsHub = createSettingsHub()): Sett
     onSettingsChanged: hub.onSettingsChanged,
     async terminalSettings() {
       return { ...terminal };
+    },
+    async terminalHostInfo() {
+      return { ptyLimit: 4096, pwshFound: false, defaultIsPowershell: true };
     },
     async terminalSettingsPut(next) {
       terminal = clampTerminalSettings(next);

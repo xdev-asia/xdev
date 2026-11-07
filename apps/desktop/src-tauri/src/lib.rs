@@ -110,6 +110,7 @@ mod swarm;
 mod tasks;
 mod term_config_import;
 mod term_tail;
+mod terminal_host;
 mod terminal_sets;
 mod terminal_themes;
 mod trackers;
@@ -393,6 +394,7 @@ pub fn run() {
             commands::set_git_settings,
             commands::terminal_settings_get,
             commands::terminal_settings_put,
+            terminal_host::terminal_host_info,
             commands::key_settings_get,
             commands::key_settings_put,
             commands::ui_settings_get,

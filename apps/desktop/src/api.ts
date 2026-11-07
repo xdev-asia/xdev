@@ -71,6 +71,7 @@ import type {
   NotificationPermission,
   SettingsChanged,
   TerminalSettings,
+  TerminalHostInfo,
   KeySettings,
   KeybindingsChanged,
   KeybindingsText,
@@ -656,6 +657,7 @@ export type {
   TerminalBell,
   MacOptionAsAlt,
   WindowsPowershell,
+  TerminalHostInfo,
   TerminalLinkClick,
   SettingsSection,
   SettingsChanged,
@@ -1217,6 +1219,8 @@ export interface Api {
   // Settings -> Terminal; the put returns what was stored, with numbers clamped to their ranges.
   terminalSettings(): Promise<TerminalSettings>;
   terminalSettingsPut(s: TerminalSettings): Promise<TerminalSettings>;
+  /** The system PTY limit and which PowerShell is installed; fields that cannot be read are null or false. */
+  terminalHostInfo(): Promise<TerminalHostInfo>;
   /** Saves the clipboard image as a PNG in the temp folder; null when the clipboard holds no image. Rejects `too_large`. */
   clipboardImageSave(): Promise<string | null>;
   /** macOS keyboard input source id; null elsewhere. */
@@ -2762,6 +2766,7 @@ const tauriApi: Api = {
   setGitSettings: (git) => call("set_git_settings", { git }),
   terminalSettings: () => call("terminal_settings_get"),
   terminalSettingsPut: (settings) => call("terminal_settings_put", { settings }),
+  terminalHostInfo: () => call("terminal_host_info"),
   clipboardImageSave: () => call("clipboard_image_save"),
   keyboardInputSource: () => call("keyboard_input_source"),
   onSettingsChanged: (listener) => {

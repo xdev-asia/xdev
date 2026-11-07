@@ -570,6 +570,7 @@ export type { TermConfigDetected } from "./TermConfigDetected";
 export type { TermConfigPreview } from "./TermConfigPreview";
 export type { TerminalBell } from "./TerminalBell";
 export type { TerminalGpu } from "./TerminalGpu";
+export type { TerminalHostInfo } from "./TerminalHostInfo";
 export type { TerminalKeyPolicy } from "./TerminalKeyPolicy";
 export type { TerminalLinkClick } from "./TerminalLinkClick";
 export type { TerminalOp } from "./TerminalOp";

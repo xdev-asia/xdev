@@ -155,6 +155,7 @@ fn export_roots(cfg: &Config) -> Result<(), ts_rs::ExportError> {
     TerminalLinkClick::export_all(cfg)?;
     MacOptionAsAlt::export_all(cfg)?;
     WindowsPowershell::export_all(cfg)?;
+    crate::terminal_host::TerminalHostInfo::export_all(cfg)?;
     SettingsChanged::export_all(cfg)?;
     ShellSettings::export_all(cfg)?;
     UpdateChannel::export_all(cfg)?;
