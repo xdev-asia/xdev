@@ -90,6 +90,37 @@ pub fn effective(stored: Option<&HostSettings>, alias: &str) -> EffectiveHost {
     }
 }
 
+/// What a launch on a host takes from its settings.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct HostLaunch {
+    pub env: Vec<(String, String)>,
+    /// `None` is the host's `"$SHELL"`.
+    pub shell: Option<String>,
+}
+
+/// The shell and env of the stored entry, checked like the Settings page checks them (a
+/// hand-edited `settings.json` is not validated on load). `None` is empty. Only the launch
+/// values are checked, so a bad label or history setting never blocks a launch.
+pub(crate) fn launch_values(stored: Option<&HostSettings>) -> Result<HostLaunch, CmdError> {
+    let Some(s) = stored else {
+        return Ok(HostLaunch::default());
+    };
+    let checked = HostSettings {
+        shell: s.shell.clone(),
+        env: s.env.clone(),
+        ..HostSettings::default()
+    }
+    .validated()
+    .map_err(|(code, detail)| CmdError {
+        code,
+        detail: Some(detail),
+    })?;
+    Ok(HostLaunch {
+        env: checked.env.into_iter().map(|v| (v.name, v.value)).collect(),
+        shell: checked.shell,
+    })
+}
+
 /// The picker entry of Local; never a valid SSH host id.
 pub const LOCAL_ID: &str = "local";
 
@@ -483,6 +514,54 @@ mod tests {
             shell: Some(shell.to_owned()),
             ..HostSettings::default()
         }
+    }
+
+    fn env_var(n: &str, v: &str) -> HostEnvVar {
+        HostEnvVar {
+            name: n.to_owned(),
+            value: v.to_owned(),
+        }
+    }
+
+    #[test]
+    fn launch_values_of_nothing_are_empty() {
+        assert_eq!(launch_values(None).unwrap(), HostLaunch::default());
+        let d = HostSettings::default();
+        assert_eq!(launch_values(Some(&d)).unwrap(), HostLaunch::default());
+    }
+
+    #[test]
+    fn launch_values_keep_env_order_and_shell() {
+        let h = HostSettings {
+            shell: Some("/bin/zsh".into()),
+            env: vec![env_var("A", "1"), env_var("B", "2")],
+            label: Some("x".into()),
+            history: HostHistory {
+                days: Some(99_999),
+                ..HostHistory::default()
+            },
+        };
+        let v = launch_values(Some(&h)).unwrap();
+        assert_eq!(v.shell.as_deref(), Some("/bin/zsh"));
+        assert_eq!(
+            v.env,
+            [
+                ("A".to_owned(), "1".to_owned()),
+                ("B".to_owned(), "2".to_owned())
+            ]
+        );
+    }
+
+    #[test]
+    fn launch_values_refuse_hand_edited_entries() {
+        let bad = |h: HostSettings| launch_values(Some(&h)).unwrap_err().code;
+        let env = |n: &str, v: &str| HostSettings {
+            env: vec![env_var(n, v)],
+            ..HostSettings::default()
+        };
+        assert_eq!(bad(env("1A", "x")), "bad_env");
+        assert_eq!(bad(env("A", "x y")), "bad_env");
+        assert_eq!(bad(with_shell("zsh; id")), "bad_path");
     }
 
     #[test]
