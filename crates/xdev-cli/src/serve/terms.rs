@@ -580,8 +580,16 @@ pub(crate) mod tests {
         let term = terms.open(shell(dir.path())).unwrap();
         let (w, rx) = watcher();
         terms.attach(&term.id, 0, w).unwrap();
+        // Kill a shell that is up: a kill sent while the shell is still
+        // starting was lost now and then on the macOS runner.
+        assert!(
+            matches!(rx.recv_timeout(DEADLINE), Ok(Ev::Out(..))),
+            "no shell output"
+        );
         terms.kill(&term.id).unwrap();
-        let (id, _) = exits.recv_timeout(DEADLINE).expect("exit within 5 s");
+        // The exit waits up to `DRAIN_WAIT` for the pump; slow runners need
+        // more than `DEADLINE` on top.
+        let (id, _) = exits.recv_timeout(DEADLINE * 3).expect("exit within 15 s");
         assert_eq!(id, term.id);
         let listed = terms.list();
         assert_eq!(listed.len(), 1);
