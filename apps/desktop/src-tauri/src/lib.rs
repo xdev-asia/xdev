@@ -61,6 +61,7 @@ mod links_open;
 mod lsp;
 mod mcp_tools;
 mod mobile;
+mod mr_review;
 mod network;
 mod notch;
 mod notes;
@@ -737,6 +738,12 @@ pub fn run() {
             gitlab::gitlab_mr_branch,
             gitlab::worktree_mr,
             gitlab::worktree_mr_create,
+            mr_review::worktree_mr_detail,
+            mr_review::worktree_mr_jobs,
+            mr_review::worktree_mr_notes,
+            mr_review::worktree_mr_note_post,
+            mr_review::worktree_mr_merge_info,
+            mr_review::worktree_mr_merge,
             prs::projects_list,
             prs::project_open,
             ship::worktree_draft_commit,

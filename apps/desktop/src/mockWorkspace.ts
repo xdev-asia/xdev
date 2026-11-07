@@ -4,7 +4,7 @@ import { DEFAULT_GIT_SETTINGS } from "./settings/gitDefaults";
 import { pushDirHistory } from "./settings/worktreeDir";
 import { mockImageBytes, mockReviewFindings, mockReviewPlan } from "./mockReviewAi";
 import { createMockFiles, mockHash, type MockFiles } from "./mockFiles";
-import type { Api, ApiError, NestedRepo, Check, MergeBlock, PrComment, PrDetail, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, MrSummary, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView, WorktreeUsage } from "./api";
+import type { Api, ApiError, NestedRepo, Check, MergeBlock, PrComment, PrDetail, PrMergeInfo, Reaction, Commit, GhLogin, DefaultTab, Linked, DirEntry, DirListing, FileCommand, FileCommands, FolderEntry, ConflictState, GitSettings, PullPolicy, HookKind, HookScript, KeptBranch, KeptReason, RepoGroup, RepoHooks, RepoView, ReviewNote, SparsePreset, SidebarItem, VaultView, PrDraft, PrView, MrSummary, MrDetail, MrNote, MrNotes, ShipView, RepoLog, CommitFiles, WorktreeChange, WorktreeFileDiff, WorktreeStat, WorktreeView, WorktreeUsage } from "./api";
 import { NO_DETAILS } from "@/workspace/worktreeDetails";
 import { fromWork } from "@/workspace/branchName";
 import { REPO_COLORS, isHexColor } from "@/workspace/repoIdentity";
@@ -77,6 +77,12 @@ type WorkspaceApi = Pick<
   | "worktreePrCreate"
   | "worktreeMr"
   | "worktreeMrCreate"
+  | "worktreeMrDetail"
+  | "worktreeMrJobs"
+  | "worktreeMrNotes"
+  | "worktreeMrNotePost"
+  | "worktreeMrMergeInfo"
+  | "worktreeMrMerge"
   | "worktreePrChecks"
   | "worktreePrComments"
   | "worktreePrCommentPost"
@@ -137,6 +143,10 @@ export type MockWorkspaceSeed = {
   mergeInfo?: Record<string, PrMergeInfo>;
   // The full PR panel read of each worktree's PR; built from the `prs` entry when absent.
   prDetails?: Record<string, PrDetail>;
+  // The merge request of each worktree, its comments and its pipeline jobs, by worktree path.
+  mrDetails?: Record<string, MrDetail>;
+  mrNotes?: Record<string, MrNote[]>;
+  mrJobs?: Record<string, Check[]>;
   // The PR head on GitHub by worktree path; the mock's own HEAD when absent.
   prHeads?: Record<string, string>;
   // The collaborators offered as reviewers; the list is closed (`gh_failed`) when absent.
@@ -534,6 +544,9 @@ export function createMockWorkspace(
   }
   let prNumber = 0;
   const mrs = new Map<string, MrSummary>();
+  const mrDetails = new Map<string, MrDetail>(Object.entries(structuredClone(seed.mrDetails ?? {})));
+  const mrNotes = new Map<string, MrNote[]>(Object.entries(structuredClone(seed.mrNotes ?? {})));
+  const mrJobs = new Map<string, Check[]>(Object.entries(structuredClone(seed.mrJobs ?? {})));
   const prs = new Map<string, PrView>(Object.entries(structuredClone(seed.prs ?? {})));
   const checks = new Map<string, Check[]>(Object.entries(structuredClone(seed.checks ?? {})));
   const prComments = new Map<string, PrComment[]>(Object.entries(structuredClone(seed.prComments ?? {})));
@@ -1532,7 +1545,7 @@ export function createMockWorkspace(
     },
     async worktreeMr(path) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);
-      return structuredClone(mrs.get(path) ?? null);
+      return structuredClone(mrs.get(path) ?? mrDetails.get(path)?.summary ?? null);
     },
     async worktreeMrCreate(path, draft) {
       const view = shipView(path);
@@ -1555,6 +1568,46 @@ export function createMockWorkspace(
       };
       mrs.set(path, mr);
       return structuredClone(mr);
+    },
+    async worktreeMrDetail(path, iid) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const detail = mrDetails.get(path);
+      if (!detail || detail.summary.iid !== iid) return reject("mr_not_found");
+      return structuredClone(detail);
+    },
+    async worktreeMrJobs(path, pipelineId) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      return mrDetails.get(path)?.pipeline?.id === pipelineId ? structuredClone(mrJobs.get(path) ?? []) : [];
+    },
+    async worktreeMrNotes(path, iid) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const notes: MrNote[] = mrDetails.get(path)?.summary.iid === iid ? structuredClone(mrNotes.get(path) ?? []) : [];
+      const none: MrNotes = { notes, truncated: false };
+      return none;
+    },
+    async worktreeMrNotePost(path, iid, body) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      if (body.trim() === "") return reject("empty_comment");
+      if (body.length > 16000) return reject("comment_too_large");
+      if (mrDetails.get(path)?.summary.iid !== iid) return reject("mr_not_found");
+      const list = mrNotes.get(path) ?? [];
+      const id = list.reduce((m, n) => Math.max(m, n.id), 0) + 1;
+      mrNotes.set(path, [...list, { id, author: "you", body, createdAt: new Date().toISOString() }]);
+    },
+    async worktreeMrMergeInfo(path, iid) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const detail = mrDetails.get(path);
+      if (!detail || detail.summary.iid !== iid) return reject("mr_not_found");
+      return { block: null, checksFailed: false, methods: ["squash", "merge", "rebase"], defaultMethod: "merge", headOid: detail.headSha };
+    },
+    async worktreeMrMerge(path, iid, _method, headSha) {
+      if (!findWorktree(path)) return reject("worktree_unknown", path);
+      const detail = mrDetails.get(path);
+      if (!detail || detail.summary.iid !== iid) return reject("mr_not_found");
+      if (headSha !== detail.headSha) return reject("pr_head_moved");
+      mrDetails.set(path, { ...detail, summary: { ...detail.summary, state: "merged" } });
+      const own = mrs.get(path);
+      if (own) mrs.set(path, { ...own, state: "merged" });
     },
     async worktreePrChecks(path, number) {
       if (!findWorktree(path)) return reject("worktree_unknown", path);

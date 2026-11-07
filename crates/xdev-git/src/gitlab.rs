@@ -138,7 +138,7 @@ impl From<RawMr> for MrSummary {
 }
 
 /// The one reading of a failed `glab` run.
-fn classify(out: &GhOutput) -> GitError {
+pub(crate) fn classify(out: &GhOutput) -> GitError {
     let err = &out.stderr;
     if err.contains("glab auth login") || err.contains("401 Unauthorized") {
         GitError::GlabAuth
@@ -149,7 +149,7 @@ fn classify(out: &GhOutput) -> GitError {
     }
 }
 
-fn parse_error(e: serde_json::Error) -> GitError {
+pub(crate) fn parse_error(e: serde_json::Error) -> GitError {
     GitError::Glab(format!("unexpected glab output: {e}"))
 }
 
