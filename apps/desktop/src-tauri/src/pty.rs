@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Duration;
 
@@ -182,6 +182,8 @@ pub struct Ptys {
     /// Signalled when a claim ends, filled or not.
     claim_ended: Condvar,
     next_claim: AtomicU64,
+    /// New terminals are refused once this many run or are being started.
+    max_running: AtomicU32,
     /// Fingerprints of skip-mode launches a person has just approved. A start
     /// takes its fingerprint out, so each approval covers one start.
     passes: Mutex<HashSet<String>>,
@@ -228,6 +230,7 @@ impl Ptys {
             claims: Mutex::default(),
             claim_ended: Condvar::new(),
             next_claim: AtomicU64::new(0),
+            max_running: AtomicU32::new(crate::settings::TerminalSettings::MAX_RUNNING_DEFAULT),
             passes: Mutex::default(),
             host: Mutex::new(None),
             host_set: Condvar::new(),
@@ -372,15 +375,39 @@ impl Ptys {
         self.claims.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// Sets the most terminals a new spawn may bring the count to, 1..=1024.
+    pub(crate) fn set_max_running(&self, n: u32) {
+        let range = crate::settings::TerminalSettings::MAX_RUNNING;
+        self.max_running
+            .store(n.clamp(*range.start(), *range.end()), Ordering::Relaxed);
+    }
+
     /// Takes `id` for a spawn or attach, which then runs without the lock:
     /// `pty_exists` while a PTY or another claim has it.
     fn claim(&self, id: &str) -> Result<Claim<'_>, CmdError> {
+        self.claim_with_cap(id, false)
+    }
+
+    /// As `claim`, for a brand-new terminal: also `too_many_terminals` (the cap as detail)
+    /// when the running terminals and the claims in flight already reach the cap.
+    fn claim_new(&self, id: &str) -> Result<Claim<'_>, CmdError> {
+        self.claim_with_cap(id, true)
+    }
+
+    fn claim_with_cap(&self, id: &str, capped: bool) -> Result<Claim<'_>, CmdError> {
         let map = self.map();
         let mut claims = self.claims();
         if map.contains_key(id) || claims.contains_key(id) {
             return Err(CmdError {
                 code: "pty_exists",
                 detail: None,
+            });
+        }
+        let cap = self.max_running.load(Ordering::Relaxed);
+        if capped && map.len() + claims.len() >= cap as usize {
+            return Err(CmdError {
+                code: "too_many_terminals",
+                detail: Some(cap.to_string()),
             });
         }
         let ticket = self.next_claim.fetch_add(1, Ordering::Relaxed);
@@ -856,7 +883,7 @@ pub(crate) fn spawn_launch_at(
     }
     // Not under the lock: the host may wait for the service to start, and a
     // spawn there is a round trip.
-    let claim = ptys.claim(&id)?;
+    let claim = ptys.claim_new(&id)?;
     if launch.agent {
         let gate = Audited::new(Policy::load(data_dir)?, data_dir);
         match gate.check_confirmed(&launch_action(&launch), approved_now) {
@@ -1480,6 +1507,7 @@ pub fn pty_spawn(
             &|name| std::env::var_os(name),
         ),
     };
+    ptys.set_max_running(settings_store::read(&app).terminal.max_running_terminals);
     let info = spawn_launch_at(
         &ptys,
         data,
@@ -2385,6 +2413,55 @@ mod tests {
         claim.fill(Box::new(FakePty)).unwrap();
         assert_eq!(ptys.claim("a").err().unwrap().code, "pty_exists");
         assert_eq!(ptys.with("a", |h| h.pid()).unwrap(), Some(4242));
+    }
+
+    #[test]
+    fn claim_new_refuses_past_the_cap() {
+        let ptys = Ptys::default();
+        ptys.set_max_running(2);
+        let a = ptys.claim_new("a").unwrap();
+        let _b = ptys.claim_new("b").unwrap();
+        let err = ptys.claim_new("c").err().unwrap();
+        assert_eq!(err.code, "too_many_terminals");
+        assert_eq!(err.detail.as_deref(), Some("2"));
+        drop(a);
+        assert!(ptys.claim_new("c").is_ok());
+    }
+
+    #[test]
+    fn claim_new_counts_filled_terminals() {
+        let ptys = Ptys::default();
+        ptys.set_max_running(1);
+        ptys.claim_new("a").unwrap().fill(Box::new(FakePty)).unwrap();
+        assert_eq!(
+            ptys.claim_new("b").err().unwrap().code,
+            "too_many_terminals"
+        );
+    }
+
+    #[test]
+    fn claim_new_reports_pty_exists_first() {
+        let ptys = Ptys::default();
+        ptys.set_max_running(1);
+        let _a = ptys.claim_new("a").unwrap();
+        assert_eq!(ptys.claim_new("a").err().unwrap().code, "pty_exists");
+    }
+
+    #[test]
+    fn attach_claim_ignores_the_cap() {
+        let ptys = Ptys::default();
+        ptys.set_max_running(1);
+        let _a = ptys.claim_new("a").unwrap();
+        assert!(ptys.claim("d").is_ok());
+    }
+
+    #[test]
+    fn set_max_running_clamps() {
+        let ptys = Ptys::default();
+        ptys.set_max_running(0);
+        assert_eq!(ptys.max_running.load(Ordering::Relaxed), 1);
+        ptys.set_max_running(5000);
+        assert_eq!(ptys.max_running.load(Ordering::Relaxed), 1024);
     }
 
     #[test]
