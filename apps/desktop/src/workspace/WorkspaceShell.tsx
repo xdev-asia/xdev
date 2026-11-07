@@ -6,6 +6,7 @@ import { ProfilesProvider, SSH_SHELL_PREFIX, profileName } from "@/agents/profil
 import { SETUP_PROFILE, toApiError, type Api, type ApiError, type Check, type Created, type Linked, type OpenInApp, type OpenTarget, type HookDetail, type ScriptKind, type RepoHooks, type PrView, type PtyProfile, type DetailsPatch, type KeptBranch, type RepoGroup, type FolderEntry, type WorkStatus, type SidebarItem, type SidebarPrefs, type RepoView, type WorktreeChange, type WorktreeView, type Issue, type IssueDetail, type CreateRequest, type PrSummary, type MrSummary, type MenuAction, type SetupDecision, type BaseDrift, type Provider, type ProfilesView } from "@/api";
 import { SIDEBAR_PREFS_DEFAULTS } from "@/mockSettings";
 import { DocsApp } from "@/DocsApp";
+import { PlaceStage } from "./PlaceStage";
 import { useI18n } from "@/i18n";
 import { onTryFeature } from "@/featureWall/featureWallStore";
 import { SurfaceBoundary } from "@/components/SurfaceBoundary";
@@ -212,7 +213,7 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
   const [picked, setPicked] = useState<Selection>(clearPicked);
   const [selected, setSelected] = useState<string | null>(() => readSelected());
   const views = useShellViews();
-  const { view, show, mounted: placesMounted, docsKey, setDocsKey, settingsAt, setSettingsAt, openSettings, openUsage, openTask, openTaskBoard, openDecompose, openAccounts, openSearch } = views;
+  const { view, show, mounted: placesMounted, tasksRequest, openDocsSection, docsKey, setDocsKey, settingsAt, setSettingsAt, openSettings, openUsage, openTask, openTaskBoard, openDecompose, openAccounts, openSearch } = views;
   // Agent and shell names for the merge headings and the resource manager rows.
   const [nameView, setNameView] = useState<ProfilesView | null>(null);
   const dialogs = useShellDialogs(api);
@@ -1059,6 +1060,16 @@ export function WorkspaceShell(props: { api: Api }): JSX.Element {
         <div className="ws-docs" hidden={view !== "docs"}>
           {placesMounted.has("docs") && <SurfaceBoundary id="page.docs" surface="Docs" resetKey={docsKey} titleKey="boundary.page.title"><DocsApp key={docsKey} appRequest={null} board={{ repos, defaultRepo: repoOf(repos, current), sessions, current: current ? { path: current.path, branch: current.branch } : null, onStart: startBoardAgent, onOpenTab: (l) => void jumpTo(l.tabId) }} kit={{ worktree: current?.path ?? null, open: null, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }} /></SurfaceBoundary>}
         </div>
+        <PlaceStage
+          api={api}
+          view={view}
+          mounted={placesMounted}
+          tasks={tasksRequest}
+          board={{ repos, defaultRepo: repoOf(repos, current), sessions, current: current ? { path: current.path, branch: current.branch } : null, onStart: startBoardAgent, onOpenTab: (l) => void jumpTo(l.tabId) }}
+          kit={{ worktree: current?.path ?? null, open: null, onSendToAgent: sendToAgent, canSend: target(current?.path) !== null }}
+          onOpenTask={openTask}
+          onOpenAgentContext={() => openDocsSection("agents")}
+        />
 
         <div className="ws-automations" hidden={view !== "automations"}>
           {view === "automations" && (

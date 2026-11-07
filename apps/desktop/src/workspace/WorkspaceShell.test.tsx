@@ -31,6 +31,7 @@ import { LiveWorkspaceFooter } from "./WorkspaceFooter";
 import { AccountSwitchDialog } from "./AccountSwitchDialog";
 import { LanguageSwitch } from "@/components/LanguageSwitch";
 import { WorkspaceShell } from "./WorkspaceShell";
+import { PlaceStage } from "./PlaceStage";
 import { requestTabJump } from "./tabJump";
 import { WorktreeChanges } from "./WorktreeChanges";
 import { WorktreeList } from "./WorktreeList";
@@ -92,7 +93,7 @@ function nodes(value: unknown): Node[] {
   if (!value || typeof value !== "object" || !("props" in value)) return [];
   const node = value as Node;
   // Extracted layout parts hold no state; draw them so their markup is walked like the rest.
-  if (node.type === RightPanel || node.type === PanelTabBar || node.type === ShellOverlays || node.type === ShellSidebar || node.type === WorkspaceStage) return nodes((node.type as (p: unknown) => unknown)(node.props));
+  if (node.type === RightPanel || node.type === PanelTabBar || node.type === ShellOverlays || node.type === ShellSidebar || node.type === WorkspaceStage || node.type === PlaceStage) return nodes((node.type as (p: unknown) => unknown)(node.props));
   // The frame passes its parts as slots; the rail's places stand in as the buttons they are.
   if (node.type === ShellFrame) {
     const p = node.props;

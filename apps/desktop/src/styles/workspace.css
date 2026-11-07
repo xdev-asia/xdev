@@ -1911,6 +1911,20 @@ button.ws-tree-row[data-flash="true"] {
   display: none;
 }
 
+/* Places: Tasks, Squads, Kit and Accounts fill the stage beside the side list. */
+
+.ws-place {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ws-place[hidden] {
+  display: none;
+}
+
 /* Footer */
 
 .ws-footer {
