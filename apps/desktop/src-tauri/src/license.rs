@@ -360,27 +360,51 @@ impl LicenseHub {
         let id = match known {
             Some(d) if d.revoked_at.is_some() => return Err(Flow::Api(ApiError::Revoked)),
             Some(d) => d.id,
-            None => {
-                let nonce = api::challenge(&*self.http, &c.base, &c.bearer)?;
-                let name = match ::xdev_id::device_name() {
-                    n if n.is_empty() => "This computer".to_owned(),
-                    n => n,
-                };
-                api::register(
-                    &*self.http,
-                    &c.base,
-                    &c.bearer,
-                    &c.uid,
-                    &nonce,
-                    key,
-                    &name,
-                    std::env::consts::OS,
-                )?
-                .id
-            }
+            None => return self.register_device(c, key),
         };
         self.lock().device = Some((c.base.clone(), c.uid.clone(), id.clone()));
         Ok(id)
+    }
+
+    /// POST /v1/devices/challenge, then POST /v1/devices. The service returns the existing
+    /// device when this key is already registered for the user.
+    fn register_device(&self, c: &Credentials, key: &DeviceKey) -> Result<String, Flow> {
+        let name = match ::xdev_id::device_name() {
+            n if n.is_empty() => "This computer".to_owned(),
+            n => n,
+        };
+        let id = api::register_fresh(
+            &*self.http,
+            &c.base,
+            &c.bearer,
+            &c.uid,
+            key,
+            &name,
+            std::env::consts::OS,
+        )?
+        .id;
+        self.lock().device = Some((c.base.clone(), c.uid.clone(), id.clone()));
+        Ok(id)
+    }
+
+    /// Runs `call` with this computer's device id. When the service does not know the id
+    /// (404 `device_unknown`: another account, or it was removed), the id is dropped, the
+    /// device is registered again and the call is repeated once. Nothing is revoked then.
+    fn with_device<T>(
+        &self,
+        c: &Credentials,
+        key: &DeviceKey,
+        call: impl Fn(&str) -> Result<T, ApiError>,
+    ) -> Result<T, Flow> {
+        let id = self.device_id(c, key)?;
+        match call(&id) {
+            Err(ApiError::DeviceUnknown) => {
+                self.lock().device = None;
+                let id = self.register_device(c, key)?;
+                Ok(call(&id)?)
+            }
+            other => Ok(other?),
+        }
     }
 
     /// Asks the service for a fresh token and keeps it once it verifies.
@@ -415,22 +439,13 @@ impl LicenseHub {
     fn fetch_token(&self, c: &Credentials) -> Result<i64, Flow> {
         let (base, roots) = self.trust()?;
         let key = self.key_or_new()?;
-        let id = self.device_id(c, &key)?;
-        let nonce = api::challenge(&*self.http, &c.base, &c.bearer)?;
         let build = BuildInfo {
             version: self.version.clone(),
             date: self.build_date,
         };
-        let reply = api::entitlement(
-            &*self.http,
-            &c.base,
-            &c.bearer,
-            &c.uid,
-            &nonce,
-            &id,
-            &key,
-            &build,
-        )?;
+        let reply = self.with_device(c, &key, |id| {
+            api::entitlement_fresh(&*self.http, &c.base, &c.bearer, &c.uid, id, &key, &build)
+        })?;
         let now = self.now();
         let old = read_cache(&self.cache_path)
             .filter(|o| o.server == base)
@@ -491,8 +506,9 @@ impl LicenseHub {
     fn activate_flow(&self) -> Result<(), Flow> {
         let c = self.need_credentials()?;
         let key = self.key_or_new()?;
-        let id = self.device_id(&c, &key)?;
-        api::activate(&*self.http, &c.base, &c.bearer, &id)?;
+        self.with_device(&c, &key, |id| {
+            api::activate(&*self.http, &c.base, &c.bearer, id)
+        })?;
         Ok(())
     }
 
@@ -1277,6 +1293,54 @@ mod tests {
         // And going back is a lookup too: only the last account is remembered.
         r.hub.device_id(&a, &key).unwrap();
         assert_eq!(r.net.hits("/v1/devices"), listed + 2);
+    }
+
+    /// The id the service gave this computer.
+    fn this_device(r: &Rig) -> String {
+        let fingerprint = r.keys.load().unwrap().unwrap().fingerprint();
+        r.hub
+            .devices()
+            .unwrap()
+            .into_iter()
+            .find(|d| d.fingerprint == fingerprint)
+            .unwrap()
+            .id
+    }
+
+    #[test]
+    fn an_unknown_device_registers_again_and_is_not_revoked() {
+        let r = rig(MockMode::Pro);
+        r.hub.activate().unwrap();
+        r.server.forget(&this_device(&r));
+        let before = r.net.hits("/v1/devices");
+        let state = r.hub.refresh().unwrap();
+        // One more registration, and the retried call went through.
+        assert_eq!(r.net.hits("/v1/devices"), before + 1);
+        assert_eq!(state, LicenseState::free(None), "no revoked notice");
+        // The seat went with the old device; the new one can take it.
+        let state = r.hub.activate().unwrap();
+        assert!(is_pro(&state), "{state:?}");
+    }
+
+    #[test]
+    fn activating_an_unknown_device_registers_again_once() {
+        let r = rig(MockMode::Pro);
+        r.hub.refresh().unwrap();
+        r.server.forget(&this_device(&r));
+        let state = r.hub.activate().unwrap();
+        assert!(is_pro(&state), "{state:?}");
+    }
+
+    #[test]
+    fn a_revoked_device_still_gets_the_sticky_notice() {
+        let r = rig(MockMode::Pro);
+        r.hub.activate().unwrap();
+        r.server.revoke(&this_device(&r));
+        assert_eq!(r.hub.refresh().unwrap_err().code, xdev_license::E_REVOKED);
+        assert_eq!(
+            r.hub.state(),
+            LicenseState::free(Some(xdev_license::E_REVOKED))
+        );
     }
 
     #[test]

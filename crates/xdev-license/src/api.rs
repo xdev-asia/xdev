@@ -31,6 +31,10 @@ pub enum ApiError {
     /// 404 `no_grant`: the account has no active Pro grant.
     #[error("no_grant")]
     NoGrant,
+    /// 404 `device_unknown`: the service has no such device for this user (C1). The caller
+    /// drops its device id and registers again; the account did not revoke anything.
+    #[error("device_unknown")]
+    DeviceUnknown,
     /// 404 `not_found`: no such device, or no activation to end.
     #[error("not_found")]
     NotFound,
@@ -54,6 +58,7 @@ impl ApiError {
             | ApiError::Unavailable
             | ApiError::NoGrant
             | ApiError::NotFound
+            | ApiError::DeviceUnknown
             | ApiError::DeviceRejected => E_UNAVAILABLE,
         }
     }
@@ -153,6 +158,7 @@ fn fail(res: &Response) -> ApiError {
         (409, Some("device_limit" | "device_conflict")) => ApiError::DeviceRejected,
         (429, Some("transfer_limit")) => ApiError::TransferLimit,
         (404, Some("no_grant")) => ApiError::NoGrant,
+        (404, Some("device_unknown")) => ApiError::DeviceUnknown,
         (404, Some("not_found")) => ApiError::NotFound,
         _ => ApiError::Unavailable,
     }
@@ -218,6 +224,34 @@ pub fn register(
         }
         _ => Err(ApiError::Unavailable),
     }
+}
+
+/// `POST /v1/devices/challenge` then `POST /v1/devices`.
+pub fn register_fresh(
+    http: &dyn Transport,
+    base: &str,
+    bearer: &Secret,
+    uid: &str,
+    key: &DeviceKey,
+    name: &str,
+    platform: &str,
+) -> Result<Registered, ApiError> {
+    let nonce = challenge(http, base, bearer)?;
+    register(http, base, bearer, uid, &nonce, key, name, platform)
+}
+
+/// `POST /v1/devices/challenge` then `POST /v1/entitlement`.
+pub fn entitlement_fresh(
+    http: &dyn Transport,
+    base: &str,
+    bearer: &Secret,
+    uid: &str,
+    device_id: &str,
+    key: &DeviceKey,
+    build: &BuildInfo,
+) -> Result<TokenReply, ApiError> {
+    let nonce = challenge(http, base, bearer)?;
+    entitlement(http, base, bearer, uid, &nonce, device_id, key, build)
 }
 
 /// `POST /v1/entitlement`: a fresh token for this device.
@@ -420,6 +454,13 @@ mod tests {
         DeviceKey::from_seeds([3u8; 32], [4u8; 32])
     }
 
+    fn build() -> BuildInfo {
+        BuildInfo {
+            version: "1.0.0".into(),
+            date: 1,
+        }
+    }
+
     fn nonce() -> String {
         "N".repeat(43)
     }
@@ -487,6 +528,35 @@ mod tests {
         assert_eq!(body["device_id"], "dev-1");
         assert_eq!(body["build"]["version"], "1.2.3");
         verify_proof(ENT_PROOF, &body, &k);
+    }
+
+    #[test]
+    fn entitlement_404_device_unknown_is_not_revoked() {
+        let t = FakeTransport::new(vec![Ok(Response::json(
+            404,
+            r#"{"error":"device_unknown"}"#,
+        ))]);
+        let err = entitlement(
+            &t,
+            BASE,
+            &bearer(),
+            UID,
+            &nonce(),
+            "dev-1",
+            &key(),
+            &build(),
+        )
+        .unwrap_err();
+        assert_eq!(err, ApiError::DeviceUnknown);
+        assert_eq!(err.code(), E_UNAVAILABLE);
+        let t = FakeTransport::new(vec![Ok(Response::json(
+            404,
+            r#"{"error":"device_unknown"}"#,
+        ))]);
+        assert_eq!(
+            activate(&t, BASE, &bearer(), "dev-1").unwrap_err(),
+            ApiError::DeviceUnknown
+        );
     }
 
     #[test]

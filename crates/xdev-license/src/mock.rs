@@ -207,6 +207,13 @@ impl MockEntitlementServer {
         st.activations.retain(|(_, d)| d != device_id);
     }
 
+    /// The server side: forgets a device altogether, as if it never registered for this user.
+    pub fn forget(&self, device_id: &str) {
+        let mut st = self.lock();
+        st.devices.retain(|d| d.id != device_id);
+        st.activations.retain(|(_, d)| d != device_id);
+    }
+
     pub fn transfers(&self) -> u32 {
         self.lock().transfers
     }
@@ -373,13 +380,10 @@ fn entitlement(st: &mut State, body: &Value) -> Response {
     ) else {
         return err(400, "bad_request");
     };
-    let Some(device) = st
-        .devices
-        .iter()
-        .find(|d| d.id == device_id && d.revoked_at.is_none())
-        .cloned()
-    else {
-        return err(403, "device_revoked");
+    let device = match st.devices.iter().find(|d| d.id == device_id).cloned() {
+        None => return err(404, "device_unknown"),
+        Some(d) if d.revoked_at.is_some() => return err(403, "device_revoked"),
+        Some(d) => d,
     };
     if !spend(st, nonce) {
         return err(400, "bad_nonce");
@@ -447,12 +451,10 @@ fn activate(st: &mut State, body: &Value) -> Response {
     let Some(device_id) = str_of(body, "device_id") else {
         return err(400, "bad_request");
     };
-    if !st
-        .devices
-        .iter()
-        .any(|d| d.id == device_id && d.revoked_at.is_none())
-    {
-        return err(404, "not_found");
+    match st.devices.iter().find(|d| d.id == device_id) {
+        None => return err(404, "device_unknown"),
+        Some(d) if d.revoked_at.is_some() => return err(403, "device_revoked"),
+        Some(_) => {}
     }
     if let Some((g, _)) = st.activations.iter().find(|(_, d)| d == device_id) {
         return reply(200, json!({ "grant_id": g }));
