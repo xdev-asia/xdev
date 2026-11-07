@@ -35,7 +35,7 @@ import { annotateClipboard } from "@/capture/annotateBridge";
 import { CaptureHost } from "@/capture/CaptureHost";
 import { startCapture } from "@/capture/useCaptureFailures";
 import { confirmResume } from "@/agentSessions/resumeFlow";
-import { Sessions } from "./sessions";
+import type { Sessions } from "./sessions";
 import { NameDialog } from "./NameDialog";
 import { BulkRemoveDialog } from "./BulkRemoveDialog";
 import { ReviewBranchesDialog } from "./ReviewBranchesDialog";

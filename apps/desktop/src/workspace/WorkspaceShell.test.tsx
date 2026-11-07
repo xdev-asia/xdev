@@ -44,6 +44,7 @@ const hooks = vi.hoisted(() => ({ active: false, values: [] as unknown[], cursor
 import { PanelTabBar, RightPanel } from "@/panel/RightPanel";
 import { ShellOverlays } from "./ShellOverlays";
 import { ShellSidebar } from "./ShellSidebar";
+import { WorkspaceStage } from "./WorkspaceStage";
 import { ShellFrame } from "@/shell/ShellFrame";
 vi.mock("react", async (original) => {
   const react = await original<typeof import("react")>();
@@ -89,7 +90,7 @@ function nodes(value: unknown): Node[] {
   if (!value || typeof value !== "object" || !("props" in value)) return [];
   const node = value as Node;
   // Extracted layout parts hold no state; draw them so their markup is walked like the rest.
-  if (node.type === RightPanel || node.type === PanelTabBar || node.type === ShellOverlays || node.type === ShellSidebar) return nodes((node.type as (p: unknown) => unknown)(node.props));
+  if (node.type === RightPanel || node.type === PanelTabBar || node.type === ShellOverlays || node.type === ShellSidebar || node.type === WorkspaceStage) return nodes((node.type as (p: unknown) => unknown)(node.props));
   // The frame passes its parts as slots; the rail's places stand in as the buttons they are.
   if (node.type === ShellFrame) {
     const p = node.props;

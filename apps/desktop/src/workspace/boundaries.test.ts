@@ -7,8 +7,9 @@ const read = (rel: string) => readFileSync(join(src, rel), "utf8");
 
 // Every boundary id of the plan and the file that must carry it: a cheap guard against a lost wrap.
 const WRAPS: [string, string[]][] = [
-  ["workspace/WorkspaceShell.tsx", ["workspace.tabs", "panel.${name}".replace("${name}", "files"), "panel.search", "panel.changes", "panel.checks", "panel.issues", "page.docs"]],
+  ["workspace/WorkspaceShell.tsx", ["page.docs"]],
   ["workspace/ShellSidebar.tsx", ["sidebar.worktrees", "sidebar.sessions"]],
+  ["workspace/WorkspaceStage.tsx", ["workspace.tabs", "panel.${name}".replace("${name}", "files"), "panel.search", "panel.changes", "panel.checks", "panel.issues"]],
   ["workspace/WorktreeTabs.tsx", ["terminal.", "editor.file", 'id="review"']],
   ["settings/SettingsView.tsx", ["page.settings"]],
   ["components/ErrorBoundary.tsx", ["app.root"]],
@@ -25,7 +26,7 @@ describe("surface boundaries", () => {
 
 describe("startup banner", () => {
   it("sits at the top of ws-stage, before the body", () => {
-    const text = read("workspace/WorkspaceShell.tsx");
+    const text = read("workspace/WorkspaceStage.tsx");
     const stage = text.indexOf('className="ws-stage"');
     const banner = text.indexOf("<StartupBanner");
     const body = text.indexOf('className="ws-stage-body"');
