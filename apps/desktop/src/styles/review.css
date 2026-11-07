@@ -125,12 +125,39 @@
   min-height: 0;
 }
 
-.rv-list {
+/* The side column: the file list over the verdict panel, one width for both. */
+.rv-side {
   display: flex;
   flex-shrink: 0;
   flex-direction: column;
-  overflow: auto;
+  min-height: 0;
+  max-width: 100%;
   background: var(--bg-2);
+}
+
+.rv-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.rv-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x-space-3);
+  padding: var(--x-space-3);
+  border-top: 1px solid var(--line);
+}
+
+.rv-verdict-count {
+  margin: 0;
+  color: var(--text-3);
+}
+
+.rv-more {
+  display: inline-flex;
 }
 
 .rv-list-item {

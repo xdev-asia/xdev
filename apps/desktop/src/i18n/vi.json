@@ -6357,5 +6357,20 @@
   "shell.narrow.accounts": "Tài khoản",
   "shell.narrow.settings": "Cài đặt",
   "shell.narrow.more": "Thêm",
-  "shell.narrow.badge": "{count} mới"
+  "shell.narrow.badge": "{count} mới",
+  "review.verdict.region": "Kết luận",
+  "review.verdict": "Kết luận",
+  "review.verdict.changes": "Yêu cầu sửa",
+  "review.verdict.changes.hint": "Agent sửa từng điểm và chạy lại test.",
+  "review.verdict.comment": "Góp ý",
+  "review.verdict.comment.hint": "Agent trả lời và chỉ sửa điểm nó đồng ý.",
+  "review.verdict.approve": "Chấp thuận",
+  "review.verdict.approve.hint": "Ghi chú là tùy chọn.",
+  "review.verdict.summary": "Tóm tắt",
+  "review.verdict.summaryPlaceholder": "Điều agent cần biết trước tiên",
+  "review.verdict.send": "Gửi review",
+  "review.verdict.notes": "Kèm {count} ghi chú",
+  "review.more": "Tùy chọn hiển thị",
+  "review.more.view": "Hiển thị",
+  "review.more.ai": "AI review"
 }

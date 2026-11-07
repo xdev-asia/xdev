@@ -116,13 +116,36 @@ function place(n: ReviewNote, lines: string[] | null): ReviewNote {
   return { ...n, startLine, line: Math.max(startLine, Math.min(n.line, last)), outdated: true };
 }
 
+/** The verdict a review ends with; there is no PR review to submit, so it shapes what the agent is asked to do. */
+export type Verdict = "changes" | "comment" | "approve";
+
+const ASK: Record<Verdict, string> = {
+  changes: "Fix each point, re-run the tests, then report back:",
+  comment: "Consider each point and reply; change the code only where you agree, then report back:",
+  approve: "The change is approved. The points below are optional; take them only if they are quick, then report back:",
+};
+const NONE: Record<Verdict, string> = {
+  changes: "changes requested. Make the changes below, re-run the tests, then report back.",
+  comment: "a comment. Reply to it; change the code only where you agree.",
+  approve: "approved. Nothing to change.",
+};
+
 /** The prompt that goes to the agent, one item per note. */
 export function notesPrompt(branch: string | null, notes: ReviewNote[]): string {
+  return reviewPrompt(branch, notes, "changes", "");
+}
+
+/** The prompt of a whole review: the verdict, the summary when there is one, then one item per note. */
+export function reviewPrompt(branch: string | null, notes: ReviewNote[], verdict: Verdict, summary: string): string {
+  const name = branch ?? "HEAD (detached)";
+  const text = summary.trim();
+  if (notes.length === 0) return `Review of ${name}: ${NONE[verdict]}${text ? `\n\n${text}` : ""}`;
   const items = sortNotes(notes).map((n, i) => {
     const where = n.startLine === n.line ? `${n.line}` : `${n.startLine}-${n.line}`;
     const body = n.body.trim().split("\n").join("\n   ");
     const flag = n.outdated ? " (outdated: the line changed after this note)" : "";
     return `${i + 1}. ${n.file}:${where} — ${body}${flag}`;
   });
-  return `Review notes for ${branch ?? "HEAD (detached)"}. Fix each point, re-run the tests, then report back:\n\n${items.join("\n")}`;
+  const head = text ? `Review notes for ${name}.\n\n${text}\n\n${ASK[verdict]}` : `Review notes for ${name}. ${ASK[verdict]}`;
+  return `${head}\n\n${items.join("\n")}`;
 }

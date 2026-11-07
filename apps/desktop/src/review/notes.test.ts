@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ReviewNote } from "@/api";
-import { MAX_ANCHOR, deleteNote, editNote, markSent, newNote, notesPrompt, notesToSend, reanchor } from "./notes";
+import { MAX_ANCHOR, deleteNote, editNote, markSent, newNote, notesPrompt, notesToSend, reanchor, reviewPrompt } from "./notes";
 
 const make = (over: Partial<ReviewNote> = {}): ReviewNote => ({ ...newNote("a.ts", 3, 3, "target", "fix it", 1, "n1"), ...over });
 const text = (...lines: string[]) => lines.join("\n") + "\n";
@@ -147,5 +147,23 @@ describe("notesPrompt", () => {
 
   it("a detached HEAD", () => {
     expect(notesPrompt(null, [make()]).startsWith("Review notes for HEAD (detached). ")).toBe(true);
+  });
+});
+
+describe("reviewPrompt", () => {
+  const note = (over: Partial<ReviewNote> = {}): ReviewNote => ({ ...newNote("a.ts", 3, 3, "x", "fix it", 1, "n1"), ...over });
+  it("is the notes prompt for requested changes with no summary", () => {
+    expect(reviewPrompt("feat/x", [note()], "changes", "  ")).toBe(notesPrompt("feat/x", [note()]));
+  });
+  it("puts the summary before what the agent is asked to do", () => {
+    expect(reviewPrompt("feat/x", [note()], "comment", " Looks close. ")).toBe(
+      "Review notes for feat/x.\n\nLooks close.\n\nConsider each point and reply; change the code only where you agree, then report back:\n\n1. a.ts:3 — fix it",
+    );
+  });
+  it("without notes says the verdict and the summary", () => {
+    expect(reviewPrompt("feat/x", [], "approve", "")).toBe("Review of feat/x: approved. Nothing to change.");
+    expect(reviewPrompt(null, [], "changes", "Rename the flag.")).toBe(
+      "Review of HEAD (detached): changes requested. Make the changes below, re-run the tests, then report back.\n\nRename the flag.",
+    );
   });
 });

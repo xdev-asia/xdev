@@ -6357,5 +6357,20 @@
   "shell.narrow.accounts": "Accounts",
   "shell.narrow.settings": "Settings",
   "shell.narrow.more": "More",
-  "shell.narrow.badge": "{count} new"
+  "shell.narrow.badge": "{count} new",
+  "review.verdict.region": "Verdict",
+  "review.verdict": "Verdict",
+  "review.verdict.changes": "Request changes",
+  "review.verdict.changes.hint": "The agent fixes each point and runs the tests.",
+  "review.verdict.comment": "Comment",
+  "review.verdict.comment.hint": "The agent replies and changes only what it agrees with.",
+  "review.verdict.approve": "Approve",
+  "review.verdict.approve.hint": "The notes are optional.",
+  "review.verdict.summary": "Summary",
+  "review.verdict.summaryPlaceholder": "What the agent should know first",
+  "review.verdict.send": "Send review",
+  "review.verdict.notes": "{count} notes go with it",
+  "review.more": "View options",
+  "review.more.view": "View",
+  "review.more.ai": "AI review"
 }

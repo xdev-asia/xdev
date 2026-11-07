@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { Api } from "@/api";
 import { createMockApi, type MockApi } from "@/mockApi";
 import { translate } from "@/i18n";
+import { MenuButton } from "@xdev-asia/ui";
 import { FileDiff } from "./FileDiff";
 import { ReviewView } from "./ReviewView";
 import { AUTO_KEY } from "./aiReview";
@@ -91,9 +92,10 @@ function review(api: Api) {
   const view = mount(() => ReviewView({ api, worktree: OAK }));
   const diffs = () => view.all().filter((n) => n.type === FileDiff);
   const diff = (path: string) => diffs().find((n) => n.props.file.path === path)!;
-  const act = (name: string) => view.all().find((n) => n.props["data-act"] === name);
+  // "Review with AI" sits in the toolbar's options menu.
+  const runAi = () => view.all().find((n) => n.type === MenuButton)!.props.items.find((i: { label?: string }) => i.label === translate("en", "review.ai.run")).onSelect();
   const status = () => view.all().find((n) => n.props.role === "status" && String(n.props.className ?? "").includes("rv-ai-status"));
-  return { ...view, diffs, diff, act };
+  return { ...view, diffs, diff, runAi };
 }
 
 async function settle() { for (let i = 0; i < 10; i++) await tick(); }
@@ -113,7 +115,7 @@ it("Review with AI asks about each hunk and shows the findings as AI notes on th
   const hunk = vi.spyOn(api, "worktreeReviewAiHunk");
   const v = review(api);
   await tick();
-  v.act("ai-review")!.props.onClick();
+  v.runAi();
   await settle();
   expect(plan).toHaveBeenCalledWith(OAK, START);
   // Two text hunks; the image is skipped as binary and the deleted file as deleted.
@@ -134,7 +136,7 @@ it("a finding can be dismissed, or turned into a note that the notes store saves
   const put = vi.spyOn(api, "reviewNotesPut");
   const v = review(api);
   await tick();
-  v.act("ai-review")!.props.onClick();
+  v.runAi();
   await settle();
   const first = v.diff("src/session.ts").props.notes[0];
   v.diff("src/session.ts").props.handlers.dismissAi(first.id);

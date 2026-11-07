@@ -5,7 +5,8 @@ import { createMockApi, type Api } from "@/api";
 import { translate } from "@/i18n";
 import { BasePicker } from "./BasePicker";
 import { FileDiff } from "./FileDiff";
-import { Checkbox, SearchInput, SplitHandle, TreeView } from "@xdev-asia/ui";
+import { Checkbox, MenuButton, SearchInput, Segmented, SplitHandle, TreeView } from "@xdev-asia/ui";
+import { VerdictPanel } from "./VerdictPanel";
 import { DEMO_WORKSPACE } from "@/mockWorkspace";
 import { ReviewView } from "./ReviewView";
 import { touchChanges } from "@/workspace/changesBus";
@@ -220,7 +221,9 @@ function memoryStorage(initial: Record<string, string> = {}) {
   });
   return saved;
 }
-const saveButton = (v: ReturnType<typeof review>) => v.all().find((n) => n.props["data-act"] === "save-default")!;
+// An entry of the toolbar's options menu, by its label.
+const menuItem = (v: ReturnType<typeof review>, key: string) => v.all().find((n) => n.type === MenuButton)!.props.items.find((i: { label?: string }) => i.label === en(key));
+const saveButton = (v: ReturnType<typeof review>) => { const item = menuItem(v, "review.opt.saveDefault"); return { props: { disabled: item.disabled, onClick: item.onSelect } }; };
 
 it("starts from the diff settings; a change stays in this view until Save as default", async () => {
   const saved = memoryStorage();
@@ -233,7 +236,7 @@ it("starts from the diff settings; a change stays in this view until Save as def
 
   // A toggle changes this view only: no settings write, nothing in localStorage.
   const put = vi.spyOn(api, "diffSettingsPut");
-  v.all().find((n) => n.type === "button" && n.props["aria-pressed"] === false)!.props.onClick();
+  v.all().find((n) => n.type === Segmented)!.props.onChange("inline");
   expect(v.diff("src/session.ts").props.opts).toMatchObject({ layout: "inline" });
   expect(put).not.toHaveBeenCalled();
   expect([...saved.keys()]).toEqual([]);
@@ -253,19 +256,17 @@ it("starts from the diff settings; a change stays in this view until Save as def
   expect(again.diff("src/session.ts").props.opts).toMatchObject({ layout: "inline", ignoreWhitespace: true });
 });
 
-it("a Line authors checkbox turns the gutter off for this view and keeps the choice", async () => {
+it("a Line authors entry of the options menu turns the gutter off for this view and keeps the choice", async () => {
   const saved = memoryStorage();
   const api = createMockApi({});
   const v = review(api);
   await tick();
   expect(v.diff("src/session.ts").props.opts).toMatchObject({ attribution: true });
-  const box = v.all().find((n) => n.type === Checkbox && n.props.label === en("review.opt.attribution"))!;
-  expect(box.props).toMatchObject({ checked: true });
-  box.props.onChange();
+  expect(menuItem(v, "review.opt.attribution")).toMatchObject({ checked: true });
+  menuItem(v, "review.opt.attribution").onSelect();
   expect(v.diff("src/session.ts").props.opts).toMatchObject({ attribution: false });
+  expect(menuItem(v, "review.opt.attribution")).toMatchObject({ checked: false });
   expect(JSON.parse(saved.get(LOCAL_KEY)!)).toMatchObject({ attribution: false });
-  expect(v.html()).toContain("Line authors");
-  expect(v.html()).not.toContain("btn-primary");
 });
 
 it("moves the options an older version kept in localStorage into the settings, once", async () => {
@@ -405,7 +406,8 @@ it("draws the file tree when the setting asks for it, folds a folder and saves t
 
   // Back to the list: the change is local until Save as default, which writes fileTree.
   const put = vi.spyOn(api, "diffSettingsPut");
-  v.all().find((n) => n.props["data-view"] === "list")!.props.onClick();
+  expect(menuItem(v, "review.view.tree")).toMatchObject({ checked: true });
+  menuItem(v, "review.view.tree").onSelect();
   expect(v.all().some((n) => n.type === TreeView)).toBe(false);
   expect(put).not.toHaveBeenCalled();
   expect(saveButton(v).props.disabled).toBe(false);
@@ -499,4 +501,26 @@ it("no Viewed box without an open PR or when the viewed read fails", async () =>
   const offline = review(withPr());
   await tick();
   expect(offline.diffs().every((d) => nodes(d.props.extra).every((n) => n.type !== Checkbox))).toBe(true);
+});
+
+it("the toolbar keeps the layout, whitespace and notes; the rest is one options menu, and Send review is the one primary", async () => {
+  memoryStorage();
+  const api = createMockApi({});
+  const v = review(api);
+  await tick();
+  const bar = v.all().find((n) => n.props.className === "rv-bar")!;
+  const inBar = nodes(bar.props.children);
+  expect(inBar.filter((n) => n.type === Checkbox).map((n) => n.props.label)).toEqual([en("review.opt.whitespace")]);
+  expect(inBar.some((n) => n.type === Segmented)).toBe(true);
+  const labels = v.all().find((n) => n.type === MenuButton)!.props.items.map((i: { label?: string }) => i.label).filter(Boolean);
+  for (const key of ["review.opt.collapse", "review.opt.lineNumbers", "review.opt.wrap", "review.view.tree", "review.attr.live", "review.ai.run", "review.ai.auto", "review.opt.saveDefault"]) expect(labels).toContain(en(key));
+  // The whitespace box still changes the view.
+  inBar.find((n) => n.type === Checkbox)!.props.onChange();
+  expect(v.diff("src/session.ts").props.opts).toMatchObject({ ignoreWhitespace: true });
+
+  expect(v.all().find((n) => n.type === VerdictPanel)!.props).toMatchObject({ worktree: OAK, branch: expect.any(String) });
+  const html = v.html();
+  expect(html).toContain(en("review.verdict.send"));
+  expect(html).toContain(en("review.verdict.changes"));
+  expect(html.match(/class="btn[ "]/g)).toHaveLength(1);
 });

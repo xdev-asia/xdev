@@ -6,7 +6,8 @@ import type { ProfilesView, ReviewNote } from "@/api";
 import type { Sessions, Tab } from "@/workspace/sessions";
 import type { TabStatus } from "@/workspace/status";
 import { pastePrompt } from "@/workspace/agentPrompt";
-import { newNote, notesPrompt, notesToSend } from "./notes";
+import { Checkbox } from "@xdev-asia/ui";
+import { newNote, notesPrompt, notesToSend, reviewPrompt, type Verdict } from "./notes";
 import { SendNotesMenu } from "./SendNotesMenu";
 
 const profiles = vi.hoisted(() => ({ view: null as unknown }));
@@ -94,8 +95,8 @@ function fake(initial: Tab[]) {
 beforeEach(() => { hooks.values = []; hooks.cursor = 0; hooks.effects = []; hooks.active = false; profiles.view = null; });
 afterEach(() => vi.useRealTimers());
 
-function menu(sessions: Sessions | null, markSent = vi.fn(async () => {}), list = notes) {
-  const m = mount(() => SendNotesMenu({ sessions, worktree: OAK, branch: "oak", notes: list, markSent }));
+function menu(sessions: Sessions | null, markSent = vi.fn(async () => {}), list = notes, review?: { verdict: Verdict; summary: string; onSent(): void }) {
+  const m = mount(() => SendNotesMenu({ sessions, worktree: OAK, branch: "oak", notes: list, markSent, review }));
   const button = () => m.all().find((n) => n.props["aria-haspopup"] === "menu")!;
   const items = () => m.all().filter((n) => n.props.role === "menuitem");
   return { ...m, markSent, button, items, openMenu: () => button().props.onClick() };
@@ -106,7 +107,7 @@ it("counts the notes not sent yet and offers the sent ones on request", () => {
   const m = menu(f.sessions);
   expect(m.html()).toContain(en("review.send.one", { count: 1 }));
   m.openMenu();
-  m.all().find((n) => n.type === "input")!.props.onChange();
+  m.all().find((n) => n.type === Checkbox)!.props.onChange();
   expect(m.html()).toContain(en("review.send", { count: 2 }));
 });
 
@@ -181,4 +182,24 @@ it("running tabs of one agent are told apart by number", () => {
   const labels = m.items().filter((n) => n.props["data-tab"]).map(text);
   expect(labels.slice(0, 2)).toEqual(["Claude Code 1", "Claude Code 2"]);
   expect(labels[2]).not.toMatch(/\d/);
+});
+
+it("as the verdict panel's primary it sends the verdict and summary, even with no note", async () => {
+  const a = tab("a");
+  const f = fake([a]);
+  const onSent = vi.fn();
+  const approve = menu(f.sessions, undefined, [], { verdict: "approve", summary: "", onSent });
+  expect(approve.html()).toContain(en("review.verdict.send"));
+  expect(approve.html().match(/class="btn[ "]/g)).toHaveLength(1);
+  expect(approve.button().props.disabled).toBe(false);
+  // Requested changes with no note and no summary have nothing to say.
+  expect(menu(f.sessions, undefined, [], { verdict: "changes", summary: " ", onSent }).button().props.disabled).toBe(true);
+
+  const m = menu(f.sessions, undefined, notes, { verdict: "comment", summary: "Close.", onSent });
+  m.openMenu();
+  m.items().find((n) => n.props["data-tab"] === "a")!.props.onClick();
+  await tick();
+  expect(a.client.input).toHaveBeenCalledWith(pastePrompt(reviewPrompt("oak", notesToSend(notes, false), "comment", "Close.")));
+  expect(m.markSent).toHaveBeenCalledWith(["n1"]);
+  expect(onSent).toHaveBeenCalledOnce();
 });

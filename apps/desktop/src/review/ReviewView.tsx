@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Badge, Button, Checkbox, FilterChip, SearchInput, SplitHandle, TreeView } from "@xdev-asia/ui";
+import { Badge, Button, Checkbox, FilterChip, MenuButton, SearchInput, Segmented, SplitHandle, TreeView, type MenuEntry } from "@xdev-asia/ui";
 import { reviewRows } from "./reviewRows";
 import type { JSX } from "react";
 import { toApiError, type Api, type ReviewData, type ReviewFile, type ReviewNote } from "@/api";
@@ -15,7 +15,7 @@ import { nextChange, type ChangeAt } from "./navigate";
 import { postBlock } from "./postable";
 import { sortNotes } from "./notes";
 import { noteLabel } from "./NoteCard";
-import { SendNotesMenu } from "./SendNotesMenu";
+import { VerdictPanel } from "./VerdictPanel";
 import { AiStatus } from "./AiStatus";
 import { readAuto, writeAuto } from "./aiReview";
 import { useAiReview } from "./useAiReview";
@@ -350,37 +350,48 @@ export function ReviewView(props: {
   }
 
   const width = clampListWidth(opts.listWidth);
-  const flag = (name: "ignoreWhitespace" | "collapse" | "lineNumbers" | "wrap" | "attribution", label: string) => (
-    <Checkbox className="rv-check" label={t(label)} checked={opts[name]} onChange={() => setOption({ [name]: !opts[name] })} />
-  );
+  // The view options past whitespace, the AI review and "Save as default" sit in one menu.
+  const check = (name: "collapse" | "lineNumbers" | "wrap" | "attribution", label: string): MenuEntry => ({
+    label: t(label),
+    checked: opts[name],
+    onSelect: () => setOption({ [name]: !opts[name] }),
+  });
+  const more: MenuEntry[] = [
+    { type: "group", label: t("review.more.view") },
+    check("collapse", "review.opt.collapse"),
+    check("lineNumbers", "review.opt.lineNumbers"),
+    check("attribution", "review.opt.attribution"),
+    check("wrap", "review.opt.wrap"),
+    { label: t("review.view.tree"), checked: opts.tree, onSelect: () => setOption({ tree: !opts.tree }) },
+    { label: t("review.attr.live"), checked: live, onSelect: () => setLive(!live) },
+    { label: t("review.opt.saveDefault"), disabled: !unsaved, onSelect: () => void saveDefault() },
+    { type: "separator" },
+    { type: "group", label: t("review.more.ai") },
+    { label: t("review.ai.run"), disabled: ai.busy || !data || files.length === 0, onSelect: () => data && void ai.run(data.base.id) },
+    {
+      label: t("review.ai.auto"),
+      checked: auto,
+      onSelect: () => {
+        writeAuto(storage(), !auto);
+        setAuto(!auto);
+      },
+    },
+  ];
 
   return (
     <div className="rv" onKeyDown={key}>
       <FeatureTour tour="review" />
       <div className="rv-bar">
         {data && <BasePicker api={api} worktree={worktree} base={data.base} baseRef={data.baseRef} onPick={(b) => void pickBase(b)} />}
-        <div className="rv-layout" role="group" aria-label={t("review.layout")} data-tour="review-layout">
-          {(["inline", "split"] as const).map((layout) => (
-            <button key={layout} type="button" aria-pressed={opts.layout === layout} onClick={() => setOption({ layout })}>
-              {t(`review.layout.${layout}`)}
-            </button>
-          ))}
-        </div>
-        {flag("ignoreWhitespace", "review.opt.whitespace")}
-        {flag("collapse", "review.opt.collapse")}
-        {flag("lineNumbers", "review.opt.lineNumbers")}
-        {flag("attribution", "review.opt.attribution")}
-        {flag("wrap", "review.opt.wrap")}
-        <div className="rv-layout" role="group" aria-label={t("review.view")}>
-          {([false, true] as const).map((tree) => (
-            <button key={String(tree)} type="button" data-view={tree ? "tree" : "list"} aria-pressed={opts.tree === tree} onClick={() => setOption({ tree })}>
-              {t(tree ? "review.view.tree" : "review.view.list")}
-            </button>
-          ))}
-        </div>
-        <button type="button" className="rv-base-button" data-act="save-default" disabled={!unsaved} onClick={() => void saveDefault()}>
-          {t("review.opt.saveDefault")}
-        </button>
+        <span className="rv-seg" data-tour="review-layout">
+          <Segmented
+            label={t("review.layout")}
+            options={(["inline", "split"] as const).map((layout) => ({ value: layout, label: t(`review.layout.${layout}`) }))}
+            value={opts.layout}
+            onChange={(layout) => setOption({ layout: layout as ViewOptions["layout"] })}
+          />
+        </span>
+        <Checkbox className="rv-check" label={t("review.opt.whitespace")} checked={opts.ignoreWhitespace} onChange={() => setOption({ ignoreWhitespace: !opts.ignoreWhitespace })} />
         <div className="rv-notes" data-tour="review-notes">
           <button type="button" className="rv-base-button" aria-haspopup="dialog" aria-expanded={listing} onClick={() => setListing(!listing)}>
             {t("review.notes", { count: store.notes.length })}
@@ -399,22 +410,9 @@ export function ReviewView(props: {
             </div>
           )}
         </div>
-        <button type="button" className="rv-base-button" data-act="live" aria-expanded={live} onClick={() => setLive(!live)}>
-          {t("review.attr.live")}
-        </button>
-        <button type="button" className="rv-base-button" data-act="ai-review" data-tour="review-ai" disabled={ai.busy || !data || files.length === 0} onClick={() => data && void ai.run(data.base.id)}>
-          {t("review.ai.run")}
-        </button>
-        <Checkbox
-          className="rv-check"
-          label={t("review.ai.auto")}
-          checked={auto}
-            onChange={() => {
-              writeAuto(storage(), !auto);
-              setAuto(!auto);
-            }}
-        />
-        <SendNotesMenu sessions={sessions} worktree={worktree} branch={data?.branch ?? null} notes={store.notes} markSent={store.markSent} />
+        <span className="rv-more" data-tour="review-ai">
+          <MenuButton label={t("review.more")} icon="sliders" items={more} align="end" />
+        </span>
         {store.removed && (
           <span className="rv-undo" role="status">
             {t("review.note.deleted")}
@@ -432,7 +430,8 @@ export function ReviewView(props: {
       {data && files.length === 0 && <p className="ws-empty">{t("review.empty")}</p>}
       {files.length > 0 && data && (
         <div className="rv-main">
-          <nav className="rv-list" style={{ width }} aria-label={t("review.list")}>
+          <div className="rv-side" style={{ width }}>
+          <nav className="rv-list" aria-label={t("review.list")}>
             <SearchInput
               size="sm"
               className="rv-filter"
@@ -474,6 +473,8 @@ export function ReviewView(props: {
               </>
             )}
           </nav>
+          <VerdictPanel sessions={sessions} worktree={worktree} branch={data.branch} notes={store.notes} markSent={store.markSent} />
+          </div>
           <SplitHandle direction="horizontal" value={width} min={LIST_MIN} max={LIST_MAX} step={STEP} label={t("review.resize")} onResize={(listWidth) => setOption({ listWidth: clampListWidth(listWidth) })} />
           <div className="rv-files">
             {files.map((f) => (
